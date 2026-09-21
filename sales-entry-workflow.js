@@ -22,6 +22,7 @@
   }
   function currentFlow(){ return document.getElementById('salesFlowType')?.value || 'stock_sale'; }
   function lineRows(){ return [...document.querySelectorAll('#orderItems .order-item-row')]; }
+
   function calcSalesEntry(){
     let subtotal=0;
     lineRows().forEach(r=>{
@@ -70,6 +71,66 @@
     salesEntryRecalc();
   };
 
+  function productMatches(q){
+    const s=String(q||'').trim().toLowerCase();
+    const list=state.products||[];
+    if(!s) return list.slice(0,10);
+    return list
+      .map(p=>{
+        const code=String(p.code||'').toLowerCase();
+        const name=String(p.item_name||'').toLowerCase();
+        const brand=String(p.brand||'').toLowerCase();
+        let score=99;
+        if(code===s) score=0;
+        else if(code.startsWith(s)) score=1;
+        else if(code.includes(s)) score=2;
+        else if(name.startsWith(s)) score=3;
+        else if(name.includes(s)) score=4;
+        else if(brand.includes(s)) score=5;
+        return {p,score};
+      })
+      .filter(x=>x.score<99)
+      .sort((a,b)=>a.score-b.score || String(a.p.code||'').localeCompare(String(b.p.code||'')))
+      .slice(0,12)
+      .map(x=>x.p);
+  }
+
+  window.showSalesProductSuggestions=function(input){
+    const row=input.closest('.order-item-row');
+    if(!row) return;
+    const box=row.querySelector('.product-suggestions');
+    const matches=productMatches(input.value);
+    if(!matches.length){
+      box.innerHTML='<div class="px-3 py-3 text-xs text-gray-400">No matching product code or item name.</div>';
+    }else{
+      box.innerHTML=matches.map(p=>`<button type="button" class="w-full text-left px-3 py-2 hover:bg-amber-50 border-b last:border-b-0" data-id="${esc(p.id)}" data-code="${esc(p.code||'')}" data-name="${esc(p.item_name||'')}" data-image="${esc(p.image_url||'')}" data-price="${Number(p.sales_price||0)}" onclick="chooseSalesProduct(this)"><div class="text-xs font-bold text-[#a77d1a]">${esc(p.code||'No code')}</div><div class="text-sm truncate">${esc(p.item_name||'')}</div><div class="text-[10px] text-gray-400">${esc(p.brand||'')} ${p.class?'· '+esc(p.class):''} · ${money(p.sales_price||0,p.currency||'USD')}</div></button>`).join('');
+    }
+    box.classList.remove('hidden');
+  };
+
+  window.chooseSalesProduct=function(btn){
+    const row=btn.closest('.order-item-row');
+    if(!row) return;
+    row.querySelector('.product-id').value=btn.dataset.id||'';
+    row.querySelector('.product-code').value=btn.dataset.code||'';
+    row.querySelector('.product-name').value=btn.dataset.name||'';
+    row.querySelector('.product-image').value=btn.dataset.image||'';
+    row.querySelector('.product-search-input').value=`${btn.dataset.code||''} · ${btn.dataset.name||''}`;
+    row.querySelector('.unit-price').value=Number(btn.dataset.price||0);
+    row.querySelector('.product-suggestions').classList.add('hidden');
+    salesEntryRecalc();
+  };
+
+  window.salesProductInputChanged=function(input){
+    const row=input.closest('.order-item-row');
+    if(!row)return;
+    row.querySelector('.product-id').value='';
+    row.querySelector('.product-code').value='';
+    row.querySelector('.product-name').value='';
+    row.querySelector('.product-image').value='';
+    showSalesProductSuggestions(input);
+  };
+
   window.addOrderItemRow=function(){
     const wrap=document.getElementById('orderItems');
     if(!wrap || !state.products.length) return;
@@ -77,22 +138,18 @@
     const d=document.createElement('div');
     d.className='grid md:grid-cols-12 gap-2 p-3 bg-gray-50 rounded-xl order-item-row';
     d.innerHTML=`
-      <select class="product-select md:col-span-5 border rounded-lg px-2 py-2" onchange="syncItemPrice(this)">
-        ${state.products.map(p=>`<option value="${p.id}" data-price="${Number(p.sales_price||0)}" data-code="${esc(p.code)}" data-name="${esc(p.item_name)}" data-image="${esc(p.image_url||'')}">${esc(p.code)} · ${esc(p.item_name)}</option>`).join('')}
-      </select>
-      <input class="qty md:col-span-2 border rounded-lg px-2 py-2" type="number" min="0.01" step="0.01" value="1" placeholder="Qty" oninput="salesEntryRecalc()">
-      <input class="unit-price md:col-span-2 border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="${Number(state.products[0]?.sales_price||0)}" placeholder="Unit price" oninput="salesEntryRecalc()">
-      <input class="line-discount md:col-span-2 border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="0" placeholder="Discount" oninput="salesEntryRecalc()">
-      <button type="button" onclick="this.closest('.order-item-row').remove();salesEntryRecalc()" class="md:col-span-1 border rounded-lg text-red-500 font-bold">×</button>
+      <div class="md:col-span-5 relative">
+        <label class="text-[10px] font-semibold text-gray-500">Product Code / Item</label>
+        <input type="text" autocomplete="off" class="product-search-input mt-1 w-full border rounded-lg px-3 py-2 bg-white" placeholder="Type product code or item name..." onfocus="showSalesProductSuggestions(this)" oninput="salesProductInputChanged(this)">
+        <input type="hidden" class="product-id"><input type="hidden" class="product-code"><input type="hidden" class="product-name"><input type="hidden" class="product-image">
+        <div class="product-suggestions hidden absolute z-[100] left-0 right-0 top-full mt-1 max-h-64 overflow-y-auto bg-white border rounded-xl shadow-xl"></div>
+      </div>
+      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Qty</label><input class="qty mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0.01" step="0.01" value="1" oninput="salesEntryRecalc()"></div>
+      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Unit Price</label><input class="unit-price mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="0" oninput="salesEntryRecalc()"></div>
+      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Line Discount</label><input class="line-discount mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="0" oninput="salesEntryRecalc()"></div>
+      <div class="md:col-span-1 flex items-end"><button type="button" onclick="this.closest('.order-item-row').remove();salesEntryRecalc()" class="w-full h-[42px] border rounded-lg text-red-500 font-bold">×</button></div>
       <select class="source-type hidden"><option value="stock" ${flow==='stock_sale'?'selected':''}>Stock</option><option value="pre_order" ${flow==='pre_order'?'selected':''}>Pre-order</option></select>`;
     wrap.appendChild(d);
-    salesEntryRecalc();
-  };
-
-  window.syncItemPrice=function(sel){
-    const row=sel.closest('.order-item-row');
-    if(!row)return;
-    row.querySelector('.unit-price').value=sel.selectedOptions[0]?.dataset.price||0;
     salesEntryRecalc();
   };
 
@@ -105,7 +162,6 @@
     openModal('Create Sale / Customer Order',`
       <form id="orderForm" class="space-y-5">
         <div class="rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs text-amber-900" id="salesFlowHint"><b>Stock Sale:</b> enter the official TK or RK invoice number for the stock sale.</div>
-
         <div class="grid md:grid-cols-2 gap-3">
           <div><label class="text-xs font-semibold">Customer</label><select id="orderCustomer" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white">${state.customers.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></div>
           <div><label class="text-xs font-semibold">Sale Type</label><select id="salesFlowType" onchange="updateSalesDocumentFields()" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"><option value="stock_sale">Stock Sale — TK / RK</option><option value="pre_order">Pre-Order — SR</option></select></div>
@@ -116,14 +172,14 @@
         </div>
 
         <div>
-          <div class="flex items-center justify-between mb-2"><div><h4 class="font-bold">Items</h4><div class="text-[10px] text-gray-400">Selling price and line discount can be adjusted by Sales.</div></div><button type="button" onclick="addOrderItemRow()" class="px-3 py-2 border rounded-lg text-xs font-semibold">+ Add Item</button></div>
+          <div class="flex items-center justify-between mb-2"><div><h4 class="font-bold">Items</h4><div class="text-[10px] text-gray-400">Type a product code or item name, then choose a matching suggestion.</div></div><button type="button" onclick="addOrderItemRow()" class="px-3 py-2 border rounded-lg text-xs font-semibold">+ Add Item</button></div>
           <div id="orderItems" class="space-y-3"></div>
         </div>
 
         <div class="grid md:grid-cols-2 gap-4 border-t pt-4">
-          <div><label class="text-xs font-semibold">Order Discount Amount</label><input id="orderDiscount" type="number" min="0" step="0.01" value="0" oninput="salesEntryRecalc()" class="mt-1 w-full border rounded-xl px-3 py-2"></div>
+          <div><label class="text-xs font-semibold">Order Discount Amount</label><input id="orderDiscount" type="number" min="0" step="0.01" value="0" oninput="salesEntryRecalc()" class="mt-1 w-full border rounded-xl px-3 py-2"><div class="text-[10px] text-gray-400 mt-1">Optional discount applied to the whole order.</div></div>
           <div><label class="text-xs font-semibold">Deposit Entry</label><select id="depositMode" onchange="salesEntryRecalc()" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"><option value="amount">By Amount</option><option value="percent">By Percentage (%)</option></select></div>
-          <div><label id="depositValueLabel" class="text-xs font-semibold">Deposit Amount</label><input id="depositValue" type="number" min="0" step="0.01" value="0" oninput="salesEntryRecalc()" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Example: 3000"></div>
+          <div><label id="depositValueLabel" class="text-xs font-semibold">Deposit Amount</label><input id="depositValue" type="number" min="0" step="0.01" value="0" oninput="salesEntryRecalc()" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Example: 3000"><div class="text-[10px] text-gray-400 mt-1">This becomes the first customer payment.</div></div>
           <div><label class="text-xs font-semibold">Payment Method</label><input id="paymentMethod" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Cash, ABA, Bank Transfer..."></div>
         </div>
 
@@ -148,6 +204,8 @@
     e.preventDefault();
     const rows=lineRows();
     if(!rows.length) return showToast('Add at least one item.','err');
+    const missingProduct=rows.find(r=>!r.querySelector('.product-id')?.value);
+    if(missingProduct){ missingProduct.querySelector('.product-search-input')?.focus(); return showToast('Choose a matching product from the suggestion list.','err'); }
 
     const flow=currentFlow();
     const invoiceType=document.getElementById('salesInvoiceType')?.value||'TK';
@@ -164,76 +222,34 @@
     const repId=effectiveSalesRepId();
     const repName=effectiveSalesRepName();
     const orderDate=document.getElementById('orderDate').value;
-    const order={
-      customer_id:document.getElementById('orderCustomer').value,
-      sales_rep_id:repId,
-      sales_rep_name_snapshot:repName||null,
-      order_date:orderDate,
-      order_type:flow==='pre_order'?'pre_order':'in_stock',
-      sales_flow_type:flow,
-      status:'confirmed',
-      currency:'USD',
-      order_discount:calc.orderDiscount,
-      notes:document.getElementById('orderNotes').value.trim()||null,
-      created_by:state.user.id,
-      order_no:docNo,
-      invoice_no:flow==='stock_sale'?docNo:null,
-      sr_no:flow==='pre_order'?docNo:null,
-      sales_invoice_no:flow==='stock_sale'?docNo:null,
-      sales_invoice_type:flow==='stock_sale'?invoiceType:null,
-      invoice_request_status:flow==='stock_sale'?'not_needed':'not_requested',
-      deposit_input_type:calc.depositMode,
-      deposit_input_value:calc.depositValue
-    };
+    const order={customer_id:document.getElementById('orderCustomer').value,sales_rep_id:repId,sales_rep_name_snapshot:repName||null,order_date:orderDate,order_type:flow==='pre_order'?'pre_order':'in_stock',sales_flow_type:flow,status:'confirmed',currency:'USD',order_discount:calc.orderDiscount,notes:document.getElementById('orderNotes').value.trim()||null,created_by:state.user.id,order_no:docNo,invoice_no:flow==='stock_sale'?docNo:null,sr_no:flow==='pre_order'?docNo:null,sales_invoice_no:flow==='stock_sale'?docNo:null,sales_invoice_type:flow==='stock_sale'?invoiceType:null,invoice_request_status:flow==='stock_sale'?'not_needed':'not_requested',deposit_input_type:calc.depositMode,deposit_input_value:calc.depositValue};
 
     const {data:so,error}=await db.from('sales_orders').insert(order).select().single();
-    if(error){
-      const msg=String(error.message||'');
-      return showToast(msg.toLowerCase().includes('duplicate')?'That SR/TK/RK number already exists.':msg,'err');
-    }
+    if(error){const msg=String(error.message||'');return showToast(msg.toLowerCase().includes('duplicate')?'That SR/TK/RK number already exists.':msg,'err');}
 
-    const items=rows.map(r=>{
-      const s=r.querySelector('.product-select'),opt=s.selectedOptions[0];
-      return {
-        sales_order_id:so.id,
-        product_id:s.value,
-        product_code_snapshot:opt.dataset.code,
-        item_name_snapshot:opt.dataset.name,
-        image_url_snapshot:opt.dataset.image||null,
-        qty:Number(r.querySelector('.qty').value),
-        unit_price:Number(r.querySelector('.unit-price').value),
-        discount_amount:Number(r.querySelector('.line-discount').value||0),
-        source_type:flow==='pre_order'?'pre_order':'stock',
-        fulfillment_status:flow==='pre_order'?'pending':'ready'
-      };
-    });
-
+    const items=rows.map(r=>({sales_order_id:so.id,product_id:r.querySelector('.product-id').value,product_code_snapshot:r.querySelector('.product-code').value,item_name_snapshot:r.querySelector('.product-name').value,image_url_snapshot:r.querySelector('.product-image').value||null,qty:Number(r.querySelector('.qty').value),unit_price:Number(r.querySelector('.unit-price').value),discount_amount:Number(r.querySelector('.line-discount').value||0),source_type:flow==='pre_order'?'pre_order':'stock',fulfillment_status:flow==='pre_order'?'pending':'ready'}));
     const invalid=items.some(i=>!i.product_id || i.qty<=0 || i.unit_price<0 || i.discount_amount<0);
-    if(invalid){ await db.from('sales_orders').delete().eq('id',so.id); return showToast('Please check item quantity, price and discount.','err'); }
+    if(invalid){await db.from('sales_orders').delete().eq('id',so.id);return showToast('Please check item quantity, price and discount.','err');}
 
     const {error:itemErr}=await db.from('sales_order_items').insert(items);
-    if(itemErr){ await db.from('sales_orders').delete().eq('id',so.id); return showToast(itemErr.message,'err'); }
+    if(itemErr){await db.from('sales_orders').delete().eq('id',so.id);return showToast(itemErr.message,'err');}
 
     if(calc.depositAmount>0){
       const note=calc.depositMode==='percent' ? `Initial deposit ${calc.depositValue}%` : 'Initial deposit amount';
-      const {error:payErr}=await db.from('sales_payments').insert({
-        sales_order_id:so.id,
-        amount:calc.depositAmount,
-        payment_date:orderDate,
-        method:document.getElementById('paymentMethod').value.trim()||'Deposit',
-        notes:note,
-        received_by:state.user.id
-      });
-      if(payErr){ await db.from('sales_orders').delete().eq('id',so.id); return showToast(payErr.message,'err'); }
+      const {error:payErr}=await db.from('sales_payments').insert({sales_order_id:so.id,amount:calc.depositAmount,payment_date:orderDate,method:document.getElementById('paymentMethod').value.trim()||'Deposit',notes:note,received_by:state.user.id});
+      if(payErr){await db.from('sales_orders').delete().eq('id',so.id);return showToast(payErr.message,'err');}
     }
 
     if(managerContextActive() && typeof recordManagerRepAction==='function'){
       await recordManagerRepAction('create_sales_order','sales_order',so.id,{document_no:docNo,flow_type:flow,deposit_amount:calc.depositAmount});
     }
-
     if(window.documentFlowState) window.documentFlowState.loaded=false;
     closeModal();
     showToast(flow==='pre_order'?`Pre-order ${docNo} created`:`${invoiceType} invoice ${docNo} created`);
     await go('sales-orders');
   };
+
+  document.addEventListener('click',e=>{
+    if(!e.target.closest('.order-item-row')) document.querySelectorAll('.product-suggestions').forEach(x=>x.classList.add('hidden'));
+  });
 })();
