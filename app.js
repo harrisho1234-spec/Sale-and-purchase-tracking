@@ -204,13 +204,166 @@ async function renderReports(){
 }
 async function renderUsers(){
   if(!isSuper()) throw new Error('Super Admin only');
-  const {data,error}=await db.from('app_users').select('*').order('display_name');
+
+  const {data,error}=await db
+    .from('app_users')
+    .select('*')
+    .order('display_name');
+
   if(error) throw error;
-  document.getElementById('content').innerHTML=`<div class="card rounded-2xl overflow-hidden"><div class="divide-y">${(data||[]).map(u=>`<div class="p-4 flex justify-between items-center"><div><b>${esc(u.display_name||u.user_id)}</b><div class="text-xs text-gray-400">${esc(u.user_id)}</div></div><select onchange="updateUserRole('${u.user_id}',this.value)" class="border rounded-lg px-3 py-2 text-sm"><option value="sales" ${u.role==='sales'?'selected':''}>Sales</option><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option><option value="super_admin" ${u.role==='super_admin'?'selected':''}>Super Admin</option></select></div>`).join('')}</div></div>`;
+
+  document.getElementById('content').innerHTML=`
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+      <div>
+        <h3 class="font-bold text-lg">Users & Access</h3>
+        <p class="text-xs text-gray-400">Create logins and control access roles.</p>
+      </div>
+      <button onclick="openCreateUser()" class="px-4 py-2.5 bg-[#211d18] text-white rounded-xl text-sm font-semibold">
+        + Add User
+      </button>
+    </div>
+
+    <div class="card rounded-2xl overflow-hidden">
+      <div class="divide-y">
+        ${(data||[]).map(u=>`
+          <div class="p-4 grid md:grid-cols-[1fr_170px_110px] gap-3 items-center">
+            <div>
+              <div class="font-semibold">${esc(u.display_name || u.email || u.user_id)}</div>
+              <div class="text-xs text-gray-400">${esc(u.email || '')}</div>
+            </div>
+
+            <select
+              onchange="updateUserRole('${u.user_id}',this.value)"
+              class="border rounded-lg px-3 py-2 text-sm bg-white">
+              <option value="sales" ${u.role==='sales'?'selected':''}>Sales</option>
+              <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option>
+              <option value="super_admin" ${u.role==='super_admin'?'selected':''}>Super Admin</option>
+            </select>
+
+            <button
+              onclick="toggleUserActive('${u.user_id}', ${u.active ? 'false' : 'true'})"
+              class="px-3 py-2 rounded-lg text-xs font-semibold border ${u.active ? 'text-green-700 bg-green-50 border-green-200' : 'text-gray-600 bg-gray-50 border-gray-200'}">
+              ${u.active ? 'Active' : 'Inactive'}
+            </button>
+          </div>
+        `).join('') || empty('No users found.')}
+      </div>
+    </div>`;
 }
+
+function openCreateUser(){
+  if(!isSuper()) return showToast('Super Admin only','err');
+
+  openModal('Create User',`
+    <form id="createUserForm" class="space-y-4">
+      <div class="grid md:grid-cols-2 gap-4">
+        <div>
+          <label class="text-xs font-semibold text-gray-600">Name</label>
+          <input id="newUserName" required class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Staff name">
+        </div>
+
+        <div>
+          <label class="text-xs font-semibold text-gray-600">Email</label>
+          <input id="newUserEmail" type="email" required class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="staff@company.com">
+        </div>
+
+        <div>
+          <label class="text-xs font-semibold text-gray-600">Password</label>
+          <input id="newUserPassword" type="password" minlength="8" required class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Minimum 8 characters">
+        </div>
+
+        <div>
+          <label class="text-xs font-semibold text-gray-600">Role</label>
+          <select id="newUserRole" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">
+            <option value="sales">Sales</option>
+            <option value="admin">Admin</option>
+            <option value="super_admin">Super Admin</option>
+          </select>
+        </div>
+      </div>
+
+      <label class="flex items-center gap-2 text-sm">
+        <input id="newUserActive" type="checkbox" checked class="w-4 h-4">
+        <span>Active user</span>
+      </label>
+
+      <div class="bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-amber-800">
+        The user can sign in immediately with the email and password you create here.
+      </div>
+
+      <button id="createUserSubmitBtn" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">
+        Create User
+      </button>
+    </form>
+  `);
+
+  document.getElementById('createUserForm').onsubmit = saveNewUser;
+}
+
+async function saveNewUser(e){
+  e.preventDefault();
+
+  const btn = document.getElementById('createUserSubmitBtn');
+  btn.disabled = true;
+  btn.textContent = 'Creating...';
+
+  const payload = {
+    name: document.getElementById('newUserName').value.trim(),
+    email: document.getElementById('newUserEmail').value.trim(),
+    password: document.getElementById('newUserPassword').value,
+    role: document.getElementById('newUserRole').value,
+    active: document.getElementById('newUserActive').checked
+  };
+
+  try{
+    const {data,error} = await db.functions.invoke('create-app-user', {
+      body: payload
+    });
+
+    if(error) throw error;
+    if(data?.error) throw new Error(data.error);
+
+    closeModal();
+    showToast('User created successfully');
+    await go('users');
+  }catch(err){
+    showToast(err.message || 'Could not create user','err');
+    btn.disabled = false;
+    btn.textContent = 'Create User';
+  }
+}
+
 async function updateUserRole(id,role){
-  const {error}=await db.from('app_users').update({role}).eq('user_id',id);
-  if(error) showToast(error.message,'err'); else showToast('Role updated');
+  const {error}=await db
+    .from('app_users')
+    .update({role})
+    .eq('user_id',id);
+
+  if(error) showToast(error.message,'err');
+  else {
+    showToast('Role updated');
+    if(id === state.user.id){
+      await loadProfile();
+      renderNav();
+    }
+  }
+}
+
+async function toggleUserActive(id,active){
+  if(id === state.user.id && active === false){
+    return showToast('You cannot deactivate your own Super Admin account here.','err');
+  }
+
+  const {error}=await db
+    .from('app_users')
+    .update({active})
+    .eq('user_id',id);
+
+  if(error) showToast(error.message,'err');
+  else {
+    showToast(active ? 'User activated' : 'User deactivated');
+    await go('users');
+  }
 }
 
 function openModal(title,body){document.getElementById('modalTitle').textContent=title;document.getElementById('modalBody').innerHTML=body;document.getElementById('modal').classList.remove('hidden');}
