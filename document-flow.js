@@ -21,8 +21,12 @@
   function refsForItem(id){return df.refs.filter(r=>r.sales_order_item_id===id)}
   function eventsForOrder(id){return df.events.filter(e=>e.sales_order_id===id)}
   function allArrived(o){
-    const items=o.items||[]; if(!items.length)return false;
-    return items.every(i=>['arrived','ready','delivered'].includes(norm((Array.isArray(i.item_tracking)?i.item_tracking[0]?.status:i.item_tracking?.status)||i.fulfillment_status)));
+    const items=o.items||[];if(!items.length)return false;
+    return items.every(i=>{
+      const linked=refsForItem(i.id);
+      if(linked.length)return linked.every(r=>['arrived','completed'].includes(norm(r.po_status)));
+      return ['arrived','ready','delivered'].includes(norm(i.fulfillment_status));
+    });
   }
   function allDelivered(o){const items=o.items||[];return !!items.length&&items.every(i=>norm(i.fulfillment_status)==='delivered')}
   function uniquePOs(o){
@@ -48,25 +52,6 @@
   }
 
   function mergeMeta(o){return {...o,...(df.orderMeta.get(o.id)||{})}}
-
-  function matchesCurrentSalesFilter(o){
-    const ui=window.trackingRedesign||{};const q=String(ui.salesSearch||'').toLowerCase().trim();
-    if(ui.salesRep&&ui.salesRep!=='all'&&(o.sales_rep_name_snapshot||'')!==ui.salesRep)return false;
-    if(ui.salesCustomer&&ui.salesCustomer!=='all'&&o.customer_id!==ui.salesCustomer)return false;
-    if(ui.salesClass&&ui.salesClass!=='all'&&!(o.items||[]).some(i=>i.product_catalog?.class===ui.salesClass))return false;
-    const st=ui.salesStatus||'active';
-    if(st==='uncleared'&&Number(o.balance_due||0)<=0)return false;
-    if(st==='preorder'&&!isPre(o))return false;
-    if(st==='not_taken'&&!(o.items||[]).some(i=>norm(i.fulfillment_status)==='ready'))return false;
-    if(st==='taken_unpaid'&&!(Number(o.balance_due||0)>0&&(o.items||[]).some(i=>norm(i.fulfillment_status)==='delivered')))return false;
-    if(st==='settled'&&norm(o.payment_status)!=='paid')return false;
-    if(st==='active'&&norm(o.status)==='cancelled')return false;
-    if(q){
-      const hay=[o.order_no,o.invoice_no,o.sr_no,o.sales_invoice_no,o.customer_name,o.sales_rep_name_snapshot,...(o.items||[]).flatMap(i=>[i.product_code_snapshot,i.item_name_snapshot,i.product_catalog?.brand,i.product_catalog?.class])].filter(Boolean).join(' ').toLowerCase();
-      if(!hay.includes(q))return false;
-    }
-    return true;
-  }
 
   function stepHtml(label,done,current=false,sub=''){
     return `<div class="min-w-[118px] rounded-xl border p-3 ${done?'bg-green-50 border-green-200':'bg-gray-50 border-gray-200'} ${current?'ring-2 ring-amber-200':''}"><div class="text-[9px] font-extrabold uppercase ${done?'text-green-700':'text-gray-400'}">${done?'✓':'○'} ${esc(label)}</div>${sub?`<div class="text-[10px] mt-1 ${done?'text-green-800':'text-gray-500'}">${esc(sub)}</div>`:''}</div>`;
@@ -97,7 +82,7 @@
       steps=[
         stepHtml('TK/RK Issued',!!o.sales_invoice_no,false,o.sales_invoice_no||o.invoice_no||o.order_no||''),
         stepHtml('Paid',settled,!settled),
-        stepHtml('Ready', (o.items||[]).some(i=>['ready','delivered'].includes(norm(i.fulfillment_status))),false),
+        stepHtml('Ready',(o.items||[]).some(i=>['ready','delivered'].includes(norm(i.fulfillment_status))),false),
         stepHtml('Delivered',delivered,settled&&!delivered)
       ].join('');
     }
@@ -118,11 +103,14 @@
 
   function enhanceSalesCards(){
     const ui=window.trackingRedesign;if(!ui||ui.salesTab!=='invoices')return;
-    const orders=(ui.salesOrders||[]).map(mergeMeta).filter(matchesCurrentSalesFilter);
+    const all=(ui.salesOrders||[]).map(mergeMeta);
     const cards=[...document.querySelectorAll('#salesTrackingRoot .lr-order-card')];
-    cards.forEach((card,idx)=>{
-      const o=orders[idx];if(!o)return;
-      const title=card.querySelector('.lr-order-main button.font-extrabold');if(title)title.textContent=docLabel(o);
+    cards.forEach(card=>{
+      const title=card.querySelector('.lr-order-main button.font-extrabold');if(!title)return;
+      const original=title.textContent.trim();
+      const o=all.find(x=>[x.invoice_no,x.order_no,x.sr_no,x.sales_invoice_no].filter(Boolean).map(String).includes(original));
+      if(!o)return;
+      title.textContent=docLabel(o);
       const detail=card.querySelector('.lr-detail');if(detail&&!detail.querySelector('.document-flow-panel')){
         const wrap=document.createElement('div');wrap.className='document-flow-panel';wrap.innerHTML=flowPanel(o);detail.prepend(wrap);
       }
@@ -130,13 +118,9 @@
   }
 
   const baseRenderSalesBody=window.renderSalesTrackingBody;
-  if(baseRenderSalesBody){
-    window.renderSalesTrackingBody=function(){baseRenderSalesBody();setTimeout(enhanceSalesCards,0)};
-  }
+  if(baseRenderSalesBody){window.renderSalesTrackingBody=function(){baseRenderSalesBody();setTimeout(enhanceSalesCards,0)}}
   const baseRenderSalesOrders=window.renderSalesOrders;
-  if(baseRenderSalesOrders){
-    window.renderSalesOrders=async function(){await baseRenderSalesOrders();await refreshFlowData(true);enhanceSalesCards()};
-  }
+  if(baseRenderSalesOrders){window.renderSalesOrders=async function(){await baseRenderSalesOrders();await refreshFlowData(true);enhanceSalesCards()}}
 
   window.openInvoiceRequest=function(orderId){
     openModal('Request Final TK/RK Invoice',`<form id="invoiceRequestForm" class="space-y-4"><div class="rounded-xl bg-amber-50 border border-amber-100 p-3 text-xs text-amber-800">This marks the arrived SR as ready for Accounting to issue the final TK or RK invoice.</div><div><label class="text-xs font-semibold">Note to Accounting</label><textarea id="invoiceRequestNote" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Optional note"></textarea></div><button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Send Invoice Request</button></form>`);
@@ -149,10 +133,9 @@
   };
 
   async function loadLinkModalData(orderId){
-    const [sr,pr,lr]=await Promise.all([
+    const [sr,pr]=await Promise.all([
       db.from('sales_order_items').select('id,product_code_snapshot,item_name_snapshot,qty').eq('sales_order_id',orderId).order('created_at'),
-      db.from('supplier_po_items').select('id,product_code_snapshot,item_name_snapshot,qty,supplier_po_id,supplier_pos(id,po_number,status,estimated_arrival)').order('created_at',{ascending:false}).limit(2000),
-      db.from('fulfillment_links').select('id,sales_order_item_id,supplier_po_item_id,qty_allocated').in('sales_order_item_id',(window._dfSalesItemIds||['00000000-0000-0000-0000-000000000000']))
+      db.from('supplier_po_items').select('id,product_code_snapshot,item_name_snapshot,qty,supplier_po_id,supplier_pos(id,po_number,status,estimated_arrival)').order('created_at',{ascending:false}).limit(2000)
     ]);
     if(sr.error)throw sr.error;if(pr.error)throw pr.error;
     const ids=(sr.data||[]).map(x=>x.id);let links=[];
@@ -163,8 +146,7 @@
   window.openLinkPOItems=async function(orderId){
     if(!isAdminRole())return showToast('Admin access required','err');
     try{
-      const d=await loadLinkModalData(orderId);window._dfLinkData=d;
-      const poMap=new Map(d.po.map(p=>[p.id,p]));
+      const d=await loadLinkModalData(orderId);window._dfLinkData=d;const poMap=new Map(d.po.map(p=>[p.id,p]));
       openModal('Link Supplier PO Items to SR',`<div class="space-y-5"><div class="rounded-xl bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800">Link each customer pre-order item to the supplier PO item that will fulfill it. PO status and ETA will then flow automatically into Sales tracking.</div><form id="linkPOForm" class="grid md:grid-cols-3 gap-3"><select id="linkSalesItem" class="border rounded-xl px-3 py-2">${d.sales.map(i=>`<option value="${i.id}">${esc(i.product_code_snapshot||'No Code')} · ${esc(i.item_name_snapshot||'Item')} · Qty ${Number(i.qty||0)}</option>`).join('')}</select><select id="linkPOItem" class="border rounded-xl px-3 py-2">${d.po.map(i=>`<option value="${i.id}">${esc(i.supplier_pos?.po_number||'PO Pending')} · ${esc(i.product_code_snapshot||'No Code')} · ${esc(i.item_name_snapshot||'Item')} · Qty ${Number(i.qty||0)}</option>`).join('')}</select><input id="linkQty" type="number" min="0.01" step="0.01" value="1" class="border rounded-xl px-3 py-2" placeholder="Allocated qty"><button class="md:col-span-3 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Link PO Item</button></form><div><div class="text-xs font-bold uppercase text-gray-400 mb-2">Existing Links</div><div class="divide-y border rounded-xl">${d.links.length?d.links.map(l=>{const s=d.sales.find(x=>x.id===l.sales_order_item_id),p=poMap.get(l.supplier_po_item_id);return `<div class="p-3 flex justify-between gap-3 text-xs"><div><b>${esc(s?.product_code_snapshot||'Sales item')}</b> → <b>${esc(p?.supplier_pos?.po_number||'PO Pending')}</b> · ${esc(p?.product_code_snapshot||'PO item')} · Qty ${Number(l.qty_allocated||0)}</div><button onclick="unlinkPOItem('${l.id}','${orderId}')" class="text-red-600 font-semibold">Unlink</button></div>`}).join(''):'<div class="p-4 text-xs text-gray-400">No PO items linked yet.</div>'}</div></div></div>`);
       document.getElementById('linkPOForm').onsubmit=async e=>{e.preventDefault();const row={sales_order_item_id:document.getElementById('linkSalesItem').value,supplier_po_item_id:document.getElementById('linkPOItem').value,qty_allocated:Number(document.getElementById('linkQty').value||0)};const {error}=await db.from('fulfillment_links').insert(row);if(error)return showToast(error.message,'err');showToast('PO item linked');df.loaded=false;await openLinkPOItems(orderId)};
     }catch(err){showToast(err.message,'err')}
@@ -172,7 +154,6 @@
 
   window.unlinkPOItem=async function(linkId,orderId){const {error}=await db.from('fulfillment_links').delete().eq('id',linkId);if(error)return showToast(error.message,'err');showToast('PO link removed');df.loaded=false;await openLinkPOItems(orderId)};
 
-  // New supplier PO form: official PO number may be blank when Accounting has not issued it yet.
   window.openNewSupplierPO=function(){
     if(!isAdminRole())return;
     openModal('Create / Upload Supplier PO',`<form id="newPOFlowForm" class="grid md:grid-cols-2 gap-4"><div><label class="text-xs font-semibold">Official PO Number</label><input id="poOfficialNo" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Leave blank if pending"></div><div><label class="text-xs font-semibold">Vendor / Supplier</label><input id="poVendor" required class="mt-1 w-full border rounded-xl px-3 py-2"></div><div><label class="text-xs font-semibold">Order Date</label><input id="poOrderDate" type="date" value="${new Date().toISOString().slice(0,10)}" class="mt-1 w-full border rounded-xl px-3 py-2"></div><div><label class="text-xs font-semibold">Currency</label><select id="poCurrency" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"><option>USD</option><option>EUR</option><option>CNY</option><option>GBP</option></select></div><div><label class="text-xs font-semibold">Shipping Agent</label><input id="poAgent" class="mt-1 w-full border rounded-xl px-3 py-2"></div><div><label class="text-xs font-semibold">ETA</label><input id="poEta" type="date" class="mt-1 w-full border rounded-xl px-3 py-2"></div><div class="md:col-span-2"><label class="text-xs font-semibold">PO Document / Supplier Order File</label><input id="poFile" type="file" accept=".pdf,image/*" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"><div class="text-[10px] text-gray-400 mt-1">If Accounting has not issued a PO number yet, upload the supplier/order document here.</div></div><div class="md:col-span-2"><label class="text-xs font-semibold">Notes</label><textarea id="poNotes" class="mt-1 w-full border rounded-xl px-3 py-2"></textarea></div><button class="md:col-span-2 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Supplier PO</button></form>`);
@@ -191,7 +172,6 @@
 
   window.viewPODocument=async function(poId){const {data:po,error}=await db.from('supplier_pos').select('po_document_path').eq('id',poId).single();if(error||!po?.po_document_path)return showToast('No PO document found','err');const r=await db.storage.from('po-documents').createSignedUrl(po.po_document_path,300);if(r.error)return showToast(r.error.message,'err');window.open(r.data.signedUrl,'_blank','noopener')};
 
-  // Add a fifth Order Tracking tab: the actual business-document chain.
   function flowTrackingHtml(){
     const ui=window.trackingRedesign||{};const q=String(ui.trackingSearch||'').toLowerCase();
     const orders=(ui.trackingOrders||[]).map(o=>({...o,...(df.orderMeta.get(o.id)||{})})).filter(o=>!q||[o.order_no,o.sr_no,o.sales_invoice_no,o.customer_name,...(o.items||[]).flatMap(i=>[i.product_code_snapshot,i.item_name_snapshot])].filter(Boolean).join(' ').toLowerCase().includes(q));
@@ -214,6 +194,5 @@
   const baseTracking=window.renderTracking;
   if(baseTracking){window.renderTracking=async function(){await baseTracking();await refreshFlowData(true);renderOrderTrackingBody()}}
 
-  // Refresh document-flow metadata after login / page changes where available.
   setTimeout(()=>{if(state?.profile)refreshFlowData().then(()=>{enhanceSalesCards();if(state.page==='tracking')renderOrderTrackingBody()})},500);
 })();
