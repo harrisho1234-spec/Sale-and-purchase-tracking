@@ -19,13 +19,9 @@
     if(!u)return `<div style="width:${size}px;height:${size}px" class="rounded-xl bg-gray-100 border flex items-center justify-center text-[9px] text-gray-400 shrink-0">No Photo</div>`;
     return `<div style="width:${size}px;height:${size}px" class="rounded-xl bg-gray-100 border overflow-hidden shrink-0"><img src="${esc(u)}" class="w-full h-full object-cover" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div style="display:none" class="w-full h-full items-center justify-center text-[9px] text-gray-400">No Photo</div></div>`;
   }
-  function statusPill(n){
-    if(n<=0)return '<span class="px-2 py-1 rounded-full bg-green-50 text-green-700 border border-green-200 text-[10px] font-bold">Covered</span>';
-    return `<span class="px-2 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold">Need ${fmtQty(n)}</span>`;
-  }
 
   async function loadNeeds(){
-    const ir=await db.from('sales_order_items').select('id,sales_order_id,product_id,product_code_snapshot,item_name_snapshot,image_url_snapshot,qty,line_position,created_at,sales_orders!inner(id,order_no,sr_no,order_date,order_type,sales_flow_type,status,customer_id,customers(name),app_users:sales_rep_id(display_name,email)),product_catalog(image_url)').order('created_at',{ascending:true});
+    const ir=await db.from('sales_order_items').select('id,sales_order_id,product_id,product_code_snapshot,item_name_snapshot,image_url_snapshot,qty,line_position,created_at,sales_orders!inner(id,order_no,sr_no,order_date,order_type,sales_flow_type,status,customer_id,customers(name)),product_catalog(image_url)').order('created_at',{ascending:true});
     if(ir.error)throw ir.error;
     const items=(ir.data||[]).filter(i=>isPreOrder(i.sales_orders)&&!['cancelled'].includes(norm(i.sales_orders?.status)));
     const ids=items.map(i=>i.id);
@@ -44,7 +40,7 @@
     const orderIds=[...new Set(items.map(i=>i.sales_order_id))];
     const payMap=new Map();
     if(orderIds.length){
-      const sr=await db.from('sales_order_summary').select('*').in('id',orderIds);
+      const sr=await db.from('sales_order_summary').select('id,amount_paid,balance_due,payment_status,sales_rep_name_snapshot').in('id',orderIds);
       if(!sr.error)(sr.data||[]).forEach(x=>payMap.set(x.id,x));
     }
     return items.map(i=>{
@@ -56,7 +52,7 @@
         allocated_qty:poQty,
         need_qty:need,
         customer_name:i.sales_orders?.customers?.name||'',
-        sales_rep_name:i.sales_orders?.app_users?.display_name||i.sales_orders?.app_users?.email||'',
+        sales_rep_name:summary.sales_rep_name_snapshot||'',
         sr_no:i.sales_orders?.sr_no||i.sales_orders?.order_no||'SR',
         order_date:i.sales_orders?.order_date||'',
         amount_paid:qty(summary.amount_paid),
