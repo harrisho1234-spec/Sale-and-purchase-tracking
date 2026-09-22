@@ -30,7 +30,11 @@
           e.preventDefault();openCustomerOrders(c.id);
         }
       };
-      const name=row.querySelector('.font-bold.text-\[14px\]');
+
+      // Do not use Tailwind arbitrary-value classes (for example text-[14px]) as a CSS selector.
+      // Their square brackets require special escaping and caused the Customers page to crash.
+      const firstCell=row.firstElementChild;
+      const name=firstCell?.querySelector('.font-bold');
       if(name){
         name.classList.add('hover:text-[#b3871e]');
         name.innerHTML=`<span class="inline-flex items-center gap-1.5">${esc(c.name||'')} <span class="text-[10px] text-[#b3871e] font-semibold">View orders ›</span></span>`;
