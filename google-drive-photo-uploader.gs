@@ -5,7 +5,8 @@
 // Security is still enforced: every upload must include a valid Supabase access token
 // and the caller must currently have admin/super_admin role.
 
-const LIMPERIAL_PRODUCT_PHOTO_FOLDER_ID = '1FzFku17bZEuoCvvfeXmd7MPqOGHQ2dRm';
+// Existing Google Drive folder supplied by Harris: Product Photos
+const LIMPERIAL_PRODUCT_PHOTO_FOLDER_ID = '1sUamVc5I5ocetxmICpzCBla5BcHe7Zo1';
 
 function doGet() {
   return json_({ ok: true, service: 'LImperial Drive Photo Uploader' });
