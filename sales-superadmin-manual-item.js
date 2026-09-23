@@ -4,6 +4,21 @@
   const isSuper=()=>state.profile?.role==='super_admin';
   const baseShow=window.showSalesProductSuggestions;
   const baseOpen=window.openNewOrder;
+  function productTypeFromClass(value){
+    const s=String(value||'').trim().toLowerCase();
+    if(!s)return 'Unclassified';
+    if(/chandelier|wall lamp|ceiling lamp|ceiling fixture|stand lamp|light bulb|lamp|lighting/.test(s))return 'Lighting';
+    if(/carpet|rug/.test(s))return 'Carpet';
+    if(/accessor|mirror|decor|vase|ornament/.test(s))return 'Accessories';
+    return 'Furniture';
+  }
+  function setMeta(row,productClass){
+    const cls=String(productClass||'').trim();
+    const type=productTypeFromClass(cls);
+    const ci=row.querySelector('.product-class'),ti=row.querySelector('.product-type');
+    const cl=row.querySelector('.product-class-label'),tl=row.querySelector('.product-type-label');
+    if(ci)ci.value=cls;if(ti)ti.value=type;if(cl)cl.textContent=cls||'Unclassified';if(tl)tl.textContent=type;
+  }
 
   function parseManual(raw){
     const s=String(raw||'').trim();
@@ -22,7 +37,7 @@
     if(!code)throw new Error('Enter a product code or item name first.');
 
     let existing=await db.from('product_catalog')
-      .select('id,code,item_name,image_url,sales_price,currency,active')
+      .select('id,code,item_name,image_url,sales_price,currency,active,class')
       .eq('code',code)
       .maybeSingle();
     if(existing.error)throw existing.error;
@@ -37,7 +52,7 @@
         currency:'USD',
         active:false,
         manual_override:true
-      }).select('id,code,item_name,image_url,sales_price,currency,active').single();
+      }).select('id,code,item_name,image_url,sales_price,currency,active,class').single();
       if(ins.error)throw ins.error;
       p=ins.data;
     }
@@ -48,6 +63,7 @@
     row.querySelector('.product-name').value=p.item_name||name||code;
     row.querySelector('.product-image').value=p.image_url||'';
     row.querySelector('.product-search-input').value=`${p.code||code} · ${p.item_name||name||code}`;
+    setMeta(row,p.class||'');
     row.querySelector('.product-suggestions')?.classList.add('hidden');
 
     if(Array.isArray(state.products)&&!state.products.some(x=>x.id===p.id))state.products.push(p);
