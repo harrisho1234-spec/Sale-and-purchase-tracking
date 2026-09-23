@@ -97,11 +97,17 @@
     const {data,error}=await db.rpc('get_returnable_sales_orders');if(error)return showToast(error.message,'err');
     let orders=data||[];
     if(managerContext())orders=orders.filter(x=>x.sales_rep_id===managerRepId());
-    const opts=orders.map(o=>`<option value="${o.order_id}">${esc(o.document_no||'Sale')} — ${esc(o.customer_name||'')} — ${esc(fmtDate(o.order_date))}</option>`).join('');
+    window._returnableSalesOrders=orders;
     openModal('Create Customer Return / CN',`<form id="salesReturnForm" class="grid md:grid-cols-2 gap-4">
       <div><label class="text-xs font-semibold">CN Number</label><input id="returnCnNo" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Leave blank for automatic CN"><div class="text-[10px] text-gray-400 mt-1">Example: CN-00015</div></div>
       <div><label class="text-xs font-semibold">Return Date</label><input id="returnDate" type="date" value="${today()}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
-      <div class="md:col-span-2"><label class="text-xs font-semibold">Original Sale / Invoice</label><select id="returnOrder" required class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="">Select TK / RK / SR...</option>${opts}</select></div>
+      <div class="md:col-span-2 relative">
+        <label class="text-xs font-semibold">Original Sale / Invoice</label>
+        <input id="returnOrderSearch" autocomplete="off" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white" placeholder="Type TK / RK / SR number or customer name..." onfocus="showReturnOrderSuggestions(this.value)" oninput="returnOrderSearchChanged(this.value)">
+        <input id="returnOrder" type="hidden">
+        <div id="returnOrderSuggestions" class="hidden absolute z-[120] left-0 right-0 top-full mt-1 max-h-72 overflow-y-auto bg-white border rounded-xl shadow-xl"></div>
+        <div class="text-[10px] text-gray-400 mt-1">Type an invoice/order number or customer name, then choose the matching sale.</div>
+      </div>
       <div><label class="text-xs font-semibold">Return Action</label><select id="returnAction" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="return_only">Return Only / No Refund</option><option value="return_to_stock">Return to Stock</option><option value="exchange">Exchange</option><option value="damaged_return">Damaged / Defective Return</option></select></div>
       <div><label class="text-xs font-semibold">Reason</label><input id="returnReason" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Changed model, wrong item, damaged..."></div>
       <div class="md:col-span-2 border-t pt-4"><div class="font-bold text-sm">Returned Items</div><div class="text-[10px] text-gray-400 mt-1">Only select the quantities actually coming back from the customer.</div><div id="returnItemsArea" class="mt-3 rounded-xl border bg-gray-50 p-4 text-sm text-gray-400">Select the original sale first.</div></div>
@@ -109,9 +115,56 @@
       <div class="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-700">Creating a CN does not delete the original sale and does not automatically refund the customer or change AR.</div>
       <button class="md:col-span-2 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Create Credit Note</button>
     </form>`);
-    document.getElementById('returnOrder').onchange=e=>loadReturnableItems(e.target.value);
     document.getElementById('returnAction').onchange=e=>syncReturnDisposition(e.target.value);
+    showReturnOrderSuggestions('');
     document.getElementById('salesReturnForm').onsubmit=saveSalesReturn;
+  };
+
+  function returnOrderLabel(o){
+    return `${o.document_no||'Sale'} — ${o.customer_name||''} — ${fmtDate(o.order_date)}`;
+  }
+
+  function matchingReturnOrders(q){
+    const s=String(q||'').trim().toLowerCase();
+    const orders=window._returnableSalesOrders||[];
+    if(!s)return orders.slice(0,30);
+    return orders.filter(o=>{
+      const hay=[o.document_no,o.customer_name,o.order_date,o.customer_code]
+        .filter(Boolean).join(' ').toLowerCase();
+      return hay.includes(s);
+    }).slice(0,30);
+  }
+
+  window.showReturnOrderSuggestions=function(q){
+    const box=document.getElementById('returnOrderSuggestions');
+    if(!box)return;
+    const matches=matchingReturnOrders(q);
+    box.innerHTML=matches.length?matches.map(o=>`
+      <button type="button" class="w-full text-left px-4 py-3 border-b last:border-b-0 hover:bg-[#faf7f0]" onclick="chooseReturnOrder('${o.order_id}')">
+        <div class="font-semibold text-sm">${esc(o.document_no||'Sale')} — ${esc(o.customer_name||'')}</div>
+        <div class="text-[10px] text-gray-400 mt-0.5">${esc(fmtDate(o.order_date))}</div>
+      </button>`).join(''):`<div class="px-4 py-3 text-sm text-gray-400">No matching returnable sale found.</div>`;
+    box.classList.remove('hidden');
+  };
+
+  window.returnOrderSearchChanged=function(q){
+    const hidden=document.getElementById('returnOrder');
+    if(hidden)hidden.value='';
+    const root=document.getElementById('returnItemsArea');
+    if(root)root.innerHTML='Select the original sale first.';
+    showReturnOrderSuggestions(q);
+  };
+
+  window.chooseReturnOrder=async function(orderId){
+    const order=(window._returnableSalesOrders||[]).find(o=>o.order_id===orderId);
+    if(!order)return;
+    const hidden=document.getElementById('returnOrder');
+    const input=document.getElementById('returnOrderSearch');
+    const box=document.getElementById('returnOrderSuggestions');
+    if(hidden)hidden.value=orderId;
+    if(input)input.value=returnOrderLabel(order);
+    if(box)box.classList.add('hidden');
+    await loadReturnableItems(orderId);
   };
 
   function syncReturnDisposition(action){
