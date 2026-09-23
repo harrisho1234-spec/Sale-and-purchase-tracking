@@ -130,8 +130,8 @@ async function renderSalesAccess(){
         <h3 class="font-bold">Grant Sales Access</h3><p class="text-xs text-gray-400 mt-1">Give a Sales user access to an extra customer or a specific order.</p>
         <form id="grantAccessForm" class="space-y-3 mt-5">
           <div><label class="text-xs font-semibold">Sales User</label><select id="grantSalesUser" required class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"><option value="">Select Sales user</option>${d.users.map(u=>`<option value="${u.user_id}">${esc(u.display_name||u.email)}</option>`).join('')}</select></div>
-          <div><label class="text-xs font-semibold">Grant Scope</label><select id="grantScope" onchange="refreshGrantTargets()" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"><option value="customer">Whole Customer</option><option value="order">Specific Sales Order</option></select></div>
-          <div><label class="text-xs font-semibold">Customer / Order</label><select id="grantTarget" required class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"></select></div>
+          <div><label class="text-xs font-semibold">Grant Scope</label><select id="grantScope" onchange="refreshGrantTargets()" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"><option value="customer">Specific Customer</option><option value="order">Specific Sales Order</option></select><div id="grantScopeHelp" class="text-[10px] text-gray-400 mt-1">Gives access to the selected customer and all of that customer's orders/history.</div></div>
+          <div><label id="grantTargetLabel" class="text-xs font-semibold">Customer</label><select id="grantTarget" required class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"></select></div>
           <div><label class="text-xs font-semibold">Access Level</label><select id="grantLevel" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"><option value="edit">View + Edit</option><option value="view">View Only</option></select></div>
           <div><label class="text-xs font-semibold">Expires</label><input id="grantExpires" type="datetime-local" class="mt-1 w-full border rounded-xl px-3 py-2"><div class="text-[10px] text-gray-400 mt-1">Leave blank for permanent access.</div></div>
           <div><label class="text-xs font-semibold">Reason / Note</label><textarea id="grantReason" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Example: Covering Nary while she is on leave"></textarea></div>
@@ -141,10 +141,12 @@ async function renderSalesAccess(){
       <div class="card rounded-2xl overflow-hidden">
         <div class="p-5 border-b"><h3 class="font-bold">Access Grants</h3><p class="text-xs text-gray-400">Manager/Admin/Super Admin controlled exceptions for Sales users.</p></div>
         <div class="divide-y">${d.grants.length?d.grants.map(g=>{
-          const target=g.customer_id?customerName(g.customer_id):orderName(g.sales_order_id);
+          const isCustomerGrant=!!g.customer_id;
+          const target=isCustomerGrant?customerName(g.customer_id):orderName(g.sales_order_id);
+          const scopeLabel=isCustomerGrant?'Specific Customer':'Specific Sales Order';
           const expired=g.expires_at&&new Date(g.expires_at)<new Date();
           const active=g.active&&!expired;
-          return `<div class="p-4 grid md:grid-cols-[1fr_1.3fr_90px_100px] gap-3 items-center"><div><b>${esc(userName(g.sales_user_id))}</b><div class="text-xs text-gray-400">${titleCase(g.access_level)}${g.expires_at?' · until '+new Date(g.expires_at).toLocaleString():''}</div></div><div><div class="text-sm">${esc(target)}</div>${g.reason?`<div class="text-xs text-gray-400">${esc(g.reason)}</div>`:''}</div><span class="text-xs font-semibold ${active?'text-green-600':'text-gray-400'}">${active?'Active':expired?'Expired':'Revoked'}</span>${active?`<button onclick="revokeSalesAccess('${g.id}')" class="px-3 py-2 border border-red-200 text-red-600 rounded-lg text-xs">Revoke</button>`:'<span></span>'}</div>`
+          return `<div class="p-4 grid md:grid-cols-[1fr_1.3fr_90px_100px] gap-3 items-center"><div><b>${esc(userName(g.sales_user_id))}</b><div class="text-xs text-gray-400">${titleCase(g.access_level)}${g.expires_at?' · until '+new Date(g.expires_at).toLocaleString():''}</div></div><div><div class="flex flex-wrap items-center gap-2"><span class="text-sm">${esc(target)}</span><span class="px-2 py-1 rounded-md bg-gray-50 border text-[9px] font-semibold text-gray-500">${scopeLabel}</span></div>${g.reason?`<div class="text-xs text-gray-400 mt-1">${esc(g.reason)}</div>`:''}</div><span class="text-xs font-semibold ${active?'text-green-600':'text-gray-400'}">${active?'Active':expired?'Expired':'Revoked'}</span>${active?`<button onclick="revokeSalesAccess('${g.id}')" class="px-3 py-2 border border-red-200 text-red-600 rounded-lg text-xs">Revoke</button>`:'<span></span>'}</div>`
         }).join(''):empty('No access grants yet.')}</div>
       </div>
     </div>`;
@@ -156,8 +158,17 @@ function refreshGrantTargets(){
   const d=window._salesAccessData;if(!d)return;
   const scope=document.getElementById('grantScope')?.value||'customer';
   const el=document.getElementById('grantTarget');if(!el)return;
-  if(scope==='customer')el.innerHTML='<option value="">Select Customer</option>'+d.customers.map(c=>`<option value="${c.id}">${esc(c.name)}${c.customer_code?' · '+esc(c.customer_code):''}</option>`).join('');
-  else el.innerHTML='<option value="">Select Sales Order</option>'+d.orders.map(o=>`<option value="${o.id}">${esc(o.order_no)} · ${esc(o.customer_name||'')}</option>`).join('');
+  const label=document.getElementById('grantTargetLabel');
+  const help=document.getElementById('grantScopeHelp');
+  if(scope==='customer'){
+    if(label)label.textContent='Customer';
+    if(help)help.textContent="Gives access to the selected customer and all of that customer's orders/history.";
+    el.innerHTML='<option value="">Select Customer</option>'+d.customers.map(c=>`<option value="${c.id}">${esc(c.name)}${c.customer_code?' · '+esc(c.customer_code):''}</option>`).join('');
+  }else{
+    if(label)label.textContent='Sales Order';
+    if(help)help.textContent='Gives access only to the selected sales order and its related customer context.';
+    el.innerHTML='<option value="">Select Sales Order</option>'+d.orders.map(o=>`<option value="${o.id}">${esc(o.order_no)} · ${esc(o.customer_name||'')}</option>`).join('');
+  }
 }
 
 async function saveSalesAccessGrant(e){
