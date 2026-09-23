@@ -60,8 +60,24 @@
 
     const itemRows=rows();
     if(!itemRows.length)return showToast('Add at least one item.','err');
-    const missing=itemRows.find(r=>!r.querySelector('.product-id')?.value);
-    if(missing){missing.querySelector('.product-search-input')?.focus();return showToast('Choose a matching product from the suggestion list.','err')}
+
+    const missingProduct=itemRows.find(r=>{
+      const lineKind=r.querySelector('.line-kind')?.value||'product';
+      return lineKind!=='service'&&!r.querySelector('.product-id')?.value;
+    });
+    if(missingProduct){
+      missingProduct.querySelector('.product-search-input')?.focus();
+      return showToast('Choose a matching product from the suggestion list.','err');
+    }
+
+    const missingService=itemRows.find(r=>{
+      const lineKind=r.querySelector('.line-kind')?.value||'product';
+      return lineKind==='service'&&!String(r.querySelector('.product-name')?.value||'').trim();
+    });
+    if(missingService){
+      missingService.querySelector('.service-name')?.focus();
+      return showToast('Enter a service or fee description.','err');
+    }
 
     const flow=currentFlow();
     const invoiceType=document.getElementById('salesInvoiceType')?.value||'TK';
@@ -100,21 +116,27 @@
     const {data:so,error}=await db.from('sales_orders').insert(order).select().single();
     if(error){const msg=String(error.message||'');return showToast(msg.toLowerCase().includes('duplicate')?'That SR/TK/RK number already exists.':msg,'err')}
 
-    const items=itemRows.map(r=>({
-      sales_order_id:so.id,
-      product_id:r.querySelector('.product-id').value,
-      product_code_snapshot:r.querySelector('.product-code').value,
-      item_name_snapshot:r.querySelector('.product-name').value,
-      image_url_snapshot:r.querySelector('.product-image').value||null,
-      qty:Number(r.querySelector('.qty').value),
-      unit_price:Number(String(r.querySelector('.unit-price').value||0).replace(',','.')),
-      discount_amount:Number(r.querySelector('.line-discount').value||0),
-      source_type:flow==='pre_order'?'pre_order':'stock',
-      fulfillment_status:flow==='pre_order'?'pending':'ready'
-    }));
-    if(items.some(i=>!i.product_id||i.qty<=0||i.unit_price<0||i.discount_amount<0)){
+    const items=itemRows.map(r=>{
+      const lineKind=r.querySelector('.line-kind')?.value||'product';
+      return {
+        sales_order_id:so.id,
+        line_kind:lineKind,
+        product_id:lineKind==='service'?null:(r.querySelector('.product-id').value||null),
+        product_code_snapshot:r.querySelector('.product-code').value,
+        item_name_snapshot:r.querySelector('.product-name').value,
+        image_url_snapshot:lineKind==='service'?null:(r.querySelector('.product-image').value||null),
+        product_class_snapshot:r.querySelector('.product-class')?.value||null,
+        product_type_snapshot:r.querySelector('.product-type')?.value||null,
+        qty:Number(r.querySelector('.qty').value),
+        unit_price:Number(String(r.querySelector('.unit-price').value||0).replace(',','.')),
+        discount_amount:Number(r.querySelector('.line-discount').value||0),
+        source_type:flow==='pre_order'?'pre_order':'stock',
+        fulfillment_status:lineKind==='service'?'ready':(flow==='pre_order'?'pending':'ready')
+      };
+    });
+    if(items.some(i=>(i.line_kind!=='service'&&!i.product_id)||!i.product_code_snapshot||!i.item_name_snapshot||i.qty<=0||i.unit_price<0||i.discount_amount<0)){
       await db.from('sales_orders').delete().eq('id',so.id);
-      return showToast('Please check item quantity, price and discount.','err');
+      return showToast('Please check product/service description, quantity, price and discount.','err');
     }
     const ir=await db.from('sales_order_items').insert(items);
     if(ir.error){await db.from('sales_orders').delete().eq('id',so.id);return showToast(ir.error.message,'err')}
