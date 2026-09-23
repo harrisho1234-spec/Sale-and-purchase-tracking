@@ -30,7 +30,7 @@
   async function loadPOEditData(poId){
     const [p,i]=await Promise.all([
       db.from('supplier_pos').select('*').eq('id',poId).single(),
-      db.from('supplier_po_items').select('*').eq('supplier_po_id',poId).order('created_at')
+      db.from('supplier_po_items').select('*').eq('supplier_po_id',poId).order('sort_order',{ascending:true}).order('created_at',{ascending:true})
     ]);
     if(p.error)throw p.error;if(i.error)throw i.error;return {po:p.data,items:i.data||[]};
   }
@@ -53,7 +53,7 @@
 
         <div class="border-t pt-5">
           <div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">PO Items</h4><div class="text-xs text-gray-400">Items here can be linked to SR customer items.</div></div><span class="lr-badge lr-badge-gray">${d.items.length} items</span></div>
-          <div class="divide-y border rounded-xl mb-4">${d.items.length?d.items.map(i=>`<div class="p-3 grid md:grid-cols-[1fr_90px_120px] gap-2 text-xs"><div><b>${esc(i.product_code_snapshot||'No Code')}</b><div class="text-gray-500 mt-0.5">${esc(i.item_name_snapshot||'')}</div></div><div>Qty <b>${Number(i.qty||0)}</b></div><div class="text-right">Cost <b>${money(i.unit_cost||0,p.currency||'USD')}</b></div></div>`).join(''):'<div class="p-4 text-xs text-gray-400">No PO items yet.</div>'}</div>
+          <div id="poExistingItems" class="divide-y border rounded-xl mb-4">${d.items.length?d.items.map(i=>`<div class="p-3 grid md:grid-cols-[1fr_90px_120px] gap-2 text-xs"><div><b>${esc(i.product_code_snapshot||'No Code')}</b><div class="text-gray-500 mt-0.5">${esc(i.item_name_snapshot||'')}</div></div><div>Qty <b>${Number(i.qty||0)}</b></div><div class="text-right">Cost <b>${money(i.unit_cost||0,p.currency||'USD')}</b></div></div>`).join(''):'<div class="p-4 text-xs text-gray-400">No PO items yet.</div>'}</div>
           <form id="addPOItemForm" class="grid md:grid-cols-12 gap-3 bg-gray-50 rounded-xl p-4">
             <div class="md:col-span-5 min-w-0">
               <label class="text-[10px] font-semibold text-gray-500">Product Code / Item</label>
