@@ -87,17 +87,13 @@ async function renderDashboard(){
 
   const notTaken=items.filter(x=>
     orderMap.has(x.sales_order_id)
-    && String(x.line_kind||'product')==='product'
     && norm(x.fulfillment_status)==='ready'
   );
   const notTakenQty=notTaken.reduce((a,x)=>a+num(x.qty),0);
   const notTakenValue=notTaken.reduce((a,x)=>a+num(x.line_total),0);
 
   const preIds=new Set(pendingPreOrders.map(x=>x.id));
-  const preItems=items.filter(x=>
-    preIds.has(x.sales_order_id)
-    && String(x.line_kind||'product')==='product'
-  );
+  const preItems=items.filter(x=>preIds.has(x.sales_order_id));
   const preQty=preItems.reduce((a,x)=>a+num(x.qty),0);
   const preDeposits=pendingPreOrders.reduce((a,x)=>a+num(x.amount_paid),0);
   const prePending=pendingPreOrders.reduce((a,x)=>a+Math.max(0,num(x.balance_due)),0);
