@@ -43,6 +43,32 @@
     if(classLabel)classLabel.textContent=cls||'Unclassified';
     if(typeLabel)typeLabel.textContent=type;
   }
+  function serviceCode(value){
+    return ({
+      'Service Fee':'SERVICE-FEE',
+      'Maintenance Fee':'MAINTENANCE-FEE',
+      'Cleaning Fee':'CLEANING-FEE',
+      'Delivery / Installation':'DELIVERY-INSTALLATION',
+      'Other Fee':'OTHER-FEE'
+    })[value]||'SERVICE-FEE';
+  }
+  window.serviceFeeChanged=function(sel){
+    const row=sel.closest('.order-item-row');if(!row)return;
+    const kind=sel.value||'Service Fee';
+    row.querySelector('.product-code').value=serviceCode(kind);
+    row.querySelector('.product-class').value=kind;
+    row.querySelector('.product-type').value='Service';
+    row.querySelector('.product-type-label').textContent='Service';
+    row.querySelector('.product-class-label').textContent=kind;
+    const name=row.querySelector('.service-name');
+    if(name&&!name.value.trim())name.value=kind;
+    if(name)row.querySelector('.product-name').value=name.value.trim()||kind;
+  };
+  window.serviceFeeNameChanged=function(input){
+    const row=input.closest('.order-item-row');if(!row)return;
+    const sel=row.querySelector('.service-fee-type');
+    row.querySelector('.product-name').value=input.value.trim()||(sel?.value||'Service Fee');
+  };
 
   function calcSalesEntry(){
     let subtotal=0;
@@ -180,6 +206,47 @@
     salesEntryRecalc();
   };
 
+  window.addServiceFeeRow=function(){
+    const wrap=document.getElementById('orderItems');
+    if(!wrap)return;
+    const flow=currentFlow();
+    const d=document.createElement('div');
+    d.className='grid md:grid-cols-12 gap-2 p-3 bg-amber-50/50 border border-amber-100 rounded-xl order-item-row service-item-row';
+    d.innerHTML=`
+      <div class="md:col-span-5">
+        <label class="text-[10px] font-semibold text-gray-500">Service / Fee</label>
+        <div class="grid sm:grid-cols-2 gap-2 mt-1">
+          <select class="service-fee-type w-full border rounded-lg px-3 py-2 bg-white" onchange="serviceFeeChanged(this)">
+            <option>Service Fee</option>
+            <option>Maintenance Fee</option>
+            <option>Cleaning Fee</option>
+            <option>Delivery / Installation</option>
+            <option>Other Fee</option>
+          </select>
+          <input type="text" class="service-name w-full border rounded-lg px-3 py-2 bg-white" value="Service Fee" placeholder="Description / custom fee name" oninput="serviceFeeNameChanged(this)">
+        </div>
+        <input type="hidden" class="line-kind" value="service">
+        <input type="hidden" class="product-id">
+        <input type="hidden" class="product-code" value="SERVICE-FEE">
+        <input type="hidden" class="product-name" value="Service Fee">
+        <input type="hidden" class="product-image">
+        <input type="hidden" class="product-class" value="Service Fee">
+        <input type="hidden" class="product-type" value="Service">
+        <div class="mt-1.5 flex flex-wrap gap-1.5 text-[9px]">
+          <span class="px-2 py-1 rounded-full bg-white border text-gray-500">Type: <b class="product-type-label text-gray-700">Service</b></span>
+          <span class="px-2 py-1 rounded-full bg-white border text-gray-500">Class: <b class="product-class-label text-gray-700">Service Fee</b></span>
+          <span class="px-2 py-1 rounded-full bg-white border text-amber-700">No physical stock item</span>
+        </div>
+      </div>
+      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Qty</label><input class="qty mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0.01" step="0.01" value="1" oninput="salesEntryRecalc()"></div>
+      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Unit Price</label><input class="unit-price mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="0" oninput="salesEntryRecalc()"></div>
+      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Line Discount</label><input class="line-discount mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="0" oninput="salesEntryRecalc()"></div>
+      <div class="md:col-span-1 flex items-end"><button type="button" onclick="this.closest('.order-item-row').remove();salesEntryRecalc()" class="w-full h-[42px] border rounded-lg text-red-500 font-bold bg-white">×</button></div>
+      <select class="source-type hidden"><option value="stock" ${flow==='stock_sale'?'selected':''}>Stock</option><option value="pre_order" ${flow==='pre_order'?'selected':''}>Pre-order</option></select>`;
+    wrap.appendChild(d);
+    salesEntryRecalc();
+  };
+
   window.openNewOrder=async function(){
     if(role()==='manager' && !managerContextActive()) return showToast('Choose a Sales Rep in Rep Workspace before creating a sale.','err');
     await ensureOrderFormData();
@@ -199,7 +266,7 @@
         </div>
 
         <div>
-          <div class="flex items-center justify-between mb-2"><div><h4 class="font-bold">Items</h4><div class="text-[10px] text-gray-400">Type a product code or item name, then choose a matching suggestion.</div></div><button type="button" onclick="addOrderItemRow()" class="px-3 py-2 border rounded-lg text-xs font-semibold">+ Add Item</button></div>
+          <div class="flex items-center justify-between gap-3 mb-2"><div><h4 class="font-bold">Items</h4><div class="text-[10px] text-gray-400">Add a catalog product or a non-physical charge such as service, maintenance or cleaning.</div></div><div class="flex gap-2"><button type="button" onclick="addOrderItemRow()" class="px-3 py-2 border rounded-lg text-xs font-semibold">+ Product</button><button type="button" onclick="addServiceFeeRow()" class="px-3 py-2 border border-amber-300 bg-amber-50 text-amber-800 rounded-lg text-xs font-semibold">+ Service / Fee</button></div></div>
           <div id="orderItems" class="space-y-3"></div>
         </div>
 
@@ -231,8 +298,10 @@
     e.preventDefault();
     const rows=lineRows();
     if(!rows.length) return showToast('Add at least one item.','err');
-    const missingProduct=rows.find(r=>!r.querySelector('.product-id')?.value);
+    const missingProduct=rows.find(r=>(r.querySelector('.line-kind')?.value||'product')!=='service'&&!r.querySelector('.product-id')?.value);
     if(missingProduct){ missingProduct.querySelector('.product-search-input')?.focus(); return showToast('Choose a matching product from the suggestion list.','err'); }
+    const missingService=rows.find(r=>(r.querySelector('.line-kind')?.value||'product')==='service'&&!String(r.querySelector('.product-name')?.value||'').trim());
+    if(missingService){ missingService.querySelector('.service-name')?.focus(); return showToast('Enter a service or fee description.','err'); }
 
     const flow=currentFlow();
     const invoiceType=document.getElementById('salesInvoiceType')?.value||'TK';
@@ -254,8 +323,8 @@
     const {data:so,error}=await db.from('sales_orders').insert(order).select().single();
     if(error){const msg=String(error.message||'');return showToast(msg.toLowerCase().includes('duplicate')?'That SR/TK/RK number already exists.':msg,'err');}
 
-    const items=rows.map(r=>({sales_order_id:so.id,product_id:r.querySelector('.product-id').value,product_code_snapshot:r.querySelector('.product-code').value,item_name_snapshot:r.querySelector('.product-name').value,image_url_snapshot:r.querySelector('.product-image').value||null,product_class_snapshot:r.querySelector('.product-class')?.value||null,product_type_snapshot:r.querySelector('.product-type')?.value||null,qty:Number(r.querySelector('.qty').value),unit_price:Number(r.querySelector('.unit-price').value),discount_amount:Number(r.querySelector('.line-discount').value||0),source_type:flow==='pre_order'?'pre_order':'stock',fulfillment_status:flow==='pre_order'?'pending':'ready'}));
-    const invalid=items.some(i=>!i.product_id || i.qty<=0 || i.unit_price<0 || i.discount_amount<0);
+    const items=rows.map(r=>{const lineKind=r.querySelector('.line-kind')?.value||'product';return {sales_order_id:so.id,line_kind:lineKind,product_id:lineKind==='service'?null:(r.querySelector('.product-id').value||null),product_code_snapshot:r.querySelector('.product-code').value,item_name_snapshot:r.querySelector('.product-name').value,image_url_snapshot:lineKind==='service'?null:(r.querySelector('.product-image').value||null),product_class_snapshot:r.querySelector('.product-class')?.value||null,product_type_snapshot:r.querySelector('.product-type')?.value||null,qty:Number(r.querySelector('.qty').value),unit_price:Number(r.querySelector('.unit-price').value),discount_amount:Number(r.querySelector('.line-discount').value||0),source_type:flow==='pre_order'?'pre_order':'stock',fulfillment_status:lineKind==='service'?'ready':(flow==='pre_order'?'pending':'ready')}}});
+    const invalid=items.some(i=>(i.line_kind!=='service'&&!i.product_id)||!i.product_code_snapshot||!i.item_name_snapshot||i.qty<=0||i.unit_price<0||i.discount_amount<0);
     if(invalid){await db.from('sales_orders').delete().eq('id',so.id);return showToast('Please check item quantity, price and discount.','err');}
 
     const {error:itemErr}=await db.from('sales_order_items').insert(items);
