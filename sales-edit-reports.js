@@ -28,9 +28,23 @@
       const b=document.createElement('button');
       b.className='sales-edit-order-btn px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-[10px] font-bold';
       b.dataset.orderId=o.id;
-      b.textContent='Edit Order';
-      b.onclick=()=>openEditSalesOrder(o.id);
+      const superAdmin=role()==='super_admin';
+      b.textContent=superAdmin?'Edit Invoice':'Edit Order';
+      b.onclick=()=>superAdmin&&typeof window.openSuperAdminInvoiceEdit==='function'
+        ? window.openSuperAdminInvoiceEdit(o.id)
+        : openEditSalesOrder(o.id);
       box.appendChild(b);
+
+      if(superAdmin&&!card.querySelector(`.sales-delete-invoice-btn[data-order-id="${o.id}"]`)){
+        const del=document.createElement('button');
+        del.className='sales-delete-invoice-btn px-3 py-2 rounded-lg border border-red-200 bg-red-50 text-red-700 text-[10px] font-bold';
+        del.dataset.orderId=o.id;
+        del.textContent='Delete Invoice';
+        del.onclick=()=>typeof window.openSuperAdminInvoiceDelete==='function'
+          ? window.openSuperAdminInvoiceDelete(o.id)
+          : showToast('Please refresh the page to load the Super Admin invoice controls.','err');
+        box.appendChild(del);
+      }
     }
   }
 
