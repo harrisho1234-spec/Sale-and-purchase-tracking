@@ -71,7 +71,8 @@
     if(flow==='stock_sale'&&!docNo.startsWith(invoiceType))return showToast(`Invoice number must begin with ${invoiceType}.`,'err');
 
     const c=calc();
-    if(c.total<=0)return showToast('Order total must be greater than zero.','err');
+    // $0 orders are valid for complimentary/warranty items and 100% discounts.
+    // Unit prices still cannot be negative.
     if(c.depositMode==='percent'&&c.depositValue>100)return showToast('Deposit percentage cannot be more than 100%.','err');
     if(c.depositAmount>c.total+0.001)return showToast('Deposit amount cannot be greater than the order total.','err');
 
