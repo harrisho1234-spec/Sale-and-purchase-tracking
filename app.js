@@ -61,23 +61,50 @@ async function renderDashboard(){
   if(o.error)throw o.error;if(i.error)throw i.error;if(p.error)throw p.error;
   state.orderSummary=o.data||[];state.supplierSummary=p.data||[];
   const items=i.data||[];
-  const activeOrders=state.orderSummary.filter(x=>String(x.status||'').toLowerCase()!=='cancelled');
-  const orderMap=new Map(activeOrders.map(x=>[x.id,x]));
-  const totalSales=activeOrders.reduce((a,x)=>a+Number(x.order_total||0),0);
-  const balanceDue=activeOrders.reduce((a,x)=>a+Math.max(0,Number(x.balance_due||0)),0);
-  const uncleared=activeOrders.filter(x=>Math.max(0,Number(x.balance_due||0))>0);
-  const notTaken=items.filter(x=>orderMap.has(x.sales_order_id)&&String(x.line_kind||'product')==='product'&&String(x.fulfillment_status||'').toLowerCase()==='ready');
-  const notTakenQty=notTaken.reduce((a,x)=>a+Number(x.qty||0),0);
-  const notTakenValue=notTaken.reduce((a,x)=>a+Number(x.line_total||0),0);
-  const preOrders=activeOrders.filter(x=>String(x.sales_flow_type||'').toLowerCase()==='pre_order');
-  const preIds=new Set(preOrders.map(x=>x.id));
-  const preItems=items.filter(x=>preIds.has(x.sales_order_id)&&String(x.line_kind||'product')==='product');
-  const preQty=preItems.reduce((a,x)=>a+Number(x.qty||0),0);
-  const preDeposits=preOrders.reduce((a,x)=>a+Number(x.amount_paid||0),0);
-  const prePending=preOrders.reduce((a,x)=>a+Math.max(0,Number(x.balance_due||0)),0);
+
+  // Keep Dashboard KPIs consistent with Sales Tracking's "All Active" logic.
+  // Current open = non-cancelled orders with an outstanding balance.
+  // Pending SR / pre-orders are shown separately and are not collectible AR yet.
+  const norm=v=>String(v||'').trim().toLowerCase().replace(/[\s-]+/g,'_');
+  const num=v=>{const n=Number(v||0);return Number.isFinite(n)?n:0};
+  const isPendingPre=x=>{
+    const pre=['pre_order','mixed'].includes(norm(x.order_type))
+      || norm(x.sales_flow_type)==='pre_order'
+      || String(x.sr_no||'').toUpperCase().startsWith('SR');
+    return pre && !x.sales_invoice_no && !x.invoice_issued_at;
+  };
+
+  const openOrders=state.orderSummary.filter(x=>
+    norm(x.status)!=='cancelled' && num(x.balance_due)>0.001
+  );
+  const pendingPreOrders=openOrders.filter(isPendingPre);
+  const collectibleOrders=openOrders.filter(x=>!isPendingPre(x));
+
+  const orderMap=new Map(openOrders.map(x=>[x.id,x]));
+  const totalSales=openOrders.reduce((a,x)=>a+num(x.order_total),0);
+  const balanceDue=collectibleOrders.reduce((a,x)=>a+Math.max(0,num(x.balance_due)),0);
+  const uncleared=collectibleOrders;
+
+  const notTaken=items.filter(x=>
+    orderMap.has(x.sales_order_id)
+    && String(x.line_kind||'product')==='product'
+    && norm(x.fulfillment_status)==='ready'
+  );
+  const notTakenQty=notTaken.reduce((a,x)=>a+num(x.qty),0);
+  const notTakenValue=notTaken.reduce((a,x)=>a+num(x.line_total),0);
+
+  const preIds=new Set(pendingPreOrders.map(x=>x.id));
+  const preItems=items.filter(x=>
+    preIds.has(x.sales_order_id)
+    && String(x.line_kind||'product')==='product'
+  );
+  const preQty=preItems.reduce((a,x)=>a+num(x.qty),0);
+  const preDeposits=pendingPreOrders.reduce((a,x)=>a+num(x.amount_paid),0);
+  const prePending=pendingPreOrders.reduce((a,x)=>a+Math.max(0,num(x.balance_due)),0);
+
   const cards=`<div class="grid sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-6">
-    ${salesDashCard('Balance Due (AR)',money(balanceDue),`Total Sales: <b class="text-gray-700">${money(totalSales)}</b>`,'','red')}
-    ${salesDashCard('Uncleared',String(uncleared.length),'Orders with an outstanding customer balance','','neutral')}
+    ${salesDashCard('Active Balance Due (AR)',money(balanceDue),`Open sales value: <b class="text-gray-700">${money(totalSales)}</b>`,'','red')}
+    ${salesDashCard('Uncleared',String(uncleared.length),'Current collectible invoices','','neutral')}
     ${salesDashCard('Not Taken Items',money(notTakenValue),'Ready items waiting for collection / installation',`${notTakenQty.toLocaleString()} items`,'orange')}
     ${salesDashCard('Pre-order Deposits',money(preDeposits),`+ ${money(prePending)} pending`,`${preQty.toLocaleString()} items`,'blue')}
   </div>`;
