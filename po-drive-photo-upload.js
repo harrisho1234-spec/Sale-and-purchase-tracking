@@ -65,7 +65,7 @@
     const form=document.getElementById('addPOItemForm');if(!form)return;
     if(!document.getElementById('poiPhoto')){
       const button=form.querySelector('button[type="submit"],button:not([type])');
-      const wrap=document.createElement('div');wrap.className='md:col-span-5 rounded-xl border border-[#e8e2d8] bg-white p-3';
+      const wrap=document.createElement('div');wrap.className='md:col-span-12 rounded-xl border border-[#e8e2d8] bg-white p-3';
       wrap.innerHTML=`
         <div class="flex flex-col sm:flex-row gap-3 sm:items-center">
           <div id="poiPhotoPreview">${photoHtml('',64)}</div>
