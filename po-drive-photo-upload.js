@@ -123,9 +123,9 @@
   }
 
   async function loadPhotoRows(poId){
-    let r=await db.from('supplier_po_items').select('id,product_id,product_code_snapshot,item_name_snapshot,image_url_snapshot,drive_file_id,created_at,product_catalog(image_url)').eq('supplier_po_id',poId).order('created_at');
+    let r=await db.from('supplier_po_items').select('id,product_id,product_code_snapshot,item_name_snapshot,image_url_snapshot,drive_file_id,sort_order,created_at,product_catalog(image_url)').eq('supplier_po_id',poId).order('sort_order',{ascending:true}).order('created_at',{ascending:true});
     if(r.error){
-      r=await db.from('supplier_po_items').select('id,product_id,product_code_snapshot,item_name_snapshot,image_url_snapshot,drive_file_id,created_at').eq('supplier_po_id',poId).order('created_at');
+      r=await db.from('supplier_po_items').select('id,product_id,product_code_snapshot,item_name_snapshot,image_url_snapshot,drive_file_id,sort_order,created_at').eq('supplier_po_id',poId).order('sort_order',{ascending:true}).order('created_at',{ascending:true});
     }
     if(r.error)throw r.error;
     return r.data||[];
