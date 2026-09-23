@@ -51,7 +51,7 @@ async function openProductDetail(id){
           <div class="mt-6 border-t pt-5">
             <div class="flex items-center justify-between gap-3 mb-3">
               <h4 class="font-bold">Admin / Confidential</h4>
-              <span class="text-xs px-2 py-1 rounded-full ${p.manual_override?'bg-amber-50 text-amber-700':'bg-green-50 text-green-700'}">${p.manual_override?'App-managed':'Google Sheet synced'}</span>
+              <span class="text-xs px-2 py-1 rounded-full ${p.manual_override?'bg-amber-50 text-amber-700':'bg-green-50 text-green-700'}">${(String(p.source_row_key||'').startsWith('app:')||['app_created','app_products_sheet'].includes(String(p.source_system||'')))?(p.manual_override?'Queued for App Products':'App Products synced'):(p.manual_override?'App override':'Google Sheet synced')}</span>
             </div>
             <div class="grid sm:grid-cols-2 gap-2 text-sm">
               <div><span class="text-gray-400">Location:</span> ${esc(adminDetail?.location||'-')}</div>
@@ -66,7 +66,7 @@ async function openProductDetail(id){
               <button onclick="openAdjustStock('${id}')" class="px-3 py-2.5 border rounded-xl text-sm">Adjust Stock</button>
               <button onclick="openEditCosting('${id}')" class="px-3 py-2.5 border rounded-xl text-sm">Edit Costing</button>
             </div>
-            ${p.manual_override?`<button onclick="resumeProductSheetSync('${id}')" class="mt-2 w-full px-3 py-2 border border-amber-200 text-amber-700 bg-amber-50 rounded-xl text-xs">Resume Google Sheet sync for this product</button>`:''}
+            ${p.manual_override&&!(String(p.source_row_key||'').startsWith('app:')||['app_created','app_products_sheet'].includes(String(p.source_system||'')))?`<button onclick="resumeProductSheetSync('${id}')" class="mt-2 w-full px-3 py-2 border border-amber-200 text-amber-700 bg-amber-50 rounded-xl text-xs">Resume Google Sheet sync for this product</button>`:''}
             ${history.length?`<div class="mt-5"><div class="text-xs font-bold uppercase text-gray-400 mb-2">Recent Stock Changes</div><div class="divide-y border rounded-xl">${history.map(h=>`<div class="p-2.5 flex justify-between gap-3 text-xs"><div><b>${esc(h.reason)}</b>${h.note?`<div class="text-gray-400">${esc(h.note)}</div>`:''}</div><div class="text-right"><b>${Number(h.previous_qty)} → ${Number(h.new_qty)}</b><div class="text-gray-400">${new Date(h.created_at).toLocaleString()}</div></div></div>`).join('')}</div></div>`:''}
           </div>`:''}
       </div>
