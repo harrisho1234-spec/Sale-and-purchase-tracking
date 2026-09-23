@@ -480,6 +480,7 @@ function invoiceAdminItemEditor(item, currency) {
 
 async function openSuperAdminInvoiceEdit(id) {
   if(!isSuper()) return showToast('Super Admin only','err');
+  if(typeof window.openEditSalesOrder==='function') return window.openEditSalesOrder(id);
   const o=invoiceById(id);
   if(!o) return showToast('Invoice not found','err');
 
