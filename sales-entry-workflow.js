@@ -312,7 +312,9 @@
     if(flow==='stock_sale' && !docNo.startsWith(invoiceType)) return showToast(`Invoice number must begin with ${invoiceType}.`,'err');
 
     const calc=calcSalesEntry();
-    if(calc.total<=0) return showToast('Order total must be greater than zero.','err');
+    // Zero-value orders are valid: complimentary items, warranty/service cases,
+    // samples, or a 100% order discount can legitimately produce a $0 total.
+    // Negative prices/discounts are still rejected by the item validation below.
     if(calc.depositMode==='percent' && calc.depositValue>100) return showToast('Deposit percentage cannot be more than 100%.','err');
     if(calc.depositAmount>calc.total+0.001) return showToast('Deposit amount cannot be greater than the order total.','err');
 
