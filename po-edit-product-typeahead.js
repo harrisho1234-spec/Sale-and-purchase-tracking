@@ -59,12 +59,13 @@
     code.dataset.typeaheadReady='1';
     code.autocomplete='off';
     code.placeholder='Type SKU / code or item name...';
+    code.classList.add('w-full','min-w-0');
 
     let products=[];
     try{products=await loadProducts()}catch(err){console.warn('Could not load PO product suggestions:',err.message);return;}
 
     const wrap=document.createElement('div');
-    wrap.className='relative min-w-0';
+    wrap.className='relative w-full min-w-0';
     code.parentNode.insertBefore(wrap,code);
     wrap.appendChild(code);
 
