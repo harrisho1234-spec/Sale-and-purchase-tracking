@@ -34,7 +34,55 @@ document.getElementById('mobileMenuBtn').onclick=()=>document.getElementById('mo
 async function go(page){state.page=page;renderNav();const map={dashboard:['Dashboard','Business overview'],customers:['Customers','Customer master & ownership'],'sales-orders':['Sales Orders','Create and manage customer orders'],tracking:['Order Tracking','Follow each item from order to delivery'],products:['Products','Selling catalog and stock'],payments:['Payments','Customer payment history'],procurement:['Procurement','Private purchasing view'],'supplier-pos':['Supplier POs','Vendor orders and balances'],reports:['Reports','Sales, receivables and order status'],users:['Users & Access','Role management']};document.getElementById('pageTitle').textContent=map[page][0];document.getElementById('pageSubtitle').textContent=map[page][1];document.getElementById('content').innerHTML='<div class="py-20 text-center text-gray-400">Loading...</div>';try{if(page==='dashboard')await renderDashboard();else if(page==='customers')await renderCustomers();else if(page==='products')await renderProducts();else if(page==='sales-orders')await renderSalesOrders();else if(page==='payments')await renderPayments();else if(page==='tracking')await renderTracking();else if(page==='supplier-pos'||page==='procurement')await renderSupplierPOs();else if(page==='reports')await renderReports();else if(page==='users')await renderUsers()}catch(err){document.getElementById('content').innerHTML=`<div class="card rounded-xl p-5 text-red-600">Error: ${esc(err.message)}</div>`}}
 async function refreshCurrentPage(){await go(state.page)}
 
-async function renderDashboard(){const [o,p]=await Promise.all([db.from('sales_order_summary').select('*').order('created_at',{ascending:false}),isAdmin()?db.from('supplier_po_summary').select('*').order('created_at',{ascending:false}):Promise.resolve({data:[]})]);state.orderSummary=o.data||[];state.supplierSummary=p.data||[];const total=state.orderSummary.reduce((a,x)=>a+Number(x.order_total||0),0),paid=state.orderSummary.reduce((a,x)=>a+Number(x.amount_paid||0),0),bal=state.orderSummary.reduce((a,x)=>a+Number(x.balance_due||0),0),active=state.orderSummary.filter(x=>!['completed','cancelled'].includes(x.status)).length;document.getElementById('content').innerHTML=`<div class="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-6">${kpi('Total Sales',money(total),'All visible orders')}${kpi('Amount Received',money(paid),'Customer payments','text-green-600')}${kpi('Balance Due',money(bal),'Outstanding receivables','text-red-600')}${kpi('Active Orders',active,'Not completed')}</div><div class="grid xl:grid-cols-3 gap-5"><div class="xl:col-span-2 card rounded-2xl overflow-hidden"><div class="p-5 border-b flex justify-between items-center"><div><h3 class="font-bold">Recent Sales Orders</h3><p class="text-xs text-gray-400">Latest customer activity</p></div><button onclick="openNewOrder()" class="px-3 py-2 bg-[#211d18] text-white rounded-lg text-xs font-semibold">+ New Order</button></div><div class="divide-y">${state.orderSummary.slice(0,8).map(orderRow).join('')||empty('No sales orders yet.')}</div></div><div class="card rounded-2xl p-5 h-fit"><h3 class="font-bold mb-4">Quick Actions</h3><div class="grid gap-2"><button onclick="openNewCustomer()" class="p-3 border rounded-xl text-left text-sm hover:bg-gray-50">+ Add Customer</button><button onclick="openNewOrder()" class="p-3 border rounded-xl text-left text-sm hover:bg-gray-50">+ Create Sales Order</button>${isAdmin()?'<button onclick="openNewProduct()" class="p-3 border rounded-xl text-left text-sm hover:bg-gray-50">+ Add Product</button><button onclick="openNewSupplierPO()" class="p-3 border rounded-xl text-left text-sm hover:bg-gray-50">+ Create Supplier PO</button>':''}</div></div></div>`}
+function salesDashCard(label,value,sub,badge,tone='neutral'){
+  const tones={
+    red:['border-red-400','text-red-500','bg-red-50 text-red-500'],
+    orange:['border-orange-400','text-orange-500','bg-orange-50 text-orange-600'],
+    blue:['border-blue-400','text-blue-500','bg-blue-50 text-blue-600'],
+    neutral:['border-gray-200','text-gray-500','bg-gray-50 text-gray-500']
+  };
+  const t=tones[tone]||tones.neutral;
+  return `<div class="relative overflow-hidden bg-white border border-gray-100 ${t[0]} border-b-2 rounded-2xl p-4 min-h-[116px] shadow-sm">
+    <div class="flex items-start justify-between gap-2">
+      <div class="text-[10px] uppercase tracking-[.11em] font-extrabold ${t[1]}">${esc(label)}</div>
+      ${badge?`<span class="px-2 py-1 rounded-md text-[9px] font-bold ${t[2]}">${esc(badge)}</span>`:''}
+    </div>
+    <div class="mt-2 text-2xl md:text-3xl font-black text-gray-950 leading-none">${value}</div>
+    <div class="mt-2 text-[10px] text-gray-400">${sub}</div>
+  </div>`;
+}
+
+async function renderDashboard(){
+  const [o,i,p]=await Promise.all([
+    db.from('sales_order_summary').select('*').order('created_at',{ascending:false}),
+    db.from('sales_order_items').select('id,sales_order_id,qty,line_total,fulfillment_status,line_kind,source_type'),
+    isAdmin()?db.from('supplier_po_summary').select('*').order('created_at',{ascending:false}):Promise.resolve({data:[],error:null})
+  ]);
+  if(o.error)throw o.error;if(i.error)throw i.error;if(p.error)throw p.error;
+  state.orderSummary=o.data||[];state.supplierSummary=p.data||[];
+  const items=i.data||[];
+  const activeOrders=state.orderSummary.filter(x=>String(x.status||'').toLowerCase()!=='cancelled');
+  const orderMap=new Map(activeOrders.map(x=>[x.id,x]));
+  const totalSales=activeOrders.reduce((a,x)=>a+Number(x.order_total||0),0);
+  const balanceDue=activeOrders.reduce((a,x)=>a+Math.max(0,Number(x.balance_due||0)),0);
+  const uncleared=activeOrders.filter(x=>Math.max(0,Number(x.balance_due||0))>0);
+  const notTaken=items.filter(x=>orderMap.has(x.sales_order_id)&&String(x.line_kind||'product')==='product'&&String(x.fulfillment_status||'').toLowerCase()==='ready');
+  const notTakenQty=notTaken.reduce((a,x)=>a+Number(x.qty||0),0);
+  const notTakenValue=notTaken.reduce((a,x)=>a+Number(x.line_total||0),0);
+  const preOrders=activeOrders.filter(x=>String(x.sales_flow_type||'').toLowerCase()==='pre_order');
+  const preIds=new Set(preOrders.map(x=>x.id));
+  const preItems=items.filter(x=>preIds.has(x.sales_order_id)&&String(x.line_kind||'product')==='product');
+  const preQty=preItems.reduce((a,x)=>a+Number(x.qty||0),0);
+  const preDeposits=preOrders.reduce((a,x)=>a+Number(x.amount_paid||0),0);
+  const prePending=preOrders.reduce((a,x)=>a+Math.max(0,Number(x.balance_due||0)),0);
+  const cards=`<div class="grid sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-6">
+    ${salesDashCard('Balance Due (AR)',money(balanceDue),`Total Sales: <b class="text-gray-700">${money(totalSales)}</b>`,'','red')}
+    ${salesDashCard('Uncleared',String(uncleared.length),'Orders with an outstanding customer balance','','neutral')}
+    ${salesDashCard('Not Taken Items',money(notTakenValue),'Ready items waiting for collection / installation',`${notTakenQty.toLocaleString()} items`,'orange')}
+    ${salesDashCard('Pre-order Deposits',money(preDeposits),`+ ${money(prePending)} pending`,`${preQty.toLocaleString()} items`,'blue')}
+  </div>`;
+  document.getElementById('content').innerHTML=`${cards}<div class="grid xl:grid-cols-3 gap-5"><div class="xl:col-span-2 card rounded-2xl overflow-hidden"><div class="p-5 border-b flex justify-between items-center"><div><h3 class="font-bold">Recent Sales Orders</h3><p class="text-xs text-gray-400">Latest customer activity</p></div><button onclick="openNewOrder()" class="px-3 py-2 bg-[#211d18] text-white rounded-lg text-xs font-semibold">+ New Order</button></div><div class="divide-y">${state.orderSummary.slice(0,8).map(orderRow).join('')||empty('No sales orders yet.')}</div></div><div class="card rounded-2xl p-5 h-fit"><h3 class="font-bold mb-4">Quick Actions</h3><div class="grid gap-2"><button onclick="openNewCustomer()" class="p-3 border rounded-xl text-left text-sm hover:bg-gray-50">+ Add Customer</button><button onclick="openNewOrder()" class="p-3 border rounded-xl text-left text-sm hover:bg-gray-50">+ Create Sales Order</button>${isAdmin()?'<button onclick="openNewProduct()" class="p-3 border rounded-xl text-left text-sm hover:bg-gray-50">+ Add Product</button><button onclick="openNewSupplierPO()" class="p-3 border rounded-xl text-left text-sm hover:bg-gray-50">+ Create Supplier PO</button>':''}</div></div></div>`;
+}
 function orderRow(o){return `<div class="p-4 flex items-center justify-between gap-3 hover:bg-gray-50"><div><div class="font-bold">${esc(o.order_no)}</div><div class="text-xs text-gray-500">${esc(o.customer_name)} · ${esc(o.order_date||'')}</div></div><div class="text-right"><div class="font-semibold">${money(o.order_total,o.currency)}</div><div class="text-xs ${Number(o.balance_due)>0?'text-red-500':'text-green-600'}">${Number(o.balance_due)>0?'Balance '+money(o.balance_due,o.currency):'Paid'}</div></div></div>`}
 
 async function renderCustomers(){const {data,error}=await db.from('customers').select('*').order('name');if(error)throw error;state.customers=data||[];document.getElementById('content').innerHTML=`<div class="flex justify-between mb-4"><input id="customerSearch" oninput="filterCustomerRows()" class="border rounded-xl px-4 py-2 w-full max-w-md" placeholder="Search customer, phone..."><button onclick="openNewCustomer()" class="ml-3 px-4 py-2 bg-[#211d18] text-white rounded-xl text-sm">+ Customer</button></div><div class="card rounded-2xl overflow-hidden"><div id="customerRows" class="divide-y">${customerRows(state.customers)}</div></div>`}
