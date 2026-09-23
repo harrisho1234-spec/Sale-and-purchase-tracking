@@ -1,7 +1,7 @@
 // Sales order editing + dedicated Reports page.
 // Loaded last so it can safely extend the tracking redesign without changing the existing dashboard.
 (function(){
-  const editState={order:null,items:[],linked:new Set(),paid:0,deleted:[],discountBasis:'amount'};
+  const editState={order:null,items:[],linked:new Set(),returned:new Set(),paid:0,deleted:[],discountBasis:'amount',auditOld:null};
   const reportState={orders:[],items:[]};
 
   function role(){return state.profile?.role||''}
@@ -59,15 +59,19 @@
 
   async function loadEditData(orderId){
     await ensureOrderFormData();
-    const [or,ir,sr,rr]=await Promise.all([
+    const [or,ir,sr,rr,ret]=await Promise.all([
       db.from('sales_orders').select('*').eq('id',orderId).single(),
       db.from('sales_order_items').select('*').eq('sales_order_id',orderId).order('created_at'),
       db.from('sales_order_summary').select('*').eq('id',orderId).single(),
-      db.rpc('get_visible_sales_procurement_refs')
+      db.rpc('get_visible_sales_procurement_refs'),
+      db.rpc('get_sales_tracking_return_summary')
     ]);
-    if(or.error)throw or.error;if(ir.error)throw ir.error;if(sr.error)throw sr.error;
+    if(or.error)throw or.error;if(ir.error)throw ir.error;if(sr.error)throw sr.error;if(rr.error)throw rr.error;if(ret.error)throw ret.error;
     editState.order=or.data;editState.items=ir.data||[];editState.paid=Number(sr.data?.amount_paid||0);editState.deleted=[];editState.discountBasis='amount';
     editState.linked=new Set((rr.data||[]).filter(x=>x.sales_order_id===orderId).map(x=>x.sales_order_item_id));
+    const returnedIds=new Set((ret.data||[]).filter(x=>Number(x.qty_returned||0)>0).map(x=>x.sales_order_item_id));
+    editState.returned=new Set((ir.data||[]).filter(i=>returnedIds.has(i.id)).map(i=>i.id));
+    editState.auditOld={order:or.data,items:ir.data||[]};
   }
 
   function editProductTypeFromClass(value){
@@ -121,6 +125,7 @@
 
   function itemRow(i=null){
     const linked=!!(i?.id&&editState.linked.has(i.id));
+    const returned=!!(i?.id&&editState.returned.has(i.id));
     const service=(i?.line_kind==='service')||(!i?.product_id&&i?.product_type_snapshot==='Service');
     if(service){
       const feeClass=i?.product_class_snapshot||'Service Fee';
@@ -149,12 +154,12 @@
       </div>`;
     }
     const productText=i?`${i.product_code_snapshot||''} · ${i.item_name_snapshot||''}`:'';
-    return `<div class="edit-order-item-row grid md:grid-cols-12 gap-2 p-3 bg-gray-50 rounded-xl" data-item-id="${esc(i?.id||'')}" data-linked="${linked?'1':'0'}">
-      <div class="md:col-span-5 relative"><label class="text-[10px] font-semibold text-gray-500">Product Code / Item</label><input ${linked?'disabled':''} value="${esc(productText)}" class="edit-product-search mt-1 w-full border rounded-lg px-3 py-2 bg-white disabled:bg-gray-100" placeholder="Type product code or item name..." onfocus="showEditProductSuggestions(this)" oninput="editProductInputChanged(this)"><input type="hidden" class="edit-line-kind" value="product"><input type="hidden" class="edit-product-id" value="${esc(i?.product_id||'')}"><input type="hidden" class="edit-product-code" value="${esc(i?.product_code_snapshot||'')}"><input type="hidden" class="edit-product-name" value="${esc(i?.item_name_snapshot||'')}"><input type="hidden" class="edit-product-image" value="${esc(i?.image_url_snapshot||'')}"><input type="hidden" class="edit-product-class" value="${esc(i?.product_class_snapshot||'')}"><input type="hidden" class="edit-product-type" value="${esc(i?.product_type_snapshot||'')}"><div class="edit-product-suggestions hidden absolute z-[100] left-0 right-0 top-full mt-1 max-h-64 overflow-y-auto bg-white border rounded-xl shadow-xl"></div>${linked?'<div class="text-[9px] text-blue-600 mt-1">Linked to Procurement — product and qty are locked until unlinked.</div>':''}</div>
-      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Qty</label><input ${linked?'disabled':''} class="edit-qty mt-1 w-full border rounded-lg px-2 py-2 disabled:bg-gray-100" type="number" min="1" step="1" value="${Number(i?.qty||1)}" oninput="editOrderRecalc()"></div>
-      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Unit Price</label><input class="edit-unit-price mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="${Number(i?.unit_price||0)}" oninput="editOrderRecalc()"></div>
-      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Line Discount</label><input class="edit-line-discount mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="${Number(i?.discount_amount||0)}" oninput="editOrderRecalc()"></div>
-      <div class="md:col-span-1 flex items-end"><button type="button" ${linked?'disabled':''} onclick="removeEditOrderItem(this)" class="w-full h-[42px] border rounded-lg text-red-500 font-bold disabled:opacity-30">×</button></div>
+    return `<div class="edit-order-item-row grid md:grid-cols-12 gap-2 p-3 bg-gray-50 rounded-xl" data-item-id="${esc(i?.id||'')}" data-linked="${linked?'1':'0'}" data-returned="${returned?'1':'0'}">
+      <div class="md:col-span-5 relative"><label class="text-[10px] font-semibold text-gray-500">Product Code / Item</label><input ${(linked||returned)?'disabled':''} value="${esc(productText)}" class="edit-product-search mt-1 w-full border rounded-lg px-3 py-2 bg-white disabled:bg-gray-100" placeholder="Type product code or item name..." onfocus="showEditProductSuggestions(this)" oninput="editProductInputChanged(this)"><input type="hidden" class="edit-line-kind" value="product"><input type="hidden" class="edit-product-id" value="${esc(i?.product_id||'')}"><input type="hidden" class="edit-product-code" value="${esc(i?.product_code_snapshot||'')}"><input type="hidden" class="edit-product-name" value="${esc(i?.item_name_snapshot||'')}"><input type="hidden" class="edit-product-image" value="${esc(i?.image_url_snapshot||'')}"><input type="hidden" class="edit-product-class" value="${esc(i?.product_class_snapshot||'')}"><input type="hidden" class="edit-product-type" value="${esc(i?.product_type_snapshot||'')}"><div class="edit-product-suggestions hidden absolute z-[100] left-0 right-0 top-full mt-1 max-h-64 overflow-y-auto bg-white border rounded-xl shadow-xl"></div>${returned?'<div class="text-[9px] text-amber-700 mt-1">Return/CN recorded — product, qty, price, discount and removal are locked.</div>':linked?'<div class="text-[9px] text-blue-600 mt-1">Linked to Procurement — product, qty and removal are locked until unlinked.</div>':''}</div>
+      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Qty</label><input ${(linked||returned)?'disabled':''} class="edit-qty mt-1 w-full border rounded-lg px-2 py-2 disabled:bg-gray-100" type="number" min="1" step="1" value="${Number(i?.qty||1)}" oninput="editOrderRecalc()"></div>
+      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Unit Price</label><input ${returned?'disabled':''} class="edit-unit-price mt-1 w-full border rounded-lg px-2 py-2 disabled:bg-gray-100" type="number" min="0" step="0.01" value="${Number(i?.unit_price||0)}" oninput="editOrderRecalc()"></div>
+      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Line Discount</label><input ${returned?'disabled':''} class="edit-line-discount mt-1 w-full border rounded-lg px-2 py-2 disabled:bg-gray-100" type="number" min="0" step="0.01" value="${Number(i?.discount_amount||0)}" oninput="editOrderRecalc()"></div>
+      <div class="md:col-span-1 flex items-end"><button type="button" ${(linked||returned)?'disabled':''} onclick="removeEditOrderItem(this)" class="w-full h-[42px] border rounded-lg text-red-500 font-bold disabled:opacity-30">×</button></div>
     </div>`;
   }
 
@@ -174,10 +179,11 @@
   window.openEditSalesOrder=async function(orderId){
     if(!canEditOrdersUI())return showToast('You do not have edit access here.','err');
     try{await loadEditData(orderId)}catch(e){return showToast(e.message||'Could not load order','err')}
-    const o=editState.order,f=flow(o),linkedCount=editState.linked.size;
+    const o=editState.order,f=flow(o),linkedCount=editState.linked.size,returnedCount=editState.returned.size;
     const currentType=o.sales_invoice_type||String(o.sales_invoice_no||o.order_no||'').toUpperCase().startsWith('RK')?'RK':'TK';
-    openModal(`Edit ${docNo(o)}`,`<form id="editSalesOrderForm" class="space-y-5">
+    openModal(`${role()==='super_admin'?'Edit Invoice':'Edit'} ${docNo(o)}`,`<form id="editSalesOrderForm" class="space-y-5">
       <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">Payments are kept separately. Editing the order changes the order total and AR automatically. ${linkedCount?`${linkedCount} item(s) linked to Procurement are protected from product/qty changes.`:''}</div>
+      ${returnedCount?`<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">${returnedCount} item(s) already have Return/CN records. Those specific lines are locked from product, quantity, price, discount and deletion changes.</div>`:''}
       <div class="grid md:grid-cols-2 gap-3">
         <div><label class="text-xs font-semibold">Customer</label><select id="editOrderCustomer" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white">${state.customers.map(c=>`<option value="${c.id}" ${c.id===o.customer_id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
         <div><label class="text-xs font-semibold">Sale Type</label><input disabled value="${f==='pre_order'?'Pre-Order — SR':'Stock Sale — TK / RK'}" class="mt-1 w-full border rounded-xl px-3 py-2 bg-gray-50 text-gray-500"><div class="text-[9px] text-gray-400 mt-1">Sale type is locked after creation to protect the PO/SR workflow.</div></div>
@@ -190,7 +196,8 @@
       <div class="grid md:grid-cols-2 gap-4 border-t pt-4"><div><label class="text-xs font-semibold">Order Discount %</label><input id="editDiscountPercent" type="number" min="0" max="100" step="0.01" value="0" oninput="editDiscountPercentChanged()" class="mt-1 w-full border rounded-xl px-3 py-2"></div><div><label class="text-xs font-semibold">Order Discount Amount</label><input id="editDiscountAmount" type="number" min="0" step="0.01" value="${Number(o.order_discount||0)}" oninput="editDiscountAmountChanged()" class="mt-1 w-full border rounded-xl px-3 py-2"></div></div>
       <div class="grid grid-cols-2 md:grid-cols-5 gap-2 rounded-2xl bg-[#faf8f3] border border-[#eee8df] p-4"><div><div class="text-[9px] uppercase font-bold text-gray-400">Subtotal</div><div id="editSubtotal" class="font-bold mt-1"></div></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Discount</div><div id="editDiscountPreview" class="font-bold mt-1"></div></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Order Total</div><div id="editTotal" class="font-bold mt-1"></div></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Paid</div><div id="editPaid" class="font-bold text-green-600 mt-1"></div></div><div><div class="text-[9px] uppercase font-bold text-gray-400">AR / Balance</div><div id="editBalance" class="font-bold text-red-500 mt-1"></div></div></div>
       <div><label class="text-xs font-semibold">Notes</label><textarea id="editOrderNotes" class="mt-1 w-full border rounded-xl px-3 py-2" rows="3">${esc(o.notes||'')}</textarea></div>
-      <button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Order Changes</button>
+      ${role()==='super_admin'?`<div><label class="text-xs font-semibold">Reason for correction</label><textarea id="editOrderAuditReason" required class="mt-1 w-full border border-amber-200 bg-amber-50 rounded-xl px-3 py-2" rows="2" placeholder="Example: wrong item, wrong quantity, duplicated line"></textarea><div class="text-[9px] text-amber-700 mt-1">Required for Super Admin changes and stored in the audit log.</div></div>`:''}
+      <button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">${role()==='super_admin'?'Save Invoice & Item Changes':'Save Order Changes'}</button>
     </form>`);
     editState.discountBasis='amount';editOrderRecalc();
     document.getElementById('editSalesOrderForm').onsubmit=saveEditSalesOrder;
@@ -200,19 +207,28 @@
     e.preventDefault();const o=editState.order,f=flow(o),rows=[...document.querySelectorAll('#editOrderItems .edit-order-item-row')];if(!rows.length)return showToast('Order must have at least one item.','err');
     const subtotal=editSubtotal(),discount=Math.max(0,Math.min(subtotal,Number(document.getElementById('editDiscountAmount').value||0))),total=Math.max(round2(subtotal-discount),0);if(total+0.001<editState.paid)return showToast(`Order total cannot be lower than payments already received (${money(editState.paid)}).`,'err');
     const raw=String(document.getElementById('editDocumentNo').value||'').trim().toUpperCase().replace(/\s+/g,'');if(!raw)return showToast('Enter the SR/TK/RK number.','err');
+    const auditReason=role()==='super_admin'?String(document.getElementById('editOrderAuditReason')?.value||'').trim():'';
+    if(role()==='super_admin'&&!auditReason)return showToast('Enter a reason for the correction.','err');
     let doc=raw,type=null;if(f==='pre_order'){if(!doc.startsWith('SR'))doc='SR-'+doc.replace(/^[-:]+/,'')}else{type=document.getElementById('editInvoiceType').value;if(!doc.startsWith(type))doc=type+doc.replace(/^[-:]+/,'')}
     const patch={customer_id:document.getElementById('editOrderCustomer').value,order_date:document.getElementById('editOrderDate').value,order_discount:discount,notes:document.getElementById('editOrderNotes').value.trim()||null,order_no:doc};
     if(f==='pre_order'){patch.sr_no=doc}else{patch.invoice_no=doc;patch.sales_invoice_no=doc;patch.sales_invoice_type=type}
     const up=await db.from('sales_orders').update(patch).eq('id',o.id);if(up.error)return showToast(up.error.message,'err');
     for(const r of rows){
-      const id=r.dataset.itemId||null,linked=r.dataset.linked==='1',lineKind=r.querySelector('.edit-line-kind')?.value||'product';const row={line_kind:lineKind,product_id:lineKind==='service'?null:(r.querySelector('.edit-product-id').value||null),product_code_snapshot:r.querySelector('.edit-product-code').value||null,item_name_snapshot:r.querySelector('.edit-product-name').value||null,image_url_snapshot:lineKind==='service'?null:(r.querySelector('.edit-product-image').value||null),product_class_snapshot:r.querySelector('.edit-product-class')?.value||null,product_type_snapshot:r.querySelector('.edit-product-type')?.value||null,qty:Number(r.querySelector('.edit-qty')?.value||1),unit_price:Number(r.querySelector('.edit-unit-price').value||0),discount_amount:Number(r.querySelector('.edit-line-discount').value||0),source_type:f==='pre_order'?'pre_order':'stock'};
+      const id=r.dataset.itemId||null,linked=r.dataset.linked==='1',returned=r.dataset.returned==='1',lineKind=r.querySelector('.edit-line-kind')?.value||'product';const row={line_kind:lineKind,product_id:lineKind==='service'?null:(r.querySelector('.edit-product-id').value||null),product_code_snapshot:r.querySelector('.edit-product-code').value||null,item_name_snapshot:r.querySelector('.edit-product-name').value||null,image_url_snapshot:lineKind==='service'?null:(r.querySelector('.edit-product-image').value||null),product_class_snapshot:r.querySelector('.edit-product-class')?.value||null,product_type_snapshot:r.querySelector('.edit-product-type')?.value||null,qty:Number(r.querySelector('.edit-qty')?.value||1),unit_price:Number(r.querySelector('.edit-unit-price').value||0),discount_amount:Number(r.querySelector('.edit-line-discount').value||0),source_type:f==='pre_order'?'pre_order':'stock'};
       if((lineKind!=='service'&&!row.product_id)||!row.product_code_snapshot||!row.item_name_snapshot||row.qty<=0||row.unit_price<0||row.discount_amount<0)return showToast('Check all item/service descriptions, qty, price and discount values.','err');
-      if(id){const payload=linked?{unit_price:row.unit_price,discount_amount:row.discount_amount}:{...row};const x=await db.from('sales_order_items').update(payload).eq('id',id);if(x.error)return showToast(x.error.message,'err')}
+      if(id){if(returned)continue;const payload=linked?{unit_price:row.unit_price,discount_amount:row.discount_amount}:{...row};const x=await db.from('sales_order_items').update(payload).eq('id',id);if(x.error)return showToast(x.error.message,'err')}
       else{row.sales_order_id=o.id;row.fulfillment_status=lineKind==='service'?'ready':(f==='pre_order'?'pending':'ready');const x=await db.from('sales_order_items').insert(row);if(x.error)return showToast(x.error.message,'err')}
     }
     for(const id of editState.deleted){const x=await db.rpc('delete_sales_order_item_safe',{p_item_id:id});if(x.error)return showToast(x.error.message,'err')}
+    if(role()==='super_admin'){
+      const [ao,ai]=await Promise.all([db.from('sales_orders').select('*').eq('id',o.id).single(),db.from('sales_order_items').select('*').eq('sales_order_id',o.id).order('created_at')]);
+      if(ao.error)return showToast('Invoice saved, but audit snapshot failed: '+ao.error.message,'err');
+      if(ai.error)return showToast('Invoice saved, but audit snapshot failed: '+ai.error.message,'err');
+      const audit=await db.from('sales_invoice_admin_audit').insert({sales_order_id:o.id,order_no:ao.data?.order_no||doc,invoice_no:ao.data?.invoice_no||null,action:'edit',actor_user_id:state.user.id,actor_email:state.user.email||null,reason:auditReason,old_data:editState.auditOld||{},new_data:{order:ao.data,items:ai.data||[]}});
+      if(audit.error)return showToast('Invoice saved, but audit log failed: '+audit.error.message,'err');
+    }
     if(role()==='manager'&&mgrCtx()&&typeof recordManagerRepAction==='function')await recordManagerRepAction('edit_sales_order','sales_order',o.id,{document_no:doc,total});
-    closeModal();showToast('Order updated');await go('sales-orders');
+    closeModal();showToast(role()==='super_admin'?'Invoice and items updated':'Order updated');await go('sales-orders');
   }
 
   // ----- Dedicated Reports page -----
