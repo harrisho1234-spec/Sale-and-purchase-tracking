@@ -85,7 +85,8 @@
     let items=[];
     try{items=await getPOItems(poId)}catch(err){console.warn('PO item edit load:',err.message);return}
     const links=await linkedSet(items);
-    const currency=document.getElementById('epoCurrency')?.value||'USD';
+    const po=await db.from('supplier_pos').select('currency').eq('id',poId).single();
+    const currency=po.data?.currency||'USD';
     box.dataset.poId=poId;
     box.innerHTML=items.length
       ? items.map((i,idx)=>rowHtml(i,idx,items.length,currency,links.has(i.id))).join('')
