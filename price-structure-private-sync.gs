@@ -207,9 +207,11 @@ function syncAppProductsToSheet_(showUi = false) {
     let rowNum = rowByCode.get(newKey) || (oldKey ? rowByCode.get(oldKey) : null);
 
     if (!rowNum) {
-      const newRow = new Array(sheet.getLastColumn()).fill('');
-      sheet.appendRow(newRow);
-      rowNum = sheet.getLastRow();
+      // Row 1 is reserved for headers. App products always start from row 2.
+      rowNum = Math.max(sheet.getLastRow() + 1, 2);
+
+      // Keep unused columns blank instead of inheriting anything from the header row.
+      sheet.getRange(rowNum, 1, 1, sheet.getLastColumn()).clearContent();
     }
 
     setSheetField_(sheet, header, rowNum, 'Code', code);
@@ -275,8 +277,13 @@ function ensureAppProductsSheet_(ss) {
   }
 
   const headers = allSheet.getRange(1, 1, 1, requiredCols).getValues();
+
+  // Row 1 is reserved for headers only.
   appSheet.getRange(1, 1, 1, requiredCols).setValues(headers);
   appSheet.setFrozenRows(1);
+
+  // Make sure the header row is committed before looking for the next data row.
+  SpreadsheetApp.flush();
 
   return appSheet;
 }
