@@ -173,9 +173,10 @@ window.saveResetAppUserPassword=async function(e,id){
 window.openChangeMyPassword=function(){
   if(!state.user)return showToast('Please sign in first.','err');
   openModal('Change My Password',`<form id="changeMyPasswordForm" class="space-y-4">
-    <div class="rounded-xl border bg-[#faf9f6] p-3 text-xs text-gray-600">This changes only your own login password. If you forget your password and cannot sign in, contact the Super Admin for a reset.</div>
-    <div><label class="text-xs font-semibold text-gray-600">New Password</label><input id="myNewPassword" type="password" minlength="8" required class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Minimum 8 characters"></div>
-    <div><label class="text-xs font-semibold text-gray-600">Confirm New Password</label><input id="myNewPasswordConfirm" type="password" minlength="8" required class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Repeat new password"></div>
+    <div class="rounded-xl border bg-[#faf9f6] p-3 text-xs text-gray-600">Enter your current password first. If you have forgotten it and cannot verify it, only the Super Admin can reset your password.</div>
+    <div><label class="text-xs font-semibold text-gray-600">Current Password</label><input id="myCurrentPassword" type="password" minlength="8" required autocomplete="current-password" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Your current password"></div>
+    <div><label class="text-xs font-semibold text-gray-600">New Password</label><input id="myNewPassword" type="password" minlength="8" required autocomplete="new-password" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Minimum 8 characters"></div>
+    <div><label class="text-xs font-semibold text-gray-600">Confirm New Password</label><input id="myNewPasswordConfirm" type="password" minlength="8" required autocomplete="new-password" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Repeat new password"></div>
     <button id="changeMyPasswordBtn" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Change My Password</button>
   </form>`);
   document.getElementById('changeMyPasswordForm').onsubmit=saveMyPassword;
@@ -183,13 +184,21 @@ window.openChangeMyPassword=function(){
 
 window.saveMyPassword=async function(e){
   e.preventDefault();
+  const currentPassword=document.getElementById('myCurrentPassword').value;
   const password=document.getElementById('myNewPassword').value;
   const confirmPassword=document.getElementById('myNewPasswordConfirm').value;
-  if(password.length<8)return showToast('Password must be at least 8 characters.','err');
-  if(password!==confirmPassword)return showToast('The two passwords do not match.','err');
+  if(currentPassword.length<8)return showToast('Enter your current password.','err');
+  if(password.length<8)return showToast('New password must be at least 8 characters.','err');
+  if(password!==confirmPassword)return showToast('The two new passwords do not match.','err');
+  if(password===currentPassword)return showToast('Choose a new password different from your current password.','err');
   const btn=document.getElementById('changeMyPasswordBtn');
-  btn.disabled=true;btn.textContent='Changing...';
+  btn.disabled=true;btn.textContent='Verifying...';
   try{
+    const email=state.user?.email||'';
+    if(!email)throw new Error('Your login email is unavailable. Please sign in again.');
+    const verify=await db.auth.signInWithPassword({email,password:currentPassword});
+    if(verify.error)throw new Error('Current password is incorrect.');
+    btn.textContent='Changing...';
     const {error}=await db.auth.updateUser({password});
     if(error)throw error;
     closeModal();showToast('Your password has been changed');
