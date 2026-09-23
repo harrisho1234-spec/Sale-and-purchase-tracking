@@ -182,7 +182,9 @@
     }
 
     const label=[item.data?.product_code_snapshot,item.data?.item_name_snapshot].filter(Boolean).join(' · ')||'this PO item';
-    if(!confirm(`Delete ${label}? This cannot be undone.`))return;
+    if(!confirm(
+      `Remove ${label} from this Supplier PO?\n\nThis only removes the PO line. The product will remain in the Product Catalog and Price Structure.`
+    ))return;
 
     const del=await db.from('supplier_po_items').delete().eq('id',itemId);
     if(del.error)return showToast(del.error.message,'err');
