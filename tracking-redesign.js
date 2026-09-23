@@ -187,6 +187,22 @@
     return o.sales_rep_name_snapshot || o.rep_name || '';
   }
 
+  function returnInfo(i){
+    return i?.return_info||null;
+  }
+
+  function returnBadge(i){
+    const r=returnInfo(i);
+    if(!r||Number(r.qty_returned||0)<=0)return '';
+    const returned=Number(r.qty_returned||0);
+    const sold=Number(r.qty_sold||i.qty||0);
+    const full=sold>0&&returned>=sold;
+    const label=full?`Returned ${returned} of ${sold}`:`Partial Return ${returned} of ${sold}`;
+    const cls=full?'border-red-200 bg-red-50 text-red-700':'border-amber-200 bg-amber-50 text-amber-800';
+    const cn=r.cn_numbers?` · ${esc(r.cn_numbers)}`:'';
+    return `<span class="inline-flex px-2 py-1 rounded-lg border text-[9px] font-bold ${cls}">↩ ${label}${cn}</span>`;
+  }
+
   async function loadSalesTrackingData() {
     let summaryQ = db.from('sales_order_summary').select('*').order('created_at',{ascending:false});
     let ordersQ = db.from('sales_orders').select(`
@@ -203,14 +219,23 @@
       ordersQ = ordersQ.eq('sales_rep_id',repContextId());
     }
 
-    const [sr,or] = await Promise.all([summaryQ,ordersQ]);
+    const [sr,or,rr] = await Promise.all([
+      summaryQ,
+      ordersQ,
+      db.rpc('get_sales_tracking_return_summary')
+    ]);
     if(sr.error) throw sr.error;
     if(or.error) throw or.error;
+    if(rr.error) throw rr.error;
 
+    const returnMap=new Map((rr.data||[]).map(x=>[x.sales_order_item_id,x]));
     const detailMap = new Map((or.data||[]).map(o=>[o.id,o]));
     const merged = (sr.data||[]).map(s => {
       const d = detailMap.get(s.id) || {};
-      const items = d.sales_order_items || [];
+      const items = (d.sales_order_items || []).map(i=>({
+        ...i,
+        return_info:returnMap.get(i.id)||null
+      }));
       return {
         ...s,
         ...d,
@@ -333,6 +358,7 @@
               <div class="flex flex-wrap items-center gap-2">
                 <button onclick="toggleSalesInvoice('${o.id}')" class="font-extrabold text-[14px] hover:text-[#b3871e]">${esc(o.invoice_no||o.order_no||'Order')}</button>
                 ${salesStatusBadge(o)}
+                ${items.some(i=>Number(returnInfo(i)?.qty_returned||0)>0)?`<span class="lr-badge lr-badge-amber">↩ Return Recorded</span>`:''}
                 ${repName(o)?`<span class="lr-badge lr-badge-gray">▣ ${esc(repName(o))}</span>`:''}
               </div>
               <div class="font-serif text-[16px] font-bold mt-1 truncate">${esc(o.customer_name||'Customer')}</div>
@@ -366,6 +392,7 @@
                   <div class="flex flex-wrap gap-2 items-center"><b>${esc(i.product_code_snapshot||'No Code')}</b><span class="lr-badge lr-badge-gray">${esc(titleCase(i.fulfillment_status||'ordered'))}</span></div>
                   <div class="text-sm mt-0.5 truncate">${esc(i.item_name_snapshot||i.product_catalog?.item_name||'Item')}</div>
                   <div class="text-[10px] text-gray-400">${esc(i.product_catalog?.brand||'')} ${i.product_catalog?.class?'· '+esc(i.product_catalog.class):''}</div>
+                  ${returnInfo(i)?`<div class="mt-1.5 flex flex-wrap items-center gap-2">${returnBadge(i)}<span class="text-[10px] text-gray-500">Remaining with customer: <b>${Number(returnInfo(i).remaining_with_customer||0)}</b></span></div>`:''}
                 </div>
                 <div class="text-right text-xs"><b>${Number(i.qty||0)} × ${money(i.unit_price,o.currency)}</b><div class="text-gray-400 mt-1">${money(i.line_total,o.currency)}</div></div>
               </div>`).join(''):`<div class="lr-empty">No line-item detail available.</div>`)}
@@ -383,8 +410,10 @@
           <span class="font-bold">${Number(i.qty||0)}x</span>
           <span class="lr-badge lr-badge-gray">${esc(i.product_code_snapshot||'No Code')}</span>
           <span class="lr-badge ${cleanStatus(i.fulfillment_status)==='delivered'?'lr-badge-green':cleanStatus(i.fulfillment_status)==='ready'?'lr-badge-blue':'lr-badge-amber'}">${esc(titleCase(i.fulfillment_status||'ordered'))}</span>
+          ${returnBadge(i)}
         </div>
         <div class="text-sm font-semibold mt-1">${esc(i.item_name_snapshot||i.product_catalog?.item_name||'Item')}</div>
+        ${returnInfo(i)?`<div class="text-[10px] text-gray-500 mt-1">Sold ${Number(returnInfo(i).qty_sold||i.qty||0)} · Returned ${Number(returnInfo(i).qty_returned||0)} · Remaining with customer ${Number(returnInfo(i).remaining_with_customer||0)}</div>`:''}
         <div class="text-[11px] text-gray-400 mt-1">${esc(o.customer_name||'Customer')}${repName(o)?' · '+esc(repName(o)):''}</div>
       </div>
     </div>`;
