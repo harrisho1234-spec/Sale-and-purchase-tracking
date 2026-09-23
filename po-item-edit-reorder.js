@@ -28,7 +28,7 @@
   function rowHtml(i,idx,total,currency,linked){
     const landed=n(i.unit_cost)+n(i.shipping_cost);
     return `<div class="p-3 po-editable-item" data-po-item-id="${esc(i.id)}">
-      <div class="po-item-view grid md:grid-cols-[1fr_88px_115px_115px_170px] gap-2 items-center text-xs">
+      <div class="po-item-view grid md:grid-cols-[1fr_88px_115px_115px_250px] gap-2 items-center text-xs">
         <div class="min-w-0">
           <div class="flex items-center gap-2 flex-wrap">
             <b class="text-[#a77d1a]">${esc(i.product_code_snapshot||'No Code')}</b>
@@ -72,9 +72,12 @@
           </div>
         </div>
         ${linked?'<div class="mt-2 text-[9px] text-blue-700">This item is linked to an SR item. SKU, item name and quantity are locked; costing and position can still be changed.</div>':''}
-        <div class="mt-3 flex justify-end gap-2">
-          <button type="button" onclick="cancelPOItemEdit('${i.id}')" class="px-3 py-2 border rounded-lg text-xs">Cancel</button>
-          <button type="button" onclick="savePOItemEdit('${i.id}')" class="px-4 py-2 bg-[#211d18] text-white rounded-lg text-xs font-semibold">Save Item</button>
+        <div class="mt-3 flex justify-between gap-2 flex-wrap">
+          <button type="button" onclick="deletePOItem('${i.id}')" ${linked?'disabled':''} class="px-3 py-2 border border-red-200 bg-red-50 text-red-600 rounded-lg text-xs font-semibold disabled:opacity-35 disabled:cursor-not-allowed">${linked?'Linked to SR — cannot delete':'Delete Item'}</button>
+          <div class="flex gap-2">
+            <button type="button" onclick="cancelPOItemEdit('${i.id}')" class="px-3 py-2 border rounded-lg text-xs">Cancel</button>
+            <button type="button" onclick="savePOItemEdit('${i.id}')" class="px-4 py-2 bg-[#211d18] text-white rounded-lg text-xs font-semibold">Save Item</button>
+          </div>
         </div>
       </div>
     </div>`;
