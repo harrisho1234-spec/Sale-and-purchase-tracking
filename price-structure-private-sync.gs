@@ -6,7 +6,8 @@
  * SECURITY:
  * - The Google Sheet stays private.
  * - No Supabase service key or shared secret is stored in this script.
- * - Apps Script sends a short-lived Google identity token.
+ * - Apps Script sends its short-lived Google OAuth access token.
+ * - Supabase verifies that token directly with Google.
  * - Supabase only accepts the authorized Google account and this spreadsheet ID.
  */
 
@@ -31,14 +32,6 @@ function onOpen() {
 
 /** Run this ONCE from Apps Script after adding the code. */
 function setupProductSync() {
-  ScriptApp.requireScopes(ScriptApp.AuthMode.FULL, [
-    'openid',
-    'https://www.googleapis.com/auth/userinfo.email',
-    'https://www.googleapis.com/auth/script.external_request',
-    'https://www.googleapis.com/auth/script.scriptapp',
-    'https://www.googleapis.com/auth/spreadsheets'
-  ]);
-
   removeProductSyncTriggers_();
 
   ScriptApp.newTrigger('syncEditedProducts')
@@ -54,32 +47,47 @@ function setupProductSync() {
   const ping = testProductSyncConnection(false);
   const result = syncAllProducts(false);
 
-  SpreadsheetApp.getUi().alert(
-    'Product Sync Installed',
-    `Secure connection: ${ping.ok ? 'OK' : 'FAILED'}\n` +
-    `Products sent: ${result.sent}\n` +
-    `Products updated: ${result.upserted}\n` +
-    `Automatic sync: on edit + every ${LPH_PRODUCT_SYNC.everyMinutes} minutes.`,
-    SpreadsheetApp.getUi().ButtonSet.OK
-  );
+  try {
+    SpreadsheetApp.getUi().alert(
+      'Product Sync Installed',
+      `Secure connection: ${ping.ok ? 'OK' : 'FAILED'}\n` +
+      `Products sent: ${result.sent}\n` +
+      `Products updated: ${result.upserted}\n` +
+      `Automatic sync: on edit + every ${LPH_PRODUCT_SYNC.everyMinutes} minutes.`,
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+  } catch (_) {}
+
+  return {
+    ok: true,
+    connection: ping.ok,
+    sent: result.sent,
+    upserted: result.upserted,
+    automatic: true
+  };
 }
 
 /** Full sync. Can also be run manually from the custom menu. */
 function syncAllProducts(showUi = true) {
-  const products = buildAggregatedProducts_();
-  const result = pushProducts_(products, 'full');
-  saveSyncStatus_('success', `Full sync: ${result.upserted}/${result.sent} products updated.`);
+  try {
+    const products = buildAggregatedProducts_();
+    const result = pushProducts_(products, 'full');
+    saveSyncStatus_('success', `Full sync: ${result.upserted}/${result.sent} products updated.`);
 
-  if (showUi && SpreadsheetApp.getUi) {
-    try {
-      SpreadsheetApp.getUi().alert(
-        'Product Sync Complete',
-        `${result.upserted} of ${result.sent} products updated in L'Imperial Sales & Order Management.`,
-        SpreadsheetApp.getUi().ButtonSet.OK
-      );
-    } catch (_) {}
+    if (showUi) {
+      try {
+        SpreadsheetApp.getUi().alert(
+          'Product Sync Complete',
+          `${result.upserted} of ${result.sent} products updated in L'Imperial Sales & Order Management.`,
+          SpreadsheetApp.getUi().ButtonSet.OK
+        );
+      } catch (_) {}
+    }
+    return result;
+  } catch (err) {
+    saveSyncStatus_('error', String(err && err.message ? err.message : err));
+    throw err;
   }
-  return result;
 }
 
 /**
@@ -125,14 +133,17 @@ function testProductSyncConnection(showUi = true) {
   };
   const response = callSyncApi_(payload);
   const ok = !!response.ok;
+
   if (showUi) {
-    SpreadsheetApp.getUi().alert(
-      ok ? 'Secure Connection OK' : 'Secure Connection Failed',
-      ok
-        ? `Authenticated as ${response.caller || 'authorized Google account'}.`
-        : (response.error || 'Unknown error'),
-      SpreadsheetApp.getUi().ButtonSet.OK
-    );
+    try {
+      SpreadsheetApp.getUi().alert(
+        ok ? 'Secure Connection OK' : 'Secure Connection Failed',
+        ok
+          ? `Authenticated as ${response.caller || 'authorized Google account'}.`
+          : (response.error || 'Unknown error'),
+        SpreadsheetApp.getUi().ButtonSet.OK
+      );
+    } catch (_) {}
   }
   return response;
 }
@@ -162,12 +173,16 @@ function buildAggregatedProducts_(onlyCodes) {
   headers.forEach((h, i) => { if (h) idx[h] = i; });
   if (idx['Code'] === undefined) throw new Error('Column "Code" was not found in the All sheet.');
 
+  const wanted = onlyCodes
+    ? new Set(Array.from(onlyCodes).map(v => String(v || '').trim().toLowerCase()))
+    : null;
+
   const map = new Map();
   for (let r = 1; r < values.length; r++) {
     const row = values[r];
     const code = text_(row[idx['Code']]);
     if (!code) continue;
-    if (onlyCodes && !onlyCodes.has(code)) continue;
+    if (wanted && !wanted.has(code.toLowerCase())) continue;
 
     const actual = number_(cell_(row, idx, 'Actual Sales Price'));
     const listed = number_(cell_(row, idx, 'Sales Price'));
@@ -188,9 +203,10 @@ function buildAggregatedProducts_(onlyCodes) {
       vendor: text_(cell_(row, idx, 'Brand'))
     };
 
-    const existing = map.get(code);
+    const key = code.toLowerCase();
+    const existing = map.get(key);
     if (!existing) {
-      map.set(code, next);
+      map.set(key, next);
     } else {
       existing.stock_qty += qty;
       if (next.item_name) existing.item_name = next.item_name;
@@ -226,23 +242,26 @@ function pushProducts_(products, mode) {
 }
 
 function callSyncApi_(payload) {
-  const identityToken = ScriptApp.getIdentityToken();
-  if (!identityToken) {
-    throw new Error('Google identity token is unavailable. Run setupProductSync() manually and approve the requested permissions.');
+  const accessToken = ScriptApp.getOAuthToken();
+  if (!accessToken) {
+    throw new Error('Google authorization is unavailable. Run setupProductSync() manually and approve the requested permissions.');
   }
 
   const response = UrlFetchApp.fetch(LPH_PRODUCT_SYNC.endpoint, {
     method: 'post',
     contentType: 'application/json',
-    headers: { Authorization: 'Bearer ' + identityToken },
+    headers: { Authorization: 'Bearer ' + accessToken },
     payload: JSON.stringify(payload),
     muteHttpExceptions: true
   });
 
   const status = response.getResponseCode();
   let body = {};
-  try { body = JSON.parse(response.getContentText() || '{}'); }
-  catch (_) { body = { ok: false, error: response.getContentText() || `HTTP ${status}` }; }
+  try {
+    body = JSON.parse(response.getContentText() || '{}');
+  } catch (_) {
+    body = { ok: false, error: response.getContentText() || `HTTP ${status}` };
+  }
 
   if (status < 200 || status >= 300) {
     throw new Error(body.error || `Product sync returned HTTP ${status}.`);
@@ -279,7 +298,11 @@ function cell_(row, idx, header) {
   const i = idx[header];
   return i === undefined ? '' : row[i];
 }
-function text_(v) { return v == null ? '' : String(v).trim(); }
+
+function text_(v) {
+  return v == null ? '' : String(v).trim();
+}
+
 function number_(v) {
   if (typeof v === 'number') return isFinite(v) ? v : 0;
   const n = parseFloat(String(v == null ? '' : v).replace(/[$€£¥,%\s,]/g, ''));
