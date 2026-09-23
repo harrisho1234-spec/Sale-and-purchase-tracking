@@ -152,13 +152,22 @@
 
   window.globalCustomerSearchChanged=function(v){clearTimeout(directoryTimer);const q=String(v||'').trim();if(q.length<2){renderDirectoryResults([],q);return;}directoryTimer=setTimeout(async()=>{const root=document.getElementById('globalCustomerResults');if(root){root.classList.remove('hidden');root.innerHTML='<div class="py-3 text-xs text-gray-400">Searching...</div>';}const {data,error}=await db.rpc('search_customer_directory',{p_query:q});if(error){if(root)root.innerHTML=`<div class="py-3 text-xs text-red-500">${esc(error.message)}</div>`;return;}renderDirectoryResults(data||[],q);},250)};
 
+  function mountDashboardCustomerSearch(){
+    const content=document.getElementById('content');
+    if(!content||document.getElementById('globalCustomerDirectory'))return;
+    const wrap=document.createElement('div');
+    wrap.innerHTML=directoryPanel();
+    const panel=wrap.firstElementChild;
+    const banner=content.firstElementChild?.classList?.contains('mb-5')&&content.firstElementChild?.textContent?.includes('Manager Rep Workspace')?content.firstElementChild:null;
+    if(banner&&banner.nextSibling)content.insertBefore(panel,banner.nextSibling);
+    else content.insertBefore(panel,content.firstChild);
+  }
+
   const baseDashboard=window.renderDashboard;
   window.renderDashboard=async function(){
     await baseDashboard.apply(this,arguments);
-    const content=document.getElementById('content');if(!content||document.getElementById('globalCustomerDirectory'))return;
-    const wrap=document.createElement('div');wrap.innerHTML=directoryPanel();
-    const panel=wrap.firstElementChild;
-    const banner=content.firstElementChild?.classList?.contains('mb-5')&&content.firstElementChild?.textContent?.includes('Manager Rep Workspace')?content.firstElementChild:null;
-    if(banner&&banner.nextSibling)content.insertBefore(panel,banner.nextSibling);else content.insertBefore(panel,content.firstChild);
+    mountDashboardCustomerSearch();
+    requestAnimationFrame(mountDashboardCustomerSearch);
+    setTimeout(mountDashboardCustomerSearch,60);
   };
 })();
