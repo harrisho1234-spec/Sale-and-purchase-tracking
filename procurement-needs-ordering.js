@@ -21,7 +21,7 @@
   }
 
   async function loadNeeds(){
-    const ir=await db.from('sales_order_items').select('id,sales_order_id,product_id,product_code_snapshot,item_name_snapshot,image_url_snapshot,qty,line_position,created_at,sales_orders!inner(id,order_no,sr_no,order_date,order_type,sales_flow_type,status,customer_id,customers(name)),product_catalog(image_url)').order('created_at',{ascending:true});
+    const ir=await db.from('sales_order_items').select('id,sales_order_id,product_id,product_code_snapshot,item_name_snapshot,image_url_snapshot,qty,line_position,created_at,sales_orders!inner(id,order_no,sr_no,order_date,order_type,sales_flow_type,status,customer_id,customers(name)),product_catalog(image_url)').eq('line_kind','product').not('product_id','is',null).order('created_at',{ascending:true});
     if(ir.error)throw ir.error;
     const items=(ir.data||[]).filter(i=>isPreOrder(i.sales_orders)&&!['cancelled'].includes(norm(i.sales_orders?.status)));
     const ids=items.map(i=>i.id);
