@@ -55,15 +55,20 @@ renderUsers=async function(){
   if(!isSuper())throw new Error('Super Admin only');
   const {data,error}=await db.from('app_users').select('*').order('display_name');
   if(error)throw error;
+  window._usersAccessRows=data||[];
   document.getElementById('content').innerHTML=`
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-      <div><h3 class="font-bold text-lg">Users & Access</h3><p class="text-xs text-gray-400">Only Super Admin can create/delete users or change roles.</p></div>
+      <div><h3 class="font-bold text-lg">Users & Access</h3><p class="text-xs text-gray-400">Super Admin can edit user information, roles, access status and reset forgotten passwords.</p></div>
       <button onclick="openCreateUser()" class="px-4 py-2.5 bg-[#211d18] text-white rounded-xl text-sm font-semibold">+ Add User</button>
     </div>
     <div class="card rounded-2xl overflow-hidden"><div class="divide-y">
       ${(data||[]).map(u=>`
-        <div class="p-4 grid md:grid-cols-[1fr_170px_105px_90px] gap-3 items-center">
-          <div><div class="font-semibold">${esc(u.display_name||u.email||u.user_id)}</div><div class="text-xs text-gray-400">${esc(u.email||'')}</div></div>
+        <div class="p-4 grid lg:grid-cols-[1fr_160px_105px_auto] gap-3 items-center">
+          <div>
+            <div class="font-semibold">${esc(u.display_name||u.email||u.user_id)}</div>
+            <div class="text-xs text-gray-400">${esc(u.email||'')}</div>
+            ${u.user_id===state.user.id?'<div class="text-[9px] text-[#b3871e] font-bold mt-1">YOUR ACCOUNT</div>':''}
+          </div>
           <select onchange="updateUserRoleSafe('${u.user_id}',this.value)" class="border rounded-lg px-3 py-2 text-sm bg-white">
             <option value="sales" ${u.role==='sales'?'selected':''}>Sales</option>
             <option value="manager" ${u.role==='manager'?'selected':''}>Manager</option>
@@ -71,9 +76,127 @@ renderUsers=async function(){
             <option value="super_admin" ${u.role==='super_admin'?'selected':''}>Super Admin</option>
           </select>
           <button onclick="toggleUserActive('${u.user_id}',${u.active?'false':'true'})" class="px-3 py-2 rounded-lg text-xs font-semibold border ${u.active?'text-green-700 bg-green-50 border-green-200':'text-gray-600 bg-gray-50 border-gray-200'}">${u.active?'Active':'Inactive'}</button>
-          <button ${u.user_id===state.user.id?'disabled':''} onclick="deleteAppUser('${u.user_id}','${esc(u.display_name||u.email||'this user')}')" class="px-3 py-2 rounded-lg text-xs font-semibold border text-red-600 border-red-200 disabled:opacity-30">Delete</button>
+          <div class="flex flex-wrap justify-end gap-2">
+            <button onclick="openEditAppUser('${u.user_id}')" class="px-3 py-2 rounded-lg text-xs font-semibold border bg-white text-gray-700">Edit User</button>
+            ${u.user_id!==state.user.id?`<button onclick="openResetAppUserPassword('${u.user_id}')" class="px-3 py-2 rounded-lg text-xs font-semibold border border-amber-200 bg-amber-50 text-amber-800">Reset Password</button>`:''}
+            <button ${u.user_id===state.user.id?'disabled':''} onclick="deleteAppUser('${u.user_id}','${esc(u.display_name||u.email||'this user')}')" class="px-3 py-2 rounded-lg text-xs font-semibold border text-red-600 border-red-200 disabled:opacity-30">Delete</button>
+          </div>
         </div>`).join('')||empty('No users found.')}
     </div></div>`;
+};
+
+window.openEditAppUser=function(id){
+  if(!isSuper())return showToast('Super Admin only','err');
+  const u=(window._usersAccessRows||[]).find(x=>x.user_id===id);
+  if(!u)return showToast('User not found. Refresh Users & Access.','err');
+  openModal('Edit User',`<form id="editAppUserForm" class="space-y-4">
+    <div class="rounded-xl border bg-[#faf9f6] p-3 text-xs text-gray-600">Update the staff account information used for login and access control.</div>
+    <div class="grid md:grid-cols-2 gap-4">
+      <div><label class="text-xs font-semibold text-gray-600">Name</label><input id="editAppUserName" required value="${esc(u.display_name||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+      <div><label class="text-xs font-semibold text-gray-600">Login Email</label><input id="editAppUserEmail" type="email" required value="${esc(u.email||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+      <div><label class="text-xs font-semibold text-gray-600">Role</label><select id="editAppUserRole" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">
+        <option value="sales" ${u.role==='sales'?'selected':''}>Sales</option>
+        <option value="manager" ${u.role==='manager'?'selected':''}>Manager</option>
+        <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option>
+        <option value="super_admin" ${u.role==='super_admin'?'selected':''}>Super Admin</option>
+      </select></div>
+      <div class="flex items-end"><label class="w-full flex items-center gap-2 border rounded-xl px-3 py-3 text-sm"><input id="editAppUserActive" type="checkbox" ${u.active?'checked':''} class="w-4 h-4"><span>Active user</span></label></div>
+    </div>
+    ${id===state.user.id?'<div class="rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs text-amber-800">Your own Super Admin role and active status are protected from accidental removal.</div>':''}
+    <button id="editAppUserBtn" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save User Changes</button>
+  </form>`);
+  document.getElementById('editAppUserForm').onsubmit=e=>saveEditAppUser(e,id);
+};
+
+window.saveEditAppUser=async function(e,id){
+  e.preventDefault();
+  if(!isSuper())return showToast('Super Admin only','err');
+  const btn=document.getElementById('editAppUserBtn');
+  const payload={
+    action:'update_user',
+    user_id:id,
+    name:document.getElementById('editAppUserName').value.trim(),
+    email:document.getElementById('editAppUserEmail').value.trim(),
+    role:document.getElementById('editAppUserRole').value,
+    active:document.getElementById('editAppUserActive').checked
+  };
+  if(!payload.name||!payload.email)return showToast('Name and email are required.','err');
+  btn.disabled=true;btn.textContent='Saving...';
+  try{
+    const {data,error}=await db.functions.invoke('manage-app-user',{body:payload});
+    if(error)throw error;
+    if(data?.error)throw new Error(data.error);
+    if(id===state.user.id){await loadProfile();showApp()}
+    closeModal();showToast('User information updated');await go('users');
+  }catch(err){
+    showToast(err.message||'Could not update user','err');
+    btn.disabled=false;btn.textContent='Save User Changes';
+  }
+};
+
+window.openResetAppUserPassword=function(id){
+  if(!isSuper())return showToast('Super Admin only','err');
+  if(id===state.user.id)return openChangeMyPassword();
+  const u=(window._usersAccessRows||[]).find(x=>x.user_id===id);
+  if(!u)return showToast('User not found. Refresh Users & Access.','err');
+  openModal('Reset Password',`<form id="resetAppUserPasswordForm" class="space-y-4">
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+      Reset password for <b>${esc(u.display_name||u.email||'this user')}</b>. Their old password will stop working immediately.
+    </div>
+    <div><label class="text-xs font-semibold text-gray-600">New Password</label><input id="resetAppUserPassword" type="password" minlength="8" required class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Minimum 8 characters"></div>
+    <div><label class="text-xs font-semibold text-gray-600">Confirm New Password</label><input id="resetAppUserPasswordConfirm" type="password" minlength="8" required class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Repeat new password"></div>
+    <button id="resetAppUserPasswordBtn" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Reset Password</button>
+  </form>`);
+  document.getElementById('resetAppUserPasswordForm').onsubmit=e=>saveResetAppUserPassword(e,id);
+};
+
+window.saveResetAppUserPassword=async function(e,id){
+  e.preventDefault();
+  if(!isSuper())return showToast('Super Admin only','err');
+  const password=document.getElementById('resetAppUserPassword').value;
+  const confirmPassword=document.getElementById('resetAppUserPasswordConfirm').value;
+  if(password.length<8)return showToast('Password must be at least 8 characters.','err');
+  if(password!==confirmPassword)return showToast('The two passwords do not match.','err');
+  const btn=document.getElementById('resetAppUserPasswordBtn');
+  btn.disabled=true;btn.textContent='Resetting...';
+  try{
+    const {data,error}=await db.functions.invoke('manage-app-user',{body:{action:'reset_password',user_id:id,password}});
+    if(error)throw error;
+    if(data?.error)throw new Error(data.error);
+    closeModal();showToast('Password reset successfully');
+  }catch(err){
+    showToast(err.message||'Could not reset password','err');
+    btn.disabled=false;btn.textContent='Reset Password';
+  }
+};
+
+window.openChangeMyPassword=function(){
+  if(!state.user)return showToast('Please sign in first.','err');
+  openModal('Change My Password',`<form id="changeMyPasswordForm" class="space-y-4">
+    <div class="rounded-xl border bg-[#faf9f6] p-3 text-xs text-gray-600">This changes only your own login password. If you forget your password and cannot sign in, contact the Super Admin for a reset.</div>
+    <div><label class="text-xs font-semibold text-gray-600">New Password</label><input id="myNewPassword" type="password" minlength="8" required class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Minimum 8 characters"></div>
+    <div><label class="text-xs font-semibold text-gray-600">Confirm New Password</label><input id="myNewPasswordConfirm" type="password" minlength="8" required class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Repeat new password"></div>
+    <button id="changeMyPasswordBtn" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Change My Password</button>
+  </form>`);
+  document.getElementById('changeMyPasswordForm').onsubmit=saveMyPassword;
+};
+
+window.saveMyPassword=async function(e){
+  e.preventDefault();
+  const password=document.getElementById('myNewPassword').value;
+  const confirmPassword=document.getElementById('myNewPasswordConfirm').value;
+  if(password.length<8)return showToast('Password must be at least 8 characters.','err');
+  if(password!==confirmPassword)return showToast('The two passwords do not match.','err');
+  const btn=document.getElementById('changeMyPasswordBtn');
+  btn.disabled=true;btn.textContent='Changing...';
+  try{
+    const {error}=await db.auth.updateUser({password});
+    if(error)throw error;
+    closeModal();showToast('Your password has been changed');
+  }catch(err){
+    showToast(err.message||'Could not change password','err');
+    btn.disabled=false;btn.textContent='Change My Password';
+  }
 };
 
 openCreateUser=function(){
