@@ -14,6 +14,8 @@
 const LPH_PRODUCT_SYNC = {
   spreadsheetId: '1maKk_lPYMYval44vnorm3_awwrIh5IYPKLovn_gWYtg',
   sheetName: 'All',
+  appSheetName: 'App Products',
+  appSheetColumns: 24,
   endpoint: 'https://msxvnaintafqdgheutfu.supabase.co/functions/v1/sync-price-structure',
   batchSize: 150,
   everyMinutes: 15
@@ -34,6 +36,9 @@ function onOpen() {
 /** Run this ONCE from Apps Script after adding the code. */
 function setupProductSync() {
   removeProductSyncTriggers_();
+
+  const ss = SpreadsheetApp.openById(LPH_PRODUCT_SYNC.spreadsheetId);
+  ensureAppProductsSheet_(ss);
 
   ScriptApp.newTrigger('syncEditedProducts')
     .forSpreadsheet(LPH_PRODUCT_SYNC.spreadsheetId)
@@ -77,13 +82,13 @@ function syncAllProducts(showUi = true) {
     const products = buildAggregatedProducts_();
     const result = pushProducts_(products, 'full');
     result.sheetWrites = appToSheet.written || 0;
-    saveSyncStatus_('success', `Full sync: ${result.upserted}/${result.sent} products updated; ${result.sheetWrites} app changes written to Price Structure.`);
+    saveSyncStatus_('success', `Full sync: ${result.upserted}/${result.sent} products updated; ${result.sheetWrites} app changes written to App Products.`);
 
     if (showUi) {
       try {
         SpreadsheetApp.getUi().alert(
           'Product Sync Complete',
-          `${result.upserted} of ${result.sent} products updated in L'Imperial Sales & Order Management.\n${result.sheetWrites || 0} app changes written back to Price Structure.`,
+          `${result.upserted} of ${result.sent} products updated in L'Imperial Sales & Order Management.\n${result.sheetWrites || 0} app changes written to App Products.`,
           SpreadsheetApp.getUi().ButtonSet.OK
         );
       } catch (_) {}
@@ -104,7 +109,7 @@ function syncEditedProducts(e) {
   try {
     if (!e || !e.range) return;
     const sheet = e.range.getSheet();
-    if (sheet.getName() !== LPH_PRODUCT_SYNC.sheetName) return;
+    if (![LPH_PRODUCT_SYNC.sheetName, LPH_PRODUCT_SYNC.appSheetName].includes(sheet.getName())) return;
     if (e.range.getLastRow() < 2) return;
 
     const header = getHeaderMap_(sheet);
@@ -165,7 +170,7 @@ function syncAppProductsToSheet_(showUi = false) {
     if (showUi) {
       try {
         SpreadsheetApp.getUi().alert(
-          'App → Price Structure',
+          'App → App Products',
           'No pending app product changes.',
           SpreadsheetApp.getUi().ButtonSet.OK
         );
@@ -175,8 +180,7 @@ function syncAppProductsToSheet_(showUi = false) {
   }
 
   const ss = SpreadsheetApp.openById(LPH_PRODUCT_SYNC.spreadsheetId);
-  const sheet = ss.getSheetByName(LPH_PRODUCT_SYNC.sheetName);
-  if (!sheet) throw new Error(`Sheet "${LPH_PRODUCT_SYNC.sheetName}" was not found.`);
+  const sheet = ensureAppProductsSheet_(ss);
 
   const header = getHeaderMap_(sheet);
   const codeCol = header['Code'];
@@ -248,14 +252,33 @@ function syncAppProductsToSheet_(showUi = false) {
   if (showUi) {
     try {
       SpreadsheetApp.getUi().alert(
-        'App → Price Structure Complete',
-        `${result.written} product change(s) written to the All sheet.\n${result.acked} acknowledged by Supabase.`,
+        'App → App Products Complete',
+        `${result.written} product change(s) written to the App Products sheet.\n${result.acked} acknowledged by Supabase.`,
         SpreadsheetApp.getUi().ButtonSet.OK
       );
     } catch (_) {}
   }
 
   return result;
+}
+
+function ensureAppProductsSheet_(ss) {
+  const allSheet = ss.getSheetByName(LPH_PRODUCT_SYNC.sheetName);
+  if (!allSheet) throw new Error(`Sheet "${LPH_PRODUCT_SYNC.sheetName}" was not found.`);
+
+  let appSheet = ss.getSheetByName(LPH_PRODUCT_SYNC.appSheetName);
+  if (!appSheet) appSheet = ss.insertSheet(LPH_PRODUCT_SYNC.appSheetName);
+
+  const requiredCols = LPH_PRODUCT_SYNC.appSheetColumns;
+  if (appSheet.getMaxColumns() < requiredCols) {
+    appSheet.insertColumnsAfter(appSheet.getMaxColumns(), requiredCols - appSheet.getMaxColumns());
+  }
+
+  const headers = allSheet.getRange(1, 1, 1, requiredCols).getValues();
+  appSheet.getRange(1, 1, 1, requiredCols).setValues(headers);
+  appSheet.setFrozenRows(1);
+
+  return appSheet;
 }
 
 function setSheetField_(sheet, headerMap, rowNum, headerName, value) {
