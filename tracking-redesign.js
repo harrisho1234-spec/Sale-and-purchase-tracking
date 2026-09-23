@@ -396,7 +396,12 @@
                 </div>
                 <div class="text-right text-xs"><b>${Number(i.qty||0)} × ${money(i.unit_price,o.currency)}</b><div class="text-gray-400 mt-1">${money(i.line_total,o.currency)}</div></div>
               </div>`).join(''):`<div class="lr-empty">No line-item detail available.</div>`)}
-          </div>`:''}
+            ${isSuper()?`
+              <div class="mt-4 pt-4 border-t flex flex-wrap gap-2 justify-end">
+                <button onclick="openSuperAdminInvoiceEdit(\'${o.id}\')" class="px-3 py-2 border border-[#d8c28a] bg-[#fffaf0] text-[#8a6a1f] rounded-lg text-[10px] font-bold">✎ EDIT INVOICE</button>
+                <button onclick="openSuperAdminInvoiceDelete(\'${o.id}\')" class="px-3 py-2 border border-red-200 bg-red-50 text-red-700 rounded-lg text-[10px] font-bold">DELETE INVOICE</button>
+              </div>`:'' }
+          </div>`:'' }
       </div>`;
   }
 
@@ -418,6 +423,300 @@
       </div>
     </div>`;
   }
+
+function invoiceById(id) {
+  return ui.salesOrders.find(o=>o.id===id) || null;
+}
+
+function invoiceAdminStatusOptions(selected) {
+  const values=['draft','confirmed','partially_paid','paid','processing','ready','completed','cancelled'];
+  return values.map(v=>`<option value="${v}" ${cleanStatus(selected)===v?'selected':''}>${esc(titleCase(v))}</option>`).join('');
+}
+
+function invoiceAdminFulfillmentOptions(selected) {
+  const values=['pending','reserved','ordered','production','shipping','arrived','ready','delivered','installed','cancelled'];
+  return values.map(v=>`<option value="${v}" ${cleanStatus(selected)===v?'selected':''}>${esc(titleCase(v))}</option>`).join('');
+}
+
+function invoiceAdminItemEditor(item, currency) {
+  const r=returnInfo(item);
+  const returnLocked=Number(r?.qty_returned||0)>0;
+  return `<div class="invoice-admin-item border rounded-xl p-3 bg-[#fffdf9]" data-id="${esc(item.id)}" data-return-locked="${returnLocked?'1':'0'}">
+    <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-2 mb-3">
+      <div class="min-w-0">
+        <div class="flex flex-wrap items-center gap-2">
+          <b class="text-sm">${esc(item.product_code_snapshot||'No Code')}</b>
+          ${returnLocked?`<span class="lr-badge lr-badge-amber">Return/CN Locked</span>`:''}
+        </div>
+        <div class="text-xs text-gray-600 mt-1">${esc(item.item_name_snapshot||item.product_catalog?.item_name||'Item')}</div>
+        <div class="text-[10px] text-gray-400 mt-1">Product/SKU is fixed here to protect PO, delivery and return links.</div>
+      </div>
+      <div class="text-xs font-bold">${money(item.line_total,currency)}</div>
+    </div>
+    <div class="grid sm:grid-cols-2 lg:grid-cols-5 gap-2">
+      <label class="text-[10px] font-bold text-gray-500">Qty
+        <input class="invoice-admin-qty lr-input mt-1" type="number" min="0.01" step="0.01" value="${Number(item.qty||0)}" ${returnLocked?'disabled':''}>
+      </label>
+      <label class="text-[10px] font-bold text-gray-500">Unit Price
+        <input class="invoice-admin-price lr-input mt-1" type="number" min="0" step="0.01" value="${Number(item.unit_price||0)}" ${returnLocked?'disabled':''}>
+      </label>
+      <label class="text-[10px] font-bold text-gray-500">Discount
+        <input class="invoice-admin-discount lr-input mt-1" type="number" min="0" step="0.01" value="${Number(item.discount_amount||0)}" ${returnLocked?'disabled':''}>
+      </label>
+      <label class="text-[10px] font-bold text-gray-500">Source
+        <select class="invoice-admin-source lr-select mt-1">
+          <option value="stock" ${cleanStatus(item.source_type)==='stock'?'selected':''}>Stock</option>
+          <option value="pre_order" ${cleanStatus(item.source_type)==='pre_order'?'selected':''}>Pre-Order</option>
+        </select>
+      </label>
+      <label class="text-[10px] font-bold text-gray-500">Fulfillment
+        <select class="invoice-admin-fulfillment lr-select mt-1">${invoiceAdminFulfillmentOptions(item.fulfillment_status)}</select>
+      </label>
+    </div>
+    <textarea class="invoice-admin-item-notes lr-input mt-2" rows="2" placeholder="Item notes">${esc(item.notes||'')}</textarea>
+    ${returnLocked?`<div class="mt-2 text-[10px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-2">Quantity, unit price and discount are locked because this item already has a Return/Credit Note.</div>`:''}
+  </div>`;
+}
+
+async function openSuperAdminInvoiceEdit(id) {
+  if(!isSuper()) return showToast('Super Admin only','err');
+  const o=invoiceById(id);
+  if(!o) return showToast('Invoice not found','err');
+
+  let customers=[];
+  try{
+    const {data,error}=await db.from('customers').select('id,name,customer_code,active').order('name');
+    if(error) throw error;
+    customers=data||[];
+  }catch(err){
+    return showToast(err.message||'Could not load customers','err');
+  }
+
+  const currentCustomerExists=customers.some(c=>c.id===o.customer_id);
+  if(!currentCustomerExists && o.customer_id){
+    customers.unshift({id:o.customer_id,name:o.customer_name||'Current Customer',customer_code:o.customer_code||'',active:false});
+  }
+
+  openModal(`Edit Invoice · ${o.invoice_no||o.order_no||'Order'}`,`
+    <form id="superAdminInvoiceEditForm" class="space-y-5">
+      <div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+        <b>Super Admin correction.</b> Every save is recorded in the invoice audit log with the original and revised values.
+      </div>
+
+      <div class="grid md:grid-cols-2 xl:grid-cols-4 gap-3">
+        <label class="text-xs font-semibold text-gray-600">Order No.
+          <input id="invoiceAdminOrderNo" class="lr-input mt-1" required value="${esc(o.order_no||'')}">
+        </label>
+        <label class="text-xs font-semibold text-gray-600">Invoice No.
+          <input id="invoiceAdminInvoiceNo" class="lr-input mt-1" value="${esc(o.invoice_no||'')}" placeholder="Optional">
+        </label>
+        <label class="text-xs font-semibold text-gray-600">Order Date
+          <input id="invoiceAdminDate" type="date" class="lr-input mt-1" required value="${esc(String(o.order_date||'').slice(0,10))}">
+        </label>
+        <label class="text-xs font-semibold text-gray-600">Customer
+          <select id="invoiceAdminCustomer" class="lr-select mt-1" required>
+            ${customers.map(c=>`<option value="${esc(c.id)}" ${c.id===o.customer_id?'selected':''}>${esc(c.name||'Customer')}${c.customer_code?' · '+esc(c.customer_code):''}${c.active===false?' (Inactive)':''}</option>`).join('')}
+          </select>
+        </label>
+        <label class="text-xs font-semibold text-gray-600">Order Type
+          <select id="invoiceAdminType" class="lr-select mt-1">
+            <option value="in_stock" ${cleanStatus(o.order_type)==='in_stock'?'selected':''}>In Stock</option>
+            <option value="pre_order" ${cleanStatus(o.order_type)==='pre_order'?'selected':''}>Pre-Order</option>
+            <option value="mixed" ${cleanStatus(o.order_type)==='mixed'?'selected':''}>Mixed</option>
+          </select>
+        </label>
+        <label class="text-xs font-semibold text-gray-600">Status
+          <select id="invoiceAdminStatus" class="lr-select mt-1">${invoiceAdminStatusOptions(o.status)}</select>
+        </label>
+        <label class="text-xs font-semibold text-gray-600">Order Discount
+          <input id="invoiceAdminOrderDiscount" type="number" min="0" step="0.01" class="lr-input mt-1" value="${Number(o.order_discount||0)}">
+        </label>
+        <label class="text-xs font-semibold text-gray-600">Sales Rep
+          <input class="lr-input mt-1 bg-gray-50" disabled value="${esc(repName(o)||'—')}">
+        </label>
+      </div>
+
+      <label class="block text-xs font-semibold text-gray-600">Invoice / Order Notes
+        <textarea id="invoiceAdminNotes" class="lr-input mt-1" rows="2">${esc(o.notes||'')}</textarea>
+      </label>
+
+      <div>
+        <div class="flex items-end justify-between gap-3 mb-2">
+          <div>
+            <div class="font-bold text-sm">Invoice Items</div>
+            <div class="text-[10px] text-gray-400">You can correct quantity, selling price, discount, source and fulfillment status.</div>
+          </div>
+          <span class="lr-badge lr-badge-gray">${(o.items||[]).length} item${(o.items||[]).length===1?'':'s'}</span>
+        </div>
+        <div class="space-y-3">
+          ${(o.items||[]).map(i=>invoiceAdminItemEditor(i,o.currency)).join('')||'<div class="lr-empty">No invoice items.</div>'}
+        </div>
+      </div>
+
+      <label class="block text-xs font-semibold text-gray-600">Reason for correction
+        <textarea id="invoiceAdminReason" class="lr-input mt-1" rows="2" required placeholder="Example: Wrong invoice number / duplicate entry / incorrect quantity"></textarea>
+      </label>
+
+      <div class="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 border-t pt-4">
+        <button type="button" onclick="closeModal()" class="px-4 py-2.5 border rounded-xl text-sm font-semibold">Cancel</button>
+        <button id="invoiceAdminSaveBtn" class="px-5 py-2.5 bg-[#211d18] text-white rounded-xl text-sm font-semibold">Save Invoice Changes</button>
+      </div>
+    </form>
+  `);
+
+  document.getElementById('superAdminInvoiceEditForm').onsubmit=e=>saveSuperAdminInvoiceEdit(e,id);
+}
+
+async function saveSuperAdminInvoiceEdit(e,id) {
+  e.preventDefault();
+  if(!isSuper()) return showToast('Super Admin only','err');
+
+  const btn=document.getElementById('invoiceAdminSaveBtn');
+  const itemRows=[...document.querySelectorAll('.invoice-admin-item')];
+  const items=itemRows.map(row=>({
+    id:row.dataset.id,
+    qty:Number(row.querySelector('.invoice-admin-qty')?.value||0),
+    unit_price:Number(row.querySelector('.invoice-admin-price')?.value||0),
+    discount_amount:Number(row.querySelector('.invoice-admin-discount')?.value||0),
+    source_type:row.querySelector('.invoice-admin-source')?.value||'stock',
+    fulfillment_status:row.querySelector('.invoice-admin-fulfillment')?.value||'pending',
+    notes:row.querySelector('.invoice-admin-item-notes')?.value||''
+  }));
+
+  const order={
+    order_no:document.getElementById('invoiceAdminOrderNo').value.trim(),
+    invoice_no:document.getElementById('invoiceAdminInvoiceNo').value.trim(),
+    customer_id:document.getElementById('invoiceAdminCustomer').value,
+    order_date:document.getElementById('invoiceAdminDate').value,
+    order_type:document.getElementById('invoiceAdminType').value,
+    status:document.getElementById('invoiceAdminStatus').value,
+    order_discount:Number(document.getElementById('invoiceAdminOrderDiscount').value||0),
+    notes:document.getElementById('invoiceAdminNotes').value
+  };
+  const reason=document.getElementById('invoiceAdminReason').value.trim();
+
+  if(!order.order_no || !order.order_date || !order.customer_id || !reason){
+    return showToast('Complete the required fields and correction reason.','err');
+  }
+
+  btn.disabled=true;
+  btn.textContent='Saving...';
+  try{
+    const {data,error}=await db.rpc('super_admin_update_sales_invoice',{
+      p_order_id:id,
+      p_order:order,
+      p_items:items,
+      p_reason:reason
+    });
+    if(error) throw error;
+    closeModal();
+    showToast('Invoice updated successfully');
+    await loadSalesTrackingData();
+    ui.salesExpanded.add(id);
+    renderSalesTrackingBody();
+  }catch(err){
+    showToast(err.message||'Could not update invoice','err');
+    btn.disabled=false;
+    btn.textContent='Save Invoice Changes';
+  }
+}
+
+async function openSuperAdminInvoiceDelete(id) {
+  if(!isSuper()) return showToast('Super Admin only','err');
+  const o=invoiceById(id);
+  if(!o) return showToast('Invoice not found','err');
+
+  let paymentCount=0;
+  let returns=[];
+  try{
+    const [p,r]=await Promise.all([
+      db.from('sales_payments').select('id',{count:'exact',head:true}).eq('sales_order_id',id),
+      db.from('sales_returns').select('id,cn_no,status').eq('sales_order_id',id).order('created_at')
+    ]);
+    if(p.error) throw p.error;
+    if(r.error) throw r.error;
+    paymentCount=p.count||0;
+    returns=r.data||[];
+  }catch(err){
+    return showToast(err.message||'Could not inspect invoice links','err');
+  }
+
+  const blocked=returns.length>0;
+  openModal(`Delete Invoice · ${o.invoice_no||o.order_no||'Order'}`,`
+    <div class="space-y-4">
+      <div class="rounded-xl border ${blocked?'border-red-200 bg-red-50':'border-amber-200 bg-amber-50'} p-4">
+        <div class="font-bold ${blocked?'text-red-800':'text-amber-900'}">${blocked?'Deletion blocked':'Permanent invoice deletion'}</div>
+        <div class="text-xs mt-1 ${blocked?'text-red-700':'text-amber-800'}">
+          ${blocked
+            ? `This invoice has linked Return/Credit Note record(s): <b>${returns.map(r=>esc(r.cn_no||r.id)).join(', ')}</b>. Resolve or cancel those records first.`
+            : `This removes the invoice/order plus its linked item rows, payment rows and tracking links. A full audit snapshot is kept for Super Admin review.`
+          }
+        </div>
+      </div>
+
+      <div class="grid sm:grid-cols-2 gap-3 text-xs">
+        <div class="border rounded-xl p-3"><div class="text-gray-400">Invoice / Order</div><b>${esc(o.invoice_no||o.order_no||'-')}</b></div>
+        <div class="border rounded-xl p-3"><div class="text-gray-400">Customer</div><b>${esc(o.customer_name||'Customer')}</b></div>
+        <div class="border rounded-xl p-3"><div class="text-gray-400">Items that will be deleted</div><b>${(o.items||[]).length}</b></div>
+        <div class="border rounded-xl p-3"><div class="text-gray-400">Payment records that will be deleted</div><b>${paymentCount}</b></div>
+      </div>
+
+      ${blocked
+        ? `<div class="flex justify-end"><button type="button" onclick="closeModal()" class="px-4 py-2.5 bg-[#211d18] text-white rounded-xl text-sm font-semibold">Close</button></div>`
+        : `<form id="superAdminInvoiceDeleteForm" class="space-y-3">
+            <label class="block text-xs font-semibold text-gray-600">Reason for deletion
+              <textarea id="invoiceAdminDeleteReason" class="lr-input mt-1" rows="2" required placeholder="Why is this invoice being removed?"></textarea>
+            </label>
+            <label class="block text-xs font-semibold text-gray-600">Type DELETE to confirm
+              <input id="invoiceAdminDeletePhrase" class="lr-input mt-1" autocomplete="off" required placeholder="DELETE">
+            </label>
+            <div class="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 border-t pt-4">
+              <button type="button" onclick="closeModal()" class="px-4 py-2.5 border rounded-xl text-sm font-semibold">Cancel</button>
+              <button id="invoiceAdminDeleteBtn" class="px-5 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold">Delete Invoice Permanently</button>
+            </div>
+          </form>`
+      }
+    </div>
+  `);
+
+  if(!blocked){
+    document.getElementById('superAdminInvoiceDeleteForm').onsubmit=e=>confirmSuperAdminInvoiceDelete(e,id);
+  }
+}
+
+async function confirmSuperAdminInvoiceDelete(e,id) {
+  e.preventDefault();
+  if(!isSuper()) return showToast('Super Admin only','err');
+  const reason=document.getElementById('invoiceAdminDeleteReason').value.trim();
+  const phrase=document.getElementById('invoiceAdminDeletePhrase').value.trim();
+  if(!reason) return showToast('Deletion reason is required.','err');
+  if(phrase!=='DELETE') return showToast('Type DELETE exactly to confirm.','err');
+
+  const btn=document.getElementById('invoiceAdminDeleteBtn');
+  btn.disabled=true;
+  btn.textContent='Deleting...';
+  try{
+    const {data,error}=await db.rpc('super_admin_delete_sales_invoice',{
+      p_order_id:id,
+      p_reason:reason
+    });
+    if(error) throw error;
+    closeModal();
+    ui.salesExpanded.delete(id);
+    showToast('Invoice deleted');
+    await loadSalesTrackingData();
+    renderSalesTrackingBody();
+  }catch(err){
+    showToast(err.message||'Could not delete invoice','err');
+    btn.disabled=false;
+    btn.textContent='Delete Invoice Permanently';
+  }
+}
+  window.openSuperAdminInvoiceEdit = openSuperAdminInvoiceEdit;
+  window.saveSuperAdminInvoiceEdit = saveSuperAdminInvoiceEdit;
+  window.openSuperAdminInvoiceDelete = openSuperAdminInvoiceDelete;
+  window.confirmSuperAdminInvoiceDelete = confirmSuperAdminInvoiceDelete;
+
 
   window.setSalesTab = function(tab){ ui.salesTab=tab; renderSalesTrackingBody(); };
   window.setSalesStatus = function(v){ ui.salesStatus=v; renderSalesTrackingBody(); };
