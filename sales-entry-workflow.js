@@ -22,6 +22,27 @@
   }
   function currentFlow(){ return document.getElementById('salesFlowType')?.value || 'stock_sale'; }
   function lineRows(){ return [...document.querySelectorAll('#orderItems .order-item-row')]; }
+  function productTypeFromClass(value){
+    const s=String(value||'').trim().toLowerCase();
+    if(!s)return 'Unclassified';
+    if(/chandelier|wall lamp|ceiling lamp|ceiling fixture|stand lamp|light bulb|lamp|lighting/.test(s))return 'Lighting';
+    if(/carpet|rug/.test(s))return 'Carpet';
+    if(/accessor|mirror|decor|vase|ornament/.test(s))return 'Accessories';
+    return 'Furniture';
+  }
+  function updateProductMeta(row,productClass){
+    if(!row)return;
+    const cls=String(productClass||'').trim();
+    const type=productTypeFromClass(cls);
+    const classInput=row.querySelector('.product-class');
+    const typeInput=row.querySelector('.product-type');
+    const classLabel=row.querySelector('.product-class-label');
+    const typeLabel=row.querySelector('.product-type-label');
+    if(classInput)classInput.value=cls;
+    if(typeInput)typeInput.value=type;
+    if(classLabel)classLabel.textContent=cls||'Unclassified';
+    if(typeLabel)typeLabel.textContent=type;
+  }
 
   function calcSalesEntry(){
     let subtotal=0;
@@ -103,7 +124,7 @@
     if(!matches.length){
       box.innerHTML='<div class="px-3 py-3 text-xs text-gray-400">No matching product code or item name.</div>';
     }else{
-      box.innerHTML=matches.map(p=>`<button type="button" class="w-full text-left px-3 py-2 hover:bg-amber-50 border-b last:border-b-0" data-id="${esc(p.id)}" data-code="${esc(p.code||'')}" data-name="${esc(p.item_name||'')}" data-image="${esc(p.image_url||'')}" data-price="${Number(p.sales_price||0)}" onclick="chooseSalesProduct(this)"><div class="text-xs font-bold text-[#a77d1a]">${esc(p.code||'No code')}</div><div class="text-sm truncate">${esc(p.item_name||'')}</div><div class="text-[10px] text-gray-400">${esc(p.brand||'')} ${p.class?'· '+esc(p.class):''} · ${money(p.sales_price||0,p.currency||'USD')}</div></button>`).join('');
+      box.innerHTML=matches.map(p=>`<button type="button" class="w-full text-left px-3 py-2 hover:bg-amber-50 border-b last:border-b-0" data-id="${esc(p.id)}" data-code="${esc(p.code||'')}" data-name="${esc(p.item_name||'')}" data-image="${esc(p.image_url||'')}" data-price="${Number(p.sales_price||0)}" data-class="${esc(p.class||'')}" onclick="chooseSalesProduct(this)"><div class="text-xs font-bold text-[#a77d1a]">${esc(p.code||'No code')}</div><div class="text-sm truncate">${esc(p.item_name||'')}</div><div class="text-[10px] text-gray-400">${esc(p.brand||'')} ${p.class?'· '+esc(p.class):''} · ${money(p.sales_price||0,p.currency||'USD')}</div></button>`).join('');
     }
     box.classList.remove('hidden');
   };
@@ -117,6 +138,7 @@
     row.querySelector('.product-image').value=btn.dataset.image||'';
     row.querySelector('.product-search-input').value=`${btn.dataset.code||''} · ${btn.dataset.name||''}`;
     row.querySelector('.unit-price').value=Number(btn.dataset.price||0);
+    updateProductMeta(row,btn.dataset.class||'');
     row.querySelector('.product-suggestions').classList.add('hidden');
     salesEntryRecalc();
   };
@@ -128,6 +150,7 @@
     row.querySelector('.product-code').value='';
     row.querySelector('.product-name').value='';
     row.querySelector('.product-image').value='';
+    updateProductMeta(row,'');
     showSalesProductSuggestions(input);
   };
 
@@ -141,8 +164,12 @@
       <div class="md:col-span-5 relative">
         <label class="text-[10px] font-semibold text-gray-500">Product Code / Item</label>
         <input type="text" autocomplete="off" class="product-search-input mt-1 w-full border rounded-lg px-3 py-2 bg-white" placeholder="Type product code or item name..." onfocus="showSalesProductSuggestions(this)" oninput="salesProductInputChanged(this)">
-        <input type="hidden" class="product-id"><input type="hidden" class="product-code"><input type="hidden" class="product-name"><input type="hidden" class="product-image">
+        <input type="hidden" class="product-id"><input type="hidden" class="product-code"><input type="hidden" class="product-name"><input type="hidden" class="product-image"><input type="hidden" class="product-class"><input type="hidden" class="product-type">
         <div class="product-suggestions hidden absolute z-[100] left-0 right-0 top-full mt-1 max-h-64 overflow-y-auto bg-white border rounded-xl shadow-xl"></div>
+        <div class="mt-1.5 flex flex-wrap gap-1.5 text-[9px]">
+          <span class="px-2 py-1 rounded-full bg-white border text-gray-500">Type: <b class="product-type-label text-gray-700">Unclassified</b></span>
+          <span class="px-2 py-1 rounded-full bg-white border text-gray-500">Class: <b class="product-class-label text-gray-700">Unclassified</b></span>
+        </div>
       </div>
       <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Qty</label><input class="qty mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0.01" step="0.01" value="1" oninput="salesEntryRecalc()"></div>
       <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Unit Price</label><input class="unit-price mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="0" oninput="salesEntryRecalc()"></div>
@@ -227,7 +254,7 @@
     const {data:so,error}=await db.from('sales_orders').insert(order).select().single();
     if(error){const msg=String(error.message||'');return showToast(msg.toLowerCase().includes('duplicate')?'That SR/TK/RK number already exists.':msg,'err');}
 
-    const items=rows.map(r=>({sales_order_id:so.id,product_id:r.querySelector('.product-id').value,product_code_snapshot:r.querySelector('.product-code').value,item_name_snapshot:r.querySelector('.product-name').value,image_url_snapshot:r.querySelector('.product-image').value||null,qty:Number(r.querySelector('.qty').value),unit_price:Number(r.querySelector('.unit-price').value),discount_amount:Number(r.querySelector('.line-discount').value||0),source_type:flow==='pre_order'?'pre_order':'stock',fulfillment_status:flow==='pre_order'?'pending':'ready'}));
+    const items=rows.map(r=>({sales_order_id:so.id,product_id:r.querySelector('.product-id').value,product_code_snapshot:r.querySelector('.product-code').value,item_name_snapshot:r.querySelector('.product-name').value,image_url_snapshot:r.querySelector('.product-image').value||null,product_class_snapshot:r.querySelector('.product-class')?.value||null,product_type_snapshot:r.querySelector('.product-type')?.value||null,qty:Number(r.querySelector('.qty').value),unit_price:Number(r.querySelector('.unit-price').value),discount_amount:Number(r.querySelector('.line-discount').value||0),source_type:flow==='pre_order'?'pre_order':'stock',fulfillment_status:flow==='pre_order'?'pending':'ready'}));
     const invalid=items.some(i=>!i.product_id || i.qty<=0 || i.unit_price<0 || i.discount_amount<0);
     if(invalid){await db.from('sales_orders').delete().eq('id',so.id);return showToast('Please check item quantity, price and discount.','err');}
 
