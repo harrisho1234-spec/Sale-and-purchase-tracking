@@ -54,13 +54,28 @@
         <div class="border-t pt-5">
           <div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">PO Items</h4><div class="text-xs text-gray-400">Items here can be linked to SR customer items.</div></div><span class="lr-badge lr-badge-gray">${d.items.length} items</span></div>
           <div class="divide-y border rounded-xl mb-4">${d.items.length?d.items.map(i=>`<div class="p-3 grid md:grid-cols-[1fr_90px_120px] gap-2 text-xs"><div><b>${esc(i.product_code_snapshot||'No Code')}</b><div class="text-gray-500 mt-0.5">${esc(i.item_name_snapshot||'')}</div></div><div>Qty <b>${Number(i.qty||0)}</b></div><div class="text-right">Cost <b>${money(i.unit_cost||0,p.currency||'USD')}</b></div></div>`).join(''):'<div class="p-4 text-xs text-gray-400">No PO items yet.</div>'}</div>
-          <form id="addPOItemForm" class="grid md:grid-cols-5 gap-2 bg-gray-50 rounded-xl p-3">
-            <input id="poiCode" required class="border rounded-lg px-2 py-2" placeholder="SKU / Code">
-            <input id="poiName" required class="border rounded-lg px-2 py-2 md:col-span-2" placeholder="Item name">
-            <input id="poiQty" type="number" min="0.01" step="0.01" value="1" required class="border rounded-lg px-2 py-2" placeholder="Qty">
-            <input id="poiCost" type="number" min="0" step="0.01" value="0" class="border rounded-lg px-2 py-2" placeholder="Unit cost">
-            <input id="poiShipping" type="number" min="0" step="0.01" value="0" class="border rounded-lg px-2 py-2" placeholder="Shipping/unit">
-            <button class="md:col-span-4 bg-[#b38b2e] text-white rounded-lg py-2 font-semibold">+ Add PO Item</button>
+          <form id="addPOItemForm" class="grid md:grid-cols-12 gap-3 bg-gray-50 rounded-xl p-4">
+            <div class="md:col-span-5 min-w-0">
+              <label class="text-[10px] font-semibold text-gray-500">Product Code / Item</label>
+              <input id="poiCode" required class="mt-1 w-full min-w-0 border rounded-lg px-3 py-2 bg-white" placeholder="Type SKU / code or item name...">
+            </div>
+            <div class="md:col-span-4 min-w-0">
+              <label class="text-[10px] font-semibold text-gray-500">Item Name</label>
+              <input id="poiName" required class="mt-1 w-full min-w-0 border rounded-lg px-3 py-2 bg-white" placeholder="Item name">
+            </div>
+            <div class="md:col-span-3">
+              <label class="text-[10px] font-semibold text-gray-500">Qty</label>
+              <input id="poiQty" type="number" min="0.01" step="0.01" value="1" required class="mt-1 w-full border rounded-lg px-3 py-2 bg-white" placeholder="Qty">
+            </div>
+            <div class="md:col-span-6">
+              <label class="text-[10px] font-semibold text-gray-500">Unit Cost</label>
+              <input id="poiCost" type="number" min="0" step="0.01" value="0" class="mt-1 w-full border rounded-lg px-3 py-2 bg-white" placeholder="Unit cost">
+            </div>
+            <div class="md:col-span-6">
+              <label class="text-[10px] font-semibold text-gray-500">Shipping / Unit</label>
+              <input id="poiShipping" type="number" min="0" step="0.01" value="0" class="mt-1 w-full border rounded-lg px-3 py-2 bg-white" placeholder="Shipping / unit">
+            </div>
+            <button class="md:col-span-12 w-full bg-[#b38b2e] text-white rounded-lg py-2.5 font-semibold">+ Add PO Item</button>
           </form>
         </div>
       </div>`);
