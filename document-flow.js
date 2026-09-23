@@ -134,7 +134,7 @@
 
   async function loadLinkModalData(orderId){
     const [sr,pr]=await Promise.all([
-      db.from('sales_order_items').select('id,product_code_snapshot,item_name_snapshot,qty').eq('sales_order_id',orderId).order('created_at'),
+      db.from('sales_order_items').select('id,product_code_snapshot,item_name_snapshot,qty').eq('sales_order_id',orderId).eq('line_kind','product').not('product_id','is',null).order('created_at'),
       db.from('supplier_po_items').select('id,product_code_snapshot,item_name_snapshot,qty,supplier_po_id,supplier_pos(id,po_number,status,estimated_arrival)').order('created_at',{ascending:false}).limit(2000)
     ]);
     if(sr.error)throw sr.error;if(pr.error)throw pr.error;
