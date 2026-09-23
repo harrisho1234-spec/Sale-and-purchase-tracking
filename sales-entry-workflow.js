@@ -61,7 +61,8 @@
     row.querySelector('.product-type-label').textContent='Service';
     row.querySelector('.product-class-label').textContent=kind;
     const name=row.querySelector('.service-name');
-    if(name&&!name.value.trim())name.value=kind;
+    const defaults=['Service Fee','Maintenance Fee','Cleaning Fee','Delivery / Installation','Other Fee'];
+    if(name&&(!name.value.trim()||defaults.includes(name.value.trim())))name.value=kind;
     if(name)row.querySelector('.product-name').value=name.value.trim()||kind;
   };
   window.serviceFeeNameChanged=function(input){
