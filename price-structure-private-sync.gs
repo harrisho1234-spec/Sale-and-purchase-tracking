@@ -23,6 +23,7 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu("L'Imperial Product Sync")
     .addItem('Sync Products Now', 'syncAllProducts')
+    .addItem('Sync App Changes to Sheet Now', 'syncAppProductsToSheet')
     .addItem('Install / Repair Auto Sync', 'setupProductSync')
     .addItem('Test Secure Connection', 'testProductSyncConnection')
     .addSeparator()
@@ -53,7 +54,8 @@ function setupProductSync() {
       `Secure connection: ${ping.ok ? 'OK' : 'FAILED'}\n` +
       `Products sent: ${result.sent}\n` +
       `Products updated: ${result.upserted}\n` +
-      `Automatic sync: on edit + every ${LPH_PRODUCT_SYNC.everyMinutes} minutes.`,
+      `App changes written to Sheet: ${result.sheetWrites || 0}\n` +
+      `Automatic sync: Sheet edits + app changes every ${LPH_PRODUCT_SYNC.everyMinutes} minutes.`,
       SpreadsheetApp.getUi().ButtonSet.OK
     );
   } catch (_) {}
@@ -63,6 +65,7 @@ function setupProductSync() {
     connection: ping.ok,
     sent: result.sent,
     upserted: result.upserted,
+    sheetWrites: result.sheetWrites || 0,
     automatic: true
   };
 }
@@ -70,15 +73,17 @@ function setupProductSync() {
 /** Full sync. Can also be run manually from the custom menu. */
 function syncAllProducts(showUi = true) {
   try {
+    const appToSheet = syncAppProductsToSheet_(false);
     const products = buildAggregatedProducts_();
     const result = pushProducts_(products, 'full');
-    saveSyncStatus_('success', `Full sync: ${result.upserted}/${result.sent} products updated.`);
+    result.sheetWrites = appToSheet.written || 0;
+    saveSyncStatus_('success', `Full sync: ${result.upserted}/${result.sent} products updated; ${result.sheetWrites} app changes written to Price Structure.`);
 
     if (showUi) {
       try {
         SpreadsheetApp.getUi().alert(
           'Product Sync Complete',
-          `${result.upserted} of ${result.sent} products updated in L'Imperial Sales & Order Management.`,
+          `${result.upserted} of ${result.sent} products updated in L'Imperial Sales & Order Management.\n${result.sheetWrites || 0} app changes written back to Price Structure.`,
           SpreadsheetApp.getUi().ButtonSet.OK
         );
       } catch (_) {}
@@ -124,6 +129,139 @@ function syncEditedProducts(e) {
     saveSyncStatus_('error', String(err && err.message ? err.message : err));
     throw err;
   }
+}
+
+
+/**
+ * APP → GOOGLE SHEET
+ *
+ * Pulls product changes created/edited in the L'Imperial app and writes them
+ * back into Price Structure V3 → All. The Sheet remains private.
+ */
+function syncAppProductsToSheet(showUi = true) {
+  try {
+    const result = syncAppProductsToSheet_(showUi);
+    saveSyncStatus_(
+      'success',
+      `App → Sheet: ${result.written} product change(s) written and ${result.acked} acknowledged.`
+    );
+    return result;
+  } catch (err) {
+    saveSyncStatus_('error', String(err && err.message ? err.message : err));
+    throw err;
+  }
+}
+
+function syncAppProductsToSheet_(showUi = false) {
+  const response = callSyncApi_({
+    mode: 'pull_app_changes',
+    spreadsheet_id: LPH_PRODUCT_SYNC.spreadsheetId,
+    limit: 250
+  });
+
+  const changes = Array.isArray(response.changes) ? response.changes : [];
+  if (!changes.length) {
+    const result = { pulled: 0, written: 0, acked: 0, superseded: 0 };
+    if (showUi) {
+      try {
+        SpreadsheetApp.getUi().alert(
+          'App → Price Structure',
+          'No pending app product changes.',
+          SpreadsheetApp.getUi().ButtonSet.OK
+        );
+      } catch (_) {}
+    }
+    return result;
+  }
+
+  const ss = SpreadsheetApp.openById(LPH_PRODUCT_SYNC.spreadsheetId);
+  const sheet = ss.getSheetByName(LPH_PRODUCT_SYNC.sheetName);
+  if (!sheet) throw new Error(`Sheet "${LPH_PRODUCT_SYNC.sheetName}" was not found.`);
+
+  const header = getHeaderMap_(sheet);
+  const codeCol = header['Code'];
+  if (!codeCol) throw new Error('Column "Code" was not found in the All sheet.');
+
+  const rowByCode = new Map();
+  const lastRow = sheet.getLastRow();
+  if (lastRow >= 2) {
+    const codes = sheet.getRange(2, codeCol, lastRow - 1, 1).getDisplayValues().flat();
+    codes.forEach((v, i) => {
+      const key = String(v || '').trim().toLowerCase();
+      if (key && !rowByCode.has(key)) rowByCode.set(key, i + 2);
+    });
+  }
+
+  const acks = [];
+
+  changes.forEach(change => {
+    const code = String(change.code || '').trim();
+    if (!code) return;
+
+    const newKey = code.toLowerCase();
+    const oldKey = String(change.source_code || '').trim().toLowerCase();
+    let rowNum = rowByCode.get(newKey) || (oldKey ? rowByCode.get(oldKey) : null);
+
+    if (!rowNum) {
+      const newRow = new Array(sheet.getLastColumn()).fill('');
+      sheet.appendRow(newRow);
+      rowNum = sheet.getLastRow();
+    }
+
+    setSheetField_(sheet, header, rowNum, 'Code', code);
+    setSheetField_(sheet, header, rowNum, 'Item Name', change.item_name || code);
+    setSheetField_(sheet, header, rowNum, 'Brand', change.brand || change.vendor_name || '');
+    setSheetField_(sheet, header, rowNum, 'Class', change.class || '');
+    setSheetField_(sheet, header, rowNum, 'Description', change.description || '');
+    setSheetField_(sheet, header, rowNum, 'Location', change.location || '');
+    setSheetField_(sheet, header, rowNum, 'IMG link', change.image_url || '');
+    setSheetField_(sheet, header, rowNum, 'QTY', number_(change.stock_qty));
+    setSheetField_(sheet, header, rowNum, 'Costing', number_(change.sheet_cost));
+    setSheetField_(sheet, header, rowNum, 'Sales Price', number_(change.sales_price));
+    setSheetField_(sheet, header, rowNum, 'Actual Sales Price', number_(change.sales_price));
+
+    rowByCode.set(newKey, rowNum);
+
+    acks.push({
+      product_id: change.product_id,
+      change_token: change.change_token
+    });
+  });
+
+  SpreadsheetApp.flush();
+
+  const ack = acks.length
+    ? callSyncApi_({
+        mode: 'ack_app_changes',
+        spreadsheet_id: LPH_PRODUCT_SYNC.spreadsheetId,
+        acks: acks
+      })
+    : { acknowledged: 0, superseded: 0 };
+
+  const result = {
+    pulled: changes.length,
+    written: acks.length,
+    acked: Number(ack.acknowledged || 0),
+    superseded: Number(ack.superseded || 0)
+  };
+
+  if (showUi) {
+    try {
+      SpreadsheetApp.getUi().alert(
+        'App → Price Structure Complete',
+        `${result.written} product change(s) written to the All sheet.\n${result.acked} acknowledged by Supabase.`,
+        SpreadsheetApp.getUi().ButtonSet.OK
+      );
+    } catch (_) {}
+  }
+
+  return result;
+}
+
+function setSheetField_(sheet, headerMap, rowNum, headerName, value) {
+  const col = headerMap[headerName];
+  if (!col) return;
+  sheet.getRange(rowNum, col).setValue(value == null ? '' : value);
 }
 
 function testProductSyncConnection(showUi = true) {
