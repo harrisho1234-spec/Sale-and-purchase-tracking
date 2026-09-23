@@ -44,6 +44,7 @@
           <button type="button" onclick="movePOItem('${i.id}',-1)" ${idx===0?'disabled':''} class="px-2 py-1.5 border rounded-lg text-[10px] disabled:opacity-30" title="Move up">↑</button>
           <button type="button" onclick="movePOItem('${i.id}',1)" ${idx===total-1?'disabled':''} class="px-2 py-1.5 border rounded-lg text-[10px] disabled:opacity-30" title="Move down">↓</button>
           <button type="button" onclick="editPOItem('${i.id}')" class="px-3 py-1.5 border border-amber-200 bg-amber-50 text-amber-800 rounded-lg text-[10px] font-semibold">Edit</button>
+          <button type="button" onclick="deletePOItem('${i.id}')" ${linked?'disabled':''} class="px-3 py-1.5 border border-red-200 bg-red-50 text-red-600 rounded-lg text-[10px] font-semibold disabled:opacity-35 disabled:cursor-not-allowed" title="${linked?'Unlink this item from the SR before deleting':'Delete this PO item'}">Delete</button>
         </div>
       </div>
 
@@ -154,6 +155,36 @@
     if(save.error)return showToast(save.error.message,'err');
 
     showToast('PO item updated');
+    await window.openEditSupplierPO(poId);
+  };
+
+  window.deletePOItem=async function(itemId){
+    const box=document.getElementById('poExistingItems');
+    if(!box)return;
+    const poId=box.dataset.poId;
+
+    const item=await db.from('supplier_po_items')
+      .select('id,product_code_snapshot,item_name_snapshot')
+      .eq('id',itemId)
+      .single();
+    if(item.error)return showToast(item.error.message,'err');
+
+    const link=await db.from('fulfillment_links')
+      .select('id')
+      .eq('supplier_po_item_id',itemId)
+      .limit(1);
+    if(link.error)return showToast(link.error.message,'err');
+    if((link.data||[]).length){
+      return showToast('This PO item is linked to an SR customer item. Unlink it first before deleting.','err');
+    }
+
+    const label=[item.data?.product_code_snapshot,item.data?.item_name_snapshot].filter(Boolean).join(' · ')||'this PO item';
+    if(!confirm(`Delete ${label}? This cannot be undone.`))return;
+
+    const del=await db.from('supplier_po_items').delete().eq('id',itemId);
+    if(del.error)return showToast(del.error.message,'err');
+
+    showToast('PO item deleted');
     await window.openEditSupplierPO(poId);
   };
 
