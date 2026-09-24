@@ -112,7 +112,7 @@
     if(summary[0])summary[0].querySelector('.lr-summary-value').textContent=String(rows.length);
     if(summary[1])setMoneyText(summary[1].querySelector('.lr-summary-value'),k.total);
     if(summary[2]){
-      const lab=summary[2].querySelector('.lr-summary-label');if(lab)lab.textContent='Deposit Paid';
+      const lab=summary[2].querySelector('.lr-summary-label');if(lab)lab.textContent='Amount Received';
       setMoneyText(summary[2].querySelector('.lr-summary-value'),k.paid,'text-green-600');
     }
     if(summary[3]){
