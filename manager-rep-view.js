@@ -66,7 +66,7 @@ async function renderManagerRepWorkspace(){
           <div class="bg-gray-50 rounded-xl p-4"><b>Customers</b><div class="text-xs text-gray-500 mt-1">Shows only customers assigned to the selected Sales Rep.</div></div>
           <div class="bg-gray-50 rounded-xl p-4"><b>Sales Orders</b><div class="text-xs text-gray-500 mt-1">Shows only that rep's assigned orders.</div></div>
           <div class="bg-gray-50 rounded-xl p-4"><b>Payments & Tracking</b><div class="text-xs text-gray-500 mt-1">Filtered to the same Sales Rep.</div></div>
-          <div class="bg-gray-50 rounded-xl p-4"><b>New Records</b><div class="text-xs text-gray-500 mt-1">New customers and orders are assigned to that Sales Rep, while the audit records the Manager as the actor.</div></div>
+          <div class="bg-gray-50 rounded-xl p-4"><b>New Records</b><div class="text-xs text-gray-500 mt-1">Inside Rep Workspace, new customers and orders are assigned to that Sales Rep. Outside Rep Workspace, Managers can still create customers as Unassigned and assign them afterward.</div></div>
         </div>
         <div class="mt-4 rounded-xl border border-blue-100 bg-blue-50 p-4 text-xs text-blue-800">Costing, supplier purchasing and other confidential Admin information remain unavailable to the Manager, even while using Rep Workspace.</div>
       </div>
@@ -154,7 +154,6 @@ renderTracking = async function(){
 
 const _managerBaseOpenNewCustomer = openNewCustomer;
 openNewCustomer = function(){
-  if(isManager()&&!managerRepActive()) return showToast('Choose a Sales Rep in Rep Workspace before creating a customer.','err');
   return _managerBaseOpenNewCustomer();
 };
 
