@@ -435,7 +435,10 @@ function invoiceAdminStatusOptions(selected) {
 
 function invoiceAdminFulfillmentOptions(selected) {
   const values=['ordered','production','shipping','arrived','delivered'];
-  return values.map(v=>`<option value="${v}" ${cleanStatus(selected)===v?'selected':''}>${esc(titleCase(v))}</option>`).join('');
+  const current=cleanStatus(selected);
+  const canonical=current==='pending'||current==='reserved'?'ordered':current==='ready'?'arrived':current==='installed'?'delivered':current;
+  const legacy=current==='cancelled'?'<option value="cancelled" selected disabled>Cancelled (historical)</option>':'';
+  return legacy+values.map(v=>`<option value="${v}" ${canonical===v?'selected':''}>${esc(titleCase(v))}</option>`).join('');
 }
 
 function invoiceAdminItemEditor(item, currency) {
@@ -752,7 +755,7 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
         <div class="lr-kpi" style="--kpi-line:#f59e0b">
           <div class="lr-kpi-label text-orange-500">Not Taken Items</div>
           <div class="lr-kpi-value">${k.readyQty.toLocaleString()}</div>
-          <div class="lr-kpi-sub">Ready value: <b class="text-gray-600">${money(k.readyValue)}</b></div>
+          <div class="lr-kpi-sub">Arrived value: <b class="text-gray-600">${money(k.readyValue)}</b></div>
         </div>
         <div class="lr-kpi" style="--kpi-line:#3b82f6">
           <div class="lr-kpi-label text-blue-500">Pre-Order Deposits</div>
