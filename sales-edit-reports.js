@@ -29,7 +29,7 @@
       b.className='sales-edit-order-btn px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-[10px] font-bold';
       b.dataset.orderId=o.id;
       const superAdmin=role()==='super_admin';
-      b.textContent=superAdmin?'Edit Invoice':'Edit Order';
+      b.textContent=superAdmin?'Edit Invoice':role()==='sales'?'Request Edit':'Edit Order';
       b.onclick=()=>superAdmin&&typeof window.openSuperAdminInvoiceEdit==='function'
         ? window.openSuperAdminInvoiceEdit(o.id)
         : openEditSalesOrder(o.id);
@@ -178,11 +178,23 @@
 
   window.openEditSalesOrder=async function(orderId){
     if(!canEditOrdersUI())return showToast('You do not have edit access here.','err');
+    if(role()==='sales'){
+      const pending=await db.from('sales_order_edit_requests').select('id,requested_at,request_note,status').eq('sales_order_id',orderId).eq('status','pending').maybeSingle();
+      if(pending.error)return showToast(pending.error.message,'err');
+      if(pending.data){
+        return openModal('Edit Request Pending',`<div class="space-y-4">
+          <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Your requested changes are waiting for Manager/Admin review. The live order has not been changed.</div>
+          <div class="grid sm:grid-cols-2 gap-3 text-xs"><div class="rounded-xl border p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Submitted</div><div class="font-semibold mt-1">${new Date(pending.data.requested_at).toLocaleString()}</div></div><div class="rounded-xl border p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Status</div><div class="font-semibold text-amber-700 mt-1">Pending Review</div></div></div>
+          ${pending.data.request_note?`<div class="rounded-xl border p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Reason / Note</div><div class="text-sm mt-1">${esc(pending.data.request_note)}</div></div>`:''}
+          <button onclick="closeModal()" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Close</button>
+        </div>`);
+      }
+    }
     try{await loadEditData(orderId)}catch(e){return showToast(e.message||'Could not load order','err')}
     const o=editState.order,f=flow(o),linkedCount=editState.linked.size,returnedCount=editState.returned.size;
     const currentType=o.sales_invoice_type||String(o.sales_invoice_no||o.order_no||'').toUpperCase().startsWith('RK')?'RK':'TK';
     openModal(`${role()==='super_admin'?'Edit Invoice':'Edit'} ${docNo(o)}`,`<form id="editSalesOrderForm" class="space-y-5">
-      <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">Payments are kept separately. Editing the order changes the order total and AR automatically. ${linkedCount?`${linkedCount} item(s) linked to Procurement are protected from product/qty changes.`:''}</div>
+      <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">${role()==='sales'?'<b>Approval required.</b> Your requested changes will be sent to Manager/Admin. The live order will remain unchanged until approved.':'Payments are kept separately. Editing the order changes the order total and AR automatically.'} ${linkedCount?`${linkedCount} item(s) linked to Procurement are protected from product/qty changes.`:''}</div>
       ${returnedCount?`<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">${returnedCount} item(s) already have Return/CN records. Those specific lines are locked from product, quantity, price, discount and deletion changes.</div>`:''}
       <div class="grid md:grid-cols-2 gap-3">
         <div><label class="text-xs font-semibold">Customer</label><select id="editOrderCustomer" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white">${state.customers.map(c=>`<option value="${c.id}" ${c.id===o.customer_id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
@@ -196,8 +208,9 @@
       <div class="grid md:grid-cols-2 gap-4 border-t pt-4"><div><label class="text-xs font-semibold">Order Discount %</label><input id="editDiscountPercent" type="number" min="0" max="100" step="0.01" value="0" oninput="editDiscountPercentChanged()" class="mt-1 w-full border rounded-xl px-3 py-2"></div><div><label class="text-xs font-semibold">Order Discount Amount</label><input id="editDiscountAmount" type="number" min="0" step="0.01" value="${Number(o.order_discount||0)}" oninput="editDiscountAmountChanged()" class="mt-1 w-full border rounded-xl px-3 py-2"></div></div>
       <div class="grid grid-cols-2 md:grid-cols-5 gap-2 rounded-2xl bg-[#faf8f3] border border-[#eee8df] p-4"><div><div class="text-[9px] uppercase font-bold text-gray-400">Subtotal</div><div id="editSubtotal" class="font-bold mt-1"></div></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Discount</div><div id="editDiscountPreview" class="font-bold mt-1"></div></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Order Total</div><div id="editTotal" class="font-bold mt-1"></div></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Paid</div><div id="editPaid" class="font-bold text-green-600 mt-1"></div></div><div><div class="text-[9px] uppercase font-bold text-gray-400">AR / Balance</div><div id="editBalance" class="font-bold text-red-500 mt-1"></div></div></div>
       <div><label class="text-xs font-semibold">Notes</label><textarea id="editOrderNotes" class="mt-1 w-full border rounded-xl px-3 py-2" rows="3">${esc(o.notes||'')}</textarea></div>
+      ${role()==='sales'?`<div><label class="text-xs font-semibold">Reason for Edit</label><textarea id="editOrderRequestNote" required class="mt-1 w-full border border-amber-200 bg-amber-50 rounded-xl px-3 py-2" rows="2" placeholder="Explain what needs to be corrected and why."></textarea><div class="text-[9px] text-amber-700 mt-1">Manager/Admin will see this note when reviewing your request.</div></div>`:'' }
       ${role()==='super_admin'?`<div><label class="text-xs font-semibold">Reason for correction</label><textarea id="editOrderAuditReason" required class="mt-1 w-full border border-amber-200 bg-amber-50 rounded-xl px-3 py-2" rows="2" placeholder="Example: wrong item, wrong quantity, duplicated line"></textarea><div class="text-[9px] text-amber-700 mt-1">Required for Super Admin changes and stored in the audit log.</div></div>`:''}
-      <button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">${role()==='super_admin'?'Save Invoice & Item Changes':'Save Order Changes'}</button>
+      <button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">${role()==='sales'?'Submit Edit Request':role()==='super_admin'?'Save Invoice & Item Changes':'Save Order Changes'}</button>
     </form>`);
     editState.discountBasis='amount';editOrderRecalc();
     document.getElementById('editSalesOrderForm').onsubmit=saveEditSalesOrder;
@@ -212,6 +225,33 @@
     let doc=raw,type=null;if(f==='pre_order'){if(!doc.startsWith('SR'))doc='SR-'+doc.replace(/^[-:]+/,'')}else{type=document.getElementById('editInvoiceType').value;if(!doc.startsWith(type))doc=type+doc.replace(/^[-:]+/,'')}
     const patch={customer_id:document.getElementById('editOrderCustomer').value,order_date:document.getElementById('editOrderDate').value,order_discount:discount,notes:document.getElementById('editOrderNotes').value.trim()||null,order_no:doc};
     if(f==='pre_order'){patch.sr_no=doc}else{patch.invoice_no=doc;patch.sales_invoice_no=doc;patch.sales_invoice_type=type}
+    if(role()==='sales'){
+      const requestNote=String(document.getElementById('editOrderRequestNote')?.value||'').trim();
+      if(!requestNote)return showToast('Enter the reason for this edit request.','err');
+      const requestedItems=rows.map(r=>{
+        const id=r.dataset.itemId||null,lineKind=r.querySelector('.edit-line-kind')?.value||'product',original=id?editState.items.find(x=>x.id===id):null;
+        return {
+          id,
+          line_kind:lineKind,
+          product_id:lineKind==='service'?null:(r.querySelector('.edit-product-id').value||null),
+          product_code_snapshot:r.querySelector('.edit-product-code').value||null,
+          item_name_snapshot:r.querySelector('.edit-product-name').value||null,
+          image_url_snapshot:lineKind==='service'?null:(r.querySelector('.edit-product-image').value||null),
+          product_class_snapshot:r.querySelector('.edit-product-class')?.value||null,
+          product_type_snapshot:r.querySelector('.edit-product-type')?.value||null,
+          qty:Number(r.querySelector('.edit-qty')?.value||1),
+          unit_price:Number(r.querySelector('.edit-unit-price').value||0),
+          discount_amount:Number(r.querySelector('.edit-line-discount').value||0),
+          source_type:f==='pre_order'?'pre_order':'stock',
+          notes:original?.notes||null
+        };
+      });
+      if(requestedItems.some(row=>(row.line_kind!=='service'&&!row.product_id)||!row.product_code_snapshot||!row.item_name_snapshot||row.qty<=0||row.unit_price<0||row.discount_amount<0))return showToast('Check all item/service descriptions, qty, price and discount values.','err');
+      const req=await db.rpc('submit_sales_order_edit_request',{p_order_id:o.id,p_requested_order:patch,p_requested_items:requestedItems,p_request_note:requestNote});
+      if(req.error)return showToast(req.error.message,'err');
+      closeModal();showToast('Edit request submitted for Manager/Admin approval. Live order is unchanged.');
+      return await go('sales-orders');
+    }
     const up=await db.from('sales_orders').update(patch).eq('id',o.id);if(up.error)return showToast(up.error.message,'err');
     for(const r of rows){
       const id=r.dataset.itemId||null,linked=r.dataset.linked==='1',returned=r.dataset.returned==='1',lineKind=r.querySelector('.edit-line-kind')?.value||'product';const row={line_kind:lineKind,product_id:lineKind==='service'?null:(r.querySelector('.edit-product-id').value||null),product_code_snapshot:r.querySelector('.edit-product-code').value||null,item_name_snapshot:r.querySelector('.edit-product-name').value||null,image_url_snapshot:lineKind==='service'?null:(r.querySelector('.edit-product-image').value||null),product_class_snapshot:r.querySelector('.edit-product-class')?.value||null,product_type_snapshot:r.querySelector('.edit-product-type')?.value||null,qty:Number(r.querySelector('.edit-qty')?.value||1),unit_price:Number(r.querySelector('.edit-unit-price').value||0),discount_amount:Number(r.querySelector('.edit-line-discount').value||0),source_type:f==='pre_order'?'pre_order':'stock'};
