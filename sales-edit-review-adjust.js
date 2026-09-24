@@ -24,7 +24,7 @@
     return '<div class="review-edit-item rounded-xl border bg-white p-3" data-id="'+esc(i.id||'')+'" data-kind="'+(service?'service':'product')+'">'
       +'<div class="grid md:grid-cols-12 gap-2 items-end">'
       +'<div class="md:col-span-5"><label class="text-[9px] uppercase font-bold text-gray-400">'+(service?'Service / Fee':'Product')+'</label>'
-      +(service?'<input class="r-name mt-1 w-full border rounded-lg px-3 py-2" value="'+esc(i.item_name_snapshot||'Service Fee')+'"><input class="r-code" type="hidden" value="'+esc(i.product_code_snapshot||'SERVICE-FEE')+'"><input class="r-pid" type="hidden" value="">'
+      +(service?'<input class="r-name mt-1 w-full border rounded-lg px-3 py-2" value="'+esc(i.item_name_snapshot||'Service Fee')+'"><input class="r-code" type="hidden" value="'+esc(i.product_code_snapshot||'SERVICE-FEE')+'"><input class="r-pid" type="hidden" value=""><input class="r-img" type="hidden" value=""><input class="r-class" type="hidden" value="'+esc(i.product_class_snapshot||'Service Fee')+'"><input class="r-type" type="hidden" value="Service">'
         :'<select class="r-product mt-1 w-full border rounded-lg px-2 py-2 bg-white" onchange="reviewProductSelected(this)">'+prodOptions(i.product_id||'')+'</select><input class="r-name" type="hidden" value="'+esc(i.item_name_snapshot||'')+'"><input class="r-code" type="hidden" value="'+esc(i.product_code_snapshot||'')+'"><input class="r-pid" type="hidden" value="'+esc(i.product_id||'')+'">')
       +(warn?'<div class="mt-2 rounded-lg border bg-gray-50 p-2 space-y-1">'+warn+'</div>':'')+'</div>'
       +'<div class="md:col-span-2"><label class="text-[9px] uppercase font-bold text-gray-400">Qty</label><input class="r-qty mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0.01" step="0.01" value="'+(n(i.qty)||1)+'" oninput="reviewRecalc()"></div>'
@@ -38,6 +38,9 @@
     row.querySelector('.r-pid').value=sel.value||'';
     row.querySelector('.r-code').value=opt.dataset.code||'';
     row.querySelector('.r-name').value=opt.dataset.name||'';
+    row.querySelector('.r-img').value=opt.dataset.image||'';
+    row.querySelector('.r-class').value=opt.dataset.class||'';
+    row.querySelector('.r-type').value=opt.dataset.class?(/chandelier|lamp|lighting/i.test(opt.dataset.class)?'Lighting':/carpet|rug/i.test(opt.dataset.class)?'Carpet':/accessor|mirror|decor|vase/i.test(opt.dataset.class)?'Accessories':'Furniture'):'Unclassified';
   };
   window.addReviewProduct=function(){var x=document.getElementById('reviewItems');if(x)x.insertAdjacentHTML('beforeend',itemRow({line_kind:'product',qty:1,unit_price:0,discount_amount:0}))};
   window.addReviewService=function(){var x=document.getElementById('reviewItems');if(x)x.insertAdjacentHTML('beforeend',itemRow({line_kind:'service',product_code_snapshot:'SERVICE-FEE',item_name_snapshot:'Service Fee',qty:1,unit_price:0,discount_amount:0}))};
@@ -78,7 +81,7 @@
     var r=R.req,pre=isPre(r);
     var items=[].slice.call(document.querySelectorAll('#reviewItems .review-edit-item')).map(function(el){
       var service=el.dataset.kind==='service',orig=(r.requested_items||[]).find(function(x){return String(x.id||'')===String(el.dataset.id||'')});
-      return {id:el.dataset.id||null,line_kind:service?'service':'product',product_id:service?null:(el.querySelector('.r-pid').value||null),product_code_snapshot:el.querySelector('.r-code').value||'',item_name_snapshot:el.querySelector('.r-name').value||'',image_url_snapshot:orig&&orig.image_url_snapshot||null,product_class_snapshot:orig&&orig.product_class_snapshot||null,product_type_snapshot:service?'Service':(orig&&orig.product_type_snapshot||null),qty:n(el.querySelector('.r-qty').value),unit_price:n(el.querySelector('.r-price').value),discount_amount:n(el.querySelector('.r-disc').value),source_type:orig&&orig.source_type||(pre?'pre_order':'stock'),notes:orig&&orig.notes||null};
+      return {id:el.dataset.id||null,line_kind:service?'service':'product',product_id:service?null:(el.querySelector('.r-pid').value||null),product_code_snapshot:el.querySelector('.r-code').value||'',item_name_snapshot:el.querySelector('.r-name').value||'',image_url_snapshot:service?null:(el.querySelector('.r-img')?.value||null),product_class_snapshot:el.querySelector('.r-class')?.value||null,product_type_snapshot:service?'Service':(el.querySelector('.r-type')?.value||null),qty:n(el.querySelector('.r-qty').value),unit_price:n(el.querySelector('.r-price').value),discount_amount:n(el.querySelector('.r-disc').value),source_type:orig&&orig.source_type||(pre?'pre_order':'stock'),notes:orig&&orig.notes||null};
     });
     var type=pre?null:(document.getElementById('reviewType').value||'TK'),doc=clean(document.getElementById('reviewDoc').value).toUpperCase().replace(/\s+/g,'');
     doc=pre?(doc.startsWith('SR')?doc:'SR-'+doc.replace(/^[-:]+/,'')):(doc.startsWith(type)?doc:type+doc.replace(/^[-:]+/,''));
