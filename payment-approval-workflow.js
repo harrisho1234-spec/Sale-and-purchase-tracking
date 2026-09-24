@@ -91,6 +91,20 @@
     };
   }
 
+  function renameSalesPaymentButtons(){
+    if(!isSales())return;
+    document.querySelectorAll('.quick-payment-btn').forEach(function(b){b.textContent='+ Request Payment'});
+  }
+
+  var oldTrackingBody=window.renderSalesTrackingBody;
+  if(typeof oldTrackingBody==='function'){
+    window.renderSalesTrackingBody=function(){
+      var out=oldTrackingBody.apply(this,arguments);
+      setTimeout(renameSalesPaymentButtons,160);
+      return out;
+    };
+  }
+
   async function visibleRequests(status){
     var r=await db.rpc('get_visible_sales_payment_requests',{p_status:status==null?null:status});
     if(r.error)throw r.error;
