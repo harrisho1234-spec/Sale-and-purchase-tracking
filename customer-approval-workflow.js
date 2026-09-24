@@ -18,6 +18,88 @@
     var cls=s==='approved'?'bg-green-50 text-green-700 border-green-200':s==='rejected'?'bg-red-50 text-red-600 border-red-200':'bg-amber-50 text-amber-700 border-amber-200';
     return '<span class="inline-flex px-2 py-1 border rounded-lg text-[9px] font-bold uppercase '+cls+'">'+esc(s||'pending')+'</span>';
   }
+  function same(a,b){return JSON.stringify(a==null?null:a)===JSON.stringify(b==null?null:b)}
+  function display(v){var s=clean(v);return s||'-'}
+  function contactKey(x,i){
+    x=x||{};
+    return [String(x.contact_type||'other').toLowerCase(),clean(x.label).toLowerCase()||('#'+i)].join('|');
+  }
+  function contactLabel(x){
+    x=x||{};
+    var type=titleCase(String(x.contact_type||'other'));
+    var label=clean(x.label);
+    return label?type+' · '+label:type;
+  }
+  function customerFieldChanges(r){
+    var a=r.original_customer||{},b=r.requested_customer||{};
+    var fields=[
+      ['Customer Name',a.name,b.name],
+      ['Customer Code',a.customer_code,b.customer_code],
+      ['Customer Since',a.customer_since,b.customer_since],
+      ['Address',a.address,b.address],
+      ['Customer Note',a.notes,b.notes]
+    ];
+    if(r.request_type==='create'){
+      return fields.filter(function(x){return clean(x[2])}).map(function(x){return {kind:'added',label:x[0],old:'',next:display(x[2])}});
+    }
+    return fields.filter(function(x){return !same(clean(x[1]),clean(x[2]))}).map(function(x){return {kind:'changed',label:x[0],old:display(x[1]),next:display(x[2])}});
+  }
+  function customerContactChanges(r){
+    var oldList=Array.isArray(r.original_contacts)?r.original_contacts:[];
+    var newList=Array.isArray(r.requested_contacts)?r.requested_contacts:[];
+    if(r.request_type==='create'){
+      return newList.filter(function(x){return clean(x.contact_value)}).map(function(x){
+        return {kind:'added',label:contactLabel(x),old:'',next:display(x.contact_value)};
+      });
+    }
+
+    var oldMap=new Map(),newMap=new Map();
+    oldList.forEach(function(x,i){oldMap.set(contactKey(x,i),x)});
+    newList.forEach(function(x,i){newMap.set(contactKey(x,i),x)});
+    var out=[];
+
+    oldMap.forEach(function(old,key){
+      var cur=newMap.get(key);
+      if(!cur){
+        out.push({kind:'removed',label:contactLabel(old),old:display(old.contact_value),next:''});
+        return;
+      }
+      if(!same(clean(old.contact_value),clean(cur.contact_value))
+        || !same(clean(old.label),clean(cur.label))
+        || !same(String(old.contact_type||''),String(cur.contact_type||''))){
+        out.push({kind:'changed',label:contactLabel(cur),old:display(old.contact_value),next:display(cur.contact_value)});
+      }
+    });
+
+    newMap.forEach(function(cur,key){
+      if(!oldMap.has(key)){
+        out.push({kind:'added',label:contactLabel(cur),old:'',next:display(cur.contact_value)});
+      }
+    });
+    return out;
+  }
+  function customerRequestChangesHtml(r){
+    var fields=customerFieldChanges(r),contacts=customerContactChanges(r);
+    var count=fields.length+contacts.length;
+    var row=function(x){
+      var badge=x.kind==='added'?'NEW':x.kind==='removed'?'REMOVED':'CHANGED';
+      var cls=x.kind==='added'?'bg-green-50 text-green-700 border-green-200':x.kind==='removed'?'bg-red-50 text-red-600 border-red-200':'bg-amber-50 text-amber-700 border-amber-200';
+      if(x.kind==='added'){
+        return '<div class="rounded-lg border bg-white p-3 grid md:grid-cols-[100px_150px_1fr] gap-2 items-center"><span class="px-2 py-1 rounded-md border text-[9px] font-bold '+cls+' w-fit">'+badge+'</span><b class="text-xs">'+esc(x.label)+'</b><div class="text-xs font-semibold break-words">'+esc(x.next)+'</div></div>';
+      }
+      if(x.kind==='removed'){
+        return '<div class="rounded-lg border bg-white p-3 grid md:grid-cols-[100px_150px_1fr] gap-2 items-center"><span class="px-2 py-1 rounded-md border text-[9px] font-bold '+cls+' w-fit">'+badge+'</span><b class="text-xs">'+esc(x.label)+'</b><div class="text-xs text-red-600 line-through break-words">'+esc(x.old)+'</div></div>';
+      }
+      return '<div class="rounded-lg border bg-white p-3 grid md:grid-cols-[100px_140px_1fr_28px_1fr] gap-2 items-center"><span class="px-2 py-1 rounded-md border text-[9px] font-bold '+cls+' w-fit">'+badge+'</span><b class="text-xs">'+esc(x.label)+'</b><div class="text-xs text-gray-500 break-words">'+esc(x.old)+'</div><div class="text-center text-amber-600">→</div><div class="text-xs font-semibold break-words">'+esc(x.next)+'</div></div>';
+    };
+
+    return '<details open class="md:col-span-2 rounded-xl border border-amber-200 bg-amber-50/40 overflow-hidden">'
+      +'<summary class="cursor-pointer px-4 py-3 flex items-center justify-between gap-3"><div><div class="font-bold text-sm">Sales Requested Changes</div><div class="text-[10px] text-gray-500">'+(r.request_type==='create'?'Everything below is proposed as a new customer.':'Original customer information compared with the Sales request.')+'</div></div><span class="min-w-[24px] h-[24px] px-2 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold inline-flex items-center justify-center">'+count+'</span></summary>'
+      +'<div class="border-t border-amber-100 p-4 space-y-4">'
+      +'<div><div class="text-[10px] uppercase font-bold text-gray-400 mb-2">Customer Information</div><div class="grid gap-2">'+(fields.length?fields.map(row).join(''):'<div class="rounded-lg border border-dashed p-3 text-xs text-gray-400">No customer-field changes.</div>')+'</div></div>'
+      +'<div><div class="text-[10px] uppercase font-bold text-gray-400 mb-2">Contact Changes</div><div class="grid gap-2">'+(contacts.length?contacts.map(row).join(''):'<div class="rounded-lg border border-dashed p-3 text-xs text-gray-400">No contact changes.</div>')+'</div></div>'
+      +'</div></details>';
+  }
 
   var baseNew=window.openNewCustomer;
   if(typeof baseNew==='function')window.openNewCustomer=async function(){
@@ -99,9 +181,11 @@
   }
   window.openCustomerRequestDetail=async function(id){
     try{await loadRequests()}catch(e){return showToast(e.message,'err')}var r=C.requests.find(function(x){return x.request_id===id});if(!r)return showToast('Customer request not found.','err');
-    if(!reviewer())return openModal('Customer Request','<div class="space-y-4"><div class="rounded-xl border p-4"><div class="flex gap-2 items-center"><b>'+esc(r.customer_name||'Customer')+'</b>'+statusBadge(r.status)+'</div><div class="text-xs text-gray-500 mt-2">'+esc(r.request_note||'No request note')+'</div></div><button onclick="closeModal()" class="w-full bg-[#211d18] text-white rounded-xl py-3">Close</button></div>');
+    if(!reviewer())return openModal('Customer Request','<div class="space-y-4"><div class="rounded-xl border p-4"><div class="flex gap-2 items-center"><b>'+esc(r.customer_name||'Customer')+'</b>'+statusBadge(r.status)+'</div><div class="text-xs text-gray-500 mt-2">'+esc(r.request_note||'No request note')+'</div></div>'+customerRequestChangesHtml(r)+'<button onclick="closeModal()" class="w-full bg-[#211d18] text-white rounded-xl py-3">Close</button></div>');
     var o=r.requested_customer||{},contacts=Array.isArray(r.requested_contacts)?r.requested_contacts:[],opts;try{opts=await assignmentOptions(o.assigned_sales_id||'')}catch(e){return showToast(e.message,'err')}
-    var html='<form id="reviewCustomerRequestForm" class="grid md:grid-cols-2 gap-4"><div class="md:col-span-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>'+(r.request_type==='create'?'New customer awaiting publication.':'Customer change awaiting approval.')+'</b> Requested by '+esc(r.requested_by_name||'Sales')+'. You can adjust the final information below.'+(r.request_note?'<div class="mt-2"><b>Sales note:</b> '+esc(r.request_note)+'</div>':'')+'</div>'
+    var html='<form id="reviewCustomerRequestForm" class="grid md:grid-cols-2 gap-4"><div class="md:col-span-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>'+(r.request_type==='create'?'New customer awaiting publication.':'Customer change awaiting approval.')+'</b> Requested by '+esc(r.requested_by_name||'Sales')+'.'+(r.request_note?'<div class="mt-2"><b>Sales note:</b> '+esc(r.request_note)+'</div>':'')+'</div>'
+      +customerRequestChangesHtml(r)
+      +'<div class="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800"><b>Final review draft below.</b> Sales\' requested values are prefilled. You can adjust them before approval; live customer information stays unchanged until you approve.</div>'
       +'<div><label class="text-xs font-semibold">Customer Name</label><input id="rcName" value="'+esc(o.name||'')+'" class="mt-1 w-full border rounded-xl px-3 py-2"></div><div><label class="text-xs font-semibold">Customer Code</label><input id="rcCode" value="'+esc(o.customer_code||'')+'" class="mt-1 w-full border rounded-xl px-3 py-2"></div>'
       +'<div class="md:col-span-2"><label class="text-xs font-semibold">Address</label><input id="rcAddress" value="'+esc(o.address||'')+'" class="mt-1 w-full border rounded-xl px-3 py-2"></div>'
       +'<div class="md:col-span-2"><label class="text-xs font-semibold">Assign Customer To</label><select id="rcHandler" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white">'+opts+'</select></div>'
