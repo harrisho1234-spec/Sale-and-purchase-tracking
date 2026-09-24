@@ -87,7 +87,7 @@ async function renderDashboard(){
 
   const notTaken=items.filter(x=>
     orderMap.has(x.sales_order_id)
-    && norm(x.fulfillment_status)==='ready'
+    && ['arrived','ready'].includes(norm(x.fulfillment_status))
   );
   const notTakenQty=notTaken.reduce((a,x)=>a+num(x.qty),0);
   const notTakenValue=notTaken.reduce((a,x)=>a+num(x.line_total),0);
