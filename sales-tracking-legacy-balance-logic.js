@@ -154,7 +154,7 @@
       if(moneyBlocks[0]){
         const lab=moneyBlocks[0].querySelector('.lr-money-label');
         const val=moneyBlocks[0].querySelector('.lr-money');
-        if(lab)lab.textContent=isPendingPre(o)?'Pre-Order Deposit':'Deposit Paid';
+        if(lab)lab.textContent=isPendingPre(o)?'Pre-Order Deposit':'Amount Received';
         if(val){val.textContent=money(o.amount_paid,o.currency);val.classList.remove('text-green-600','text-blue-600');val.classList.add(isPendingPre(o)?'text-blue-600':'text-green-600')}
       }
       if(moneyBlocks[1]){
@@ -166,6 +166,11 @@
           val.classList.remove('text-red-500','text-green-600','text-gray-400','text-gray-500');
           val.classList.add(isPendingPre(o)?'text-gray-400':(n(o.balance_due)>0.001?'text-red-500':'text-green-600'));
         }
+        let creditNote=moneyBlocks[1].querySelector('[data-credit-applied]');
+        if(n(o.credit_applied)>0.001){
+          if(!creditNote){creditNote=document.createElement('div');creditNote.dataset.creditApplied='1';creditNote.className='text-[9px] text-blue-600 mt-0.5';moneyBlocks[1].appendChild(creditNote)}
+          creditNote.textContent='− '+money(o.credit_applied,o.currency)+' customer credit';
+        }else if(creditNote){creditNote.remove()}
       }
       if(isPendingPre(o)&&n(o.balance_due)>0.001){
         const badges=[...card.querySelectorAll('.lr-order-main .lr-badge')];
