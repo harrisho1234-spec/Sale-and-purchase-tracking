@@ -64,7 +64,8 @@
     return '<div class="sidebar-group">'
       +'<button type="button" onclick="toggleSidebarGroup(\''+group.key+'\')" class="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[10px] uppercase tracking-[.08em] font-bold text-gray-400 hover:bg-gray-50">'
       +'<span class="w-4 text-center text-[11px]">'+group.icon+'</span>'
-      +'<span class="flex-1 text-left">'+group.label+'</span>'
+      + '<span class="flex-1 text-left">'+group.label+'</span>'
+      +(group.key==='finance'?'<span id="sidebar-finance-approval-badge" class="min-w-[19px] h-[19px] px-1 rounded-full bg-red-500 text-white text-[9px] items-center justify-center" style="display:none"></span>':'')
       +'<span id="sidebar-chevron-'+group.key+'" class="text-gray-400 text-sm">'+(open?'⌄':'›')+'</span>'
       +'</button>'
       +'<div id="sidebar-group-'+group.key+'" class="'+(open?'':'hidden ')+'ml-2 pl-2 border-l border-gray-100 space-y-0.5">'
