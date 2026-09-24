@@ -1,12 +1,13 @@
 // Bottom Add Item buttons + quantity-level item status tracking.
-// Allows one sales line (e.g. Qty 3) to have mixed statuses such as Installed 1 + Ready 2.
+// Allows one sales line (e.g. Qty 3) to have mixed statuses across the simplified five-stage fulfillment flow.
 (function(){
   const statusOptions=['ordered','production','shipping','arrived','delivered'];
   const terminalStatuses=new Set(['delivered']);
 
   function canEdit(){return ['sales','manager','admin','super_admin'].includes(state.profile?.role||'')}
   function norm(v){return String(v||'').trim().toLowerCase().replace(/[\s-]+/g,'_')}
-  function canonical(v){const s=norm(v);return s==='pending'||s==='reserved'?'ordered':s==='ready'?'arrived':s==='installed'?'delivered':s}\n  function label(v){return titleCase(canonical(v)||'Ordered')}
+  function canonical(v){const s=norm(v);return s==='pending'||s==='reserved'?'ordered':s==='ready'?'arrived':s==='installed'?'delivered':s}
+  function label(v){return titleCase(canonical(v)||'Ordered')}
   function round2(v){return Math.round((Number(v||0)+Number.EPSILON)*100)/100}
   function allOrders(){return [...(window.trackingRedesign?.salesOrders||[]),...(window.trackingRedesign?.trackingOrders||[])]}
 
@@ -56,7 +57,9 @@
   }
 
   function statusOptionsHtml(selected){
-    const current=canonical(selected);\n    const legacy=norm(selected)==='cancelled'?'<option value="cancelled" selected disabled>Cancelled (historical)</option>':'';\n    return legacy+statusOptions.map(s=>`<option value="${s}" ${current===s?'selected':''}>${label(s)}</option>`).join('');
+    const current=canonical(selected);
+    const legacy=norm(selected)==='cancelled'?'<option value="cancelled" selected disabled>Cancelled (historical)</option>':'';
+    return legacy+statusOptions.map(s=>`<option value="${s}" ${current===s?'selected':''}>${label(s)}</option>`).join('');
   }
 
   function allocationRow(a={status:'ordered',qty:1}){
