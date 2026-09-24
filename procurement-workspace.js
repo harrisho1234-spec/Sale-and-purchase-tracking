@@ -106,7 +106,7 @@
     inject();requireAdmin();
     const tabs=[['pos','Supplier POs'],['items','PO Items'],['payments','Supplier Payments'],['shipping','Shipping / ETA'],['allocations','SR Allocations']];
     let action='';
-    if(pw.tab==='pos')action=`<button onclick="openNewSupplierPO()" class="px-4 py-2 bg-[#211d18] text-white rounded-xl text-sm font-semibold">+ Supplier PO</button>`;
+    if(pw.tab==='pos')action=`<div class="flex flex-wrap gap-2 justify-end"><button onclick="openBulkPOImport()" class="px-4 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-xl text-sm font-semibold">Bulk Import Excel</button><button onclick="openNewSupplierPO()" class="px-4 py-2 bg-[#211d18] text-white rounded-xl text-sm font-semibold">+ Supplier PO</button></div>`;
     if(pw.tab==='payments')action=`<button onclick="openSupplierPayment()" class="px-4 py-2 bg-[#211d18] text-white rounded-xl text-sm font-semibold">+ Supplier Payment</button>`;
     document.getElementById('content').innerHTML=`<div class="max-w-[1500px] mx-auto"><div class="pw-tabs">${tabs.map(([v,l])=>`<button class="pw-tab ${pw.tab===v?'active':''}" onclick="setProcurementTab('${v}')">${l}</button>`).join('')}</div><div class="pw-toolbar"><div><input class="pw-search" value="${esc(pw.search)}" oninput="setProcurementSearch(this.value)" placeholder="Search PO, supplier, SKU, SR, customer..."></div><div>${action}</div></div><div id="procurementWorkspaceBody"><div class="py-16 text-center text-gray-400">Loading...</div></div></div>`;
     try{
