@@ -47,7 +47,7 @@
         const first=x.firstElementChild;
         return first&&String(first.textContent||'').trim().toLowerCase()===label.toLowerCase();
       });
-      const arCard=byLabel('Active AR');
+      const arCard=byLabel('Active AR / Net Amount Due')||byLabel('Active AR');
       if(arCard){
         const value=arCard.children[1];
         if(value){
@@ -62,7 +62,8 @@
           sub.className='text-[9px] text-gray-400 mt-0.5';
           arCard.appendChild(sub);
         }
-        sub.textContent='Before customer credit';
+        const lab=arCard.firstElementChild;if(lab)lab.textContent='Balance Before Credit';
+        sub.textContent='Invoice total less cash received';
       }
 
       const pendingCard=byLabel('Pending Pre-Order');
@@ -72,15 +73,15 @@
 
       const creditCard=document.createElement('div');
       creditCard.dataset.customerCreditCard='1';
-      creditCard.innerHTML='<div class="text-[9px] uppercase font-bold text-gray-400">Customer Credit</div>'
-        +'<div class="text-lg font-bold text-blue-600 mt-1">'+money(approvedCredit)+'</div>'
-        +'<div class="text-[9px] text-gray-400 mt-0.5">'+money(appliedCredit)+' applied'+(availableCredit>0?' · '+money(availableCredit)+' available':'')+'</div>';
+      creditCard.innerHTML='<div class="text-[9px] uppercase font-bold text-gray-400">Customer Credit Applied</div>'
+        +'<div class="text-lg font-bold text-blue-600 mt-1">−'+money(appliedCredit)+'</div>'
+        +'<div class="text-[9px] text-gray-400 mt-0.5">'+money(approvedCredit)+' approved'+(availableCredit>0?' · '+money(availableCredit)+' still available':'')+'</div>';
 
       const netCard=document.createElement('div');
       netCard.dataset.customerCreditCard='1';
-      netCard.innerHTML='<div class="text-[9px] uppercase font-bold text-gray-400">Net Amount Due</div>'
+      netCard.innerHTML='<div class="text-[9px] uppercase font-bold text-gray-400">Active AR / Net Amount Due</div>'
         +'<div class="text-lg font-bold '+(netDue>0?'text-red-500':'text-green-600')+' mt-1">'+money(netDue)+'</div>'
-        +'<div class="text-[9px] text-gray-400 mt-0.5">Active AR after applied credit</div>';
+        +'<div class="text-[9px] text-gray-400 mt-0.5">Balance before credit − customer credit applied</div>';
 
       if(arCard){
         arCard.insertAdjacentElement('afterend',creditCard);
@@ -92,7 +93,7 @@
 
       const note=[...header.querySelectorAll('div')].find(x=>String(x.textContent||'').includes('Returns reduce')&&String(x.textContent||'').includes('Received remains'));
       if(note){
-        note.innerHTML='Returns reduce <b>Net Sales</b>. Only <b>approved Customer Credit</b> reduces what the customer still owes. Received remains actual cash collected. Credit can be applied to another outstanding invoice when the returned invoice was already paid.';
+        note.innerHTML='<b>Active AR = Invoice Total − Cash Received − Approved Customer Credit Applied.</b> Received is cash only. Customer Credit is shown separately and reduces what the customer still owes.';
       }
     }
 
