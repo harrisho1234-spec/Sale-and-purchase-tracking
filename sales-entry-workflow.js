@@ -335,8 +335,20 @@
 
     if(calc.depositAmount>0){
       const note=calc.depositMode==='percent' ? `Initial deposit ${calc.depositValue}%` : 'Initial deposit amount';
-      const {error:payErr}=await db.from('sales_payments').insert({sales_order_id:so.id,amount:calc.depositAmount,payment_date:orderDate,method:document.getElementById('paymentMethod').value.trim()||'Deposit',notes:note,received_by:state.user.id});
-      if(payErr){await db.from('sales_orders').delete().eq('id',so.id);return showToast(payErr.message,'err');}
+      if(state.profile?.role==='sales'){
+        const req=await db.rpc('submit_sales_payment_request',{
+          p_order_id:so.id,
+          p_amount:calc.depositAmount,
+          p_payment_date:orderDate,
+          p_method:document.getElementById('paymentMethod').value.trim()||'Deposit',
+          p_reference_no:null,
+          p_notes:note
+        });
+        if(req.error){await db.from('sales_orders').delete().eq('id',so.id);return showToast(req.error.message,'err');}
+      }else{
+        const {error:payErr}=await db.from('sales_payments').insert({sales_order_id:so.id,amount:calc.depositAmount,payment_date:orderDate,method:document.getElementById('paymentMethod').value.trim()||'Deposit',notes:note,received_by:state.user.id});
+        if(payErr){await db.from('sales_orders').delete().eq('id',so.id);return showToast(payErr.message,'err');}
+      }
     }
 
     if(managerContextActive() && typeof recordManagerRepAction==='function'){
@@ -344,7 +356,7 @@
     }
     if(window.documentFlowState) window.documentFlowState.loaded=false;
     closeModal();
-    showToast(flow==='pre_order'?`Pre-order ${docNo} created`:`${invoiceType} invoice ${docNo} created`);
+    showToast((flow==='pre_order'?`Pre-order ${docNo} created`:`${invoiceType} invoice ${docNo} created`)+(state.profile?.role==='sales'&&calc.depositAmount>0?' · Deposit pending approval':''));
     await go('sales-orders');
   };
 
