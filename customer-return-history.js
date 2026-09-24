@@ -90,18 +90,14 @@
     const netSales=Math.max(grossSales-returnValue,0);
     const paid=visible.reduce((a,o)=>a+num(o.amount_paid),0);
 
-    // Customer-level AR: every active Return/CN offsets the customer's current collectible AR.
-    // The credit can apply even when the returned item came from an already-settled invoice.
-    const creditByOrder=new Map();
-    for(const r of validReturns){
-      if(norm(r.financial_effect)!=='credit_ar')continue;
-      creditByOrder.set(r.sales_order_id,num(creditByOrder.get(r.sales_order_id))+num(r.credit_amount));
-    }
-    const adjustedBalance=o=>Math.max(num(o.balance_due)-num(creditByOrder.get(o.id)),0);
-    const activeARBeforeReturns=visible.reduce((a,o)=>a+(!isPendingPre(o)&&!isSettled(o)?num(o.balance_due):0),0);
-    const customerReturnCredit=Math.min(returnValue,activeARBeforeReturns);
-    const activeAR=Math.max(activeARBeforeReturns-customerReturnCredit,0);
-    const pending=visible.reduce((a,o)=>a+(isPendingPre(o)&&!isSettled(o)?num(o.balance_due):0),0);
+    // Shared accounting rule:
+    // Active AR = Invoice Total - Cash Received - Approved Customer Credit Applied.
+    // sales_order_summary.balance_due already contains the approved customer-credit deduction.
+    const adjustedBalance=o=>Math.max(num(o.balance_due),0);
+    const balanceBeforeCredit=visible.reduce((a,o)=>a+(!isPendingPre(o)?num(o.gross_balance_due):0),0);
+    const customerCreditApplied=visible.reduce((a,o)=>a+(!isPendingPre(o)?num(o.credit_applied):0),0);
+    const activeAR=visible.reduce((a,o)=>a+(!isPendingPre(o)?num(o.balance_due):0),0);
+    const pending=visible.reduce((a,o)=>a+(isPendingPre(o)?num(o.balance_due):0),0);
 
     const body=document.getElementById('modalBody');
     if(!body)return;
@@ -127,16 +123,16 @@
             <div><div class="text-[9px] uppercase font-bold text-gray-400">Net Sales</div><div class="text-lg font-bold mt-1">${money(netSales)}</div></div>
             <div><div class="text-[9px] uppercase font-bold text-gray-400">Received</div><div class="text-lg font-bold text-green-600 mt-1">${money(paid)}</div></div>
             <div>
-              <div class="text-[9px] uppercase font-bold text-gray-400">Active AR</div>
+              <div class="text-[9px] uppercase font-bold text-gray-400">Active AR / Net Amount Due</div>
               <div class="text-lg font-bold ${activeAR>0?'text-red-500':'text-green-600'} mt-1">${money(activeAR)}</div>
-              ${customerReturnCredit>0?`<div class="text-[9px] text-amber-600 mt-0.5">${money(activeARBeforeReturns)} − ${money(customerReturnCredit)} return credit</div>`:'' }
+              ${customerCreditApplied>0?`<div class="text-[9px] text-blue-600 mt-0.5">${money(balanceBeforeCredit)} − ${money(customerCreditApplied)} customer credit</div>`:'' }
             </div>
             <div><div class="text-[9px] uppercase font-bold text-gray-400">Pending Pre-Order</div><div class="text-lg font-bold text-blue-600 mt-1">${money(pending)}</div></div>
           </div>
 
           ${returnValue>0?`
             <div class="mt-3 pt-3 border-t text-[10px] text-gray-500">
-              Returns reduce <b>Net Sales</b> and also act as <b>customer credit against Active AR</b>, up to the amount still owed. Received remains actual cash collected. Order-level balances remain tied to their original invoices, so customer-level AR can be lower than the sum of individual invoice balances.
+              <b>Active AR = Invoice Total − Cash Received − Approved Customer Credit Applied.</b> Received remains actual cash collected only; customer credit reduces what is owed but is not counted as cash received.
             </div>`:''}
         </div>
 
