@@ -22,7 +22,7 @@
           <div class="text-sm">${esc(p.vendor_name||x.vendor_name||'-')}<div class="text-[10px] text-gray-400">${esc(x.shipping_agent||'')}</div></div>
           <span class="lr-badge ${badge(p.status)}">${esc(titleCase(p.status||'placed'))}</span>
           <div class="text-xs">ETA: <b>${esc(dformat(p.estimated_arrival||x.estimated_arrival))}</b><div class="text-[10px] text-gray-400">Balance ${money(p.balance_due,p.currency)}</div></div>
-          <div class="flex flex-wrap justify-end gap-2"><button onclick="openEditSupplierPO('${p.id}')" class="px-3 py-2 border rounded-lg text-[10px] font-semibold">Edit / Items</button>${x.po_document_path?`<button onclick="viewPODocument('${p.id}')" class="px-3 py-2 border border-blue-200 text-blue-600 rounded-lg text-[10px] font-semibold">Document</button>`:''}</div>
+          <div class="flex flex-wrap justify-end gap-2"><button onclick="openEditSupplierPO('${p.id}')" class="px-3 py-2 border rounded-lg text-[10px] font-semibold">Edit / Items</button>${x.po_document_path?`<button onclick="viewPODocument('${p.id}')" class="px-3 py-2 border border-blue-200 text-blue-600 rounded-lg text-[10px] font-semibold">Document</button>`:''}<button onclick="deleteSupplierPO('${p.id}','${esc(x.po_number||x.po_pending_reference||'PO Pending')}')" class="px-3 py-2 border border-red-200 bg-red-50 text-red-600 rounded-lg text-[10px] font-semibold">Delete</button></div>
         </div>`}).join('')||empty('No supplier POs.')}
       </div></div>`;
   };
@@ -77,6 +77,13 @@
             </div>
             <button class="md:col-span-12 w-full bg-[#b38b2e] text-white rounded-lg py-2.5 font-semibold">+ Add PO Item</button>
           </form>
+        </div>
+
+        <div class="border-t pt-5">
+          <div class="rounded-xl border border-red-100 bg-red-50 p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div><div class="font-bold text-red-700">Delete Supplier PO</div><div class="text-[10px] text-red-600 mt-1">Admin/Super Admin only. Deletion is blocked if supplier payments or SR allocations already exist.</div></div>
+            <button type="button" onclick="deleteSupplierPO('${poId}','${esc(p.po_number||p.po_pending_reference||'PO Pending')}')" class="px-4 py-2.5 rounded-xl border border-red-200 bg-white text-red-600 text-xs font-semibold">Delete PO</button>
+          </div>
         </div>
       </div>`);
 
