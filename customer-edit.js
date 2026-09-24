@@ -7,6 +7,9 @@
   function isSalesUser(){return role()==='sales'}
   function canAssignHandler(){return ['super_admin','admin','manager'].includes(role())}
   function fmtDate(v){if(!v)return '-';const d=new Date(v);return Number.isNaN(d.getTime())?String(v):d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}
+  function norm(v=''){return String(v||'').trim().toLowerCase().replace(/[\s-]+/g,'_')}
+  function isPendingPre(o){const pre=['pre_order','mixed'].includes(norm(o?.order_type))||norm(o?.sales_flow_type)==='pre_order'||String(o?.sr_no||'').toUpperCase().startsWith('SR');return pre&&!o?.sales_invoice_no&&!o?.invoice_issued_at}
+  function isSettled(o){return norm(o?.payment_status)==='paid'||Number(o?.balance_due||0)<=0.001}
   function metaFor(id){return window._customerAssignmentMeta?.get(id)||{}}
   function handlerName(c){
     const m=metaFor(c.id);
@@ -15,7 +18,7 @@
     if(c.assigned_sales_id===state.user?.id)return state.profile?.display_name||state.user?.email||'Me';
     return c.assigned_sales_id?'Assigned':'Unassigned';
   }
-  function metricsFor(id){return window._customerSalesMetrics?.get(id)||{sales:0,paid:0,ar:0,orders:0}}
+  function metricsFor(id){return window._customerSalesMetrics?.get(id)||{sales:0,paid:0,ar:0,pending:0,orders:0}}
 
   function customerCard(c){
     const note=String(c.notes||'').trim(),m=metricsFor(c.id);
@@ -56,7 +59,7 @@
   }
 
   async function loadCustomerSalesMetrics(){
-    let q=db.from('sales_order_summary').select('customer_id,sales_rep_id,order_total,amount_paid,balance_due,status');
+    let q=db.from('sales_order_summary').select('customer_id,sales_rep_id,order_total,amount_paid,balance_due,status,payment_status,order_type,sales_flow_type,sr_no,sales_invoice_no,invoice_issued_at');
     if(isSalesUser())q=q.eq('sales_rep_id',state.user.id);
     else if(managerContext())q=q.eq('sales_rep_id',managerRepId());
     const {data,error}=await q;
@@ -64,17 +67,17 @@
     const map=new Map();
     for(const o of data||[]){
       if(String(o.status||'').toLowerCase()==='cancelled')continue;
-      const x=map.get(o.customer_id)||{sales:0,paid:0,ar:0,orders:0};
-      x.sales+=Number(o.order_total||0);x.paid+=Number(o.amount_paid||0);x.ar+=Number(o.balance_due||0);x.orders+=1;
+      const x=map.get(o.customer_id)||{sales:0,paid:0,ar:0,pending:0,orders:0};
+      x.sales+=Number(o.order_total||0);x.paid+=Number(o.amount_paid||0);if(isPendingPre(o)&&!isSettled(o))x.pending+=Number(o.balance_due||0);else if(!isSettled(o))x.ar+=Number(o.balance_due||0);x.orders+=1;
       map.set(o.customer_id,x);
     }
     window._customerSalesMetrics=map;
   }
 
   function portfolioTotals(){
-    let sales=0,paid=0,ar=0,orders=0;
-    for(const c of state.customers||[]){const m=metricsFor(c.id);sales+=m.sales;paid+=m.paid;ar+=m.ar;orders+=m.orders;}
-    return {sales,paid,ar,orders};
+    let sales=0,paid=0,ar=0,pending=0,orders=0;
+    for(const c of state.customers||[]){const m=metricsFor(c.id);sales+=m.sales;paid+=m.paid;ar+=m.ar;pending+=Number(m.pending||0);orders+=m.orders;}
+    return {sales,paid,ar,pending,orders};
   }
 
   window.renderCustomers=async function(){
@@ -94,7 +97,7 @@
         ${kpi(label,state.customers.length,'Assigned customer profiles')}
         ${kpi('Sales',money(t.sales),`${t.orders} visible order${t.orders===1?'':'s'}`)}
         ${kpi('Amount Received',money(t.paid),'Customer payments','text-green-600')}
-        ${kpi('AR / Balance',money(t.ar),'Outstanding customer balance','text-red-600')}
+        ${kpi('Active Balance Due (AR)',money(t.ar),t.pending>0?'Pending pre-orders: '+money(t.pending):'Current collectible customer balance','text-red-600')}
       </div>
       <div class="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between mb-4">
         <input id="customerSearch" oninput="filterCustomerRows()" class="border rounded-xl px-4 py-3 w-full max-w-xl bg-white" placeholder="Search customer, phone, handler, note...">
