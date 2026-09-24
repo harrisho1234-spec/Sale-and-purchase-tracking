@@ -350,7 +350,7 @@
     const open = ui.salesExpanded.has(o.id);
     const items = o.items||[];
     return `
-      <div class="lr-order-card">
+      <div class="lr-order-card" id="sales-order-${o.id}">
         <div class="lr-order-main">
           <div class="min-w-0 flex gap-3">
             <button onclick="toggleSalesInvoice('${o.id}')" class="shrink-0 w-9 h-9 rounded-lg border bg-[#fffdf9] flex items-center justify-center text-[#b3871e]">▤</button>
