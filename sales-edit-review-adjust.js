@@ -19,17 +19,18 @@
   }
   function itemRow(i){
     i=i||{};var service=i.line_kind==='service',p=prot(i),warn='';
+    var lineQty=n(i.qty)||1,linePrice=n(i.unit_price),lineDisc=n(i.discount_amount),lineGross=lineQty*linePrice,linePct=lineGross?Math.round((lineDisc/lineGross*100)*100)/100:0;
     if(p.returned>0)warn+='<div class="text-[10px] text-amber-800">Return/CN: '+p.returned+' already returned'+(p.cn?' · '+esc(p.cn):'')+'. Final qty cannot be below this.</div>';
     if(p.allocated>0){var pos=[...new Set(p.refs.map(function(x){return x.po_number||'PO Pending'}))].join(', ');warn+='<div class="text-[10px] text-blue-700">PO linked: '+p.allocated+' allocated'+(pos?' · '+esc(pos):'')+'. Conflicting PO allocations are unlinked automatically on approval.</div>'}
-    return '<div class="review-edit-item rounded-xl border bg-white p-3" data-id="'+esc(i.id||'')+'" data-kind="'+(service?'service':'product')+'">'
+    return '<div class="review-edit-item rounded-xl border bg-white p-3" data-id="'+esc(i.id||'')+'" data-kind="'+(service?'service':'product')+'" data-discount-basis="amount">'
       +'<div class="grid md:grid-cols-12 gap-2 items-end">'
       +'<div class="md:col-span-5"><label class="text-[9px] uppercase font-bold text-gray-400">'+(service?'Service / Fee':'Product')+'</label>'
       +(service?'<input class="r-name mt-1 w-full border rounded-lg px-3 py-2" value="'+esc(i.item_name_snapshot||'Service Fee')+'"><input class="r-code" type="hidden" value="'+esc(i.product_code_snapshot||'SERVICE-FEE')+'"><input class="r-pid" type="hidden" value=""><input class="r-img" type="hidden" value=""><input class="r-class" type="hidden" value="'+esc(i.product_class_snapshot||'Service Fee')+'"><input class="r-type" type="hidden" value="Service">'
         :'<select class="r-product mt-1 w-full border rounded-lg px-2 py-2 bg-white" onchange="reviewProductSelected(this)">'+prodOptions(i.product_id||'')+'</select><input class="r-name" type="hidden" value="'+esc(i.item_name_snapshot||'')+'"><input class="r-code" type="hidden" value="'+esc(i.product_code_snapshot||'')+'"><input class="r-pid" type="hidden" value="'+esc(i.product_id||'')+'">')
       +(warn?'<div class="mt-2 rounded-lg border bg-gray-50 p-2 space-y-1">'+warn+'</div>':'')+'</div>'
-      +'<div class="md:col-span-2"><label class="text-[9px] uppercase font-bold text-gray-400">Qty</label><input class="r-qty mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0.01" step="0.01" value="'+(n(i.qty)||1)+'" oninput="reviewRecalc()"></div>'
-      +'<div class="md:col-span-2"><label class="text-[9px] uppercase font-bold text-gray-400">Unit Price</label><input class="r-price mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="'+n(i.unit_price)+'" oninput="reviewRecalc()"></div>'
-      +'<div class="md:col-span-2"><label class="text-[9px] uppercase font-bold text-gray-400">Discount</label><input class="r-disc mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="'+n(i.discount_amount)+'" oninput="reviewRecalc()"></div>'
+      +'<div class="md:col-span-1"><label class="text-[9px] uppercase font-bold text-gray-400">Qty</label><input class="r-qty mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0.01" step="0.01" value="'+(n(i.qty)||1)+'" oninput="reviewLineValueChanged(this)"></div>'
+      +'<div class="md:col-span-2"><label class="text-[9px] uppercase font-bold text-gray-400">Unit Price</label><input class="r-price mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="'+n(i.unit_price)+'" oninput="reviewLineValueChanged(this)"></div>'
+      +'<div class="md:col-span-3"><label class="text-[9px] uppercase font-bold text-gray-400">Line Discount</label><div class="grid grid-cols-2 gap-1 mt-1"><div><div class="text-[9px] text-gray-400 mb-0.5">%</div><input class="r-disc-pct w-full border rounded-lg px-2 py-2" type="number" min="0" max="100" step="0.01" value="'+linePct+'" oninput="reviewLineDiscountPercentChanged(this)"></div><div><div class="text-[9px] text-gray-400 mb-0.5">Amount</div><input class="r-disc w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="'+lineDisc+'" oninput="reviewLineDiscountAmountChanged(this)"></div></div></div>'
       +'<div class="md:col-span-1"><button type="button" onclick="this.closest(\'.review-edit-item\').remove();reviewRecalc()" class="w-full h-[38px] border rounded-lg text-red-500 font-bold">×</button></div>'
       +'</div></div>';
   }
@@ -42,10 +43,31 @@
     row.querySelector('.r-class').value=opt.dataset.class||'';
     row.querySelector('.r-type').value=opt.dataset.class?(/chandelier|lamp|lighting/i.test(opt.dataset.class)?'Lighting':/carpet|rug/i.test(opt.dataset.class)?'Carpet':/accessor|mirror|decor|vase/i.test(opt.dataset.class)?'Accessories':'Furniture'):'Unclassified';
   };
+  function syncReviewLineDiscount(row,basis){
+    if(!row)return;
+    if(basis)row.dataset.discountBasis=basis;
+    var qty=Math.max(n(row.querySelector('.r-qty')&&row.querySelector('.r-qty').value),0);
+    var price=Math.max(n(row.querySelector('.r-price')&&row.querySelector('.r-price').value),0);
+    var gross=Math.round(qty*price*100)/100;
+    var pct=row.querySelector('.r-disc-pct'),amt=row.querySelector('.r-disc');
+    if(!pct||!amt)return;
+    if((row.dataset.discountBasis||'amount')==='percent'){
+      var p=Math.max(0,Math.min(100,n(pct.value)));
+      pct.value=String(Math.round(p*100)/100);
+      amt.value=String(Math.round(gross*p)/100);
+    }else{
+      var a=Math.max(0,Math.min(gross,n(amt.value)));
+      amt.value=String(Math.round(a*100)/100);
+      pct.value=String(gross?Math.round((a/gross*100)*100)/100:0);
+    }
+  }
+  window.reviewLineDiscountPercentChanged=function(input){var row=input.closest('.review-edit-item');syncReviewLineDiscount(row,'percent');reviewRecalc()};
+  window.reviewLineDiscountAmountChanged=function(input){var row=input.closest('.review-edit-item');syncReviewLineDiscount(row,'amount');reviewRecalc()};
+  window.reviewLineValueChanged=function(input){var row=input.closest('.review-edit-item');syncReviewLineDiscount(row);reviewRecalc()};
   window.addReviewProduct=function(){var x=document.getElementById('reviewItems');if(x)x.insertAdjacentHTML('beforeend',itemRow({line_kind:'product',qty:1,unit_price:0,discount_amount:0}))};
   window.addReviewService=function(){var x=document.getElementById('reviewItems');if(x)x.insertAdjacentHTML('beforeend',itemRow({line_kind:'service',product_code_snapshot:'SERVICE-FEE',item_name_snapshot:'Service Fee',qty:1,unit_price:0,discount_amount:0}))};
   window.reviewRecalc=function(){
-    var sub=0;document.querySelectorAll('#reviewItems .review-edit-item').forEach(function(r){sub+=Math.max(n(r.querySelector('.r-qty').value)*n(r.querySelector('.r-price').value)-n(r.querySelector('.r-disc').value),0)});
+    var sub=0;document.querySelectorAll('#reviewItems .review-edit-item').forEach(function(r){syncReviewLineDiscount(r);sub+=Math.max(n(r.querySelector('.r-qty').value)*n(r.querySelector('.r-price').value)-n(r.querySelector('.r-disc').value),0)});
     var d=Math.max(0,Math.min(sub,n(document.getElementById('reviewDiscount')&&document.getElementById('reviewDiscount').value))),total=Math.max(sub-d,0),bal=Math.max(total-R.paid,0);
     [['reviewSub',sub],['reviewDisc',d],['reviewTotal',total],['reviewPaid',R.paid],['reviewBal',bal]].forEach(function(x){var e=document.getElementById(x[0]);if(e)e.textContent=money(x[1])});
   };
