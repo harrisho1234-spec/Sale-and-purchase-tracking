@@ -88,7 +88,7 @@
     }
 
     const poBadges=pos.length?pos.map(p=>`<span class="lr-badge lr-badge-blue">${esc(p.no)} · ${esc(titleCase(p.status||'placed'))}${p.eta?' · '+esc(fmtDate(p.eta)):''}</span>`).join(' '):'<span class="text-[10px] text-gray-400">No supplier PO linked yet.</span>';
-    const controls=[];
+    const controls=[`<button onclick="openDocumentFlowDetails('${o.id}')" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">View Details</button>`];
     if(pre&&isAdminRole())controls.push(`<button onclick="openLinkPOItems('${o.id}')" class="px-3 py-2 rounded-lg border text-xs font-semibold">Link PO Items</button>`);
     if(pre&&!issued&&arrived&&canRequestInvoice()&&o.invoice_request_status!=='requested')controls.push(`<button onclick="openInvoiceRequest('${o.id}')" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs font-semibold">Request TK/RK</button>`);
     if(pre&&!issued&&isAdminRole()&&(requested||arrived))controls.push(`<button onclick="openIssueFinalInvoice('${o.id}')" class="px-3 py-2 rounded-lg bg-[#b38b2e] text-white text-xs font-semibold">Issue TK/RK</button>`);
@@ -121,6 +121,186 @@
   if(baseRenderSalesBody){window.renderSalesTrackingBody=function(){baseRenderSalesBody();setTimeout(enhanceSalesCards,0)}}
   const baseRenderSalesOrders=window.renderSalesOrders;
   if(baseRenderSalesOrders){window.renderSalesOrders=async function(){await baseRenderSalesOrders();await refreshFlowData(true);enhanceSalesCards()}}
+
+  window.openDocumentFlowDetails=async function(orderId){
+    openModal('Order Flow Details','<div class="py-10 text-center text-sm text-gray-400">Loading order details...</div>');
+    try{
+      const [sr,or,rr,er]=await Promise.all([
+        db.from('sales_order_summary').select('*').eq('id',orderId).single(),
+        db.from('sales_orders').select(`
+          *,
+          customers(id,name,customer_code,phone,address),
+          sales_order_items(
+            id,product_id,product_code_snapshot,item_name_snapshot,image_url_snapshot,
+            qty,unit_price,discount_amount,line_total,source_type,fulfillment_status,
+            notes,product_class_snapshot,product_type_snapshot,line_kind,created_at
+          )
+        `).eq('id',orderId).single(),
+        db.rpc('get_visible_sales_procurement_refs'),
+        db.from('sales_document_events').select('*').eq('sales_order_id',orderId).order('created_at',{ascending:true})
+      ]);
+      if(sr.error)throw sr.error;
+      if(or.error)throw or.error;
+      if(rr.error)throw rr.error;
+      if(er.error)console.warn('Document event detail:',er.error.message);
+
+      const s=sr.data||{};
+      const o={...s,...(or.data||{})};
+      const customer=o.customers||{};
+      const items=o.sales_order_items||[];
+      const refs=(rr.data||[]).filter(x=>x.sales_order_id===orderId);
+      const events=er.data||[];
+      const pre=isPre(o);
+      const finalNo=o.sales_invoice_no||o.invoice_no||null;
+      const invoiceRequested=o.invoice_request_status==='requested'||!!finalNo;
+
+      const refsByItem=new Map();
+      for(const r of refs){
+        if(!refsByItem.has(r.sales_order_item_id))refsByItem.set(r.sales_order_item_id,[]);
+        refsByItem.get(r.sales_order_item_id).push(r);
+      }
+
+      const poMap=new Map();
+      for(const r of refs){
+        const key=r.po_number||'PO Pending';
+        if(!poMap.has(key))poMap.set(key,{no:key,status:r.po_status||'pending',eta:r.estimated_arrival,qty:0});
+        poMap.get(key).qty+=Number(r.qty_allocated||0);
+      }
+      const pos=[...poMap.values()];
+
+      const itemRows=items.map(i=>{
+        const links=refsByItem.get(i.id)||[];
+        const poText=links.length
+          ?links.map(r=>`<span class="inline-flex px-2 py-1 rounded-lg border border-blue-100 bg-blue-50 text-blue-700 text-[9px] font-bold">${esc(r.po_number||'PO Pending')} · Qty ${Number(r.qty_allocated||0)} · ${esc(titleCase(r.po_status||'pending'))}${r.estimated_arrival?' · ETA '+esc(fmtDate(r.estimated_arrival)):''}</span>`).join(' ')
+          :'<span class="text-[10px] text-gray-400">Not linked to supplier PO</span>';
+        return `<div class="rounded-xl border bg-white p-3">
+          <div class="grid md:grid-cols-[minmax(0,1fr)_80px_110px_110px] gap-3 items-start">
+            <div class="min-w-0">
+              <div class="flex flex-wrap items-center gap-2">
+                <b class="text-sm">${esc(i.product_code_snapshot||'No Code')}</b>
+                <span class="lr-badge lr-badge-gray">${esc(titleCase(i.fulfillment_status||'pending'))}</span>
+              </div>
+              <div class="text-xs text-gray-600 mt-1">${esc(i.item_name_snapshot||'Item')}</div>
+              ${i.notes?`<div class="text-[10px] text-gray-400 mt-1">${esc(i.notes)}</div>`:''}
+              <div class="flex flex-wrap gap-1 mt-2">${poText}</div>
+            </div>
+            <div class="text-right">
+              <div class="text-[9px] uppercase font-bold text-gray-400">Qty</div>
+              <div class="font-bold mt-1">${Number(i.qty||0)}</div>
+            </div>
+            <div class="text-right">
+              <div class="text-[9px] uppercase font-bold text-gray-400">Unit Price</div>
+              <div class="font-bold mt-1">${money(i.unit_price,o.currency)}</div>
+              ${Number(i.discount_amount||0)>0?`<div class="text-[9px] text-amber-600 mt-1">Discount ${money(i.discount_amount,o.currency)}</div>`:''}
+            </div>
+            <div class="text-right">
+              <div class="text-[9px] uppercase font-bold text-gray-400">Line Total</div>
+              <div class="font-bold mt-1">${money(i.line_total,o.currency)}</div>
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+
+      const poRows=pos.length?pos.map(p=>`<div class="rounded-xl border bg-white p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div>
+          <div class="flex flex-wrap items-center gap-2">
+            <b>${esc(p.no)}</b>
+            <span class="lr-badge ${['arrived','completed'].includes(norm(p.status))?'lr-badge-green':norm(p.status)==='shipping'?'lr-badge-blue':norm(p.status)==='production'?'lr-badge-amber':'lr-badge-gray'}">${esc(titleCase(p.status||'pending'))}</span>
+          </div>
+          <div class="text-[10px] text-gray-400 mt-1">Allocated Qty: ${Number(p.qty||0)}</div>
+        </div>
+        <div class="text-right">
+          <div class="text-[9px] uppercase font-bold text-gray-400">ETA</div>
+          <div class="text-sm font-semibold mt-1">${esc(fmtDate(p.eta))}</div>
+        </div>
+      </div>`).join(''):'<div class="rounded-xl border border-dashed p-5 text-center text-sm text-gray-400">No supplier PO linked yet.</div>';
+
+      const eventRows=events.length?events.slice().reverse().map(e=>`<div class="flex items-start justify-between gap-4 py-2 border-b last:border-b-0">
+        <div><div class="text-xs font-semibold">${esc(titleCase(e.event_type||'Activity'))}</div>${e.note?`<div class="text-[10px] text-gray-500 mt-1">${esc(e.note)}</div>`:''}</div>
+        <div class="text-[10px] text-gray-400 whitespace-nowrap">${esc(fmtDate(String(e.created_at||'').slice(0,10)))}</div>
+      </div>`).join(''):'<div class="text-sm text-gray-400">No document activity recorded yet.</div>';
+
+      const body=document.getElementById('modalBody');
+      if(!body)return;
+      body.innerHTML=`
+        <div class="space-y-5">
+          <div class="rounded-2xl border bg-[#faf9f6] p-4">
+            <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+              <div>
+                <div class="text-[10px] uppercase tracking-wider font-extrabold text-[#a77d1a]">${pre?'Pre-Order / SR':'Stock Sale'}</div>
+                <div class="text-xl font-bold mt-1">${esc(o.customer_name||customer.name||'Customer')}</div>
+                <div class="text-xs text-gray-500 mt-1">
+                  ${customer.customer_code?esc(customer.customer_code)+' · ':''}
+                  ${customer.phone?esc(customer.phone)+' · ':''}
+                  ${esc(customer.address||'')}
+                </div>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <span class="lr-badge lr-badge-amber">${esc(o.sr_no||o.order_no||'SR')}</span>
+                ${finalNo?`<span class="lr-badge lr-badge-green">${esc(finalNo)}</span>`:'<span class="lr-badge lr-badge-gray">TK/RK Pending</span>'}
+              </div>
+            </div>
+
+            <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
+              <div><div class="text-[9px] uppercase font-bold text-gray-400">Order Date</div><div class="font-semibold mt-1">${esc(fmtDate(o.order_date))}</div></div>
+              <div><div class="text-[9px] uppercase font-bold text-gray-400">Sales Rep</div><div class="font-semibold mt-1">${esc(o.sales_rep_name_snapshot||'—')}</div></div>
+              <div><div class="text-[9px] uppercase font-bold text-gray-400">Order Status</div><div class="font-semibold mt-1">${esc(titleCase(o.status||'confirmed'))}</div></div>
+              <div><div class="text-[9px] uppercase font-bold text-gray-400">Invoice Status</div><div class="font-semibold mt-1">${finalNo?'Issued':invoiceRequested?'Requested':'Not Requested'}</div></div>
+            </div>
+          </div>
+
+          <div class="grid sm:grid-cols-3 gap-3">
+            <div class="rounded-xl border p-4"><div class="text-[9px] uppercase font-bold text-gray-400">Order Total</div><div class="text-xl font-bold mt-1">${money(o.order_total,o.currency)}</div></div>
+            <div class="rounded-xl border p-4"><div class="text-[9px] uppercase font-bold text-gray-400">Deposit / Paid</div><div class="text-xl font-bold text-green-600 mt-1">${money(o.amount_paid,o.currency)}</div></div>
+            <div class="rounded-xl border p-4"><div class="text-[9px] uppercase font-bold text-gray-400">${pre&&!finalNo?'Pending Balance':'Balance Due'}</div><div class="text-xl font-bold ${Number(o.balance_due||0)>0?'text-red-500':'text-green-600'} mt-1">${money(o.balance_due,o.currency)}</div></div>
+          </div>
+
+          <div>
+            <div class="flex items-center justify-between gap-3 mb-2">
+              <h4 class="font-bold">Ordered Items</h4>
+              <span class="text-[10px] text-gray-400">${items.length} line${items.length===1?'':'s'}</span>
+            </div>
+            <div class="grid gap-2">${itemRows||'<div class="rounded-xl border border-dashed p-5 text-center text-sm text-gray-400">No item details found.</div>'}</div>
+          </div>
+
+          <div>
+            <div class="flex items-center justify-between gap-3 mb-2">
+              <h4 class="font-bold">Linked Supplier PO</h4>
+              <span class="text-[10px] text-gray-400">${pos.length} PO${pos.length===1?'':'s'}</span>
+            </div>
+            <div class="grid gap-2">${poRows}</div>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-3">
+            <div class="rounded-xl border p-4">
+              <div class="text-[9px] uppercase font-bold text-gray-400">SR / Pre-Order</div>
+              <div class="font-bold mt-1">${esc(o.sr_no||o.order_no||'-')}</div>
+              <div class="text-[10px] text-gray-500 mt-2">Created ${esc(fmtDate(o.order_date))}</div>
+            </div>
+            <div class="rounded-xl border p-4">
+              <div class="text-[9px] uppercase font-bold text-gray-400">Final TK / RK</div>
+              <div class="font-bold mt-1">${esc(finalNo||'Pending')}</div>
+              <div class="text-[10px] text-gray-500 mt-2">${o.invoice_issued_at?'Issued '+esc(fmtDate(String(o.invoice_issued_at).slice(0,10))):invoiceRequested?'Invoice requested':'Not issued yet'}</div>
+            </div>
+          </div>
+
+          ${o.notes?`<div class="rounded-xl border bg-gray-50 p-4"><div class="text-[9px] uppercase font-bold text-gray-400">Order Notes</div><div class="text-sm mt-1">${esc(o.notes)}</div></div>`:''}
+
+          <div>
+            <h4 class="font-bold mb-2">Document Activity</h4>
+            <div class="rounded-xl border px-4">${eventRows}</div>
+          </div>
+
+          <div class="flex flex-wrap justify-end gap-2 border-t pt-4">
+            ${pre&&isAdminRole()?`<button onclick="closeModal();openLinkPOItems('${orderId}')" class="px-4 py-2.5 rounded-xl border text-xs font-semibold">Link / Review PO Items</button>`:''}
+            <button onclick="closeModal()" class="px-4 py-2.5 rounded-xl bg-[#211d18] text-white text-xs font-semibold">Close</button>
+          </div>
+        </div>`;
+    }catch(err){
+      const body=document.getElementById('modalBody');
+      if(body)body.innerHTML=`<div class="rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-600">Could not load details: ${esc(err.message||'Unknown error')}</div>`;
+    }
+  };
 
   window.openInvoiceRequest=function(orderId){
     openModal('Request Final TK/RK Invoice',`<form id="invoiceRequestForm" class="space-y-4"><div class="rounded-xl bg-amber-50 border border-amber-100 p-3 text-xs text-amber-800">This marks the arrived SR as ready for Accounting to issue the final TK or RK invoice.</div><div><label class="text-xs font-semibold">Note to Accounting</label><textarea id="invoiceRequestNote" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Optional note"></textarea></div><button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Send Invoice Request</button></form>`);
