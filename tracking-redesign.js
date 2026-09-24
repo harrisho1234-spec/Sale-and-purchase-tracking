@@ -288,7 +288,7 @@
     if(status==='active') return cleanStatus(o.status)!=='cancelled';
     if(status==='uncleared') return Number(o.balance_due||0)>0 && cleanStatus(o.status)!=='cancelled';
     if(status==='preorder') return ['pre_order','mixed'].includes(cleanStatus(o.order_type)) && cleanStatus(o.status)!=='cancelled';
-    if(status==='not_taken') return items.some(i=>cleanStatus(i.fulfillment_status)==='ready');
+    if(status==='not_taken') return items.some(i=>['arrived','ready'].includes(cleanStatus(i.fulfillment_status)));
     if(status==='taken_unpaid') return Number(o.balance_due||0)>0 && items.some(i=>cleanStatus(i.fulfillment_status)==='delivered');
     if(status==='settled') return cleanStatus(o.payment_status)==='paid';
     return true;
@@ -329,7 +329,7 @@
     const paid = active.reduce((a,o)=>a+Number(o.amount_paid||0),0);
     const balance = active.reduce((a,o)=>a+Number(o.balance_due||0),0);
     const uncleared = active.filter(o=>Number(o.balance_due||0)>0);
-    const readyItems = active.flatMap(o=>(o.items||[]).filter(i=>cleanStatus(i.fulfillment_status)==='ready'));
+    const readyItems = active.flatMap(o=>(o.items||[]).filter(i=>['arrived','ready'].includes(cleanStatus(i.fulfillment_status))));
     const readyQty = readyItems.reduce((a,i)=>a+Number(i.qty||0),0);
     const readyValue = readyItems.reduce((a,i)=>a+Number(i.line_total||0),0);
     const pre = active.filter(o=>['pre_order','mixed'].includes(cleanStatus(o.order_type)));
@@ -414,7 +414,7 @@
           <b>${esc(o.invoice_no||o.order_no||'Order')}</b>
           <span class="font-bold">${Number(i.qty||0)}x</span>
           <span class="lr-badge lr-badge-gray">${esc(i.product_code_snapshot||'No Code')}</span>
-          <span class="lr-badge ${cleanStatus(i.fulfillment_status)==='delivered'?'lr-badge-green':cleanStatus(i.fulfillment_status)==='ready'?'lr-badge-blue':'lr-badge-amber'}">${esc(titleCase(i.fulfillment_status||'ordered'))}</span>
+          <span class="lr-badge ${cleanStatus(i.fulfillment_status)==='delivered'?'lr-badge-green':['arrived','ready'].includes(cleanStatus(i.fulfillment_status))?'lr-badge-blue':'lr-badge-amber'}">${esc(titleCase(i.fulfillment_status||'ordered'))}</span>
           ${returnBadge(i)}
         </div>
         <div class="text-sm font-semibold mt-1">${esc(i.item_name_snapshot||i.product_catalog?.item_name||'Item')}</div>
@@ -434,7 +434,7 @@ function invoiceAdminStatusOptions(selected) {
 }
 
 function invoiceAdminFulfillmentOptions(selected) {
-  const values=['pending','reserved','ordered','production','shipping','arrived','ready','delivered','installed','cancelled'];
+  const values=['ordered','production','shipping','arrived','delivered'];
   return values.map(v=>`<option value="${v}" ${cleanStatus(selected)===v?'selected':''}>${esc(titleCase(v))}</option>`).join('');
 }
 
@@ -580,7 +580,7 @@ async function saveSuperAdminInvoiceEdit(e,id) {
     unit_price:Number(row.querySelector('.invoice-admin-price')?.value||0),
     discount_amount:Number(row.querySelector('.invoice-admin-discount')?.value||0),
     source_type:row.querySelector('.invoice-admin-source')?.value||'stock',
-    fulfillment_status:row.querySelector('.invoice-admin-fulfillment')?.value||'pending',
+    fulfillment_status:row.querySelector('.invoice-admin-fulfillment')?.value||'ordered',
     notes:row.querySelector('.invoice-admin-item-notes')?.value||''
   }));
 
