@@ -104,7 +104,7 @@
         <button onclick="openNewCustomer()" class="px-4 py-3 bg-[#211d18] text-white rounded-xl text-sm font-semibold whitespace-nowrap">+ Customer</button>
       </div>
       <div class="hidden lg:grid grid-cols-[1.15fr_.9fr_1fr_.85fr_.72fr_.72fr_.72fr_1.1fr_auto] gap-4 px-4 pb-2 text-[9px] uppercase tracking-wide font-bold text-gray-400">
-        <div>Customer</div><div>Contact</div><div>Address</div><div>Handled By</div><div>Sales</div><div>Received</div><div>AR</div><div>Note</div><div></div>
+        <div>Customer</div><div>Contact</div><div>Address</div><div>Handled By</div><div>Sales</div><div>Received</div><div>Active AR</div><div>Note</div><div></div>
       </div>
       <div id="customerRows" class="grid gap-2"></div>`;
     renderCustomerEditRows(state.customers);
@@ -128,7 +128,7 @@
           <div><div class="text-[9px] uppercase font-bold text-gray-400">Current Handler</div><div class="text-sm font-semibold mt-1">${esc(handlerName(c))}</div></div>
           <div><div class="text-[9px] uppercase font-bold text-gray-400">Sales</div><div class="text-sm font-semibold mt-1">${money(m.sales)}</div></div>
           <div><div class="text-[9px] uppercase font-bold text-gray-400">Received</div><div class="text-sm font-semibold text-green-600 mt-1">${money(m.paid)}</div></div>
-          <div><div class="text-[9px] uppercase font-bold text-gray-400">AR</div><div class="text-sm font-semibold ${m.ar>0?'text-red-500':'text-green-600'} mt-1">${money(m.ar)}</div></div>
+          <div><div class="text-[9px] uppercase font-bold text-gray-400">Active AR</div><div class="text-sm font-semibold ${m.ar>0?'text-red-500':'text-green-600'} mt-1">${money(m.ar)}</div>${m.pending>0?`<div class="text-[9px] text-blue-500 mt-0.5">+${money(m.pending)} pending pre-order</div>`:''}</div>
         </div>
         <div><label class="text-xs font-semibold">Customer Name</label><input id="editCustomerName" required value="${esc(c.name||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
         <div><label class="text-xs font-semibold">Customer Code</label><input id="editCustomerCode" value="${esc(c.customer_code||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Optional"></div>
