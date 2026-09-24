@@ -81,7 +81,7 @@
     if(!canAssignHandler())return '';
     const {data,error}=await db.from('app_users').select('user_id,display_name,email,role,active').in('role',['sales','manager']).eq('active',true).order('role').order('display_name');
     if(error)return '<option value="">Unassigned</option>';
-    return `<option value="">Unassigned</option>${(data||[]).map(u=>`<option value="${u.user_id}" ${u.user_id===selected?'selected':''}>${esc(u.display_name||u.email)} — ${u.role==='sales'?'Sales':'Manager'}</option>`).join('')}`;
+    return `<option value="">Unassigned</option>${(data||[]).map(u=>`<option value="${u.user_id}" ${u.user_id===selected?'selected':''}>${esc(u.display_name||u.email)} — ${u.role==='sales'?'Sales':(u.user_id===state.user?.id?'Manager (Me)':'Manager')}</option>`).join('')}`;
   }
   function effectiveHandler(){if(role()==='sales')return state.user.id;if(role()==='manager'&&managerContext())return managerRepId();return null}
 
@@ -91,8 +91,8 @@
       <div><label class="text-xs font-semibold">Customer Name</label><input id="mcName" required class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Customer name"></div>
       <div><label class="text-xs font-semibold">Customer Code</label><input id="mcCode" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Optional"></div>
       <div class="md:col-span-2"><label class="text-xs font-semibold">Address</label><input id="mcAddress" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Address"></div>
-      ${(['super_admin','admin'].includes(role())&&!fixed)
-        ?`<div class="md:col-span-2"><label class="text-xs font-semibold">Handled By / Assigned Sales</label><select id="mcHandler" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${opts}</select><div class="text-[10px] text-gray-400 mt-1">Optional. Leave Unassigned and assign later if preferred.</div></div>`
+      ${(canAssignHandler()&&!fixed)
+        ?`<div class="md:col-span-2"><label class="text-xs font-semibold">Assign Customer To</label><select id="mcHandler" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${opts}</select><div class="text-[10px] text-gray-400 mt-1">${role()==='manager'?'Optional — leave Unassigned, choose a Sales Rep, or choose yourself as Manager.':'Optional. Leave Unassigned and assign later if preferred.'}</div></div>`
         :`<div class="md:col-span-2 rounded-xl border bg-gray-50 px-4 py-3 text-xs text-gray-600">
             Handled by: <b>${esc(role()==='sales'
               ?(state.profile?.display_name||state.user?.email||'You')
@@ -116,7 +116,13 @@
     if(contacts.length){const ci=await db.from('customer_contacts').insert(contacts.map((x,i)=>({...x,customer_id:cr.data.id,is_primary:i===0,created_by:state.user.id})));if(ci.error)return showToast(`Customer saved, but contacts could not be saved: ${ci.error.message}`,'err');}
     if(role()==='manager'&&managerContext()&&typeof recordManagerRepAction==='function')await recordManagerRepAction('create_customer','customer',cr.data.id,{customer_name:row.name});
     closeModal();
-    if(role()==='manager'&&!managerContext())showToast('Customer added as Unassigned — assign a Sales Rep from Edit Customer');
+    if(role()==='manager'&&!managerContext()){
+      const selected=document.getElementById('mcHandler');
+      const selectedText=handler&&selected?.selectedOptions?.[0]?.textContent?.trim();
+      if(handler===state.user.id)showToast('Customer added and assigned to you');
+      else if(handler)showToast(`Customer added and assigned to ${selectedText||'selected Sales Rep'}`);
+      else showToast('Customer added as Unassigned');
+    }
     else if(role()==='manager'&&managerContext())showToast(`Customer added and assigned to ${managerRepName()}`);
     else showToast('Customer added');
     await go('customers');
