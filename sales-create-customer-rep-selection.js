@@ -1,4 +1,4 @@
-// New-sale safety: start with no customer selected, and let Super Admin choose the Sales Rep.
+// New-sale safety: start with no customer selected, and let Manager/Admin/Super Admin assign the Sales Rep.
 // Loaded last so it preserves all existing create-sale enhancements.
 (function(){
   const baseOpenNewOrder=window.openNewOrder;
@@ -34,19 +34,28 @@
     return {subtotal:round2(subtotal),orderDiscount:round2(orderDiscount),total:round2(total),depositMode,depositValue:round2(depositValue),depositAmount};
   }
 
+  function canChooseRep(){
+    return ['manager','admin','super_admin'].includes(state.profile?.role||'');
+  }
+
   async function getAssignableReps(){
-    const r=await db.from('app_users').select('user_id,email,display_name,role,active').in('role',['sales','manager']).eq('active',true).order('role').order('display_name');
+    const r=await db.from('app_users')
+      .select('user_id,email,display_name,role,active')
+      .in('role',['sales','manager','admin','super_admin'])
+      .eq('active',true)
+      .order('role')
+      .order('display_name');
     if(r.error)throw r.error;
-    return r.data||[];
+    const currentId=state.user?.id||'';
+    return (r.data||[]).filter(u=>['sales','manager'].includes(u.role)||u.user_id===currentId);
   }
 
   function selectedRep(){
-    if(state.profile?.role==='super_admin'){
+    if(canChooseRep()){
       const sel=document.getElementById('createOrderSalesRep');
       const opt=sel?.selectedOptions?.[0];
       return {id:sel?.value||'',name:opt?.dataset?.name||opt?.textContent||''};
     }
-    if(managerContextActive())return {id:managerRepId(),name:managerRepName()};
     return {id:state.user.id,name:state.profile?.display_name||state.user?.email||''};
   }
 
@@ -131,7 +140,7 @@
         unit_price:Number(String(r.querySelector('.unit-price').value||0).replace(',','.')),
         discount_amount:Number(r.querySelector('.line-discount').value||0),
         source_type:flow==='pre_order'?'pre_order':'stock',
-        fulfillment_status:lineKind==='service'?'ready':(flow==='pre_order'?'pending':'ready')
+        fulfillment_status:lineKind==='service'?'arrived':(flow==='pre_order'?'ordered':'arrived')
       };
     });
     if(items.some(i=>(i.line_kind!=='service'&&!i.product_id)||!i.product_code_snapshot||!i.item_name_snapshot||i.qty<=0||i.unit_price<0||i.discount_amount<0)){
@@ -143,8 +152,27 @@
 
     if(c.depositAmount>0){
       const note=c.depositMode==='percent'?`Initial deposit ${c.depositValue}%`:'Initial deposit amount';
-      const pr=await db.from('sales_payments').insert({sales_order_id:so.id,amount:c.depositAmount,payment_date:orderDate,method:document.getElementById('paymentMethod').value.trim()||'Deposit',notes:note,received_by:state.user.id});
-      if(pr.error){await db.from('sales_orders').delete().eq('id',so.id);return showToast(pr.error.message,'err')}
+      if(state.profile?.role==='sales'){
+        const pr=await db.rpc('submit_sales_payment_request',{
+          p_order_id:so.id,
+          p_amount:c.depositAmount,
+          p_payment_date:orderDate,
+          p_method:document.getElementById('paymentMethod').value.trim()||'Deposit',
+          p_reference_no:null,
+          p_notes:note
+        });
+        if(pr.error){await db.from('sales_orders').delete().eq('id',so.id);return showToast(pr.error.message,'err')}
+      }else{
+        const pr=await db.from('sales_payments').insert({
+          sales_order_id:so.id,
+          amount:c.depositAmount,
+          payment_date:orderDate,
+          method:document.getElementById('paymentMethod').value.trim()||'Deposit',
+          notes:note,
+          received_by:state.user.id
+        });
+        if(pr.error){await db.from('sales_orders').delete().eq('id',so.id);return showToast(pr.error.message,'err')}
+      }
     }
 
     if(managerContextActive()&&typeof recordManagerRepAction==='function'){
@@ -152,7 +180,7 @@
     }
     if(window.documentFlowState)window.documentFlowState.loaded=false;
     closeModal();
-    showToast(flow==='pre_order'?`Pre-order ${docNo} created`:`${invoiceType} invoice ${docNo} created`);
+    showToast((flow==='pre_order'?`Pre-order ${docNo} created`:`${invoiceType} invoice ${docNo} created`)+(state.profile?.role==='sales'&&c.depositAmount>0?' · Deposit pending approval':''));
     await go('sales-orders');
   }
 
@@ -170,14 +198,17 @@
       ph.selected=true;customer.value='';
     }
 
-    // Super Admin chooses the actual Sales Rep instead of defaulting to their own account.
-    if(state.profile?.role==='super_admin'){
+    // Manager/Admin/Super Admin can assign the order to a Sales Rep (or themselves).
+    if(canChooseRep()){
       try{
         const reps=await getAssignableReps();
         const label=[...document.querySelectorAll('#orderForm label')].find(x=>x.textContent.trim()==='Sales Rep');
         const box=label?.parentElement;
         if(box){
-          box.innerHTML=`<label class="text-xs font-semibold">Sales Rep</label><select id="createOrderSalesRep" required class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"><option value="" selected disabled>— Select Sales Rep —</option>${reps.map(u=>`<option value="${u.user_id}" data-name="${esc(u.display_name||u.email||'')}">${esc(u.display_name||u.email||'')} — ${esc(titleCase(u.role||''))}</option>`).join('')}</select>`;
+          const defaultId=managerContextActive()?managerRepId():state.user?.id;
+          box.innerHTML=`<label class="text-xs font-semibold">Assign Sales Rep</label><select id="createOrderSalesRep" required class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"><option value="" disabled>— Select Sales Rep —</option>${reps.map(u=>`<option value="${u.user_id}" data-name="${esc(u.display_name||u.email||'')}" ${u.user_id===defaultId?'selected':''}>${esc(u.display_name||u.email||'')} — ${esc(titleCase(u.role||''))}${u.user_id===state.user?.id?' (Me)':''}</option>`).join('')}</select><div class="text-[10px] text-gray-400 mt-1">This Sales Rep will own the order in Sales Tracking.</div>`;
+          const sel=document.getElementById('createOrderSalesRep');
+          if(sel&&!sel.value&&reps[0])sel.value=reps[0].user_id;
         }
       }catch(err){showToast(`Could not load Sales Reps: ${err.message}`,'err')}
     }
