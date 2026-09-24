@@ -62,6 +62,7 @@
     row.querySelector('.product-code').value=p.code||code;
     row.querySelector('.product-name').value=p.item_name||name||code;
     row.querySelector('.product-image').value=p.image_url||'';
+    if(typeof updateSalesProductPhotoPreview==='function')updateSalesProductPhotoPreview(row,p.image_url||'');
     row.querySelector('.product-search-input').value=`${p.code||code} · ${p.item_name||name||code}`;
     setMeta(row,p.class||'');
     row.querySelector('.product-suggestions')?.classList.add('hidden');
