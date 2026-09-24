@@ -10,7 +10,7 @@
   function mgrCtx(){return typeof managerRepActive==='function'&&managerRepActive()}
   function canAddPayment(){
     const r=state.profile?.role||'';
-    return r==='sales'||r==='admin'||r==='super_admin'||(r==='manager'&&mgrCtx());
+    return ['sales','manager','admin','super_admin'].includes(r);
   }
   function docNo(o){return o?.sales_invoice_no||o?.sr_no||o?.invoice_no||o?.order_no||'Order'}
 
@@ -41,7 +41,7 @@
   // QUICK ADDITIONAL DEPOSIT / PAYMENT FROM SALES TRACKING.
   // ---------------------------------------------------------
   window.openSalesQuickPayment=async function(orderId){
-    if(!canAddPayment())return showToast('Open a Sales Rep in Rep Workspace to add a payment.','err');
+    if(!canAddPayment())return showToast('You do not have permission to add a payment.','err');
     const {data:o,error}=await db.from('sales_order_summary').select('*').eq('id',orderId).single();
     if(error)return showToast(error.message,'err');
     const balance=Number(o.balance_due||0);
