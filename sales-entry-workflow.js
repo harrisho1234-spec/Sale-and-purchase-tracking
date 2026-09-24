@@ -249,7 +249,6 @@
   };
 
   window.openNewOrder=async function(){
-    if(role()==='manager' && !managerContextActive()) return showToast('Choose a Sales Rep in Rep Workspace before creating a sale.','err');
     await ensureOrderFormData();
     if(!state.customers.length) return showToast('Add a customer first','err');
     if(!state.products.length) return showToast('No products are available','err');
