@@ -90,14 +90,18 @@
     const netSales=Math.max(grossSales-returnValue,0);
     const paid=visible.reduce((a,o)=>a+num(o.amount_paid),0);
 
+    // Customer-level AR: every active Return/CN offsets the customer's current collectible AR.
+    // The credit can apply even when the returned item came from an already-settled invoice.
     const creditByOrder=new Map();
     for(const r of validReturns){
       if(norm(r.financial_effect)!=='credit_ar')continue;
       creditByOrder.set(r.sales_order_id,num(creditByOrder.get(r.sales_order_id))+num(r.credit_amount));
     }
     const adjustedBalance=o=>Math.max(num(o.balance_due)-num(creditByOrder.get(o.id)),0);
-    const activeAR=visible.reduce((a,o)=>a+(!isPendingPre(o)&&!isSettled(o)?adjustedBalance(o):0),0);
-    const pending=visible.reduce((a,o)=>a+(isPendingPre(o)&&!isSettled(o)?adjustedBalance(o):0),0);
+    const activeARBeforeReturns=visible.reduce((a,o)=>a+(!isPendingPre(o)&&!isSettled(o)?num(o.balance_due):0),0);
+    const customerReturnCredit=Math.min(returnValue,activeARBeforeReturns);
+    const activeAR=Math.max(activeARBeforeReturns-customerReturnCredit,0);
+    const pending=visible.reduce((a,o)=>a+(isPendingPre(o)&&!isSettled(o)?num(o.balance_due):0),0);
 
     const body=document.getElementById('modalBody');
     if(!body)return;
@@ -122,13 +126,17 @@
             <div><div class="text-[9px] uppercase font-bold text-gray-400">Returns</div><div class="text-lg font-bold text-amber-600 mt-1">−${money(returnValue)}</div><div class="text-[9px] text-gray-400 mt-0.5">${validReturns.length} active CN${validReturns.length===1?'':'s'}</div></div>
             <div><div class="text-[9px] uppercase font-bold text-gray-400">Net Sales</div><div class="text-lg font-bold mt-1">${money(netSales)}</div></div>
             <div><div class="text-[9px] uppercase font-bold text-gray-400">Received</div><div class="text-lg font-bold text-green-600 mt-1">${money(paid)}</div></div>
-            <div><div class="text-[9px] uppercase font-bold text-gray-400">Active AR</div><div class="text-lg font-bold ${activeAR>0?'text-red-500':'text-green-600'} mt-1">${money(activeAR)}</div></div>
+            <div>
+              <div class="text-[9px] uppercase font-bold text-gray-400">Active AR</div>
+              <div class="text-lg font-bold ${activeAR>0?'text-red-500':'text-green-600'} mt-1">${money(activeAR)}</div>
+              ${customerReturnCredit>0?`<div class="text-[9px] text-amber-600 mt-0.5">${money(activeARBeforeReturns)} − ${money(customerReturnCredit)} return credit</div>`:'' }
+            </div>
             <div><div class="text-[9px] uppercase font-bold text-gray-400">Pending Pre-Order</div><div class="text-lg font-bold text-blue-600 mt-1">${money(pending)}</div></div>
           </div>
 
           ${returnValue>0?`
             <div class="mt-3 pt-3 border-t text-[10px] text-gray-500">
-              Returns reduce <b>Net Sales</b>. Received remains actual payments. AR is only reduced when a CN has an AR credit recorded.
+              Returns reduce <b>Net Sales</b> and also act as <b>customer credit against Active AR</b>, up to the amount still owed. Received remains actual cash collected. Order-level balances remain tied to their original invoices, so customer-level AR can be lower than the sum of individual invoice balances.
             </div>`:''}
         </div>
 
@@ -194,9 +202,9 @@
                     </div>
                     <div class="text-[11px] text-gray-400 mt-1">${esc(fmtDate(r.return_date))} · Original: <b class="text-gray-600">${esc(r.original_document_no||'-')}</b></div>
                     <div class="text-[11px] text-gray-500 mt-2">${Number(r.item_count||0)} returned item${Number(r.item_count||0)===1?'':'s'}${r.reason?' · '+esc(r.reason):''}</div>
-                    ${creditApplied
-                      ?`<div class="text-[10px] text-blue-700 mt-2">AR credit applied: <b>${money(fin.credit_amount)}</b></div>`
-                      :`<div class="text-[10px] text-gray-400 mt-2">No AR credit recorded for this CN.</div>`}
+                    ${cancelled
+                      ?`<div class="text-[10px] text-gray-400 mt-2">Cancelled CN — no customer credit applied.</div>`
+                      :`<div class="text-[10px] text-amber-700 mt-2">Return value counts as customer credit against outstanding AR when available.</div>`}
                   </div>
 
                   <div class="flex items-center gap-4">
