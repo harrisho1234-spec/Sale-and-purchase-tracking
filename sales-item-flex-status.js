@@ -1,12 +1,12 @@
 // Bottom Add Item buttons + quantity-level item status tracking.
 // Allows one sales line (e.g. Qty 3) to have mixed statuses such as Installed 1 + Ready 2.
 (function(){
-  const statusOptions=['pending','ordered','production','shipping','arrived','ready','delivered','installed','cancelled'];
-  const terminalStatuses=new Set(['delivered','installed']);
+  const statusOptions=['ordered','production','shipping','arrived','delivered'];
+  const terminalStatuses=new Set(['delivered']);
 
   function canEdit(){return ['sales','manager','admin','super_admin'].includes(state.profile?.role||'')}
   function norm(v){return String(v||'').trim().toLowerCase().replace(/[\s-]+/g,'_')}
-  function label(v){return v==='installed'?'Installed':titleCase(v||'Pending')}
+  function canonical(v){const s=norm(v);return s==='pending'||s==='reserved'?'ordered':s==='ready'?'arrived':s==='installed'?'delivered':s}\n  function label(v){return titleCase(canonical(v)||'Ordered')}
   function round2(v){return Math.round((Number(v||0)+Number.EPSILON)*100)/100}
   function allOrders(){return [...(window.trackingRedesign?.salesOrders||[]),...(window.trackingRedesign?.trackingOrders||[])]}
 
@@ -56,10 +56,10 @@
   }
 
   function statusOptionsHtml(selected){
-    return statusOptions.map(s=>`<option value="${s}" ${norm(selected)===s?'selected':''}>${label(s)}</option>`).join('');
+    const current=canonical(selected);\n    const legacy=norm(selected)==='cancelled'?'<option value="cancelled" selected disabled>Cancelled (historical)</option>':'';\n    return legacy+statusOptions.map(s=>`<option value="${s}" ${current===s?'selected':''}>${label(s)}</option>`).join('');
   }
 
-  function allocationRow(a={status:'pending',qty:1}){
+  function allocationRow(a={status:'ordered',qty:1}){
     return `<div class="flex-status-row grid grid-cols-[minmax(0,1fr)_120px_42px] gap-2 items-end">
       <div><label class="text-[9px] uppercase font-bold text-gray-400">Status</label><select class="flex-status-select mt-1 w-full border rounded-lg px-3 py-2 bg-white text-xs" onchange="flexStatusRecalc(this.closest('.flex-status-card'))">${statusOptionsHtml(a.status)}</select></div>
       <div><label class="text-[9px] uppercase font-bold text-gray-400">Qty</label><input class="flex-status-qty mt-1 w-full border rounded-lg px-3 py-2 text-xs" type="number" min="0.01" step="0.01" value="${Number(a.qty||0)}" oninput="flexStatusRecalc(this.closest('.flex-status-card'))"></div>
@@ -86,7 +86,7 @@
     let assigned=0;const counts=new Map();
     rows.forEach(r=>{
       const q=Math.max(Number(r.querySelector('.flex-status-qty')?.value||0),0);
-      const s=r.querySelector('.flex-status-select')?.value||'pending';
+      const s=r.querySelector('.flex-status-select')?.value||'ordered';
       assigned+=q;counts.set(s,round2((counts.get(s)||0)+q));
     });
     assigned=round2(assigned);
@@ -106,7 +106,7 @@
     const largestQty=Number(largest?.querySelector('.flex-status-qty')?.value||0);
     if(largestQty<=0.01||total<=0.01)return showToast('There is no quantity available to split.','err');
     const used=new Set([...card.querySelectorAll('.flex-status-select')].map(x=>x.value));
-    const next=statusOptions.find(s=>!used.has(s))||'pending';
+    const next=statusOptions.find(s=>!used.has(s))||'ordered';
     const move=largestQty>1?1:round2(largestQty/2);
     if(move<=0)return showToast('There is no quantity available to split.','err');
     largest.querySelector('.flex-status-qty').value=round2(largestQty-move);
@@ -136,8 +136,8 @@
       openModal('Update Item Tracking',`
         <form id="itemStatusForm" class="space-y-4">
           <div class="rounded-xl border bg-gray-50 p-4"><div class="text-[10px] uppercase font-bold text-gray-400">Order / Invoice</div><div class="font-bold mt-1">${esc(doc)}</div><div class="text-xs text-gray-500 mt-1">${esc(o.customer_name||'')}</div></div>
-          <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800"><b>Flexible quantity status:</b> one product line can now be split. Example: Qty 3 = <b>Installed 1</b> + <b>Ready 2</b>. The quantities must always add up to the sold quantity.</div>
-          <div class="grid gap-3">${(o.items||[]).map(i=>cardSummaryHtml(i,map.get(i.id)||[{status:norm(i.fulfillment_status)==='reserved'?'pending':(norm(i.fulfillment_status)||'pending'),qty:Number(i.qty||0)}])).join('')}</div>
+          <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800"><b>Flexible quantity status:</b> one product line can now be split. Example: Qty 3 = <b>Shipping 1</b> + <b>Arrived 2</b>. The quantities must always add up to the sold quantity.</div>
+          <div class="grid gap-3">${(o.items||[]).map(i=>cardSummaryHtml(i,map.get(i.id)||[{status:canonical(i.fulfillment_status)||'ordered',qty:Number(i.qty||0)}])).join('')}</div>
           <button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Item Status</button>
         </form>`);
       document.querySelectorAll('.flex-status-card').forEach(flexStatusRecalc);
