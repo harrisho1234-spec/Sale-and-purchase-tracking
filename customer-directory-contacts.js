@@ -9,7 +9,7 @@
   function canAssignHandler(){return ['super_admin','admin','manager'].includes(role())}
   function fmtDate(v){if(!v)return '-';const d=new Date(v);return Number.isNaN(d.getTime())?String(v):d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}
   function metaFor(id){return window._customerAssignmentMeta?.get(id)||{}}
-  function metricsFor(id){return window._customerSalesMetrics?.get(id)||{sales:0,paid:0,ar:0,orders:0}}
+  function metricsFor(id){return window._customerSalesMetrics?.get(id)||{sales:0,paid:0,ar:0,pending:0,orders:0}}
   function handlerName(c){const m=metaFor(c.id);if(m.assigned_sales_name)return m.assigned_sales_name;if(m.assigned_sales_email)return m.assigned_sales_email;if(c.assigned_sales_id===state.user?.id)return state.profile?.display_name||state.user?.email||'Me';return c.assigned_sales_id?'Assigned':'Unassigned'}
   function contactsFor(id){return window._customerContactsMap?.get(id)||[]}
   function typeLabel(t){return ({phone:'Phone',telegram:'Telegram',whatsapp:'WhatsApp',line:'LINE',wechat:'WeChat',email:'Email',other:'Other'})[t]||titleCase(t||'Contact')}
@@ -42,7 +42,7 @@
         <div class="min-w-0"><div class="lg:hidden text-[9px] uppercase text-gray-400 font-bold mb-1">Handled By</div><span class="inline-flex max-w-full px-2 py-1 rounded-lg border border-amber-100 bg-amber-50 text-[10px] font-bold text-amber-800 truncate">${esc(handlerName(c))}</span></div>
         <div><div class="lg:hidden text-[9px] uppercase text-gray-400 font-bold mb-1">Sales</div><div class="text-[12px] font-bold text-gray-800">${money(m.sales)}</div><div class="text-[9px] text-gray-400">${m.orders} order${m.orders===1?'':'s'}</div></div>
         <div><div class="lg:hidden text-[9px] uppercase text-gray-400 font-bold mb-1">Received</div><div class="text-[12px] font-bold text-green-600">${money(m.paid)}</div></div>
-        <div><div class="lg:hidden text-[9px] uppercase text-gray-400 font-bold mb-1">AR</div><div class="text-[12px] font-bold ${m.ar>0?'text-red-500':'text-green-600'}">${money(m.ar)}</div></div>
+        <div><div class="lg:hidden text-[9px] uppercase text-gray-400 font-bold mb-1">Active AR</div><div class="text-[12px] font-bold ${m.ar>0?'text-red-500':'text-green-600'}">${money(m.ar)}</div>${m.pending>0?`<div class="text-[9px] text-blue-500">+${money(m.pending)} pending</div>`:''}</div>
         <div class="min-w-0"><div class="lg:hidden text-[9px] uppercase text-gray-400 font-bold mb-1">Note</div>${note?`<div class="text-[11px] text-gray-500 line-clamp-2" title="${esc(note)}">${esc(note)}</div>`:'<span class="text-[11px] text-gray-300">No note</span>'}</div>
         <div class="flex justify-end"><button onclick="openEditCustomer('${c.id}')" class="px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-xs font-semibold hover:bg-gray-50">Edit</button></div>
       </div>`;
