@@ -37,6 +37,11 @@
       badge.textContent=String(count);
       badge.style.display=count?'inline-flex':'none';
     }
+    var groupBadge=document.getElementById('sidebar-finance-approval-badge');
+    if(groupBadge){
+      groupBadge.textContent=String(count);
+      groupBadge.style.display=count?'inline-flex':'none';
+    }
   }
 
   function addHeaderButton(){
