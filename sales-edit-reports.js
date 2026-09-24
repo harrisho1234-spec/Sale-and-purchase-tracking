@@ -129,11 +129,14 @@
     const linked=!!(i?.id&&editState.linked.has(i.id));
     const returned=!!(i?.id&&editState.returned.has(i.id));
     const service=(i?.line_kind==='service')||(!i?.product_id&&i?.product_type_snapshot==='Service');
+    const lineQty=Number(i?.qty||1),linePrice=Number(i?.unit_price||0),lineDiscount=Number(i?.discount_amount||0);
+    const lineGross=lineQty*linePrice;
+    const lineDiscountPct=lineGross?round2(lineDiscount/lineGross*100):0;
     if(service){
       const feeClass=i?.product_class_snapshot||'Service Fee';
       const feeName=i?.item_name_snapshot||feeClass;
       const options=['Service Fee','Maintenance Fee','Cleaning Fee','Delivery / Installation','Other Fee'];
-      return `<div class="edit-order-item-row grid md:grid-cols-12 gap-2 p-3 bg-amber-50/50 border border-amber-100 rounded-xl" data-item-id="${esc(i?.id||'')}" data-linked="0">
+      return `<div class="edit-order-item-row grid md:grid-cols-12 gap-2 p-3 bg-amber-50/50 border border-amber-100 rounded-xl" data-item-id="${esc(i?.id||'')}" data-linked="0" data-discount-basis="amount">
         <div class="md:col-span-5">
           <label class="text-[10px] font-semibold text-gray-500">Service / Fee</label>
           <div class="grid sm:grid-cols-2 gap-2 mt-1">
@@ -149,18 +152,18 @@
           <input type="hidden" class="edit-product-type" value="Service">
           <div class="text-[9px] text-amber-700 mt-1">Non-physical charge · no stock or procurement item.</div>
         </div>
-        <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Qty</label><input class="edit-qty mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0.01" step="0.01" value="${Number(i?.qty||1)}" oninput="editOrderRecalc()"></div>
-        <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Unit Price</label><input class="edit-unit-price mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="${Number(i?.unit_price||0)}" oninput="editOrderRecalc()"></div>
-        <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Line Discount</label><input class="edit-line-discount mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="${Number(i?.discount_amount||0)}" oninput="editOrderRecalc()"></div>
+        <div class="md:col-span-1"><label class="text-[10px] font-semibold text-gray-500">Qty</label><input class="edit-qty mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0.01" step="0.01" value="${Number(i?.qty||1)}" oninput="editLineValueChanged(this)"></div>
+        <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Unit Price</label><input class="edit-unit-price mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="${Number(i?.unit_price||0)}" oninput="editLineValueChanged(this)"></div>
+        <div class="md:col-span-3"><label class="text-[10px] font-semibold text-gray-500">Line Discount</label><div class="grid grid-cols-2 gap-1 mt-1"><div><div class="text-[9px] text-gray-400 mb-0.5">%</div><input class="edit-line-discount-percent w-full border rounded-lg px-2 py-2" type="number" min="0" max="100" step="0.01" value="${lineDiscountPct}" oninput="editLineDiscountPercentChanged(this)"></div><div><div class="text-[9px] text-gray-400 mb-0.5">Amount</div><input class="edit-line-discount w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="${lineDiscount}" oninput="editLineDiscountAmountChanged(this)"></div></div></div>
         <div class="md:col-span-1 flex items-end"><button type="button" onclick="removeEditOrderItem(this)" class="w-full h-[42px] border rounded-lg text-red-500 font-bold bg-white">×</button></div>
       </div>`;
     }
     const productText=i?`${i.product_code_snapshot||''} · ${i.item_name_snapshot||''}`:'';
-    return `<div class="edit-order-item-row grid md:grid-cols-12 gap-2 p-3 bg-gray-50 rounded-xl" data-item-id="${esc(i?.id||'')}" data-linked="${linked?'1':'0'}" data-returned="${returned?'1':'0'}">
+    return `<div class="edit-order-item-row grid md:grid-cols-12 gap-2 p-3 bg-gray-50 rounded-xl" data-item-id="${esc(i?.id||'')}" data-linked="${linked?'1':'0'}" data-returned="${returned?'1':'0'}" data-discount-basis="amount">
       <div class="md:col-span-5 relative"><label class="text-[10px] font-semibold text-gray-500">Product Code / Item</label><input ${role()==='sales'?'':((linked||returned)?'disabled':'')} value="${esc(productText)}" class="edit-product-search mt-1 w-full border rounded-lg px-3 py-2 bg-white disabled:bg-gray-100" placeholder="Type product code or item name..." onfocus="showEditProductSuggestions(this)" oninput="editProductInputChanged(this)"><input type="hidden" class="edit-line-kind" value="product"><input type="hidden" class="edit-product-id" value="${esc(i?.product_id||'')}"><input type="hidden" class="edit-product-code" value="${esc(i?.product_code_snapshot||'')}"><input type="hidden" class="edit-product-name" value="${esc(i?.item_name_snapshot||'')}"><input type="hidden" class="edit-product-image" value="${esc(i?.image_url_snapshot||'')}"><input type="hidden" class="edit-product-class" value="${esc(i?.product_class_snapshot||'')}"><input type="hidden" class="edit-product-type" value="${esc(i?.product_type_snapshot||'')}"><div class="edit-product-suggestions hidden absolute z-[100] left-0 right-0 top-full mt-1 max-h-64 overflow-y-auto bg-white border rounded-xl shadow-xl"></div>${returned?'<div class="text-[9px] text-amber-700 mt-1">Return/CN recorded — Sales may request corrections; Manager/Admin approval is required before anything changes.</div>':linked?'<div class="text-[9px] text-blue-600 mt-1">Linked to Procurement — Sales may request corrections; Manager/Admin will review the PO impact before approval.</div>':''}</div>
-      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Qty</label><input ${role()==='sales'?'':((linked||returned)?'disabled':'')} class="edit-qty mt-1 w-full border rounded-lg px-2 py-2 disabled:bg-gray-100" type="number" min="1" step="1" value="${Number(i?.qty||1)}" oninput="editOrderRecalc()"></div>
-      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Unit Price</label><input ${role()==='sales'?'':(returned?'disabled':'')} class="edit-unit-price mt-1 w-full border rounded-lg px-2 py-2 disabled:bg-gray-100" type="number" min="0" step="0.01" value="${Number(i?.unit_price||0)}" oninput="editOrderRecalc()"></div>
-      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Line Discount</label><input ${role()==='sales'?'':(returned?'disabled':'')} class="edit-line-discount mt-1 w-full border rounded-lg px-2 py-2 disabled:bg-gray-100" type="number" min="0" step="0.01" value="${Number(i?.discount_amount||0)}" oninput="editOrderRecalc()"></div>
+      <div class="md:col-span-1"><label class="text-[10px] font-semibold text-gray-500">Qty</label><input ${role()==='sales'?'':((linked||returned)?'disabled':'')} class="edit-qty mt-1 w-full border rounded-lg px-2 py-2 disabled:bg-gray-100" type="number" min="1" step="1" value="${Number(i?.qty||1)}" oninput="editLineValueChanged(this)"></div>
+      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Unit Price</label><input ${role()==='sales'?'':(returned?'disabled':'')} class="edit-unit-price mt-1 w-full border rounded-lg px-2 py-2 disabled:bg-gray-100" type="number" min="0" step="0.01" value="${Number(i?.unit_price||0)}" oninput="editLineValueChanged(this)"></div>
+      <div class="md:col-span-3"><label class="text-[10px] font-semibold text-gray-500">Line Discount</label><div class="grid grid-cols-2 gap-1 mt-1"><div><div class="text-[9px] text-gray-400 mb-0.5">%</div><input ${role()==='sales'?'':(returned?'disabled':'')} class="edit-line-discount-percent w-full border rounded-lg px-2 py-2 disabled:bg-gray-100" type="number" min="0" max="100" step="0.01" value="${lineDiscountPct}" oninput="editLineDiscountPercentChanged(this)"></div><div><div class="text-[9px] text-gray-400 mb-0.5">Amount</div><input ${role()==='sales'?'':(returned?'disabled':'')} class="edit-line-discount w-full border rounded-lg px-2 py-2 disabled:bg-gray-100" type="number" min="0" step="0.01" value="${lineDiscount}" oninput="editLineDiscountAmountChanged(this)"></div></div></div>
       <div class="md:col-span-1 flex items-end"><button type="button" ${role()==='sales'?'':((linked||returned)?'disabled':'')} onclick="removeEditOrderItem(this)" class="w-full h-[42px] border rounded-lg text-red-500 font-bold disabled:opacity-30">×</button></div>
     </div>`;
   }
@@ -168,7 +171,29 @@
   window.addEditOrderItem=function(){document.getElementById('editOrderItems')?.insertAdjacentHTML('beforeend',itemRow());editOrderRecalc()};
   window.addEditServiceFee=function(){document.getElementById('editOrderItems')?.insertAdjacentHTML('beforeend',itemRow({line_kind:'service',product_code_snapshot:'SERVICE-FEE',item_name_snapshot:'Service Fee',product_class_snapshot:'Service Fee',product_type_snapshot:'Service',qty:1,unit_price:0,discount_amount:0}));editOrderRecalc()};
   window.removeEditOrderItem=function(btn){const r=btn.closest('.edit-order-item-row');if(!r)return;const id=r.dataset.itemId;if(id)editState.deleted.push(id);r.remove();editOrderRecalc()};
-  function editSubtotal(){let s=0;document.querySelectorAll('#editOrderItems .edit-order-item-row').forEach(r=>{s+=Math.max(Number(r.querySelector('.edit-qty')?.value||0)*Number(r.querySelector('.edit-unit-price')?.value||0)-Number(r.querySelector('.edit-line-discount')?.value||0),0)});return round2(s)}
+  function syncEditLineDiscount(row,basis){
+    if(!row)return;
+    if(basis)row.dataset.discountBasis=basis;
+    const qty=Math.max(Number(row.querySelector('.edit-qty')?.value||0),0);
+    const price=Math.max(Number(row.querySelector('.edit-unit-price')?.value||0),0);
+    const gross=round2(qty*price);
+    const pctInput=row.querySelector('.edit-line-discount-percent');
+    const amtInput=row.querySelector('.edit-line-discount');
+    if(!pctInput||!amtInput)return;
+    if((row.dataset.discountBasis||'amount')==='percent'){
+      const pct=Math.max(0,Math.min(100,Number(pctInput.value||0)));
+      pctInput.value=String(round2(pct));
+      amtInput.value=String(round2(gross*pct/100));
+    }else{
+      const amt=Math.max(0,Math.min(gross,Number(amtInput.value||0)));
+      amtInput.value=String(round2(amt));
+      pctInput.value=String(gross?round2(amt/gross*100):0);
+    }
+  }
+  window.editLineDiscountPercentChanged=function(input){const row=input.closest('.edit-order-item-row');syncEditLineDiscount(row,'percent');editOrderRecalc()};
+  window.editLineDiscountAmountChanged=function(input){const row=input.closest('.edit-order-item-row');syncEditLineDiscount(row,'amount');editOrderRecalc()};
+  window.editLineValueChanged=function(input){const row=input.closest('.edit-order-item-row');syncEditLineDiscount(row);editOrderRecalc()};
+  function editSubtotal(){let s=0;document.querySelectorAll('#editOrderItems .edit-order-item-row').forEach(r=>{syncEditLineDiscount(r);s+=Math.max(Number(r.querySelector('.edit-qty')?.value||0)*Number(r.querySelector('.edit-unit-price')?.value||0)-Number(r.querySelector('.edit-line-discount')?.value||0),0)});return round2(s)}
   window.editDiscountPercentChanged=function(){editState.discountBasis='percent';editOrderRecalc()};
   window.editDiscountAmountChanged=function(){editState.discountBasis='amount';editOrderRecalc()};
   window.editOrderRecalc=function(){
