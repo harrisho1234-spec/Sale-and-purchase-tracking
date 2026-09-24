@@ -207,7 +207,7 @@
     let summaryQ = db.from('sales_order_summary').select('*').order('created_at',{ascending:false});
     let ordersQ = db.from('sales_orders').select(`
       id,order_no,invoice_no,customer_id,sales_rep_id,sales_rep_name_snapshot,order_date,order_type,status,currency,order_discount,notes,created_at,updated_at,
-      customers(id,name,customer_code),
+      customers(id,name,customer_code,phone),
       sales_order_items(
         id,product_id,product_code_snapshot,item_name_snapshot,image_url_snapshot,qty,unit_price,discount_amount,line_total,source_type,fulfillment_status,notes,
         product_catalog(code,item_name,brand,class,image_url)
@@ -241,6 +241,7 @@
         ...d,
         customer_name: s.customer_name || d.customers?.name || '',
         customer_code: d.customers?.customer_code || '',
+        customer_phone: d.customers?.phone || '',
         items
       };
     });
@@ -361,7 +362,10 @@
                 ${items.some(i=>Number(returnInfo(i)?.qty_returned||0)>0)?`<span class="lr-badge lr-badge-amber">↩ Return Recorded</span>`:''}
                 ${repName(o)?`<span class="lr-badge lr-badge-gray">▣ ${esc(repName(o))}</span>`:''}
               </div>
-              <div class="font-serif text-[16px] font-bold mt-1 truncate">${esc(o.customer_name||'Customer')}</div>
+              <div class="flex flex-wrap items-center gap-2 mt-1">
+                <div class="font-serif text-[16px] font-bold truncate">${esc(o.customer_name||'Customer')}</div>
+                ${o.customer_phone?`<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border bg-gray-50 text-[10px] text-gray-600 whitespace-nowrap">☎ ${esc(o.customer_phone)}</span>`:''}
+              </div>
               <div class="text-[10px] text-gray-400 mt-1 truncate">◇ ${esc(invoiceItemSummary(o))}</div>
             </div>
           </div>
