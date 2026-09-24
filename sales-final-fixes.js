@@ -145,7 +145,13 @@
   };
 
   function mgr(){return typeof managerRepActive==='function'&&managerRepActive()}
-  function canPay(){return state.profile?.role!=='manager'||mgr()}
+  function canAddPayment(){
+    return ['sales','manager','admin','super_admin'].includes(state.profile?.role||'');
+  }
+  function canEditPayment(){
+    const r=state.profile?.role||'';
+    return r!=='manager'||mgr();
+  }
   async function sums(){
     let q=db.from('sales_order_summary').select('*').neq('status','cancelled').order('order_date',{ascending:false});
     if(mgr())q=q.eq('sales_rep_id',managerRepId());
@@ -156,7 +162,7 @@
   function d(o){return o.sales_invoice_no||o.sr_no||o.invoice_no||o.order_no||'Order'}
 
   window.openAddCustomerPayment=async function(){
-    if(!canPay())return showToast('Open a Sales Rep in Rep Workspace to add a payment.','err');
+    if(!canAddPayment())return showToast('You do not have permission to add a payment.','err');
     const list=(await sums()).filter(o=>Number(o.balance_due||0)>0.001);
     if(!list.length)return showToast('No outstanding customer balances.','err');
     window._cp=list;
@@ -188,13 +194,16 @@
     const o=(window._cp||[]).find(x=>x.id===cpOrder.value),amt=Number(cpAmount.value||0);
     if(!o||amt<=0)return showToast('Enter a payment amount.','err');
     if(amt>Number(o.balance_due||0)+.001)return showToast('Payment cannot be more than balance.','err');
-    const r=await db.from('sales_payments').insert({sales_order_id:o.id,payment_date:cpDate.value,amount:amt,method:cpMethod.value.trim()||null,reference_no:cpRef.value.trim()||null,notes:cpNote.value.trim()||'Additional customer payment',received_by:state.user.id});
+    const r=await db.from('sales_payments').insert({sales_order_id:o.id,payment_date:cpDate.value,amount:amt,method:cpMethod.value.trim()||null,reference_no:cpRef.value.trim()||null,notes:cpNote.value.trim()||'Additional customer payment',received_by:state.user.id}).select('id').single();
     if(r.error)return showToast(r.error.message,'err');
+    if(mgr()&&typeof recordManagerRepAction==='function'){
+      await recordManagerRepAction('add_customer_payment','sales_payment',r.data.id,{sales_order_id:o.id,document_no:d(o),amount:amt});
+    }
     closeModal();showToast('Customer payment added');go('payments');
   };
 
   window.openEditCustomerPayment=async function(id){
-    if(!canPay())return;
+    if(!canEditPayment())return showToast('Open a Sales Rep in Rep Workspace to edit that rep\'s payment.','err');
     const r=await db.from('sales_payments').select('*').eq('id',id).single();
     if(r.error)return showToast(r.error.message,'err');
     const p=r.data;
@@ -220,6 +229,6 @@
     const [p,s]=await Promise.all([q,sums()]);
     if(p.error)throw p.error;
     const ar=s.reduce((a,o)=>a+Number(o.balance_due||0),0);
-    document.getElementById('content').innerHTML=`${mgr()&&typeof managerRepBanner==='function'?managerRepBanner():''}<div class="flex justify-between items-center mb-4"><div class="text-sm text-gray-500">Current AR: <b class="text-red-500">${money(ar)}</b></div>${canPay()?'<button onclick="openAddCustomerPayment()" class="px-4 py-2 bg-[#211d18] text-white rounded-xl text-sm">+ Add Payment</button>':''}</div><div class="card rounded-2xl overflow-hidden"><div class="divide-y">${(p.data||[]).map(x=>`<div class="p-4 grid md:grid-cols-6 gap-2 items-center"><div><b>${esc(x.sales_orders?.sales_invoice_no||x.sales_orders?.sr_no||x.sales_orders?.invoice_no||x.sales_orders?.order_no||'')}</b><div class="text-[10px] text-gray-400">${esc(x.sales_orders?.customers?.name||'')}</div></div><div>${esc(x.payment_date||'')}</div><div class="text-green-600 font-bold">${money(x.amount)}</div><div>${esc(x.method||'-')}</div><div class="text-xs text-gray-400">${esc(x.reference_no||x.notes||'')}</div><div>${canPay()?`<button onclick="openEditCustomerPayment('${x.id}')" class="px-3 py-2 border rounded-lg text-xs">Edit</button>`:''}</div></div>`).join('')||empty('No customer payments yet.')}</div></div>`;
+    document.getElementById('content').innerHTML=`${mgr()&&typeof managerRepBanner==='function'?managerRepBanner():''}<div class="flex justify-between items-center mb-4"><div class="text-sm text-gray-500">Current AR: <b class="text-red-500">${money(ar)}</b></div>${canAddPayment()?'<button onclick="openAddCustomerPayment()" class="px-4 py-2 bg-[#211d18] text-white rounded-xl text-sm">+ Add Payment</button>':''}</div><div class="card rounded-2xl overflow-hidden"><div class="divide-y">${(p.data||[]).map(x=>`<div class="p-4 grid md:grid-cols-6 gap-2 items-center"><div><b>${esc(x.sales_orders?.sales_invoice_no||x.sales_orders?.sr_no||x.sales_orders?.invoice_no||x.sales_orders?.order_no||'')}</b><div class="text-[10px] text-gray-400">${esc(x.sales_orders?.customers?.name||'')}</div></div><div>${esc(x.payment_date||'')}</div><div class="text-green-600 font-bold">${money(x.amount)}</div><div>${esc(x.method||'-')}</div><div class="text-xs text-gray-400">${esc(x.reference_no||x.notes||'')}</div><div>${canEditPayment()?`<button onclick="openEditCustomerPayment('${x.id}')" class="px-3 py-2 border rounded-lg text-xs">Edit</button>`:''}</div></div>`).join('')||empty('No customer payments yet.')}</div></div>`;
   };
 })();
