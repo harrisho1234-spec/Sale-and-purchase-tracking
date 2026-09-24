@@ -84,9 +84,40 @@
     row.querySelector('.product-name').value=input.value.trim()||(sel?.value||'Service Fee');
   };
 
+  function syncSalesLineDiscount(row,basis){
+    if(!row)return;
+    if(basis)row.dataset.discountBasis=basis;
+    const qty=Math.max(Number(row.querySelector('.qty')?.value||0),0);
+    const price=Math.max(Number(row.querySelector('.unit-price')?.value||0),0);
+    const gross=round2(qty*price);
+    const pctInput=row.querySelector('.line-discount-percent');
+    const amtInput=row.querySelector('.line-discount');
+    if(!pctInput||!amtInput)return;
+    const mode=row.dataset.discountBasis||'amount';
+    if(mode==='percent'){
+      const pct=Math.max(0,Math.min(100,Number(pctInput.value||0)));
+      pctInput.value=String(round2(pct));
+      amtInput.value=String(round2(gross*pct/100));
+    }else{
+      const amt=Math.max(0,Math.min(gross,Number(amtInput.value||0)));
+      amtInput.value=String(round2(amt));
+      pctInput.value=String(gross?round2(amt/gross*100):0);
+    }
+  }
+  window.salesLineDiscountPercentChanged=function(input){
+    const row=input.closest('.order-item-row');syncSalesLineDiscount(row,'percent');salesEntryRecalc();
+  };
+  window.salesLineDiscountAmountChanged=function(input){
+    const row=input.closest('.order-item-row');syncSalesLineDiscount(row,'amount');salesEntryRecalc();
+  };
+  window.salesLineValueChanged=function(input){
+    const row=input.closest('.order-item-row');syncSalesLineDiscount(row);salesEntryRecalc();
+  };
+
   function calcSalesEntry(){
     let subtotal=0;
     lineRows().forEach(r=>{
+      syncSalesLineDiscount(r);
       const qty=Number(r.querySelector('.qty')?.value||0);
       const price=Number(r.querySelector('.unit-price')?.value||0);
       const discount=Number(r.querySelector('.line-discount')?.value||0);
@@ -204,6 +235,7 @@
     const flow=currentFlow();
     const d=document.createElement('div');
     d.className='grid md:grid-cols-12 gap-2 p-3 bg-gray-50 rounded-xl order-item-row';
+    d.dataset.discountBasis='amount';
     d.innerHTML=`
       <div class="md:col-span-5">
         <div class="flex items-start gap-3">
@@ -220,9 +252,9 @@
           </div>
         </div>
       </div>
-      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Qty</label><input class="qty mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0.01" step="0.01" value="1" oninput="salesEntryRecalc()"></div>
-      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Unit Price</label><input class="unit-price mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="0" oninput="salesEntryRecalc()"></div>
-      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Line Discount</label><input class="line-discount mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="0" oninput="salesEntryRecalc()"></div>
+      <div class="md:col-span-1"><label class="text-[10px] font-semibold text-gray-500">Qty</label><input class="qty mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0.01" step="0.01" value="1" oninput="salesLineValueChanged(this)"></div>
+      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Unit Price</label><input class="unit-price mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="0" oninput="salesLineValueChanged(this)"></div>
+      <div class="md:col-span-3"><label class="text-[10px] font-semibold text-gray-500">Line Discount</label><div class="grid grid-cols-2 gap-1 mt-1"><div><div class="text-[9px] text-gray-400 mb-0.5">%</div><input class="line-discount-percent w-full border rounded-lg px-2 py-2" type="number" min="0" max="100" step="0.01" value="0" oninput="salesLineDiscountPercentChanged(this)"></div><div><div class="text-[9px] text-gray-400 mb-0.5">Amount</div><input class="line-discount w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="0" oninput="salesLineDiscountAmountChanged(this)"></div></div></div>
       <div class="md:col-span-1 flex items-end"><button type="button" onclick="this.closest('.order-item-row').remove();salesEntryRecalc()" class="w-full h-[42px] border rounded-lg text-red-500 font-bold">×</button></div>
       <select class="source-type hidden"><option value="stock" ${flow==='stock_sale'?'selected':''}>Stock</option><option value="pre_order" ${flow==='pre_order'?'selected':''}>Pre-order</option></select>`;
     wrap.appendChild(d);
@@ -235,6 +267,7 @@
     const flow=currentFlow();
     const d=document.createElement('div');
     d.className='grid md:grid-cols-12 gap-2 p-3 bg-amber-50/50 border border-amber-100 rounded-xl order-item-row service-item-row';
+    d.dataset.discountBasis='amount';
     d.innerHTML=`
       <div class="md:col-span-5">
         <label class="text-[10px] font-semibold text-gray-500">Service / Fee</label>
@@ -261,9 +294,9 @@
           <span class="px-2 py-1 rounded-full bg-white border text-amber-700">No physical stock item</span>
         </div>
       </div>
-      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Qty</label><input class="qty mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0.01" step="0.01" value="1" oninput="salesEntryRecalc()"></div>
-      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Unit Price</label><input class="unit-price mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="0" oninput="salesEntryRecalc()"></div>
-      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Line Discount</label><input class="line-discount mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="0" oninput="salesEntryRecalc()"></div>
+      <div class="md:col-span-1"><label class="text-[10px] font-semibold text-gray-500">Qty</label><input class="qty mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0.01" step="0.01" value="1" oninput="salesLineValueChanged(this)"></div>
+      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Unit Price</label><input class="unit-price mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="0" oninput="salesLineValueChanged(this)"></div>
+      <div class="md:col-span-3"><label class="text-[10px] font-semibold text-gray-500">Line Discount</label><div class="grid grid-cols-2 gap-1 mt-1"><div><div class="text-[9px] text-gray-400 mb-0.5">%</div><input class="line-discount-percent w-full border rounded-lg px-2 py-2" type="number" min="0" max="100" step="0.01" value="0" oninput="salesLineDiscountPercentChanged(this)"></div><div><div class="text-[9px] text-gray-400 mb-0.5">Amount</div><input class="line-discount w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="0" oninput="salesLineDiscountAmountChanged(this)"></div></div></div>
       <div class="md:col-span-1 flex items-end"><button type="button" onclick="this.closest('.order-item-row').remove();salesEntryRecalc()" class="w-full h-[42px] border rounded-lg text-red-500 font-bold bg-white">×</button></div>
       <select class="source-type hidden"><option value="stock" ${flow==='stock_sale'?'selected':''}>Stock</option><option value="pre_order" ${flow==='pre_order'?'selected':''}>Pre-order</option></select>`;
     wrap.appendChild(d);
