@@ -86,13 +86,19 @@
   function effectiveHandler(){if(role()==='sales')return state.user.id;if(role()==='manager'&&managerContext())return managerRepId();return null}
 
   window.openNewCustomer=async function(){
-    if(role()==='manager'&&!managerContext())return showToast('Choose a Sales Rep in Rep Workspace before creating a customer.','err');
     const fixed=effectiveHandler(),opts=await handlerOptions(fixed||'');
     openModal('Add Customer',`<form id="multiCustomerForm" class="grid md:grid-cols-2 gap-4">
       <div><label class="text-xs font-semibold">Customer Name</label><input id="mcName" required class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Customer name"></div>
       <div><label class="text-xs font-semibold">Customer Code</label><input id="mcCode" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Optional"></div>
       <div class="md:col-span-2"><label class="text-xs font-semibold">Address</label><input id="mcAddress" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Address"></div>
-      ${canAssignHandler()&&!fixed?`<div class="md:col-span-2"><label class="text-xs font-semibold">Handled By / Assigned Sales</label><select id="mcHandler" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${opts}</select></div>`:`<div class="md:col-span-2 rounded-xl border bg-gray-50 px-4 py-3 text-xs text-gray-600">Handled by: <b>${esc(role()==='sales'?(state.profile?.display_name||state.user?.email||'You'):(managerContext()?managerRepName():'Unassigned'))}</b></div>`}
+      ${(['super_admin','admin'].includes(role())&&!fixed)
+        ?`<div class="md:col-span-2"><label class="text-xs font-semibold">Handled By / Assigned Sales</label><select id="mcHandler" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${opts}</select><div class="text-[10px] text-gray-400 mt-1">Optional. Leave Unassigned and assign later if preferred.</div></div>`
+        :`<div class="md:col-span-2 rounded-xl border bg-gray-50 px-4 py-3 text-xs text-gray-600">
+            Handled by: <b>${esc(role()==='sales'
+              ?(state.profile?.display_name||state.user?.email||'You')
+              :(managerContext()?managerRepName():'Unassigned'))}</b>
+            ${role()==='manager'&&!managerContext()?'<div class="text-[10px] text-gray-400 mt-1">Customer will be created immediately. You can assign it to a Sales Rep afterward from Edit Customer.</div>':''}
+          </div>`}
       <div class="md:col-span-2 border-t pt-4"><div class="flex items-center justify-between gap-3"><div><div class="font-bold text-sm">Contact Methods</div><div class="text-[10px] text-gray-400">Add multiple phone numbers, Telegram users, WhatsApp, LINE, WeChat or email.</div></div><button type="button" onclick="addCustomerContactRow('phone')" class="px-3 py-2 border rounded-lg text-xs font-semibold">+ Contact</button></div><div id="customerContactRows" class="grid gap-2 mt-3">${contactRow({contact_type:'phone',label:'Main'})}${contactRow({contact_type:'telegram',label:'Telegram'})}</div></div>
       <div class="md:col-span-2"><label class="text-xs font-semibold">Customer Note</label><textarea id="mcNotes" rows="3" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Preferences, project, delivery instructions, follow-up note..."></textarea></div>
       <button class="md:col-span-2 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Customer</button>
@@ -109,7 +115,11 @@
     const cr=await db.from('customers').insert(row).select('id').single();if(cr.error)return showToast(cr.error.message,'err');
     if(contacts.length){const ci=await db.from('customer_contacts').insert(contacts.map((x,i)=>({...x,customer_id:cr.data.id,is_primary:i===0,created_by:state.user.id})));if(ci.error)return showToast(`Customer saved, but contacts could not be saved: ${ci.error.message}`,'err');}
     if(role()==='manager'&&managerContext()&&typeof recordManagerRepAction==='function')await recordManagerRepAction('create_customer','customer',cr.data.id,{customer_name:row.name});
-    closeModal();showToast('Customer added');await go('customers');
+    closeModal();
+    if(role()==='manager'&&!managerContext())showToast('Customer added as Unassigned — assign a Sales Rep from Edit Customer');
+    else if(role()==='manager'&&managerContext())showToast(`Customer added and assigned to ${managerRepName()}`);
+    else showToast('Customer added');
+    await go('customers');
   }
 
   window.openEditCustomer=async function(id){
@@ -121,7 +131,7 @@
       <div><label class="text-xs font-semibold">Customer Name</label><input id="mecName" required value="${esc(c.name||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
       <div><label class="text-xs font-semibold">Customer Code</label><input id="mecCode" value="${esc(c.customer_code||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
       <div class="md:col-span-2"><label class="text-xs font-semibold">Address</label><input id="mecAddress" value="${esc(c.address||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
-      ${canAssignHandler()?`<div class="md:col-span-2"><label class="text-xs font-semibold">Handled By / Assigned Sales</label><select id="mecHandler" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${opts}</select><div class="text-[10px] text-gray-400 mt-1">Changing this transfers the customer portfolio to another Sales Rep/Manager.</div></div>`:''}
+      ${canAssignHandler()?`<div class="md:col-span-2"><label class="text-xs font-semibold">Assign / Reassign Sales Rep</label><select id="mecHandler" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${opts}</select><div class="text-[10px] text-gray-400 mt-1">${role()==='manager'?'Manager can assign an unassigned customer or transfer the customer to another Sales Rep.':'Changing this transfers the customer portfolio to another Sales Rep/Manager.'}</div></div>`:''}
       <div class="md:col-span-2 border-t pt-4"><div class="flex items-center justify-between gap-3"><div><div class="font-bold text-sm">Contact Methods</div><div class="text-[10px] text-gray-400">Phone numbers and social usernames can be added, edited or removed.</div></div><button type="button" onclick="addCustomerContactRow('phone')" class="px-3 py-2 border rounded-lg text-xs font-semibold">+ Contact</button></div><div id="customerContactRows" class="grid gap-2 mt-3">${(cs.length?cs:[...(c.phone?[{contact_type:'phone',label:'Main',contact_value:c.phone}]:[]),...(c.email?[{contact_type:'email',label:'Email',contact_value:c.email}]:[])]).map(contactRow).join('')||contactRow({contact_type:'phone',label:'Main'})}</div></div>
       <div class="md:col-span-2"><label class="text-xs font-semibold">Customer Note</label><textarea id="mecNotes" rows="3" class="mt-1 w-full border rounded-xl px-3 py-2.5">${esc(c.notes||'')}</textarea></div>
       <button class="md:col-span-2 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Customer Changes</button>
