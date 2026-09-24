@@ -43,6 +43,19 @@
     if(classLabel)classLabel.textContent=cls||'Unclassified';
     if(typeLabel)typeLabel.textContent=type;
   }
+  function salesImageUrl(raw){
+    return typeof normalizeGoogleImageUrl==='function'?normalizeGoogleImageUrl(raw||''):(raw||'');
+  }
+  function salesProductPhotoBox(url,size=64){
+    const u=salesImageUrl(url);
+    if(!u)return `<div style="width:${size}px;height:${size}px" class="rounded-xl border bg-gray-100 flex items-center justify-center text-[9px] text-gray-400 shrink-0">No Photo</div>`;
+    return `<div style="width:${size}px;height:${size}px" class="rounded-xl border bg-gray-100 overflow-hidden shrink-0"><img src="${esc(u)}" class="w-full h-full object-cover" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div style="display:none" class="w-full h-full items-center justify-center text-[9px] text-gray-400">No Photo</div></div>`;
+  }
+  window.updateSalesProductPhotoPreview=function(row,url){
+    const box=row?.querySelector('.sales-product-preview');
+    if(box)box.innerHTML=salesProductPhotoBox(url||'',64);
+  };
+
   function serviceCode(value){
     return ({
       'Service Fee':'SERVICE-FEE',
@@ -151,7 +164,7 @@
     if(!matches.length){
       box.innerHTML='<div class="px-3 py-3 text-xs text-gray-400">No matching product code or item name.</div>';
     }else{
-      box.innerHTML=matches.map(p=>`<button type="button" class="w-full text-left px-3 py-2 hover:bg-amber-50 border-b last:border-b-0" data-id="${esc(p.id)}" data-code="${esc(p.code||'')}" data-name="${esc(p.item_name||'')}" data-image="${esc(p.image_url||'')}" data-price="${Number(p.sales_price||0)}" data-class="${esc(p.class||'')}" onclick="chooseSalesProduct(this)"><div class="text-xs font-bold text-[#a77d1a]">${esc(p.code||'No code')}</div><div class="text-sm truncate">${esc(p.item_name||'')}</div><div class="text-[10px] text-gray-400">${esc(p.brand||'')} ${p.class?'· '+esc(p.class):''} · ${money(p.sales_price||0,p.currency||'USD')}</div></button>`).join('');
+      box.innerHTML=matches.map(p=>`<button type="button" class="w-full text-left px-3 py-2 hover:bg-amber-50 border-b last:border-b-0 flex items-center gap-2" data-id="${esc(p.id)}" data-code="${esc(p.code||'')}" data-name="${esc(p.item_name||'')}" data-image="${esc(p.image_url||'')}" data-price="${Number(p.sales_price||0)}" data-class="${esc(p.class||'')}" onclick="chooseSalesProduct(this)">${salesProductPhotoBox(p.image_url||'',42)}<div class="min-w-0 flex-1"><div class="text-xs font-bold text-[#a77d1a]">${esc(p.code||'No code')}</div><div class="text-sm truncate">${esc(p.item_name||'')}</div><div class="text-[10px] text-gray-400 truncate">${esc(p.brand||'')} ${p.class?'· '+esc(p.class):''} · ${money(p.sales_price||0,p.currency||'USD')}</div></div></button>`).join('');
     }
     box.classList.remove('hidden');
   };
@@ -163,6 +176,7 @@
     row.querySelector('.product-code').value=btn.dataset.code||'';
     row.querySelector('.product-name').value=btn.dataset.name||'';
     row.querySelector('.product-image').value=btn.dataset.image||'';
+    updateSalesProductPhotoPreview(row,btn.dataset.image||'');
     row.querySelector('.product-search-input').value=`${btn.dataset.code||''} · ${btn.dataset.name||''}`;
     row.querySelector('.unit-price').value=Number(btn.dataset.price||0);
     updateProductMeta(row,btn.dataset.class||'');
@@ -177,6 +191,9 @@
     row.querySelector('.product-code').value='';
     row.querySelector('.product-name').value='';
     row.querySelector('.product-image').value='';
+    const raw=String(input.value||'').trim().toLowerCase();
+    const exact=(state.products||[]).find(p=>String(p.code||'').trim().toLowerCase()===raw);
+    updateSalesProductPhotoPreview(row,exact?.image_url||'');
     updateProductMeta(row,'');
     showSalesProductSuggestions(input);
   };
@@ -188,14 +205,19 @@
     const d=document.createElement('div');
     d.className='grid md:grid-cols-12 gap-2 p-3 bg-gray-50 rounded-xl order-item-row';
     d.innerHTML=`
-      <div class="md:col-span-5 relative">
-        <label class="text-[10px] font-semibold text-gray-500">Product Code / Item</label>
-        <input type="text" autocomplete="off" class="product-search-input mt-1 w-full border rounded-lg px-3 py-2 bg-white" placeholder="Type product code or item name..." onfocus="showSalesProductSuggestions(this)" oninput="salesProductInputChanged(this)">
-        <input type="hidden" class="product-id"><input type="hidden" class="product-code"><input type="hidden" class="product-name"><input type="hidden" class="product-image"><input type="hidden" class="product-class"><input type="hidden" class="product-type">
-        <div class="product-suggestions hidden absolute z-[100] left-0 right-0 top-full mt-1 max-h-64 overflow-y-auto bg-white border rounded-xl shadow-xl"></div>
-        <div class="mt-1.5 flex flex-wrap gap-1.5 text-[9px]">
-          <span class="px-2 py-1 rounded-full bg-white border text-gray-500">Type: <b class="product-type-label text-gray-700">Unclassified</b></span>
-          <span class="px-2 py-1 rounded-full bg-white border text-gray-500">Class: <b class="product-class-label text-gray-700">Unclassified</b></span>
+      <div class="md:col-span-5">
+        <div class="flex items-start gap-3">
+          <div class="sales-product-preview shrink-0">${salesProductPhotoBox('',64)}</div>
+          <div class="relative min-w-0 flex-1">
+            <label class="text-[10px] font-semibold text-gray-500">Product Code / Item</label>
+            <input type="text" autocomplete="off" class="product-search-input mt-1 w-full border rounded-lg px-3 py-2 bg-white" placeholder="Type product code or item name..." onfocus="showSalesProductSuggestions(this)" oninput="salesProductInputChanged(this)">
+            <input type="hidden" class="product-id"><input type="hidden" class="product-code"><input type="hidden" class="product-name"><input type="hidden" class="product-image"><input type="hidden" class="product-class"><input type="hidden" class="product-type">
+            <div class="product-suggestions hidden absolute z-[100] left-0 right-0 top-full mt-1 max-h-64 overflow-y-auto bg-white border rounded-xl shadow-xl"></div>
+            <div class="mt-1.5 flex flex-wrap gap-1.5 text-[9px]">
+              <span class="px-2 py-1 rounded-full bg-white border text-gray-500">Type: <b class="product-type-label text-gray-700">Unclassified</b></span>
+              <span class="px-2 py-1 rounded-full bg-white border text-gray-500">Class: <b class="product-class-label text-gray-700">Unclassified</b></span>
+            </div>
+          </div>
         </div>
       </div>
       <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Qty</label><input class="qty mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0.01" step="0.01" value="1" oninput="salesEntryRecalc()"></div>
