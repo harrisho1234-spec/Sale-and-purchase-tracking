@@ -26,7 +26,7 @@
     var form=document.getElementById('multiCustomerForm');if(!form)return out;
     var banner=document.createElement('div');banner.className='md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800';banner.innerHTML='<b>Approval required.</b> This customer will stay Pending and will not appear in the live customer master until Manager/Admin approves and publishes it.';form.prepend(banner);
     var note=document.createElement('div');note.className='md:col-span-2';note.innerHTML='<label class="text-xs font-semibold">Request Note</label><textarea id="customerCreateRequestNote" rows="2" class="mt-1 w-full border border-amber-200 bg-amber-50 rounded-xl px-3 py-2" placeholder="Optional context for Manager/Admin"></textarea>';form.insertBefore(note,form.lastElementChild);
-    var btn=form.querySelector('button[type="submit"],button:last-child');if(btn)btn.textContent='Submit Customer for Approval';
+    var btn=form.querySelector('button:not([type="button"])');if(btn)btn.textContent='Submit Customer for Approval';
     form.onsubmit=async function(e){
       e.preventDefault();
       var contacts=contactRows(form),name=clean(document.getElementById('mcName').value);if(!name)return showToast('Customer name is required.','err');
@@ -51,7 +51,7 @@
     var c=(state.customers||[]).find(function(x){return x.id===id});
     var banner=document.createElement('div');banner.className='md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800';banner.innerHTML='<b>Approval required.</b> Your changes will be sent to Manager/Admin. The live customer profile stays unchanged until approval.';form.prepend(banner);
     var note=document.createElement('div');note.className='md:col-span-2';note.innerHTML='<label class="text-xs font-semibold">Reason for Change</label><textarea id="customerEditRequestNote" required rows="2" class="mt-1 w-full border border-amber-200 bg-amber-50 rounded-xl px-3 py-2" placeholder="Explain what needs to be corrected."></textarea>';form.insertBefore(note,form.lastElementChild);
-    var btn=form.querySelector('button[type="submit"],button:last-child');if(btn)btn.textContent='Submit Customer Change Request';
+    var btn=form.querySelector('button:not([type="button"])');if(btn)btn.textContent='Submit Customer Change Request';
     form.onsubmit=async function(e){
       e.preventDefault();
       var contacts=contactRows(form),name=clean(document.getElementById('mecName').value),reason=clean(document.getElementById('customerEditRequestNote').value);if(!name)return showToast('Customer name is required.','err');if(!reason)return showToast('Enter the reason for this change.','err');
