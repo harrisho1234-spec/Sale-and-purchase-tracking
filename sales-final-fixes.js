@@ -150,6 +150,7 @@
   }
   function canEditPayment(){
     const r=state.profile?.role||'';
+    if(r==='sales')return false;
     return r!=='manager'||mgr();
   }
   async function sums(){
