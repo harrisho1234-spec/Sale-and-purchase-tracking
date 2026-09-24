@@ -10,6 +10,8 @@
   function round2(v){return Math.round((Number(v||0)+Number.EPSILON)*100)/100}
   function docNo(o){return o?.sales_invoice_no||o?.sr_no||o?.invoice_no||o?.order_no||'Order'}
   function flow(o){return (o?.sales_flow_type||o?.order_type)==='pre_order'?'pre_order':'stock_sale'}
+  function salesEditLocked(o){return role()==='sales'&&(o?.items||[]).some(i=>Number(i?.return_info?.qty_returned||0)>0||String(i?.fulfillment_status||'').toLowerCase()==='cancelled')}
+  function salesEditLockLabel(o){if(!(o?.items||[]).length)return '';if((o.items||[]).some(i=>Number(i?.return_info?.qty_returned||0)>0))return 'Return/CN recorded';if((o.items||[]).some(i=>String(i?.fulfillment_status||'').toLowerCase()==='cancelled'))return 'Customer-cancelled item';return ''}
 
   function decorateEditButtons(){
     if(!canEditOrdersUI()||!window.trackingRedesign?.salesOrders)return;
@@ -28,11 +30,22 @@
       const b=document.createElement('button');
       b.className='sales-edit-order-btn px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-[10px] font-bold';
       b.dataset.orderId=o.id;
-      const superAdmin=role()==='super_admin';
-      b.textContent=superAdmin?'Edit Invoice':role()==='sales'?'Request Edit':'Edit Order';
-      b.onclick=()=>superAdmin&&typeof window.openSuperAdminInvoiceEdit==='function'
-        ? window.openSuperAdminInvoiceEdit(o.id)
-        : openEditSalesOrder(o.id);
+      const superAdmin=role()==='super_admin',locked=salesEditLocked(o);
+      if(locked){
+        b.textContent='Edit Locked';
+        b.disabled=true;
+        b.title=salesEditLockLabel(o)+' — Sales cannot edit this invoice.';
+        b.className='sales-edit-order-btn px-3 py-2 rounded-lg border border-gray-200 bg-gray-100 text-gray-400 text-[10px] font-bold cursor-not-allowed';
+        const lock=document.createElement('span');
+        lock.className='px-2 py-1 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 text-[9px] font-bold';
+        lock.textContent='🔒 '+salesEditLockLabel(o);
+        box.appendChild(lock);
+      }else{
+        b.textContent=superAdmin?'Edit Invoice':role()==='sales'?'Request Edit':'Edit Order';
+        b.onclick=()=>superAdmin&&typeof window.openSuperAdminInvoiceEdit==='function'
+          ? window.openSuperAdminInvoiceEdit(o.id)
+          : openEditSalesOrder(o.id);
+      }
       box.appendChild(b);
 
       if(superAdmin&&!card.querySelector(`.sales-delete-invoice-btn[data-order-id="${o.id}"]`)){
@@ -179,6 +192,15 @@
   window.openEditSalesOrder=async function(orderId){
     if(!canEditOrdersUI())return showToast('You do not have edit access here.','err');
     if(role()==='sales'){
+      const lock=await db.rpc('sales_order_sales_edit_lock_reason',{p_order_id:orderId});
+      if(lock.error)return showToast(lock.error.message,'err');
+      if(lock.data){
+        return openModal('Invoice Edit Locked',`<div class="space-y-4">
+          <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><b>Sales edit is locked.</b><div class="mt-2">${esc(lock.data)}</div></div>
+          <div class="text-xs text-gray-500">Manager/Admin/Super Admin can review corrections when necessary, while protected return/cancelled history remains preserved.</div>
+          <button onclick="closeModal()" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Close</button>
+        </div>`);
+      }
       const pending=await db.from('sales_order_edit_requests').select('id,requested_at,request_note,status').eq('sales_order_id',orderId).eq('status','pending').maybeSingle();
       if(pending.error)return showToast(pending.error.message,'err');
       if(pending.data){
