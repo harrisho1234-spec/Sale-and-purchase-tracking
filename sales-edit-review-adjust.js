@@ -6,6 +6,73 @@
   function n(v){var x=Number(v||0);return Number.isFinite(x)?x:0}
   function clean(v){return String(v==null?'':v).trim()}
   function isPre(r){var o=r&&r.requested_order||{};return !!o.sr_no||String(o.order_no||'').toUpperCase().startsWith('SR')}
+  function same(a,b){return JSON.stringify(a==null?null:a)===JSON.stringify(b==null?null:b)}
+  function customerName(id){
+    var c=(state.customers||[]).find(function(x){return x.id===id});
+    return c?c.name:(id||'-');
+  }
+  function orderDoc(o){
+    o=o||{};
+    return o.sales_invoice_no||o.invoice_no||o.sr_no||o.order_no||'-';
+  }
+  function itemName(i){
+    i=i||{};
+    return [i.product_code_snapshot,i.item_name_snapshot].filter(Boolean).join(' · ')||'Item';
+  }
+  function orderDiffs(r){
+    var a=r.original_order||{},b=r.requested_order||{};
+    var rows=[
+      ['Document',orderDoc(a),orderDoc(b)],
+      ['Customer',customerName(a.customer_id),customerName(b.customer_id)],
+      ['Order Date',a.order_date||'-',b.order_date||'-'],
+      ['Order Discount',money(n(a.order_discount)),money(n(b.order_discount))],
+      ['Notes',a.notes||'-',b.notes||'-']
+    ];
+    return rows.filter(function(x){return !same(x[1],x[2])});
+  }
+  function itemDiffs(r){
+    var oldItems=Array.isArray(r.original_items)?r.original_items:[];
+    var newItems=Array.isArray(r.requested_items)?r.requested_items:[];
+    var oldMap=new Map(oldItems.map(function(x){return [x.id,x]}));
+    var newExisting=new Map(newItems.filter(function(x){return x.id}).map(function(x){return [x.id,x]}));
+    var out=[];
+
+    oldItems.forEach(function(old){
+      var cur=newExisting.get(old.id);
+      if(!cur){
+        out.push({kind:'removed',title:itemName(old),lines:['Removed from order','Qty '+n(old.qty),'Unit '+money(n(old.unit_price)),'Discount '+money(n(old.discount_amount))]});
+        return;
+      }
+      var lines=[];
+      if(!same(old.product_id,cur.product_id)||!same(old.product_code_snapshot,cur.product_code_snapshot)||!same(old.item_name_snapshot,cur.item_name_snapshot)){
+        lines.push('Item: '+itemName(old)+' → '+itemName(cur));
+      }
+      if(n(old.qty)!==n(cur.qty))lines.push('Qty: '+n(old.qty)+' → '+n(cur.qty));
+      if(n(old.unit_price)!==n(cur.unit_price))lines.push('Unit Price: '+money(n(old.unit_price))+' → '+money(n(cur.unit_price)));
+      if(n(old.discount_amount)!==n(cur.discount_amount))lines.push('Line Discount: '+money(n(old.discount_amount))+' → '+money(n(cur.discount_amount)));
+      if(lines.length)out.push({kind:'changed',title:itemName(cur),lines:lines});
+    });
+
+    newItems.filter(function(x){return !x.id}).forEach(function(cur){
+      out.push({kind:'added',title:itemName(cur),lines:['Added to order','Qty '+n(cur.qty),'Unit '+money(n(cur.unit_price)),'Discount '+money(n(cur.discount_amount))]});
+    });
+    return out;
+  }
+  function requestChangesHtml(r){
+    var od=orderDiffs(r),it=itemDiffs(r),count=od.length+it.length;
+    var orderHtml=od.length?od.map(function(x){
+      return '<div class="grid md:grid-cols-[130px_1fr_28px_1fr] gap-2 items-center rounded-lg border bg-white px-3 py-2 text-xs"><b>'+esc(x[0])+'</b><div class="text-gray-500 break-words">'+esc(x[1])+'</div><div class="text-center text-amber-600">→</div><div class="font-semibold break-words">'+esc(x[2])+'</div></div>';
+    }).join(''):'<div class="text-xs text-gray-400 rounded-lg border border-dashed p-3">No order-header changes.</div>';
+    var itemHtml=it.length?it.map(function(x){
+      var cls=x.kind==='added'?'bg-green-50 text-green-700 border-green-200':x.kind==='removed'?'bg-red-50 text-red-600 border-red-200':'bg-amber-50 text-amber-700 border-amber-200';
+      return '<div class="rounded-lg border bg-white p-3"><div class="flex flex-wrap items-center gap-2"><span class="px-2 py-1 rounded-md border text-[9px] font-bold '+cls+'">'+x.kind.toUpperCase()+'</span><b class="text-sm">'+esc(x.title)+'</b></div><div class="mt-2 space-y-1">'+x.lines.map(function(line){return '<div class="text-xs text-gray-600">'+esc(line)+'</div>'}).join('')+'</div></div>';
+    }).join(''):'<div class="text-xs text-gray-400 rounded-lg border border-dashed p-3">No item changes.</div>';
+
+    return '<details open class="rounded-xl border border-amber-200 bg-amber-50/40 overflow-hidden">'
+      +'<summary class="cursor-pointer px-4 py-3 flex items-center justify-between gap-3"><div><div class="font-bold text-sm">Sales Requested Changes</div><div class="text-[10px] text-gray-500">Original values compared with what Sales requested.</div></div><span class="min-w-[24px] h-[24px] px-2 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold inline-flex items-center justify-center">'+count+'</span></summary>'
+      +'<div class="border-t border-amber-100 p-4 space-y-4"><div><div class="text-[10px] uppercase font-bold text-gray-400 mb-2">Order Changes</div><div class="grid gap-2">'+orderHtml+'</div></div><div><div class="text-[10px] uppercase font-bold text-gray-400 mb-2">Item Changes</div><div class="grid gap-2">'+itemHtml+'</div></div></div>'
+      +'</details>';
+  }
   function prodOptions(selected){
     var out='<option value="">-- Select Product --</option>';
     (state.products||[]).forEach(function(p){
@@ -88,7 +155,8 @@
     var customers=(state.customers||[]).map(function(c){return '<option value="'+c.id+'" '+(c.id===o.customer_id?'selected':'')+'>'+esc(c.name)+'</option>'}).join('');
     var html='<form id="reviewSalesEditForm" class="space-y-5">'
       +'<div class="rounded-xl border border-amber-200 bg-amber-50 p-4"><div class="text-[10px] uppercase font-bold text-amber-700">Pending Sales Edit</div><div class="text-xl font-bold mt-1">'+esc(r.customer_name||'Customer')+'</div><div class="text-[10px] text-gray-500 mt-1">Requested by '+esc(r.requested_by_name||'Sales')+' · '+new Date(r.requested_at).toLocaleString()+'</div>'+(r.request_note?'<div class="border-t border-amber-200 mt-3 pt-3 text-xs"><b>Sales reason:</b> '+esc(r.request_note)+'</div>':'')+'</div>'
-      +'<div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800"><b>Adjust the final version here.</b> Nothing changes on the live order until you approve.</div>'
+      +requestChangesHtml(r)
+      +'<div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800"><b>Final review draft below.</b> Sales\' requested values are prefilled. You can adjust them before approval; the live order is unchanged until you approve.</div>'
       +'<div class="grid md:grid-cols-2 gap-3"><div><label class="text-xs font-semibold">Customer</label><select id="reviewCustomer" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white">'+customers+'</select></div><div><label class="text-xs font-semibold">Order Date</label><input id="reviewDate" type="date" value="'+esc(o.order_date||'')+'" class="mt-1 w-full border rounded-xl px-3 py-2"></div>'
       +(pre?'':'<div><label class="text-xs font-semibold">Invoice Type</label><select id="reviewType" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"><option value="TK" '+((o.sales_invoice_type||'TK')==='TK'?'selected':'')+'>TK</option><option value="RK" '+(o.sales_invoice_type==='RK'?'selected':'')+'>RK</option></select></div>')
       +'<div><label class="text-xs font-semibold">'+(pre?'SR Number':'TK / RK Invoice Number')+'</label><input id="reviewDoc" value="'+esc(o.order_no||o.sr_no||o.sales_invoice_no||'')+'" class="mt-1 w-full border rounded-xl px-3 py-2"></div></div>'
