@@ -30,22 +30,11 @@
       const b=document.createElement('button');
       b.className='sales-edit-order-btn px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-[10px] font-bold';
       b.dataset.orderId=o.id;
-      const superAdmin=role()==='super_admin',locked=salesEditLocked(o);
-      if(locked){
-        b.textContent='Edit Locked';
-        b.disabled=true;
-        b.title=salesEditLockLabel(o)+' — Sales cannot edit this invoice.';
-        b.className='sales-edit-order-btn px-3 py-2 rounded-lg border border-gray-200 bg-gray-100 text-gray-400 text-[10px] font-bold cursor-not-allowed';
-        const lock=document.createElement('span');
-        lock.className='px-2 py-1 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 text-[9px] font-bold';
-        lock.textContent='🔒 '+salesEditLockLabel(o);
-        box.appendChild(lock);
-      }else{
-        b.textContent=superAdmin?'Edit Invoice':role()==='sales'?'Request Edit':'Edit Order';
-        b.onclick=()=>superAdmin&&typeof window.openSuperAdminInvoiceEdit==='function'
-          ? window.openSuperAdminInvoiceEdit(o.id)
-          : openEditSalesOrder(o.id);
-      }
+      const superAdmin=role()==='super_admin';
+      b.textContent=superAdmin?'Edit Invoice':role()==='sales'?'Request Edit':'Edit Order';
+      b.onclick=()=>superAdmin&&typeof window.openSuperAdminInvoiceEdit==='function'
+        ? window.openSuperAdminInvoiceEdit(o.id)
+        : openEditSalesOrder(o.id);
       box.appendChild(b);
 
       if(superAdmin&&!card.querySelector(`.sales-delete-invoice-btn[data-order-id="${o.id}"]`)){
@@ -168,11 +157,11 @@
     }
     const productText=i?`${i.product_code_snapshot||''} · ${i.item_name_snapshot||''}`:'';
     return `<div class="edit-order-item-row grid md:grid-cols-12 gap-2 p-3 bg-gray-50 rounded-xl" data-item-id="${esc(i?.id||'')}" data-linked="${linked?'1':'0'}" data-returned="${returned?'1':'0'}">
-      <div class="md:col-span-5 relative"><label class="text-[10px] font-semibold text-gray-500">Product Code / Item</label><input ${(linked||returned)?'disabled':''} value="${esc(productText)}" class="edit-product-search mt-1 w-full border rounded-lg px-3 py-2 bg-white disabled:bg-gray-100" placeholder="Type product code or item name..." onfocus="showEditProductSuggestions(this)" oninput="editProductInputChanged(this)"><input type="hidden" class="edit-line-kind" value="product"><input type="hidden" class="edit-product-id" value="${esc(i?.product_id||'')}"><input type="hidden" class="edit-product-code" value="${esc(i?.product_code_snapshot||'')}"><input type="hidden" class="edit-product-name" value="${esc(i?.item_name_snapshot||'')}"><input type="hidden" class="edit-product-image" value="${esc(i?.image_url_snapshot||'')}"><input type="hidden" class="edit-product-class" value="${esc(i?.product_class_snapshot||'')}"><input type="hidden" class="edit-product-type" value="${esc(i?.product_type_snapshot||'')}"><div class="edit-product-suggestions hidden absolute z-[100] left-0 right-0 top-full mt-1 max-h-64 overflow-y-auto bg-white border rounded-xl shadow-xl"></div>${returned?'<div class="text-[9px] text-amber-700 mt-1">Return/CN recorded — product, qty, price, discount and removal are locked.</div>':linked?'<div class="text-[9px] text-blue-600 mt-1">Linked to Procurement — product, qty and removal are locked until unlinked.</div>':''}</div>
-      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Qty</label><input ${(linked||returned)?'disabled':''} class="edit-qty mt-1 w-full border rounded-lg px-2 py-2 disabled:bg-gray-100" type="number" min="1" step="1" value="${Number(i?.qty||1)}" oninput="editOrderRecalc()"></div>
-      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Unit Price</label><input ${returned?'disabled':''} class="edit-unit-price mt-1 w-full border rounded-lg px-2 py-2 disabled:bg-gray-100" type="number" min="0" step="0.01" value="${Number(i?.unit_price||0)}" oninput="editOrderRecalc()"></div>
-      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Line Discount</label><input ${returned?'disabled':''} class="edit-line-discount mt-1 w-full border rounded-lg px-2 py-2 disabled:bg-gray-100" type="number" min="0" step="0.01" value="${Number(i?.discount_amount||0)}" oninput="editOrderRecalc()"></div>
-      <div class="md:col-span-1 flex items-end"><button type="button" ${(linked||returned)?'disabled':''} onclick="removeEditOrderItem(this)" class="w-full h-[42px] border rounded-lg text-red-500 font-bold disabled:opacity-30">×</button></div>
+      <div class="md:col-span-5 relative"><label class="text-[10px] font-semibold text-gray-500">Product Code / Item</label><input ${role()==='sales'?'':((linked||returned)?'disabled':'')} value="${esc(productText)}" class="edit-product-search mt-1 w-full border rounded-lg px-3 py-2 bg-white disabled:bg-gray-100" placeholder="Type product code or item name..." onfocus="showEditProductSuggestions(this)" oninput="editProductInputChanged(this)"><input type="hidden" class="edit-line-kind" value="product"><input type="hidden" class="edit-product-id" value="${esc(i?.product_id||'')}"><input type="hidden" class="edit-product-code" value="${esc(i?.product_code_snapshot||'')}"><input type="hidden" class="edit-product-name" value="${esc(i?.item_name_snapshot||'')}"><input type="hidden" class="edit-product-image" value="${esc(i?.image_url_snapshot||'')}"><input type="hidden" class="edit-product-class" value="${esc(i?.product_class_snapshot||'')}"><input type="hidden" class="edit-product-type" value="${esc(i?.product_type_snapshot||'')}"><div class="edit-product-suggestions hidden absolute z-[100] left-0 right-0 top-full mt-1 max-h-64 overflow-y-auto bg-white border rounded-xl shadow-xl"></div>${returned?'<div class="text-[9px] text-amber-700 mt-1">Return/CN recorded — Sales may request corrections; Manager/Admin approval is required before anything changes.</div>':linked?'<div class="text-[9px] text-blue-600 mt-1">Linked to Procurement — Sales may request corrections; Manager/Admin will review the PO impact before approval.</div>':''}</div>
+      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Qty</label><input ${role()==='sales'?'':((linked||returned)?'disabled':'')} class="edit-qty mt-1 w-full border rounded-lg px-2 py-2 disabled:bg-gray-100" type="number" min="1" step="1" value="${Number(i?.qty||1)}" oninput="editOrderRecalc()"></div>
+      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Unit Price</label><input ${role()==='sales'?'':(returned?'disabled':'')} class="edit-unit-price mt-1 w-full border rounded-lg px-2 py-2 disabled:bg-gray-100" type="number" min="0" step="0.01" value="${Number(i?.unit_price||0)}" oninput="editOrderRecalc()"></div>
+      <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Line Discount</label><input ${role()==='sales'?'':(returned?'disabled':'')} class="edit-line-discount mt-1 w-full border rounded-lg px-2 py-2 disabled:bg-gray-100" type="number" min="0" step="0.01" value="${Number(i?.discount_amount||0)}" oninput="editOrderRecalc()"></div>
+      <div class="md:col-span-1 flex items-end"><button type="button" ${role()==='sales'?'':((linked||returned)?'disabled':'')} onclick="removeEditOrderItem(this)" class="w-full h-[42px] border rounded-lg text-red-500 font-bold disabled:opacity-30">×</button></div>
     </div>`;
   }
 
@@ -192,15 +181,6 @@
   window.openEditSalesOrder=async function(orderId){
     if(!canEditOrdersUI())return showToast('You do not have edit access here.','err');
     if(role()==='sales'){
-      const lock=await db.rpc('sales_order_sales_edit_lock_reason',{p_order_id:orderId});
-      if(lock.error)return showToast(lock.error.message,'err');
-      if(lock.data){
-        return openModal('Invoice Edit Locked',`<div class="space-y-4">
-          <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><b>Sales edit is locked.</b><div class="mt-2">${esc(lock.data)}</div></div>
-          <div class="text-xs text-gray-500">Manager/Admin/Super Admin can review corrections when necessary, while protected return/cancelled history remains preserved.</div>
-          <button onclick="closeModal()" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Close</button>
-        </div>`);
-      }
       const pending=await db.from('sales_order_edit_requests').select('id,requested_at,request_note,status').eq('sales_order_id',orderId).eq('status','pending').maybeSingle();
       if(pending.error)return showToast(pending.error.message,'err');
       if(pending.data){
@@ -216,8 +196,8 @@
     const o=editState.order,f=flow(o),linkedCount=editState.linked.size,returnedCount=editState.returned.size;
     const currentType=o.sales_invoice_type||String(o.sales_invoice_no||o.order_no||'').toUpperCase().startsWith('RK')?'RK':'TK';
     openModal(`${role()==='super_admin'?'Edit Invoice':'Edit'} ${docNo(o)}`,`<form id="editSalesOrderForm" class="space-y-5">
-      <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">${role()==='sales'?'<b>Approval required.</b> Your requested changes will be sent to Manager/Admin. The live order will remain unchanged until approved.':'Payments are kept separately. Editing the order changes the order total and AR automatically.'} ${linkedCount?`${linkedCount} item(s) linked to Procurement are protected from product/qty changes.`:''}</div>
-      ${returnedCount?`<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">${returnedCount} item(s) already have Return/CN records. Those specific lines are locked from product, quantity, price, discount and deletion changes.</div>`:''}
+      <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">${role()==='sales'?'<b>Approval required.</b> Your requested changes will be sent to Manager/Admin. The live order will remain unchanged until approved.':'Payments are kept separately. Editing the order changes the order total and AR automatically.'} ${linkedCount?`${linkedCount} item(s) linked to Procurement can still be included in a Sales edit request; Manager/Admin will review the PO impact before final approval.`:''}</div>
+      ${returnedCount?`<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">${returnedCount} item(s) already have Return/CN records. Sales may still request corrections to these lines. Manager/Admin will review the Return/CN impact before final approval.</div>`:''}
       <div class="grid md:grid-cols-2 gap-3">
         <div><label class="text-xs font-semibold">Customer</label><select id="editOrderCustomer" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white">${state.customers.map(c=>`<option value="${c.id}" ${c.id===o.customer_id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
         <div><label class="text-xs font-semibold">Sale Type</label><input disabled value="${f==='pre_order'?'Pre-Order — SR':'Stock Sale — TK / RK'}" class="mt-1 w-full border rounded-xl px-3 py-2 bg-gray-50 text-gray-500"><div class="text-[9px] text-gray-400 mt-1">Sale type is locked after creation to protect the PO/SR workflow.</div></div>
