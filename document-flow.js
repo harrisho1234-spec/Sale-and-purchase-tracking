@@ -82,7 +82,7 @@
       steps=[
         stepHtml('TK/RK Issued',!!o.sales_invoice_no,false,o.sales_invoice_no||o.invoice_no||o.order_no||''),
         stepHtml('Paid',settled,!settled),
-        stepHtml('Ready',(o.items||[]).some(i=>['ready','delivered'].includes(norm(i.fulfillment_status))),false),
+        stepHtml('Arrived',(o.items||[]).some(i=>['arrived','ready','delivered'].includes(norm(i.fulfillment_status))),false),
         stepHtml('Delivered',delivered,settled&&!delivered)
       ].join('');
     }
