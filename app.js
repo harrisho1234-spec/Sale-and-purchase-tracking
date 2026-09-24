@@ -106,7 +106,22 @@ async function renderDashboard(){
   </div>`;
   document.getElementById('content').innerHTML=`${cards}<div class="grid xl:grid-cols-3 gap-5"><div class="xl:col-span-2 card rounded-2xl overflow-hidden"><div class="p-5 border-b flex justify-between items-center"><div><h3 class="font-bold">Recent Sales Orders</h3><p class="text-xs text-gray-400">Latest customer activity</p></div><button onclick="openNewOrder()" class="px-3 py-2 bg-[#211d18] text-white rounded-lg text-xs font-semibold">+ New Order</button></div><div class="divide-y">${state.orderSummary.slice(0,8).map(orderRow).join('')||empty('No sales orders yet.')}</div></div><div class="card rounded-2xl p-5 h-fit"><h3 class="font-bold mb-4">Quick Actions</h3><div class="grid gap-2"><button onclick="openNewCustomer()" class="p-3 border rounded-xl text-left text-sm hover:bg-gray-50">+ Add Customer</button><button onclick="openNewOrder()" class="p-3 border rounded-xl text-left text-sm hover:bg-gray-50">+ Create Sales Order</button>${isAdmin()?'<button onclick="openNewProduct()" class="p-3 border rounded-xl text-left text-sm hover:bg-gray-50">+ Add Product</button><button onclick="openNewSupplierPO()" class="p-3 border rounded-xl text-left text-sm hover:bg-gray-50">+ Create Supplier PO</button>':''}</div></div></div>`;
 }
-function orderRow(o){return `<div class="p-4 flex items-center justify-between gap-3 hover:bg-gray-50"><div><div class="font-bold">${esc(o.order_no)}</div><div class="text-xs text-gray-500">${esc(o.customer_name)} · ${esc(o.order_date||'')}</div></div><div class="text-right"><div class="font-semibold">${money(o.order_total,o.currency)}</div><div class="text-xs ${Number(o.balance_due)>0?'text-red-500':'text-green-600'}">${Number(o.balance_due)>0?'Balance '+money(o.balance_due,o.currency):'Paid'}</div></div></div>`}
+function orderRow(o){return `<div data-dashboard-order-id="${o.id}" onclick="openDashboardSalesOrder('${o.id}')" title="Open in Sales Tracking" class="p-4 flex items-center justify-between gap-3 hover:bg-amber-50/40 cursor-pointer transition-colors"><div><div class="font-bold">${esc(o.order_no)}</div><div class="text-xs text-gray-500">${esc(o.customer_name)} · ${esc(o.order_date||'')}</div></div><div class="text-right"><div class="font-semibold">${money(o.order_total,o.currency)}</div><div class="text-xs ${Number(o.balance_due)>0?'text-red-500':'text-green-600'}">${Number(o.balance_due)>0?'Balance '+money(o.balance_due,o.currency):'Paid'}</div><div class="text-[9px] text-[#b3871e] mt-1">Open details →</div></div></div>`}
+async function openDashboardSalesOrder(id){
+  await go('sales-orders');
+  const ui=window.trackingRedesign;
+  if(!ui)return;
+  ui.salesTab='invoices';
+  ui.salesStatus='all';
+  ui.salesSearch='';
+  ui.salesDate='all';
+  ui.salesClass='all';
+  ui.salesRep='all';
+  ui.salesCustomer='all';
+  ui.salesExpanded.add(id);
+  if(typeof window.renderSalesTrackingBody==='function')window.renderSalesTrackingBody();
+  setTimeout(()=>document.getElementById('sales-order-'+id)?.scrollIntoView({behavior:'smooth',block:'center'}),80);
+}
 
 async function renderCustomers(){const {data,error}=await db.from('customers').select('*').order('name');if(error)throw error;state.customers=data||[];document.getElementById('content').innerHTML=`<div class="flex justify-between mb-4"><input id="customerSearch" oninput="filterCustomerRows()" class="border rounded-xl px-4 py-2 w-full max-w-md" placeholder="Search customer, phone..."><button onclick="openNewCustomer()" class="ml-3 px-4 py-2 bg-[#211d18] text-white rounded-xl text-sm">+ Customer</button></div><div class="card rounded-2xl overflow-hidden"><div id="customerRows" class="divide-y">${customerRows(state.customers)}</div></div>`}
 function customerRows(list){return list.map(c=>`<div class="p-4 grid md:grid-cols-4 gap-2"><div><div class="font-semibold">${esc(c.name)}</div><div class="text-xs text-gray-400">${esc(c.customer_code||'')}</div></div><div class="text-sm">${esc(c.phone||'-')}</div><div class="text-sm text-gray-500">${esc(c.email||'-')}</div><div class="text-xs text-gray-400">${esc(c.address||'')}</div></div>`).join('')||empty('No customers yet.')}
