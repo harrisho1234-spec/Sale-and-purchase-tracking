@@ -1,11 +1,12 @@
 // Item delivery / installation status controls.
-// Loaded last so Installed is treated as a completed tracking state.
+// Uses the simplified five-stage fulfillment flow.
 (function(){
   const terminalStatuses=new Set(['delivered']);
   const statusOptions=['ordered','production','shipping','arrived','delivered'];
   function canEdit(){return ['sales','manager','admin','super_admin'].includes(state.profile?.role||'')}
   function norm(v){return String(v||'').trim().toLowerCase().replace(/[\s-]+/g,'_')}
-  function canonical(v){const s=norm(v);return s==='pending'||s==='reserved'?'ordered':s==='ready'?'arrived':s==='installed'?'delivered':s}\n  function label(v){return titleCase(canonical(v)||'Ordered')}
+  function canonical(v){const s=norm(v);return s==='pending'||s==='reserved'?'ordered':s==='ready'?'arrived':s==='installed'?'delivered':s}
+  function label(v){return titleCase(canonical(v)||'Ordered')}
   function allOrders(){return [...(window.trackingRedesign?.salesOrders||[]),...(window.trackingRedesign?.trackingOrders||[])]}
   function findOrder(id){return allOrders().find(o=>o.id===id)}
 
