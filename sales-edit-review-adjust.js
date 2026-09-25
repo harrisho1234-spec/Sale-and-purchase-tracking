@@ -97,7 +97,7 @@
       +(warn?'<div class="mt-2 rounded-lg border bg-gray-50 p-2 space-y-1">'+warn+'</div>':'')+'</div>'
       +'<div class="md:col-span-1"><label class="text-[9px] uppercase font-bold text-gray-400">Qty</label><input class="r-qty mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0.01" step="0.01" value="'+(n(i.qty)||1)+'" oninput="reviewLineValueChanged(this)"></div>'
       +'<div class="md:col-span-2"><label class="text-[9px] uppercase font-bold text-gray-400">Unit Price</label><input class="r-price mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="'+n(i.unit_price)+'" oninput="reviewLineValueChanged(this)"></div>'
-      +'<div class="md:col-span-3"><div class="grid grid-cols-2 gap-1"><div><label class="text-[9px] uppercase font-bold text-gray-400">Dis %</label><input aria-label="Discount Percent" title="Dis %" class="r-disc-pct mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" max="100" step="0.01" value="'+linePct+'" oninput="reviewLineDiscountPercentChanged(this)"></div><div><label class="text-[9px] uppercase font-bold text-gray-400">Dis Amt</label><input aria-label="Discount Amount" title="Dis Amt" class="r-disc mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="'+lineDisc+'" oninput="reviewLineDiscountAmountChanged(this)"></div></div></div>'
+      +'<div class="md:col-span-3"><div class="grid grid-cols-2 gap-1"><div><label class="text-[9px] uppercase font-bold text-gray-400">Dis %</label><input aria-label="Discount Percent" title="Dis %" class="r-disc-pct mt-1 w-full border rounded-lg px-2 py-2" type="text" inputmode="decimal" value="'+linePct+'" oninput="reviewLineDiscountPercentChanged(this)" onblur="reviewLineDiscountBlur(this)"></div><div><label class="text-[9px] uppercase font-bold text-gray-400">Dis Amt</label><input aria-label="Discount Amount" title="Dis Amt" class="r-disc mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="'+lineDisc+'" oninput="reviewLineDiscountAmountChanged(this)" onblur="reviewLineDiscountBlur(this)"></div></div></div>'
       +'<div class="md:col-span-1"><button type="button" onclick="this.closest(\'.review-edit-item\').remove();reviewRecalc()" class="w-full h-[38px] border rounded-lg text-red-500 font-bold">×</button></div>'
       +'</div></div>';
   }
@@ -110,7 +110,12 @@
     row.querySelector('.r-class').value=opt.dataset.class||'';
     row.querySelector('.r-type').value=opt.dataset.class?(/chandelier|lamp|lighting/i.test(opt.dataset.class)?'Lighting':/carpet|rug/i.test(opt.dataset.class)?'Carpet':/accessor|mirror|decor|vase/i.test(opt.dataset.class)?'Accessories':'Furniture'):'Unclassified';
   };
-  function syncReviewLineDiscount(row,basis){
+  function reviewLineDecimal(input){
+    var raw=String(input&&input.value!=null?input.value:'').trim().replace(',','.');
+    if(raw===''||raw==='.'||raw==='-'||raw==='-.')return 0;
+    var v=Number(raw);return Number.isFinite(v)?v:0;
+  }
+  function syncReviewLineDiscount(row,basis,forceNormalize){
     if(!row)return;
     if(basis)row.dataset.discountBasis=basis;
     var qty=Math.max(n(row.querySelector('.r-qty')&&row.querySelector('.r-qty').value),0);
@@ -118,18 +123,20 @@
     var gross=Math.round(qty*price*100)/100;
     var pct=row.querySelector('.r-disc-pct'),amt=row.querySelector('.r-disc');
     if(!pct||!amt)return;
+    var active=document.activeElement;
     if((row.dataset.discountBasis||'amount')==='percent'){
-      var p=Math.max(0,Math.min(100,n(pct.value)));
-      pct.value=String(Math.round(p*100)/100);
+      var p=Math.max(0,Math.min(100,reviewLineDecimal(pct)));
+      if(forceNormalize||active!==pct)pct.value=String(Math.round(p*100)/100);
       amt.value=String(Math.round(gross*p)/100);
     }else{
-      var a=Math.max(0,Math.min(gross,n(amt.value)));
-      amt.value=String(Math.round(a*100)/100);
+      var a=Math.max(0,Math.min(gross,reviewLineDecimal(amt)));
+      if(forceNormalize||active!==amt)amt.value=String(Math.round(a*100)/100);
       pct.value=String(gross?Math.round((a/gross*100)*100)/100:0);
     }
   }
   window.reviewLineDiscountPercentChanged=function(input){var row=input.closest('.review-edit-item');syncReviewLineDiscount(row,'percent');reviewRecalc()};
   window.reviewLineDiscountAmountChanged=function(input){var row=input.closest('.review-edit-item');syncReviewLineDiscount(row,'amount');reviewRecalc()};
+  window.reviewLineDiscountBlur=function(input){var row=input.closest('.review-edit-item');syncReviewLineDiscount(row,null,true);reviewRecalc()};
   window.reviewLineValueChanged=function(input){var row=input.closest('.review-edit-item');syncReviewLineDiscount(row);reviewRecalc()};
   window.addReviewProduct=function(){var x=document.getElementById('reviewItems');if(x)x.insertAdjacentHTML('beforeend',itemRow({line_kind:'product',qty:1,unit_price:0,discount_amount:0}))};
   window.addReviewService=function(){var x=document.getElementById('reviewItems');if(x)x.insertAdjacentHTML('beforeend',itemRow({line_kind:'service',product_code_snapshot:'SERVICE-FEE',item_name_snapshot:'Service Fee',qty:1,unit_price:0,discount_amount:0}))};
