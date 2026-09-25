@@ -271,19 +271,19 @@
 
   window.viewSalesReturn=async function(id){
     const h=(window._visibleSalesReturns||[]).find(x=>x.return_id===id);
-    const {data,error}=await db.rpc('get_sales_return_items_detail',{p_return_id:id});if(error)return showToast(error.message,'err');
+    const {data,error}=await db.rpc('get_sales_return_items_detail_v2',{p_return_id:id});if(error)return showToast(error.message,'err');
     const items=data||[];
     openModal(h?.cn_no||'Credit Note',`<div class="space-y-4">
       <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 rounded-xl border bg-[#faf9f6] p-4">
         <div><div class="text-[9px] uppercase font-bold text-gray-400">CN</div><div class="font-bold mt-1">${esc(h?.cn_no||'-')}</div></div>
-        <div><div class="text-[9px] uppercase font-bold text-gray-400">Original</div><div class="font-semibold mt-1">${esc(h?.original_document_no||'-')}</div></div>
+        <div><div class="text-[9px] uppercase font-bold text-gray-400">Source Invoice(s)</div><div class="font-semibold mt-1">${esc(h?.original_document_no||'-')}</div></div>
         <div><div class="text-[9px] uppercase font-bold text-gray-400">Customer</div><div class="font-semibold mt-1">${esc(h?.customer_name||'-')}</div></div>
         <div><div class="text-[9px] uppercase font-bold text-gray-400">Return Date</div><div class="font-semibold mt-1">${esc(fmtDate(h?.return_date))}</div></div>
         <div><div class="text-[9px] uppercase font-bold text-gray-400">Status</div><div class="mt-1">${statusBadge(h?.status)}</div></div>
       </div>
       <div class="grid sm:grid-cols-2 gap-3"><div class="border rounded-xl p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Action</div><div class="font-semibold mt-1">${esc(actionLabel(h?.action))}</div></div><div class="border rounded-xl p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Net Return Value</div><div class="font-bold mt-1">${money(h?.return_value||0)}</div><div class="text-[9px] text-gray-400">After line + order discounts · no automatic refund</div></div></div>
       ${h?.reason?`<div class="border rounded-xl p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Reason</div><div class="text-sm mt-1">${esc(h.reason)}</div></div>`:''}
-      <div><div class="font-bold text-sm mb-2">Returned Items</div><div class="grid gap-2">${items.map(x=>{const gross=Number(x.qty||0)*Number(x.unit_price||0),net=Number(x.return_value||0),discount=Math.max(gross-net,0);return `<div class="border rounded-xl p-3 bg-white"><div class="flex flex-col md:flex-row md:justify-between gap-3"><div><div class="font-semibold">${esc(x.item_name||'Item')}</div><div class="text-[10px] text-gray-400">${esc(x.product_code||'')}</div>${x.notes?`<div class="text-[10px] text-gray-500 mt-1">${esc(x.notes)}</div>`:''}</div><div class="flex flex-wrap gap-5"><div><div class="text-[9px] uppercase font-bold text-gray-400">Returned</div><b>${Number(x.qty||0)} of ${Number(x.qty_sold||0)}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Gross Value</div><b>${money(gross)}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Discount Applied</div><b class="text-amber-700">−${money(discount)}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Net Return Value</div><b>${money(net)}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Condition</div><b>${esc(conditionLabel(x.condition))}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Handling</div><b>${esc(dispositionLabel(x.disposition))}</b></div></div></div></div>`}).join('')}</div></div>
+      <div><div class="font-bold text-sm mb-2">Returned Items</div><div class="grid gap-2">${items.map(x=>{const gross=Number(x.qty||0)*Number(x.unit_price||0),net=Number(x.return_value||0),discount=Math.max(gross-net,0);return `<div class="border rounded-xl p-3 bg-white"><div class="flex flex-col md:flex-row md:justify-between gap-3"><div><div class="flex flex-wrap items-center gap-2"><div class="font-semibold">${esc(x.item_name||'Item')}</div>${x.source_document_no?`<span class="px-2 py-0.5 rounded-md border bg-gray-50 text-[9px] font-semibold text-gray-600">${esc(x.source_document_no)}</span>`:''}</div><div class="text-[10px] text-gray-400">${esc(x.product_code||'')}</div>${x.notes?`<div class="text-[10px] text-gray-500 mt-1">${esc(x.notes)}</div>`:''}</div><div class="flex flex-wrap gap-5"><div><div class="text-[9px] uppercase font-bold text-gray-400">Returned</div><b>${Number(x.qty||0)} of ${Number(x.qty_sold||0)}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Gross Value</div><b>${money(gross)}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Discount Applied</div><b class="text-amber-700">−${money(discount)}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Net Return Value</div><b>${money(net)}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Condition</div><b>${esc(conditionLabel(x.condition))}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Handling</div><b>${esc(dispositionLabel(x.disposition))}</b></div></div></div></div>`}).join('')}</div></div>
       ${h?.notes?`<div class="rounded-xl border bg-gray-50 p-3"><div class="text-[9px] uppercase font-bold text-gray-400">CN Notes</div><div class="text-sm mt-1">${esc(h.notes)}</div></div>`:''}
       <div class="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-700">This CN records the return only. Customer payments and AR are not automatically changed.</div>
       <div class="flex justify-end gap-2 flex-wrap">
@@ -299,7 +299,7 @@
     if(!h)return showToast('Credit Note not found.','err');
     if(h.status==='cancelled')return showToast('Cancelled Credit Notes cannot be edited.','err');
 
-    const {data,error}=await db.rpc('get_sales_return_items_detail',{p_return_id:id});
+    const {data,error}=await db.rpc('get_sales_return_items_detail_v2',{p_return_id:id});
     if(error)return showToast(error.message,'err');
     const items=data||[];
     const condOptions=['good','damaged','defective','other'];
@@ -308,7 +308,7 @@
     openModal(`Edit ${h.cn_no||'Credit Note'}`,`
       <form id="editSalesReturnForm" class="grid md:grid-cols-2 gap-4">
         <div><label class="text-xs font-semibold">CN Number</label><input value="${esc(h.cn_no||'')}" disabled class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-gray-50 text-gray-500"></div>
-        <div><label class="text-xs font-semibold">Original Sale</label><input value="${esc(h.original_document_no||'')}" disabled class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-gray-50 text-gray-500"></div>
+        <div><label class="text-xs font-semibold">Source Invoice(s)</label><input value="${esc(h.original_document_no||'')}" disabled class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-gray-50 text-gray-500"></div>
         <div><label class="text-xs font-semibold">Return Date</label><input id="editReturnDate" type="date" value="${esc(h.return_date||today())}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
         <div><label class="text-xs font-semibold">Return Action</label><select id="editReturnAction" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="return_only" ${h.action==='return_only'?'selected':''}>Return Only / No Refund</option><option value="return_to_stock" ${h.action==='return_to_stock'?'selected':''}>Return to Stock</option><option value="exchange" ${h.action==='exchange'?'selected':''}>Exchange</option><option value="damaged_return" ${h.action==='damaged_return'?'selected':''}>Damaged / Defective Return</option></select></div>
         <div class="md:col-span-2"><label class="text-xs font-semibold">Reason</label><input id="editReturnReason" value="${esc(h.reason||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Reason for return"></div>
@@ -319,7 +319,7 @@
           <div class="grid gap-2 mt-3">
             ${items.map(x=>`<div class="edit-return-item border rounded-xl p-3 bg-white" data-sales-order-item-id="${x.sales_order_item_id}" data-max="${Number(x.max_edit_qty||0)}">
               <div class="grid lg:grid-cols-[minmax(0,1.5fr)_110px_150px_180px] gap-3 items-end">
-                <div><div class="font-semibold text-sm">${esc(x.item_name||'Item')}</div><div class="text-[10px] text-gray-400">${esc(x.product_code||'')} · Sold ${Number(x.qty_sold||0)} · Other CN returns ${Number(x.qty_returned_other||0)} · Max for this CN ${Number(x.max_edit_qty||0)}</div></div>
+                <div><div class="flex flex-wrap items-center gap-2"><div class="font-semibold text-sm">${esc(x.item_name||'Item')}</div>${x.source_document_no?`<span class="px-2 py-0.5 rounded-md border bg-gray-50 text-[9px] font-semibold text-gray-600">${esc(x.source_document_no)}</span>`:''}</div><div class="text-[10px] text-gray-400">${esc(x.product_code||'')} · Sold ${Number(x.qty_sold||0)} · Other CN returns ${Number(x.qty_returned_other||0)} · Max for this CN ${Number(x.max_edit_qty||0)}</div></div>
                 <div><label class="text-[9px] uppercase font-bold text-gray-400">Return Qty</label><input class="edit-return-qty mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" max="${Number(x.max_edit_qty||0)}" step="1" value="${Number(x.qty||0)}"></div>
                 <div><label class="text-[9px] uppercase font-bold text-gray-400">Condition</label><select class="edit-return-condition mt-1 w-full border rounded-lg px-2 py-2 bg-white">${condOptions.map(v=>`<option value="${v}" ${x.condition===v?'selected':''}>${conditionLabel(v)}</option>`).join('')}</select></div>
                 <div><label class="text-[9px] uppercase font-bold text-gray-400">Handling</label><select class="edit-return-disposition mt-1 w-full border rounded-lg px-2 py-2 bg-white">${dispOptions.map(v=>`<option value="${v}" ${x.disposition===v?'selected':''}>${dispositionLabel(v)}</option>`).join('')}</select></div>
@@ -330,7 +330,7 @@
         </div>
 
         <div class="md:col-span-2"><label class="text-xs font-semibold">CN Notes</label><textarea id="editReturnNotes" rows="3" class="mt-1 w-full border rounded-xl px-3 py-2.5">${esc(h.notes||'')}</textarea></div>
-        <div class="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-700">Editing the CN changes only the return record. It does not delete the original sale or automatically change customer payments / AR.</div>
+        <div class="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-700">Editing the CN changes only the return record. Source invoices remain unchanged and customer payments / AR are not automatically changed.</div>
         <div class="md:col-span-2 flex justify-between gap-2 flex-wrap">
           ${canDeleteCN()?`<button type="button" onclick="deleteSalesReturn('${id}')" class="px-4 py-2 border border-red-200 bg-red-50 text-red-600 rounded-lg text-xs font-semibold">Delete CN</button>`:'<span></span>'}
           <div class="flex gap-2"><button type="button" onclick="closeModal()" class="px-4 py-2 border rounded-lg text-xs">Cancel</button><button class="px-5 py-2 bg-[#211d18] text-white rounded-lg text-xs font-semibold">Save CN Changes</button></div>
