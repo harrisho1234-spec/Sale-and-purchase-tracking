@@ -200,12 +200,12 @@
                     <div class="text-[11px] text-gray-500 mt-2">${Number(r.item_count||0)} returned item${Number(r.item_count||0)===1?'':'s'}${r.reason?' · '+esc(r.reason):''}</div>
                     ${cancelled
                       ?`<div class="text-[10px] text-gray-400 mt-2">Cancelled CN — no customer credit applied.</div>`
-                      :`<div class="text-[10px] text-amber-700 mt-2">Return value counts as customer credit against outstanding AR when available.</div>`}
+                      :`<div class="text-[10px] text-amber-700 mt-2">Net return value is after applicable discounts. Customer credit affects AR only when approved.</div>`}
                   </div>
 
                   <div class="flex items-center gap-4">
                     <div class="text-right">
-                      <div class="text-[9px] uppercase text-gray-400 font-bold">Return Value</div>
+                      <div class="text-[9px] uppercase text-gray-400 font-bold">Net Return Value</div>
                       <div class="font-bold text-amber-700 mt-1">${money(r.return_value)}</div>
                     </div>
                     <button onclick="viewSalesReturn('${r.return_id}')" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">View</button>
