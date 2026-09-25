@@ -153,6 +153,7 @@
                     <div class="flex flex-wrap items-center gap-2">
                       <b>${esc(docNo(o))}</b>
                       ${orderStatusBadge(o)}
+                      ${o.sales_rep_name_snapshot?`<span class="px-2 py-1 rounded-lg text-[9px] font-semibold bg-[#fff9e8] text-[#8a650e] border border-[#f1d891]">Sold by: ${esc(o.sales_rep_name_snapshot)}</span>`:''}
                       ${orderReturns.length?`<span class="px-2 py-1 rounded-lg text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200">↩ ${orderReturns.length} Return/CN</span>`:''}
                     </div>
                     <div class="text-[11px] text-gray-400 mt-1">${esc(fmtDate(o.order_date))} · ${isPre(o)?'Pre-Order / SR':'Stock Sale / TK-RK'}</div>
