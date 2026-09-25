@@ -305,7 +305,7 @@
       if(!orderMatchesStatus(o)) return false;
       if(q){
         const hay = [
-          o.order_no,o.invoice_no,o.customer_name,o.customer_code,repName(o),o.status,o.order_type,
+          o.order_no,o.invoice_no,o.customer_name,o.customer_code,o.customer_phone,o.status,o.order_type,
           ...(o.items||[]).flatMap(i=>[
             i.product_code_snapshot,i.item_name_snapshot,i.product_catalog?.brand,i.product_catalog?.class
           ])
