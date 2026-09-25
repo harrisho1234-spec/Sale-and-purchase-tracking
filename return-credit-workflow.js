@@ -69,7 +69,7 @@
     if(!h)return showToast('Credit Note not found.','err');
     const apply=effect==='credit_ar';
     const msg=apply
-      ? 'Apply '+money(h.return_value||0)+' as customer credit?\n\nThe credit will be applied to the customer\'s current collectible AR. If the original invoice is already settled, it will move to another outstanding invoice. Any unused amount remains available on the customer account.'
+      ? 'Apply the net return value of '+money(h.return_value||0)+' as customer credit?\n\nThe credit will be applied to the customer\'s current collectible AR. If the original invoice is already settled, it will move to another outstanding invoice. Any unused amount remains available on the customer account.'
       : 'Remove customer credit from '+(h.cn_no||'this CN')+'?\n\nAny AR allocation created by this CN will be reversed.';
     if(!confirm(msg))return;
     const r=await db.rpc('set_sales_return_financial_treatment',{p_return_id:id,p_effect:effect});
@@ -127,7 +127,7 @@
         html+='</div></div>';
         if(canManageCredit())html+='<button type="button" data-remove-credit class="px-3 py-2 border rounded-lg bg-white text-xs font-semibold">Remove Customer Credit</button>';
       }else{
-        html+='<div class="font-bold text-gray-600 mt-1">No Customer Credit</div><div class="text-[10px] text-gray-500 mt-1">The CN records the physical return, but does not reduce AR until credit is approved.</div></div>';
+        html+='<div class="font-bold text-gray-600 mt-1">Customer Credit $0.00</div><div class="text-[10px] text-gray-500 mt-1">Net Return Value: '+money(h.return_value||0)+'. The CN records the physical return, but does not reduce AR until credit is approved.</div></div>';
         if(canManageCredit()&&h.status==='received')html+='<button type="button" data-apply-credit class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-xs font-semibold">Apply Customer Credit</button>';
       }
       html+='</div>';
