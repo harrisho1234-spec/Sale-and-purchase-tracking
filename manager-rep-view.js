@@ -1,4 +1,4 @@
-// Manager "View / Act as Sales Rep" workspace.
+// Manager / Super Admin "View / Act as Sales Rep" workspace.
 // This never exposes a salesperson password or changes the authenticated login.
 
 state.managerRepContext = null;
@@ -7,23 +7,29 @@ try {
   if (saved) state.managerRepContext = JSON.parse(saved);
 } catch (_) {}
 
+function canUseRepWorkspace(){
+  return ['manager','super_admin'].includes(state.profile?.role||'');
+}
+function repWorkspaceActorLabel(){
+  return state.profile?.role==='super_admin'?'Super Admin':'Manager';
+}
 function managerRepActive(){
-  return isManager() && !!state.managerRepContext?.user_id;
+  return canUseRepWorkspace() && !!state.managerRepContext?.user_id;
 }
 function managerRepId(){ return managerRepActive() ? state.managerRepContext.user_id : null; }
 function managerRepName(){ return managerRepActive() ? (state.managerRepContext.display_name || state.managerRepContext.email || 'Sales Rep') : ''; }
 function managerRepBanner(){
   if(!managerRepActive()) return '';
   return `<div class="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-    <div><div class="text-xs font-bold text-amber-800 uppercase tracking-wide">Manager Rep Workspace</div><div class="text-sm text-amber-900 mt-0.5">Viewing / acting for <b>${esc(managerRepName())}</b>. Actions are still recorded as performed by ${esc(state.profile?.display_name || state.user?.email || 'Manager')}.</div></div>
-    <div class="flex gap-2"><button onclick="go('rep-workspace')" class="px-3 py-2 rounded-lg border border-amber-300 bg-white text-xs font-semibold text-amber-900">Change Rep</button><button onclick="clearManagerRepContext()" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs font-semibold">All Sales</button></div>
+    <div><div class="text-xs font-bold text-amber-800 uppercase tracking-wide">${esc(repWorkspaceActorLabel())} Rep Workspace</div><div class="text-sm text-amber-900 mt-0.5">Viewing / acting for <b>${esc(managerRepName())}</b>. Actions are still recorded as performed by ${esc(state.profile?.display_name || state.user?.email || repWorkspaceActorLabel())}.</div></div>
+    <div class="flex gap-2"><button onclick="go('rep-workspace')" class="px-3 py-2 rounded-lg border border-amber-300 bg-white text-xs font-semibold text-amber-900">Change Rep</button><button onclick="clearManagerRepContext()" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs font-semibold">${state.profile?.role==='super_admin'?'Full Super Admin':'All Sales'}</button></div>
   </div>`;
 }
 
 const _managerRepNavItems = navItems;
 navItems = function(){
   const items = _managerRepNavItems();
-  if(isManager()) items.splice(1,0,['rep-workspace','Rep Workspace','⇄']);
+  if(canUseRepWorkspace()) items.splice(1,0,['rep-workspace','Rep Workspace','⇄']);
   return items;
 };
 
@@ -39,7 +45,7 @@ go = async function(page){
 };
 
 async function renderManagerRepWorkspace(){
-  if(!isManager()) throw new Error('Manager access required');
+  if(!canUseRepWorkspace()) throw new Error('Manager or Super Admin access required');
   const {data,error} = await db.from('app_users').select('user_id,display_name,email,role,active').eq('role','sales').eq('active',true).order('display_name');
   if(error) throw error;
   window._managerRepUsers = data || [];
@@ -49,7 +55,7 @@ async function renderManagerRepWorkspace(){
     <div class="grid lg:grid-cols-[420px_1fr] gap-5">
       <div class="card rounded-2xl p-5 h-fit">
         <h3 class="font-bold text-lg">View / Act as Sales Rep</h3>
-        <p class="text-xs text-gray-400 mt-1">This does not reveal or use the salesperson's password. You stay signed in as Manager.</p>
+        <p class="text-xs text-gray-400 mt-1">This does not reveal or use the salesperson's password. You stay signed in as ${esc(repWorkspaceActorLabel())}.</p>
         <div class="mt-5">
           <label class="text-xs font-semibold">Sales Rep</label>
           <select id="managerRepSelect" class="mt-1 w-full border rounded-xl px-3 py-3 bg-white">
@@ -66,15 +72,17 @@ async function renderManagerRepWorkspace(){
           <div class="bg-gray-50 rounded-xl p-4"><b>Customers</b><div class="text-xs text-gray-500 mt-1">Shows only customers assigned to the selected Sales Rep.</div></div>
           <div class="bg-gray-50 rounded-xl p-4"><b>Sales Orders</b><div class="text-xs text-gray-500 mt-1">Shows only that rep's assigned orders.</div></div>
           <div class="bg-gray-50 rounded-xl p-4"><b>Payments & Tracking</b><div class="text-xs text-gray-500 mt-1">Filtered to the same Sales Rep.</div></div>
-          <div class="bg-gray-50 rounded-xl p-4"><b>New Records</b><div class="text-xs text-gray-500 mt-1">Inside Rep Workspace, new customers and orders are assigned to that Sales Rep. Outside Rep Workspace, Managers can still create customers as Unassigned and assign them afterward.</div></div>
+          <div class="bg-gray-50 rounded-xl p-4"><b>New Records</b><div class="text-xs text-gray-500 mt-1">Inside Rep Workspace, new customers and orders default to that Sales Rep. Outside Rep Workspace, your normal ${esc(repWorkspaceActorLabel())} assignment controls remain available.</div></div>
         </div>
-        <div class="mt-4 rounded-xl border border-blue-100 bg-blue-50 p-4 text-xs text-blue-800">Costing, supplier purchasing and other confidential Admin information remain unavailable to the Manager, even while using Rep Workspace.</div>
+        <div class="mt-4 rounded-xl border border-blue-100 bg-blue-50 p-4 text-xs text-blue-800">${state.profile?.role==='super_admin'
+          ?'Your Super Admin permissions remain available. Rep Workspace only scopes the sales-facing customer/order/payment views and defaults new records to the selected Sales Rep.'
+          :'Costing, supplier purchasing and other confidential Admin information remain unavailable to the Manager, even while using Rep Workspace.'}</div>
       </div>
     </div>`;
 }
 
 function activateManagerRepContext(){
-  if(!isManager()) return showToast('Manager access required','err');
+  if(!canUseRepWorkspace()) return showToast('Manager or Super Admin access required','err');
   const id = document.getElementById('managerRepSelect')?.value;
   if(!id) return showToast('Select a Sales Rep first.','err');
   const u = (window._managerRepUsers||[]).find(x=>x.user_id===id);
@@ -88,7 +96,7 @@ function activateManagerRepContext(){
 function clearManagerRepContext(){
   state.managerRepContext = null;
   sessionStorage.removeItem('limperial_manager_rep_context');
-  showToast('Returned to All Sales view');
+  showToast(state.profile?.role==='super_admin'?'Returned to full Super Admin view':'Returned to All Sales view');
   go('dashboard');
 }
 
@@ -115,7 +123,7 @@ renderDashboard = async function(){
   const paid=state.orderSummary.reduce((a,x)=>a+Number(x.amount_paid||0),0);
   const bal=state.orderSummary.reduce((a,x)=>a+Number(x.balance_due||0),0);
   const active=state.orderSummary.filter(x=>!['completed','cancelled'].includes(x.status)).length;
-  document.getElementById('content').innerHTML=`${managerRepBanner()}<div class="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-6">${kpi('Rep Sales',money(total),managerRepName())}${kpi('Amount Received',money(paid),'Customer payments','text-green-600')}${kpi('Balance Due',money(bal),'Outstanding receivables','text-red-600')}${kpi('Active Orders',active,'Not completed')}</div><div class="grid xl:grid-cols-3 gap-5"><div class="xl:col-span-2 card rounded-2xl overflow-hidden"><div class="p-5 border-b flex justify-between items-center"><div><h3 class="font-bold">Recent Orders — ${esc(managerRepName())}</h3><p class="text-xs text-gray-400">Manager Rep Workspace</p></div><button onclick="openNewOrder()" class="px-3 py-2 bg-[#211d18] text-white rounded-lg text-xs font-semibold">+ New Order</button></div><div class="divide-y">${state.orderSummary.slice(0,8).map(orderRow).join('')||empty('No orders assigned to this Sales Rep yet.')}</div></div><div class="card rounded-2xl p-5 h-fit"><h3 class="font-bold mb-4">Rep Actions</h3><div class="grid gap-2"><button onclick="openNewCustomer()" class="p-3 border rounded-xl text-left text-sm hover:bg-gray-50">+ Add Customer for ${esc(managerRepName())}</button><button onclick="openNewOrder()" class="p-3 border rounded-xl text-left text-sm hover:bg-gray-50">+ Create Order for ${esc(managerRepName())}</button><button onclick="go('rep-workspace')" class="p-3 border rounded-xl text-left text-sm hover:bg-gray-50">⇄ Change Sales Rep</button></div></div></div>`;
+  document.getElementById('content').innerHTML=`${managerRepBanner()}<div class="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-6">${kpi('Rep Sales',money(total),managerRepName())}${kpi('Amount Received',money(paid),'Customer payments','text-green-600')}${kpi('Balance Due',money(bal),'Outstanding receivables','text-red-600')}${kpi('Active Orders',active,'Not completed')}</div><div class="grid xl:grid-cols-3 gap-5"><div class="xl:col-span-2 card rounded-2xl overflow-hidden"><div class="p-5 border-b flex justify-between items-center"><div><h3 class="font-bold">Recent Orders — ${esc(managerRepName())}</h3><p class="text-xs text-gray-400">${esc(repWorkspaceActorLabel())} Rep Workspace</p></div><button onclick="openNewOrder()" class="px-3 py-2 bg-[#211d18] text-white rounded-lg text-xs font-semibold">+ New Order</button></div><div class="divide-y">${state.orderSummary.slice(0,8).map(orderRow).join('')||empty('No orders assigned to this Sales Rep yet.')}</div></div><div class="card rounded-2xl p-5 h-fit"><h3 class="font-bold mb-4">Rep Actions</h3><div class="grid gap-2"><button onclick="openNewCustomer()" class="p-3 border rounded-xl text-left text-sm hover:bg-gray-50">+ Add Customer for ${esc(managerRepName())}</button><button onclick="openNewOrder()" class="p-3 border rounded-xl text-left text-sm hover:bg-gray-50">+ Create Order for ${esc(managerRepName())}</button><button onclick="go('rep-workspace')" class="p-3 border rounded-xl text-left text-sm hover:bg-gray-50">⇄ Change Sales Rep</button></div></div></div>`;
 };
 
 const _managerBaseRenderCustomers = renderCustomers;
