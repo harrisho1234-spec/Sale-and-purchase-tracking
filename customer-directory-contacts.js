@@ -2,6 +2,14 @@
 // Loaded last. Keeps Sales/AR private while allowing all staff to check customer ownership.
 (function(){
   let directoryTimer=null;
+  let customerPage=1;
+  let customerPageSize=(function(){
+    try{
+      const v=sessionStorage.getItem('customer_page_size')||'20';
+      return v==='all'?'all':([20,40].includes(Number(v))?Number(v):20);
+    }catch(_){return 20}
+  })();
+  let customerCurrentList=[];
   const contactTypes=['phone','telegram','whatsapp','line','wechat','email','other'];
 
   function role(){return state.profile?.role||''}
@@ -30,10 +38,71 @@
     return `<div class="flex flex-wrap gap-1">${source.slice(0,3).map(x=>`<span class="inline-flex max-w-full items-center gap-1 rounded-md bg-gray-50 border px-1.5 py-1 text-[9px] text-gray-600"><span>${contactIcon(x.contact_type)}</span><span class="truncate max-w-[125px]">${esc(x.contact_value||'')}</span></span>`).join('')}${source.length>3?`<span class="text-[9px] text-gray-400 self-center">+${source.length-3}</span>`:''}</div>`;
   }
 
+  function customerPageCount(total){
+    if(customerPageSize==='all')return 1;
+    return Math.max(1,Math.ceil(total/Number(customerPageSize||20)));
+  }
+  function pagedCustomers(list){
+    customerCurrentList=list||[];
+    const pages=customerPageCount(customerCurrentList.length);
+    if(customerPage>pages)customerPage=pages;
+    if(customerPage<1)customerPage=1;
+    if(customerPageSize==='all')return customerCurrentList;
+    const start=(customerPage-1)*Number(customerPageSize);
+    return customerCurrentList.slice(start,start+Number(customerPageSize));
+  }
+  function renderCustomerPager(){
+    const root=document.getElementById('customerPager');
+    if(!root)return;
+    const total=customerCurrentList.length;
+    const pages=customerPageCount(total);
+    const all=customerPageSize==='all';
+    const size=all?total:Number(customerPageSize||20);
+    const start=total?(all?1:(customerPage-1)*size+1):0;
+    const end=total?(all?total:Math.min(customerPage*size,total)):0;
+    root.innerHTML=`
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div class="text-[11px] text-gray-500">Showing <b>${start}–${end}</b> of <b>${total}</b> customer${total===1?'':'s'}</div>
+        <div class="flex items-center gap-2">
+          <select onchange="setCustomerPageSize(this.value)" class="border rounded-lg bg-white px-2.5 py-2 text-xs">
+            <option value="20" ${customerPageSize===20?'selected':''}>20 / page</option>
+            <option value="40" ${customerPageSize===40?'selected':''}>40 / page</option>
+            <option value="all" ${customerPageSize==='all'?'selected':''}>Show all</option>
+          </select>
+          ${all?'':`<button type="button" onclick="changeCustomerPage(-1)" ${customerPage<=1?'disabled':''} class="px-3 py-2 border rounded-lg bg-white text-xs font-semibold disabled:opacity-40">Prev</button><span class="text-[11px] text-gray-500 whitespace-nowrap">Page <b>${customerPage}</b> / ${pages}</span><button type="button" onclick="changeCustomerPage(1)" ${customerPage>=pages?'disabled':''} class="px-3 py-2 border rounded-lg bg-white text-xs font-semibold disabled:opacity-40">Next</button>`}
+        </div>
+      </div>`;
+  }
+  window.setCustomerPageSize=function(v){
+    customerPageSize=v==='all'?'all':([20,40].includes(Number(v))?Number(v):20);
+    customerPage=1;
+    try{sessionStorage.setItem('customer_page_size',String(customerPageSize))}catch(_){}
+    renderCustomerEditRows(customerCurrentList.length?customerCurrentList:(state.customers||[]));
+  };
+  window.changeCustomerPage=function(delta){
+    const pages=customerPageCount(customerCurrentList.length);
+    customerPage=Math.max(1,Math.min(pages,customerPage+Number(delta||0)));
+    renderCustomerEditRows(customerCurrentList);
+    document.getElementById('customerRows')?.scrollIntoView({behavior:'smooth',block:'start'});
+  };
+  function ensureCustomerPager(){
+    if(document.getElementById('customerPager'))return;
+    const rows=document.getElementById('customerRows');
+    const head=document.querySelector('#content .hidden.lg\\:grid');
+    if(!rows)return;
+    const p=document.createElement('div');
+    p.id='customerPager';
+    p.className='mb-3 rounded-xl border bg-[#faf9f6] px-3 py-2.5';
+    if(head)head.parentNode.insertBefore(p,head);
+    else rows.parentNode.insertBefore(p,rows);
+  }
+
   // Replace only the row renderer. The existing Customers page still calculates the correct Sales/AR portfolio.
   window.renderCustomerEditRows=function(list){
     const root=document.getElementById('customerRows');if(!root)return;
-    root.innerHTML=(list||[]).map(c=>{
+    ensureCustomerPager();
+    const pageRows=pagedCustomers(list||[]);
+    root.innerHTML=pageRows.map(c=>{
       const note=String(c.notes||'').trim(),m=metricsFor(c.id);
       return `<div class="customer-edit-row bg-white border border-[#ece8e0] rounded-2xl px-4 py-3 grid lg:grid-cols-[1.12fr_1.18fr_1fr_.82fr_.72fr_.72fr_.72fr_1.05fr_auto] gap-3 lg:gap-4 items-center shadow-[0_3px_14px_rgba(31,25,18,.025)]">
         <div class="min-w-0"><div class="font-bold text-[14px] truncate">${esc(c.name||'')}</div><div class="flex flex-wrap gap-x-2 gap-y-0.5 mt-0.5 text-[9px] text-gray-400">${c.customer_code?`<span class="text-[#b3871e] font-bold">${esc(c.customer_code)}</span>`:''}<span>Since ${esc(fmtDate(c.created_at))}</span></div></div>
@@ -47,9 +116,11 @@
         <div class="flex justify-end"><button onclick="openEditCustomer('${c.id}')" class="px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-xs font-semibold hover:bg-gray-50">Edit</button></div>
       </div>`;
     }).join('')||empty('No customers yet.');
+    renderCustomerPager();
   };
 
   window.filterCustomerRows=function(){
+    customerPage=1;
     const q=(document.getElementById('customerSearch')?.value||'').trim().toLowerCase();
     const list=!q?state.customers:state.customers.filter(c=>{
       const x=metricsFor(c.id),contacts=contactsFor(c.id).flatMap(v=>[v.contact_type,v.label,v.contact_value]);
@@ -62,8 +133,10 @@
   window.renderCustomers=async function(){
     await baseRenderCustomers.apply(this,arguments);
     await loadVisibleContacts();
+    customerPage=1;
     const head=document.querySelector('#content .hidden.lg\\:grid');
     if(head){const cols=head.children;if(cols[1])cols[1].textContent='Contacts';}
+    ensureCustomerPager();
     renderCustomerEditRows(state.customers||[]);
   };
 
