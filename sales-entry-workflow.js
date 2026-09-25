@@ -84,7 +84,13 @@
     row.querySelector('.product-name').value=input.value.trim()||(sel?.value||'Service Fee');
   };
 
-  function syncSalesLineDiscount(row,basis){
+  function salesLineDecimal(input){
+    const raw=String(input?.value??'').trim().replace(',','.');
+    if(raw===''||raw==='.'||raw==='-'||raw==='-.')return 0;
+    const v=Number(raw);
+    return Number.isFinite(v)?v:0;
+  }
+  function syncSalesLineDiscount(row,basis,forceNormalize=false){
     if(!row)return;
     if(basis)row.dataset.discountBasis=basis;
     const qty=Math.max(Number(row.querySelector('.qty')?.value||0),0);
@@ -93,14 +99,15 @@
     const pctInput=row.querySelector('.line-discount-percent');
     const amtInput=row.querySelector('.line-discount');
     if(!pctInput||!amtInput)return;
+    const active=document.activeElement;
     const mode=row.dataset.discountBasis||'amount';
     if(mode==='percent'){
-      const pct=Math.max(0,Math.min(100,Number(pctInput.value||0)));
-      pctInput.value=String(round2(pct));
+      const pct=Math.max(0,Math.min(100,salesLineDecimal(pctInput)));
+      if(forceNormalize||active!==pctInput)pctInput.value=String(round2(pct));
       amtInput.value=String(round2(gross*pct/100));
     }else{
-      const amt=Math.max(0,Math.min(gross,Number(amtInput.value||0)));
-      amtInput.value=String(round2(amt));
+      const amt=Math.max(0,Math.min(gross,salesLineDecimal(amtInput)));
+      if(forceNormalize||active!==amtInput)amtInput.value=String(round2(amt));
       pctInput.value=String(gross?round2(amt/gross*100):0);
     }
   }
@@ -109,6 +116,9 @@
   };
   window.salesLineDiscountAmountChanged=function(input){
     const row=input.closest('.order-item-row');syncSalesLineDiscount(row,'amount');salesEntryRecalc();
+  };
+  window.salesLineDiscountBlur=function(input){
+    const row=input.closest('.order-item-row');syncSalesLineDiscount(row,null,true);salesEntryRecalc();
   };
   window.salesLineValueChanged=function(input){
     const row=input.closest('.order-item-row');syncSalesLineDiscount(row);salesEntryRecalc();
@@ -254,7 +264,7 @@
       </div>
       <div class="md:col-span-1"><label class="text-[10px] font-semibold text-gray-500">Qty</label><input class="qty mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0.01" step="0.01" value="1" oninput="salesLineValueChanged(this)"></div>
       <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Unit Price</label><input class="unit-price mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="0" oninput="salesLineValueChanged(this)"></div>
-      <div class="md:col-span-3"><div class="grid grid-cols-2 gap-1"><div><label class="text-[10px] font-semibold text-gray-500">Dis %</label><input aria-label="Discount Percent" title="Dis %" class="line-discount-percent mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" max="100" step="0.01" value="0" oninput="salesLineDiscountPercentChanged(this)"></div><div><label class="text-[10px] font-semibold text-gray-500">Dis Amt</label><input aria-label="Discount Amount" title="Dis Amt" class="line-discount mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="0" oninput="salesLineDiscountAmountChanged(this)"></div></div></div>
+      <div class="md:col-span-3"><div class="grid grid-cols-2 gap-1"><div><label class="text-[10px] font-semibold text-gray-500">Dis %</label><input aria-label="Discount Percent" title="Dis %" class="line-discount-percent mt-1 w-full border rounded-lg px-2 py-2" type="text" inputmode="decimal" value="0" oninput="salesLineDiscountPercentChanged(this)" onblur="salesLineDiscountBlur(this)"></div><div><label class="text-[10px] font-semibold text-gray-500">Dis Amt</label><input aria-label="Discount Amount" title="Dis Amt" class="line-discount mt-1 w-full border rounded-lg px-2 py-2" type="text" inputmode="decimal" value="0" oninput="salesLineDiscountAmountChanged(this)" onblur="salesLineDiscountBlur(this)"></div></div></div>
       <div class="md:col-span-1 flex items-end"><button type="button" onclick="this.closest('.order-item-row').remove();salesEntryRecalc()" class="w-full h-[42px] border rounded-lg text-red-500 font-bold">×</button></div>
       <select class="source-type hidden"><option value="stock" ${flow==='stock_sale'?'selected':''}>Stock</option><option value="pre_order" ${flow==='pre_order'?'selected':''}>Pre-order</option></select>`;
     wrap.appendChild(d);
@@ -296,7 +306,7 @@
       </div>
       <div class="md:col-span-1"><label class="text-[10px] font-semibold text-gray-500">Qty</label><input class="qty mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0.01" step="0.01" value="1" oninput="salesLineValueChanged(this)"></div>
       <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Unit Price</label><input class="unit-price mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="0" oninput="salesLineValueChanged(this)"></div>
-      <div class="md:col-span-3"><div class="grid grid-cols-2 gap-1"><div><label class="text-[10px] font-semibold text-gray-500">Dis %</label><input aria-label="Discount Percent" title="Dis %" class="line-discount-percent mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" max="100" step="0.01" value="0" oninput="salesLineDiscountPercentChanged(this)"></div><div><label class="text-[10px] font-semibold text-gray-500">Dis Amt</label><input aria-label="Discount Amount" title="Dis Amt" class="line-discount mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="0" oninput="salesLineDiscountAmountChanged(this)"></div></div></div>
+      <div class="md:col-span-3"><div class="grid grid-cols-2 gap-1"><div><label class="text-[10px] font-semibold text-gray-500">Dis %</label><input aria-label="Discount Percent" title="Dis %" class="line-discount-percent mt-1 w-full border rounded-lg px-2 py-2" type="text" inputmode="decimal" value="0" oninput="salesLineDiscountPercentChanged(this)" onblur="salesLineDiscountBlur(this)"></div><div><label class="text-[10px] font-semibold text-gray-500">Dis Amt</label><input aria-label="Discount Amount" title="Dis Amt" class="line-discount mt-1 w-full border rounded-lg px-2 py-2" type="text" inputmode="decimal" value="0" oninput="salesLineDiscountAmountChanged(this)" onblur="salesLineDiscountBlur(this)"></div></div></div>
       <div class="md:col-span-1 flex items-end"><button type="button" onclick="this.closest('.order-item-row').remove();salesEntryRecalc()" class="w-full h-[42px] border rounded-lg text-red-500 font-bold bg-white">×</button></div>
       <select class="source-type hidden"><option value="stock" ${flow==='stock_sale'?'selected':''}>Stock</option><option value="pre_order" ${flow==='pre_order'?'selected':''}>Pre-order</option></select>`;
     wrap.appendChild(d);
