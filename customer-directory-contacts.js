@@ -52,8 +52,8 @@
   window.filterCustomerRows=function(){
     const q=(document.getElementById('customerSearch')?.value||'').trim().toLowerCase();
     const list=!q?state.customers:state.customers.filter(c=>{
-      const m=metaFor(c.id),x=metricsFor(c.id),contacts=contactsFor(c.id).flatMap(v=>[v.contact_type,v.label,v.contact_value]);
-      return [c.name,c.customer_code,c.phone,c.email,c.address,c.notes,m.assigned_sales_name,m.assigned_sales_email,fmtDate(c.created_at),x.sales,x.paid,x.ar,...contacts].some(v=>String(v||'').toLowerCase().includes(q));
+      const x=metricsFor(c.id),contacts=contactsFor(c.id).flatMap(v=>[v.contact_type,v.label,v.contact_value]);
+      return [c.name,c.customer_code,c.phone,c.email,c.address,c.notes,fmtDate(c.created_at),x.sales,x.paid,x.ar,...contacts].some(v=>String(v||'').toLowerCase().includes(q));
     });
     renderCustomerEditRows(list);
   };
