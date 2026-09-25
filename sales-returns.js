@@ -250,20 +250,23 @@
 
   async function saveSalesReturn(e){
     e.preventDefault();
-    const orderId=document.getElementById('returnOrder').value;
-    if(!orderId)return showToast('Select the original sale.','err');
+    const orderIds=selectedReturnOrderIds();
+    if(!orderIds.length)return showToast('Select at least one source invoice.','err');
     const selected=[...document.querySelectorAll('.sales-return-item')].filter(r=>r.querySelector('.return-item-check')?.checked);
     if(!selected.length)return showToast('Select at least one returned item.','err');
     const items=[];
+    const usedOrderIds=[];
     for(const r of selected){
       const qty=Number(r.querySelector('.return-item-qty').value||0),max=Number(r.dataset.max||0);
       if(qty<=0||qty>max)return showToast(`Return quantity must be between 1 and ${max}.`,'err');
+      if(r.dataset.orderId&&!usedOrderIds.includes(r.dataset.orderId))usedOrderIds.push(r.dataset.orderId);
       items.push({sales_order_item_id:r.dataset.id,qty,condition:r.querySelector('.return-item-condition').value,disposition:r.querySelector('.return-item-disposition').value,notes:r.querySelector('.return-item-note').value.trim()||null});
     }
+    if(!usedOrderIds.length)return showToast('Select returned items from at least one source invoice.','err');
     const btn=e.target.querySelector('button');if(btn){btn.disabled=true;btn.textContent='Creating CN...'}
-    const {data,error}=await db.rpc('create_sales_return',{p_sales_order_id:orderId,p_cn_no:document.getElementById('returnCnNo').value.trim()||null,p_return_date:document.getElementById('returnDate').value,p_action:document.getElementById('returnAction').value,p_reason:document.getElementById('returnReason').value.trim()||null,p_notes:document.getElementById('returnNotes').value.trim()||null,p_items:items});
+    const {data,error}=await db.rpc('create_sales_return_multi',{p_sales_order_ids:usedOrderIds,p_cn_no:document.getElementById('returnCnNo').value.trim()||null,p_return_date:document.getElementById('returnDate').value,p_action:document.getElementById('returnAction').value,p_reason:document.getElementById('returnReason').value.trim()||null,p_notes:document.getElementById('returnNotes').value.trim()||null,p_items:items});
     if(error){if(btn){btn.disabled=false;btn.textContent='Create Credit Note'}return showToast(error.message,'err')}
-    const out=Array.isArray(data)?data[0]:data;closeModal();showToast(`${out?.cn_no||'Credit Note'} created`);await renderReturnsPage();
+    const out=Array.isArray(data)?data[0]:data;closeModal();showToast(`${out?.cn_no||'Credit Note'} created from ${usedOrderIds.length} invoice${usedOrderIds.length===1?'':'s'}`);await renderReturnsPage();
   }
 
   window.viewSalesReturn=async function(id){
