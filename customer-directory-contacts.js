@@ -156,7 +156,7 @@
     if(error)return '<option value="">Unassigned</option>';
     return `<option value="">Unassigned</option>${(data||[]).map(u=>`<option value="${u.user_id}" ${u.user_id===selected?'selected':''}>${esc(u.display_name||u.email)} — ${u.role==='sales'?'Sales':(u.user_id===state.user?.id?'Manager (Me)':'Manager')}</option>`).join('')}`;
   }
-  function effectiveHandler(){if(role()==='sales')return state.user.id;if(role()==='manager'&&managerContext())return managerRepId();return null}
+  function effectiveHandler(){if(role()==='sales')return state.user.id;if(managerContext())return managerRepId();return null}
 
   window.openNewCustomer=async function(){
     const fixed=effectiveHandler(),opts=await handlerOptions(fixed||'');
@@ -187,7 +187,7 @@
     if(!row.name)return showToast('Customer name is required.','err');
     const cr=await db.from('customers').insert(row).select('id').single();if(cr.error)return showToast(cr.error.message,'err');
     if(contacts.length){const ci=await db.from('customer_contacts').insert(contacts.map((x,i)=>({...x,customer_id:cr.data.id,is_primary:i===0,created_by:state.user.id})));if(ci.error)return showToast(`Customer saved, but contacts could not be saved: ${ci.error.message}`,'err');}
-    if(role()==='manager'&&managerContext()&&typeof recordManagerRepAction==='function')await recordManagerRepAction('create_customer','customer',cr.data.id,{customer_name:row.name});
+    if(managerContext()&&typeof recordManagerRepAction==='function')await recordManagerRepAction('create_customer','customer',cr.data.id,{customer_name:row.name});
     closeModal();
     if(role()==='manager'&&!managerContext()){
       const selected=document.getElementById('mcHandler');
@@ -196,7 +196,7 @@
       else if(handler)showToast(`Customer added and assigned to ${selectedText||'selected Sales Rep'}`);
       else showToast('Customer added as Unassigned');
     }
-    else if(role()==='manager'&&managerContext())showToast(`Customer added and assigned to ${managerRepName()}`);
+    else if(managerContext())showToast(`Customer added and assigned to ${managerRepName()}`);
     else showToast('Customer added');
     await go('customers');
   }
