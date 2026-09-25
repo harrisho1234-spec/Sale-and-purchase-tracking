@@ -78,7 +78,7 @@
         const cu=await db.from('customers').update({assigned_sales_id:userId}).eq('id',order.customer_id);
         if(cu.error)return showToast(`Order assigned, but customer assignment failed: ${cu.error.message}`,'err');
       }
-      if(state.profile?.role==='manager' && typeof recordManagerRepAction==='function' && typeof managerRepActive==='function' && managerRepActive()){
+      if(typeof recordManagerRepAction==='function' && typeof managerRepActive==='function' && managerRepActive()){
         await recordManagerRepAction('assign_sales_order','sales_order',orderId,{assigned_sales_user_id:userId,assigned_sales_name:name});
       }
       if(window.trackingRedesign){
