@@ -9,7 +9,7 @@
       return v==='all'?'all':([20,40].includes(Number(v))?Number(v):20);
     }catch(_){return 20}
   })();
-  let customerCurrentList=[];
+  let customerCurrentList=null;
   const contactTypes=['phone','telegram','whatsapp','line','wechat','email','other'];
 
   function role(){return state.profile?.role||''}
@@ -44,7 +44,7 @@
   }
   function pagedCustomers(list){
     customerCurrentList=list||[];
-    const pages=customerPageCount(customerCurrentList.length);
+    const pages=customerPageCount((customerCurrentList||[]).length);
     if(customerPage>pages)customerPage=pages;
     if(customerPage<1)customerPage=1;
     if(customerPageSize==='all')return customerCurrentList;
@@ -77,12 +77,12 @@
     customerPageSize=v==='all'?'all':([20,40].includes(Number(v))?Number(v):20);
     customerPage=1;
     try{sessionStorage.setItem('customer_page_size',String(customerPageSize))}catch(_){}
-    renderCustomerEditRows(customerCurrentList.length?customerCurrentList:(state.customers||[]));
+    renderCustomerEditRows(Array.isArray(customerCurrentList)?customerCurrentList:(state.customers||[]));
   };
   window.changeCustomerPage=function(delta){
     const pages=customerPageCount(customerCurrentList.length);
     customerPage=Math.max(1,Math.min(pages,customerPage+Number(delta||0)));
-    renderCustomerEditRows(customerCurrentList);
+    renderCustomerEditRows(customerCurrentList||[]);
     document.getElementById('customerRows')?.scrollIntoView({behavior:'smooth',block:'start'});
   };
   function ensureCustomerPager(){
