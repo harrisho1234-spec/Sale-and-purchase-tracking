@@ -55,7 +55,7 @@
           ${kpi('Net Return Value',money(value),'After applicable sales discounts')}
         </div>
         <div class="card rounded-2xl p-4 mb-4 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-          <div><h3 class="font-bold">Returns / Credit Notes</h3><p class="text-[11px] text-gray-400 mt-1">The original sale and payments remain unchanged. CN records the returned item separately.</p></div>
+          <div><h3 class="font-bold">Returns / Credit Notes</h3><p class="text-[11px] text-gray-400 mt-1">Original invoices and payments remain unchanged. One CN can include items from multiple invoices for the same customer.</p></div>
           <div class="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
             <input id="returnSearch" oninput="filterSalesReturns()" class="border rounded-xl px-4 py-2.5 min-w-[280px] bg-white" placeholder="Search CN, customer, invoice...">
             <button onclick="openNewSalesReturn()" class="px-4 py-2.5 bg-[#211d18] text-white rounded-xl text-sm font-semibold whitespace-nowrap">+ New CN</button>
@@ -79,7 +79,7 @@
     root.innerHTML=rows.map(r=>`<div class="bg-white border border-[#ece8e0] rounded-2xl px-4 py-3 shadow-[0_3px_14px_rgba(31,25,18,.025)]">
       <div class="grid md:grid-cols-2 xl:grid-cols-[.8fr_1.25fr_.9fr_.85fr_.85fr_auto] gap-3 xl:gap-4 items-center">
         <div><div class="font-bold text-[15px]">${esc(r.cn_no||'')}</div><div class="text-[10px] text-gray-400 mt-0.5">${esc(fmtDate(r.return_date))}</div></div>
-        <div class="min-w-0"><div class="font-semibold text-sm truncate">${esc(r.customer_name||'')}</div><div class="text-[10px] text-gray-400 truncate">Original: ${esc(r.original_document_no||'-')}</div></div>
+        <div class="min-w-0"><div class="font-semibold text-sm truncate">${esc(r.customer_name||'')}</div><div class="text-[10px] text-gray-400 truncate">Invoice(s): ${esc(r.original_document_no||'-')}</div></div>
         <div><div class="text-[9px] uppercase font-bold text-gray-400">Action</div><div class="text-xs font-semibold mt-1">${esc(actionLabel(r.action))}</div></div>
         <div>${statusBadge(r.status)}${r.reason?`<div class="text-[10px] text-gray-400 truncate mt-1" title="${esc(r.reason)}">${esc(r.reason)}</div>`:''}</div>
         <div><div class="text-[9px] uppercase font-bold text-gray-400">Net Return Value</div><div class="text-sm font-bold mt-1">${money(r.return_value)}</div><div class="text-[9px] text-gray-400">${Number(r.item_count||0)} item(s) · after discount</div></div>
@@ -102,11 +102,15 @@
       <div><label class="text-xs font-semibold">CN Number</label><input id="returnCnNo" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Leave blank for automatic CN"><div class="text-[10px] text-gray-400 mt-1">Example: CN-00015</div></div>
       <div><label class="text-xs font-semibold">Return Date</label><input id="returnDate" type="date" value="${today()}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
       <div class="md:col-span-2 relative">
-        <label class="text-xs font-semibold">Original Sale / Invoice</label>
+        <label class="text-xs font-semibold">Start With Invoice / Customer</label>
         <input id="returnOrderSearch" autocomplete="off" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white" placeholder="Type TK / RK / SR number or customer name..." onfocus="showReturnOrderSuggestions(this.value)" oninput="returnOrderSearchChanged(this.value)">
         <input id="returnOrder" type="hidden">
         <div id="returnOrderSuggestions" class="hidden absolute z-[120] left-0 right-0 top-full mt-1 max-h-72 overflow-y-auto bg-white border rounded-xl shadow-xl"></div>
-        <div class="text-[10px] text-gray-400 mt-1">Type an invoice/order number or customer name, then choose the matching sale.</div>
+        <div class="text-[10px] text-gray-400 mt-1">Choose one invoice first. You can then add more invoices belonging to the same customer.</div>
+      </div>
+      <div class="md:col-span-2">
+        <div class="flex items-center justify-between gap-3"><div><div class="font-bold text-sm">Source Invoices</div><div class="text-[10px] text-gray-400 mt-0.5">One CN can include multiple invoices for the same customer.</div></div><div id="returnInvoiceCount" class="text-[10px] font-semibold text-gray-400"></div></div>
+        <div id="returnAdditionalInvoicesArea" class="mt-2 rounded-xl border bg-gray-50 p-4 text-sm text-gray-400">Choose the first invoice above.</div>
       </div>
       <div><label class="text-xs font-semibold">Return Action</label><select id="returnAction" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="return_only">Return Only / No Refund</option><option value="return_to_stock">Return to Stock</option><option value="exchange">Exchange</option><option value="damaged_return">Damaged / Defective Return</option></select></div>
       <div><label class="text-xs font-semibold">Reason</label><input id="returnReason" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Changed model, wrong item, damaged..."></div>
