@@ -5,7 +5,7 @@
     {key:'sales',label:'Sales & Customers',icon:'▤',ids:['customers','sales-orders','tracking','rep-workspace']},
     {key:'finance',label:'Finance & Control',icon:'$',ids:['approvals','payments','returns']},
     {key:'operations',label:'Products & Procurement',icon:'◇',ids:['products','procurement','supplier-pos']},
-    {key:'management',label:'Management',icon:'▥',ids:['reports','sales-access','users']}
+    {key:'management',label:'Management',icon:'▥',ids:['sales-access','users']}
   ];
 
   function readState(){
@@ -77,7 +77,7 @@
     var root=document.getElementById('mobileNav');
     if(!root)return;
     var byId=new Map(items.map(function(x){return [x[0],x]}));
-    var used=new Set(['dashboard']);
+    var used=new Set(['dashboard','reports']);
     var html='<div class="space-y-3">';
     var dashboard=byId.get('dashboard');
     if(dashboard){
@@ -93,6 +93,10 @@
       }).join('');
       html+='</div></div>';
     });
+    var reportItem=byId.get('reports');
+    if(reportItem){
+      html+='<div><div class="px-1 mb-1 text-[9px] uppercase tracking-wide font-bold text-gray-400">Report</div><button onclick="go(\'reports\');document.getElementById(\'mobileNav\').classList.add(\'hidden\')" class="w-full text-left px-3 py-2.5 border rounded-lg text-xs font-semibold">'+reportItem[1]+'</button></div>';
+    }
     var extra=items.filter(function(x){return !used.has(x[0])});
     if(extra.length){
       html+='<div><div class="px-1 mb-1 text-[9px] uppercase tracking-wide font-bold text-gray-400">More</div><div class="grid grid-cols-2 gap-2">';
@@ -123,6 +127,12 @@
       groupItems.forEach(function(x){used.add(x[0])});
       if(groupItems.length)parts.push(sectionHtml(g,groupItems,openMap[g.key]));
     });
+
+    var reportItem=byId.get('reports');
+    if(reportItem){
+      used.add('reports');
+      parts.push('<div class="mt-2 pt-2 border-t border-gray-100">'+navButton(reportItem)+'</div>');
+    }
 
     var extra=items.filter(function(x){return !used.has(x[0])});
     if(extra.length){
