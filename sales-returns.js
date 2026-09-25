@@ -155,7 +155,11 @@
     const hidden=document.getElementById('returnOrder');
     if(hidden)hidden.value='';
     const root=document.getElementById('returnItemsArea');
-    if(root)root.innerHTML='Select the original sale first.';
+    const extra=document.getElementById('returnAdditionalInvoicesArea');
+    const count=document.getElementById('returnInvoiceCount');
+    if(root)root.innerHTML='Select one or more source invoices first.';
+    if(extra)extra.innerHTML='Choose the first invoice above.';
+    if(count)count.textContent='';
     showReturnOrderSuggestions(q);
   };
 
@@ -168,7 +172,28 @@
     if(hidden)hidden.value=orderId;
     if(input)input.value=returnOrderLabel(order);
     if(box)box.classList.add('hidden');
-    await loadReturnableItems(orderId);
+    renderAdditionalReturnInvoices(order);
+    await loadReturnableItemsMulti(selectedReturnOrderIds());
+  };
+
+  function selectedReturnOrderIds(){
+    const primary=document.getElementById('returnOrder')?.value;
+    const extras=[...document.querySelectorAll('.return-extra-invoice:checked')].map(x=>x.value);
+    return [...new Set([primary,...extras].filter(Boolean))];
+  }
+
+  function renderAdditionalReturnInvoices(primary){
+    const root=document.getElementById('returnAdditionalInvoicesArea');if(!root)return;
+    const others=(window._returnableSalesOrders||[]).filter(o=>o.customer_id===primary.customer_id&&o.order_id!==primary.order_id);
+    root.innerHTML=`<div class="rounded-xl border border-amber-100 bg-amber-50/40 p-3 mb-2"><div class="text-[10px] uppercase font-bold text-amber-700">Primary Invoice</div><div class="font-semibold text-sm mt-1">${esc(primary.document_no||'Sale')} · ${esc(fmtDate(primary.order_date))}</div></div>`
+      +(others.length?`<div class="grid sm:grid-cols-2 gap-2">${others.map(o=>`<label class="flex items-start gap-3 bg-white border rounded-xl p-3 cursor-pointer hover:border-amber-300"><input type="checkbox" class="return-extra-invoice mt-0.5 w-4 h-4" value="${o.order_id}" onchange="returnAdditionalInvoiceChanged()"><div><div class="font-semibold text-sm">${esc(o.document_no||'Sale')}</div><div class="text-[10px] text-gray-400 mt-0.5">${esc(fmtDate(o.order_date))}</div></div></label>`).join('')}</div>`:'<div class="text-xs text-gray-400">No other invoices for this customer.</div>');
+    const count=document.getElementById('returnInvoiceCount');if(count)count.textContent='1 selected';
+  }
+
+  window.returnAdditionalInvoiceChanged=async function(){
+    const ids=selectedReturnOrderIds();
+    const count=document.getElementById('returnInvoiceCount');if(count)count.textContent=`${ids.length} selected`;
+    await loadReturnableItemsMulti(ids);
   };
 
   function syncReturnDisposition(action){
