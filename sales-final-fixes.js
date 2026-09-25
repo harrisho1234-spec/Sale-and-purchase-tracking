@@ -30,20 +30,28 @@
     return Math.round((s+Number.EPSILON)*100)/100;
   }
 
-  function syncDiscount(){
+  function decimalValue(input){
+    const raw=String(input?.value??'').trim().replace(',','.');
+    if(raw===''||raw==='.'||raw==='-'||raw==='-.') return 0;
+    const v=Number(raw);
+    return Number.isFinite(v)?v:0;
+  }
+
+  function syncDiscount(preserveSource=false){
     const p=document.getElementById('orderDiscountPercent');
     const a=document.getElementById('orderDiscountAmount');
     const hidden=document.getElementById('orderDiscount');
     if(!p||!a||!hidden) return;
     const subtotal=rawSubtotal();
     if(discountBasis==='percent'){
-      const pct=Math.max(0,Math.min(100,Number(p.value||0)));
+      const pct=Math.max(0,Math.min(100,decimalValue(p)));
       const amt=Math.round((subtotal*pct/100+Number.EPSILON)*100)/100;
-      a.value=String(amt);
+      if(!preserveSource)a.value=String(amt);
+      else a.value=String(amt);
       hidden.value=String(amt);
     }else{
-      const amt=Math.max(0,Math.min(subtotal,Number(a.value||0)));
-      a.value=String(amt);
+      const amt=Math.max(0,Math.min(subtotal,decimalValue(a)));
+      if(!preserveSource)a.value=String(amt);
       p.value=String(subtotal>0?Math.round((amt/subtotal*100+Number.EPSILON)*100)/100:0);
       hidden.value=String(amt);
     }
@@ -53,7 +61,7 @@
     return Math.max(rawSubtotal()-Number(document.getElementById('orderDiscount')?.value||0),0);
   }
 
-  function syncDeposit(){
+  function syncDeposit(preserveSource=false){
     const p=document.getElementById('depositPercent');
     const a=document.getElementById('depositAmount');
     const m=document.getElementById('depositMode');
@@ -61,14 +69,15 @@
     if(!p||!a||!m||!v) return;
     const t=total();
     if(depositBasis==='percent'){
-      const pct=Math.max(0,Math.min(100,Number(p.value||0)));
+      const pct=Math.max(0,Math.min(100,decimalValue(p)));
       const amt=Math.round((t*pct/100+Number.EPSILON)*100)/100;
       a.value=String(amt);
       m.value='percent';
       v.value=String(pct);
     }else{
-      const amt=Math.max(0,Math.min(t,Number(a.value||0)));
-      a.value=String(amt);
+      const amt=Math.max(0,Math.min(t,decimalValue(a)));
+      // Do not rewrite the field currently being typed in. This allows 1.1, 67.5, etc.
+      if(!preserveSource)a.value=String(amt);
       p.value=String(t>0?Math.round((amt/t*100+Number.EPSILON)*100)/100:0);
       m.value='amount';
       v.value=String(amt);
@@ -82,10 +91,25 @@
     return rec();
   };
 
-  window.salesDiscountPercentChanged=function(){discountBasis='percent';salesEntryRecalc()};
-  window.salesDiscountAmountChanged=function(){discountBasis='amount';salesEntryRecalc()};
-  window.salesDepositPercentChanged=function(){depositBasis='percent';salesEntryRecalc()};
-  window.salesDepositAmountChanged=function(){depositBasis='amount';salesEntryRecalc()};
+  window.salesDiscountPercentChanged=function(){
+    discountBasis='percent';
+    syncDiscount(true);syncDeposit();return rec();
+  };
+  window.salesDiscountAmountChanged=function(){
+    discountBasis='amount';
+    syncDiscount(true);syncDeposit();return rec();
+  };
+  window.salesDepositPercentChanged=function(){
+    depositBasis='percent';
+    syncDiscount();syncDeposit(true);return rec();
+  };
+  window.salesDepositAmountChanged=function(){
+    depositBasis='amount';
+    syncDiscount();syncDeposit(true);return rec();
+  };
+  window.salesDepositFieldBlur=function(){
+    syncDiscount();syncDeposit();return rec();
+  };
 
   // Quantity is counted as pieces: browser arrows move 1 -> 2 -> 3, not 1.01.
   const baseAddItem=window.addOrderItemRow;
@@ -113,23 +137,23 @@
     grid.innerHTML=`
       <div>
         <label class="text-xs font-semibold">Order Discount %</label>
-        <input id="orderDiscountPercent" type="number" min="0" max="100" step="0.01" value="0" oninput="salesDiscountPercentChanged()" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Example: 10">
+        <input id="orderDiscountPercent" type="text" inputmode="decimal" value="0" oninput="salesDiscountPercentChanged()" onblur="salesEntryRecalc()" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Example: 10">
         <div class="text-[10px] text-gray-400 mt-1">Type % and amount calculates automatically.</div>
       </div>
       <div>
         <label class="text-xs font-semibold">Order Discount Amount</label>
-        <input id="orderDiscountAmount" type="number" min="0" step="0.01" value="0" oninput="salesDiscountAmountChanged()" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Example: 40">
+        <input id="orderDiscountAmount" type="text" inputmode="decimal" value="0" oninput="salesDiscountAmountChanged()" onblur="salesEntryRecalc()" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Example: 40">
         <input id="orderDiscount" type="hidden" value="0">
         <div class="text-[10px] text-gray-400 mt-1">Or type amount and % calculates automatically.</div>
       </div>
       <div>
         <label class="text-xs font-semibold">Deposit %</label>
-        <input id="depositPercent" type="number" min="0" max="100" step="0.01" value="0" oninput="salesDepositPercentChanged()" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Example: 30">
+        <input id="depositPercent" type="text" inputmode="decimal" value="0" oninput="salesDepositPercentChanged()" onblur="salesDepositFieldBlur()" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Example: 30">
         <div class="text-[10px] text-gray-400 mt-1">Type % and amount calculates automatically.</div>
       </div>
       <div>
         <label class="text-xs font-semibold">Deposit Amount</label>
-        <input id="depositAmount" type="number" min="0" step="0.01" value="0" oninput="salesDepositAmountChanged()" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Example: 3000">
+        <input id="depositAmount" type="text" inputmode="decimal" value="0" oninput="salesDepositAmountChanged()" onblur="salesDepositFieldBlur()" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Example: 3000">
         <input id="depositMode" type="hidden" value="amount">
         <input id="depositValue" type="hidden" value="0">
         <div class="text-[10px] text-gray-400 mt-1">Or type amount and % calculates automatically.</div>
