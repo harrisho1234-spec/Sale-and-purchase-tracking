@@ -46,8 +46,8 @@
   window.filterCustomerRows=function(){
     const q=(document.getElementById('customerSearch')?.value||'').trim().toLowerCase();
     const list=!q?state.customers:state.customers.filter(c=>{
-      const m=metaFor(c.id),x=metricsFor(c.id);
-      return [c.name,c.customer_code,c.phone,c.email,c.address,c.notes,m.assigned_sales_name,m.assigned_sales_email,fmtDate(c.created_at),x.sales,x.paid,x.ar].some(v=>String(v||'').toLowerCase().includes(q));
+      const x=metricsFor(c.id);
+      return [c.name,c.customer_code,c.phone,c.email,c.address,c.notes,fmtDate(c.created_at),x.sales,x.paid,x.ar].some(v=>String(v||'').toLowerCase().includes(q));
     });
     renderCustomerEditRows(list);
   };
@@ -100,7 +100,7 @@
         ${kpi('Active Balance Due (AR)',money(t.ar),t.pending>0?'Pending pre-orders: '+money(t.pending):'Current collectible customer balance','text-red-600')}
       </div>
       <div class="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between mb-4">
-        <input id="customerSearch" oninput="filterCustomerRows()" class="border rounded-xl px-4 py-3 w-full max-w-xl bg-white" placeholder="Search customer, phone, handler, note...">
+        <input id="customerSearch" oninput="filterCustomerRows()" class="border rounded-xl px-4 py-3 w-full max-w-xl bg-white" placeholder="Search customer, phone, address, note...">
         <button onclick="openNewCustomer()" class="px-4 py-3 bg-[#211d18] text-white rounded-xl text-sm font-semibold whitespace-nowrap">+ Customer</button>
       </div>
       <div class="hidden lg:grid grid-cols-[1.15fr_.9fr_1fr_.85fr_.72fr_.72fr_.72fr_1.1fr_auto] gap-4 px-4 pb-2 text-[9px] uppercase tracking-wide font-bold text-gray-400">
