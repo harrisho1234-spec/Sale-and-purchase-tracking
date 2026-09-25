@@ -201,26 +201,51 @@
     document.querySelectorAll('.return-item-disposition').forEach(x=>x.value=v);
   }
 
-  async function loadReturnableItems(orderId){
+  async function loadReturnableItemsMulti(orderIds){
     const root=document.getElementById('returnItemsArea');if(!root)return;
-    if(!orderId){root.innerHTML='Select the original sale first.';return;}
-    root.innerHTML='Loading items...';
-    const {data,error}=await db.rpc('get_returnable_order_items',{p_sales_order_id:orderId});
-    if(error){root.innerHTML=`<div class="text-red-500">${esc(error.message)}</div>`;return;}
-    const rows=(data||[]).filter(x=>Number(x.qty_available||0)>0);
-    if(!rows.length){root.innerHTML='<div class="text-amber-700">No quantity remains available for return on this sale.</div>';return;}
+    if(!orderIds?.length){root.innerHTML='Select one or more source invoices first.';return;}
+    root.innerHTML='Loading items from selected invoices...';
+
+    const results=await Promise.all(orderIds.map(async orderId=>{
+      const order=(window._returnableSalesOrders||[]).find(o=>o.order_id===orderId);
+      const res=await db.rpc('get_returnable_order_items',{p_sales_order_id:orderId});
+      return {order,res};
+    }));
+
+    const failed=results.find(x=>x.res.error);
+    if(failed){root.innerHTML=`<div class="text-red-500">${esc(failed.res.error.message)}</div>`;return;}
+
     const action=document.getElementById('returnAction')?.value||'return_only';
     const defaultDisp=action==='return_to_stock'?'return_to_stock':action==='exchange'?'exchange':action==='damaged_return'?'damaged_hold':'no_stock_action';
-    root.innerHTML=`<div class="grid gap-2">${rows.map(x=>`<div class="sales-return-item bg-white border rounded-xl p-3" data-id="${x.sales_order_item_id}" data-max="${Number(x.qty_available||0)}">
-      <div class="grid grid-cols-[30px_minmax(0,1fr)] lg:grid-cols-[30px_minmax(0,1.5fr)_100px_150px_170px] gap-3 items-center">
-        <input type="checkbox" class="return-item-check w-4 h-4">
-        <div class="min-w-0"><div class="font-semibold text-sm truncate">${esc(x.item_name||'Item')}</div><div class="text-[10px] text-gray-400">${esc(x.product_code||'')}${x.product_code?' • ':''}Sold ${Number(x.qty_sold||0)} • Returned ${Number(x.qty_returned||0)} • Available ${Number(x.qty_available||0)}</div></div>
-        <div><label class="text-[9px] uppercase font-bold text-gray-400">Qty</label><input type="number" min="1" max="${Number(x.qty_available||0)}" step="1" value="1" class="return-item-qty mt-1 w-full border rounded-lg px-2 py-2 text-sm"></div>
-        <div><label class="text-[9px] uppercase font-bold text-gray-400">Condition</label><select class="return-item-condition mt-1 w-full border rounded-lg px-2 py-2 bg-white text-xs"><option value="good">Good</option><option value="damaged">Damaged</option><option value="defective">Defective</option><option value="other">Other</option></select></div>
-        <div><label class="text-[9px] uppercase font-bold text-gray-400">Handling</label><select class="return-item-disposition mt-1 w-full border rounded-lg px-2 py-2 bg-white text-xs"><option value="no_stock_action" ${defaultDisp==='no_stock_action'?'selected':''}>No Stock Action</option><option value="return_to_stock" ${defaultDisp==='return_to_stock'?'selected':''}>Return to Stock</option><option value="damaged_hold" ${defaultDisp==='damaged_hold'?'selected':''}>Damaged Hold</option><option value="exchange" ${defaultDisp==='exchange'?'selected':''}>Exchange</option></select></div>
-      </div>
-      <input class="return-item-note mt-2 w-full border rounded-lg px-3 py-2 text-xs" placeholder="Item return note (optional)">
-    </div>`).join('')}</div>`;
+    const groups=results.map(({order,res})=>({
+      order,
+      rows:(res.data||[]).filter(x=>Number(x.qty_available||0)>0)
+    }));
+
+    if(!groups.some(g=>g.rows.length)){
+      root.innerHTML='<div class="text-amber-700">No quantity remains available for return on the selected invoices.</div>';
+      return;
+    }
+
+    root.innerHTML=`<div class="grid gap-4">${groups.map(g=>`
+      <div class="rounded-xl border bg-white overflow-hidden">
+        <div class="px-4 py-3 bg-[#faf9f6] border-b flex items-center justify-between gap-3">
+          <div><div class="font-bold text-sm">${esc(g.order?.document_no||'Invoice')}</div><div class="text-[10px] text-gray-400">${esc(fmtDate(g.order?.order_date))}</div></div>
+          <div class="text-[10px] text-gray-400">${g.rows.length} returnable item${g.rows.length===1?'':'s'}</div>
+        </div>
+        <div class="grid gap-2 p-3">
+          ${g.rows.length?g.rows.map(x=>`<div class="sales-return-item bg-white border rounded-xl p-3" data-id="${x.sales_order_item_id}" data-order-id="${g.order?.order_id||''}" data-max="${Number(x.qty_available||0)}">
+            <div class="grid grid-cols-[30px_minmax(0,1fr)] lg:grid-cols-[30px_minmax(0,1.5fr)_100px_150px_170px] gap-3 items-center">
+              <input type="checkbox" class="return-item-check w-4 h-4">
+              <div class="min-w-0"><div class="font-semibold text-sm truncate">${esc(x.item_name||'Item')}</div><div class="text-[10px] text-gray-400">${esc(x.product_code||'')}${x.product_code?' • ':''}Sold ${Number(x.qty_sold||0)} • Returned ${Number(x.qty_returned||0)} • Available ${Number(x.qty_available||0)}</div></div>
+              <div><label class="text-[9px] uppercase font-bold text-gray-400">Qty</label><input type="number" min="1" max="${Number(x.qty_available||0)}" step="1" value="1" class="return-item-qty mt-1 w-full border rounded-lg px-2 py-2 text-sm"></div>
+              <div><label class="text-[9px] uppercase font-bold text-gray-400">Condition</label><select class="return-item-condition mt-1 w-full border rounded-lg px-2 py-2 bg-white text-xs"><option value="good">Good</option><option value="damaged">Damaged</option><option value="defective">Defective</option><option value="other">Other</option></select></div>
+              <div><label class="text-[9px] uppercase font-bold text-gray-400">Handling</label><select class="return-item-disposition mt-1 w-full border rounded-lg px-2 py-2 bg-white text-xs"><option value="no_stock_action" ${defaultDisp==='no_stock_action'?'selected':''}>No Stock Action</option><option value="return_to_stock" ${defaultDisp==='return_to_stock'?'selected':''}>Return to Stock</option><option value="damaged_hold" ${defaultDisp==='damaged_hold'?'selected':''}>Damaged Hold</option><option value="exchange" ${defaultDisp==='exchange'?'selected':''}>Exchange</option></select></div>
+            </div>
+            <input class="return-item-note mt-2 w-full border rounded-lg px-3 py-2 text-xs" placeholder="Item return note (optional)">
+          </div>`).join(''):`<div class="text-xs text-gray-400 p-2">No quantity remains available for return from this invoice.</div>`}
+        </div>
+      </div>`).join('')}</div>`;
   }
 
   async function saveSalesReturn(e){
