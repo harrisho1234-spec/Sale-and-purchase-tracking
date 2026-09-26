@@ -99,7 +99,20 @@
 
       document.getElementById('addPOItemForm').onsubmit=async e=>{
         e.preventDefault();const code=document.getElementById('poiCode').value.trim(),name=document.getElementById('poiName').value.trim();
-        let productId=null;const q=await db.from('product_catalog').select('id').eq('code',code).maybeSingle();if(!q.error&&q.data)productId=q.data.id;
+        let productId=null;const q=await db.from('product_catalog').select('id').ilike('code',code).maybeSingle();if(!q.error&&q.data)productId=q.data.id;
+        if(!productId){
+          const created=await db.rpc('ensure_app_product_from_procurement',{
+            p_code:code,
+            p_item_name:name,
+            p_po_currency:p.currency||'USD',
+            p_vendor_name:p.vendor_name||null,
+            p_unit_cost:Number(document.getElementById('poiCost').value||0),
+            p_shipping_cost_usd:Number(document.getElementById('poiShipping').value||0),
+            p_image_url:null
+          });
+          if(created.error)return showToast(created.error.message,'err');
+          productId=created.data?.product_id||null;
+        }
         const row={supplier_po_id:poId,product_id:productId,product_code_snapshot:code,item_name_snapshot:name,qty:Number(document.getElementById('poiQty').value||0),unit_cost:Number(document.getElementById('poiCost').value||0),shipping_cost:Number(document.getElementById('poiShipping').value||0),shipping_currency:'USD'};
         const r=await db.from('supplier_po_items').insert(row);if(r.error)return showToast(r.error.message,'err');showToast('PO item added');await openEditSupplierPO(poId);
       };
