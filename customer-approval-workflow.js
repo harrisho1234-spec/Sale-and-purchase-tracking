@@ -34,7 +34,6 @@
     var a=r.original_customer||{},b=r.requested_customer||{};
     var fields=[
       ['Customer Name',a.name,b.name],
-      ['Customer Code',a.customer_code,b.customer_code],
       ['Customer Since',a.customer_since,b.customer_since],
       ['Address',a.address,b.address],
       ['Customer Note',a.notes,b.notes]
@@ -112,7 +111,13 @@
     form.onsubmit=async function(e){
       e.preventDefault();
       var contacts=contactRows(form),name=clean(document.getElementById('mcName').value);if(!name)return showToast('Customer name is required.','err');
-      var payload={name:name,customer_code:clean(document.getElementById('mcCode').value)||null,address:clean(document.getElementById('mcAddress').value)||null,notes:clean(document.getElementById('mcNotes').value)||null,assigned_sales_id:state.user.id,active:true,customer_since:new Date().toISOString().slice(0,10)};
+      var phone=contacts.find(function(x){return x.contact_type==='phone'})?.contact_value||'';
+      if(phone){
+        var match=await db.rpc('find_customer_identity_by_phone',{p_phone:phone});
+        if(match.error)return showToast(match.error.message,'err');
+        if(match.data&&match.data.matched)return showToast('This phone number already belongs to '+(match.data.customer_name||'an existing customer')+'. Use the existing customer instead.','err');
+      }
+      var payload={name:name,address:clean(document.getElementById('mcAddress').value)||null,notes:clean(document.getElementById('mcNotes').value)||null,assigned_sales_id:state.user.id,active:true,customer_since:new Date().toISOString().slice(0,10)};
       var x=await db.rpc('submit_customer_change_request',{p_request_type:'create',p_customer_id:null,p_requested_customer:payload,p_requested_contacts:contacts,p_request_note:clean(document.getElementById('customerCreateRequestNote').value)||null});
       if(x.error)return showToast(x.error.message,'err');
       closeModal();showToast('Customer submitted for Manager/Admin approval. It is not public yet.');await go('customers');
@@ -137,7 +142,13 @@
     form.onsubmit=async function(e){
       e.preventDefault();
       var contacts=contactRows(form),name=clean(document.getElementById('mecName').value),reason=clean(document.getElementById('customerEditRequestNote').value);if(!name)return showToast('Customer name is required.','err');if(!reason)return showToast('Enter the reason for this change.','err');
-      var payload={name:name,customer_code:clean(document.getElementById('mecCode').value)||null,address:clean(document.getElementById('mecAddress').value)||null,notes:clean(document.getElementById('mecNotes').value)||null,assigned_sales_id:c&&c.assigned_sales_id||state.user.id,active:c?c.active!==false:true,customer_since:c&&c.customer_since||null};
+      var phone=contacts.find(function(x){return x.contact_type==='phone'})?.contact_value||'';
+      if(phone){
+        var match=await db.rpc('find_customer_identity_by_phone',{p_phone:phone});
+        if(match.error)return showToast(match.error.message,'err');
+        if(match.data&&match.data.matched&&match.data.customer_id&&String(match.data.customer_id)!==String(id))return showToast('This phone number already belongs to '+(match.data.customer_name||'another customer')+'.','err');
+      }
+      var payload={name:name,address:clean(document.getElementById('mecAddress').value)||null,notes:clean(document.getElementById('mecNotes').value)||null,assigned_sales_id:c&&c.assigned_sales_id||state.user.id,active:c?c.active!==false:true,customer_since:c&&c.customer_since||null};
       var x=await db.rpc('submit_customer_change_request',{p_request_type:'update',p_customer_id:id,p_requested_customer:payload,p_requested_contacts:contacts,p_request_note:reason});
       if(x.error)return showToast(x.error.message,'err');
       closeModal();showToast('Customer change submitted for Manager/Admin approval. Live information is unchanged.');await renderCustomers();
@@ -186,7 +197,8 @@
     var html='<form id="reviewCustomerRequestForm" class="grid md:grid-cols-2 gap-4"><div class="md:col-span-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>'+(r.request_type==='create'?'New customer awaiting publication.':'Customer change awaiting approval.')+'</b> Requested by '+esc(r.requested_by_name||'Sales')+'.'+(r.request_note?'<div class="mt-2"><b>Sales note:</b> '+esc(r.request_note)+'</div>':'')+'</div>'
       +customerRequestChangesHtml(r)
       +'<div class="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800"><b>Final review draft below.</b> Sales\' requested values are prefilled. You can adjust them before approval; live customer information stays unchanged until you approve.</div>'
-      +'<div><label class="text-xs font-semibold">Customer Name</label><input id="rcName" value="'+esc(o.name||'')+'" class="mt-1 w-full border rounded-xl px-3 py-2"></div><div><label class="text-xs font-semibold">Customer Code</label><input id="rcCode" value="'+esc(o.customer_code||'')+'" class="mt-1 w-full border rounded-xl px-3 py-2"></div>'
+      +'<div class="md:col-span-2"><label class="text-xs font-semibold">Customer Name</label><input id="rcName" value="'+esc(o.name||'')+'" class="mt-1 w-full border rounded-xl px-3 py-2"></div>'
+      +'<div class="md:col-span-2 rounded-xl border bg-[#faf9f6] p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Customer ID</div><div class="mt-1 font-bold text-[#b3871e]">'+esc(o.customer_code||'Assigned automatically on approval')+'</div><div class="text-[9px] text-gray-400 mt-1">Automatic and permanent — reviewers cannot edit it.</div></div>'
       +'<div class="md:col-span-2"><label class="text-xs font-semibold">Address</label><input id="rcAddress" value="'+esc(o.address||'')+'" class="mt-1 w-full border rounded-xl px-3 py-2"></div>'
       +'<div class="md:col-span-2"><label class="text-xs font-semibold">Assign Customer To</label><select id="rcHandler" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white">'+opts+'</select></div>'
       +'<div class="md:col-span-2"><div class="flex justify-between items-center mb-2"><div><b class="text-sm">Contact Methods</b><div class="text-[10px] text-gray-400">Edit before publishing if needed.</div></div><button type="button" onclick="addReviewCustomerContact()" class="px-3 py-2 border rounded-lg text-xs">+ Contact</button></div><div id="reviewCustomerContacts" class="grid gap-2">'+(contacts.length?contacts.map(contactRow).join(''):contactRow({contact_type:'phone'}))+'</div></div>'
@@ -207,7 +219,8 @@
       var name=clean(document.getElementById('rcName').value);if(!name)return showToast('Customer name is required.','err');
       finalContacts=[].slice.call(document.querySelectorAll('#reviewCustomerContacts .review-c-contact')).map(function(x,i){return {contact_type:x.querySelector('.rc-type').value,label:clean(x.querySelector('.rc-label').value)||null,contact_value:clean(x.querySelector('.rc-value').value),is_primary:i===0}}).filter(function(x){return x.contact_value});
       var dups=await duplicateWarning(finalContacts,r.customer_id);if(dups.length&&!confirm('Duplicate contact found: '+dups.join(', ')+'. Approve anyway?'))return;
-      finalCustomer=Object.assign({},r.requested_customer||{},{name:name,customer_code:clean(document.getElementById('rcCode').value)||null,address:clean(document.getElementById('rcAddress').value)||null,notes:clean(document.getElementById('rcNotes').value)||null,assigned_sales_id:document.getElementById('rcHandler').value||null,active:true});
+      finalCustomer=Object.assign({},r.requested_customer||{},{name:name,address:clean(document.getElementById('rcAddress').value)||null,notes:clean(document.getElementById('rcNotes').value)||null,assigned_sales_id:document.getElementById('rcHandler').value||null,active:true});
+      delete finalCustomer.customer_code;
     }
     if(!confirm(action==='approve'?(r.request_type==='create'?'Approve and publish this customer?':'Approve and apply these customer changes?'):'Reject this customer request?'))return;
     var x=await db.rpc('review_customer_change_request',{p_request_id:id,p_action:action,p_review_note:note||null,p_final_customer:finalCustomer,p_final_contacts:finalContacts});if(x.error)return showToast(x.error.message,'err');
