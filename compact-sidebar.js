@@ -2,11 +2,11 @@
 (function(){
   var storageKey='limperial_sidebar_groups_v1';
   var groupDefs=[
-    {key:'sales',label:'Sales & Customers',icon:'▤',ids:['customers','customer-database','sales-orders','tracking','rep-workspace']},
+    {key:'sales',label:'Sales & Customers',icon:'▤',ids:['customers','sales-orders','tracking','rep-workspace']},
     {key:'finance',label:'Finance & Control',icon:'$',ids:['approvals','payments','returns']},
     {key:'operations',label:'Products & Procurement',icon:'◇',ids:['products','procurement','supplier-pos']},
     {key:'management',label:'Management',icon:'▥',ids:['sales-access','users']},
-    {key:'reports',label:'Report',icon:'▥',ids:['reports','showroom-visit','online']}
+    {key:'reports',label:'Report',icon:'▥',ids:['reports','customer-database','showroom-visit','online']}
   ];
 
   function readState(){
