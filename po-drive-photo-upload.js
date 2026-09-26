@@ -94,8 +94,23 @@
       if(photo&&!uploaderReady())return showToast('Google Drive photo upload needs one-time setup first.','err');
 
       let productId=null;
-      const q=await db.from('product_catalog').select('id').eq('code',code).maybeSingle();
+      const q=await db.from('product_catalog').select('id').ilike('code',code).maybeSingle();
       if(!q.error&&q.data)productId=q.data.id;
+      if(!productId){
+        const po=await db.from('supplier_pos').select('currency,vendor_name').eq('id',poId).single();
+        if(po.error)return showToast(po.error.message,'err');
+        const created=await db.rpc('ensure_app_product_from_procurement',{
+          p_code:code,
+          p_item_name:name,
+          p_po_currency:po.data?.currency||'USD',
+          p_vendor_name:po.data?.vendor_name||null,
+          p_unit_cost:Number(document.getElementById('poiCost').value||0),
+          p_shipping_cost_usd:Number(document.getElementById('poiShipping').value||0),
+          p_image_url:null
+        });
+        if(created.error)return showToast(created.error.message,'err');
+        productId=created.data?.product_id||null;
+      }
       const row={
         supplier_po_id:poId,
         product_id:productId,
