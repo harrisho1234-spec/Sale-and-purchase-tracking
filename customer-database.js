@@ -123,6 +123,7 @@
           </select>
           ${salesFilter()}
         </div>
+        <button type="button" onclick="openNewCustomerLead()" class="px-4 py-2.5 bg-[#211d18] text-white rounded-xl text-sm font-semibold whitespace-nowrap">+ New Customer</button>
       </div>
     </div>`;
   }
@@ -182,7 +183,7 @@
   }
   async function loadSalesUsers(){
     if(leadState.salesUsers.length)return;
-    if(!crmCanFilterSales())return;
+    if(!crmCanFilterSales()&&!['admin','super_admin'].includes(state.profile?.role||''))return;
     const {data,error}=await db.from('app_users').select('user_id,display_name,email,role,active').in('role',['sales','manager']).eq('active',true).order('display_name');
     if(!error)leadState.salesUsers=data||[];
   }
@@ -200,6 +201,71 @@
     leadState.rows=rows;
     renderLeadBody();
   }
+  function newLeadSalesField(){
+    const scopeId=crmScopeSalesId();
+    if(scopeId){
+      const u=leadState.salesUsers.find(x=>x.user_id===scopeId);
+      const label=u?.display_name||u?.email||state.managerRepContext?.display_name||state.profile?.display_name||state.user?.email||'Current Sales';
+      return `<input id="newLeadSalesRep" type="hidden" value="${esc(scopeId)}"><div class="mt-1 border rounded-xl px-3 py-2.5 bg-gray-50 text-sm font-semibold">${esc(label)}</div>`;
+    }
+    if(['sales','manager'].includes(state.profile?.role||'')){
+      const id=state.user?.id||'';
+      const label=state.profile?.display_name||state.user?.email||'Current Sales';
+      return `<input id="newLeadSalesRep" type="hidden" value="${esc(id)}"><div class="mt-1 border rounded-xl px-3 py-2.5 bg-gray-50 text-sm font-semibold">${esc(label)}</div>`;
+    }
+    const users=leadState.salesUsers.filter(x=>['sales','manager'].includes(x.role));
+    return `<select id="newLeadSalesRep" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">
+      <option value="">Assign to myself</option>
+      ${users.map(u=>`<option value="${u.user_id}">${esc(u.display_name||u.email)} · ${esc(titleCase(u.role||''))}</option>`).join('')}
+    </select>`;
+  }
+
+  window.openNewCustomerLead=function(){
+    openModal('New Customer — Customer Database',`<form id="newCustomerLeadForm" class="grid md:grid-cols-2 gap-4">
+      <div><label class="text-xs font-semibold">Customer Name</label><input id="newLeadName" required class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Customer name"></div>
+      <div><label class="text-xs font-semibold">Phone</label><input id="newLeadPhone" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Phone / Telegram"></div>
+      <div><label class="text-xs font-semibold">Customer Category</label><select id="newLeadCategory" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="">Select category</option>${CATEGORIES.map(x=>`<option value="${x}">${x}</option>`).join('')}</select></div>
+      <div><label class="text-xs font-semibold">Business</label><select id="newLeadBusiness" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="">Unassigned</option><option value="RK">LP Home · RK</option><option value="TK">L'Imperial Luxury · TK</option></select></div>
+      <div><label class="text-xs font-semibold">Current Stage</label><select id="newLeadStage" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${STAGES.map(x=>`<option value="${x}" ${x==='Contacting'?'selected':''}>${x}</option>`).join('')}</select></div>
+      <div><label class="text-xs font-semibold">Assigned Sales</label>${newLeadSalesField()}</div>
+      <div><label class="text-xs font-semibold">Next Follow-up</label><input id="newLeadFollowup" type="date" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+      <div class="md:col-span-2"><label class="text-xs font-semibold">Interest</label><input id="newLeadInterest" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Sofa, chandelier, bedroom set..."></div>
+      <div class="md:col-span-2"><label class="text-xs font-semibold">Customer Note</label><textarea id="newLeadNotes" rows="3" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="What the customer needs / next action..."></textarea></div>
+      <div class="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-700">This adds the person directly to Customer Database. You can add Showroom Visit or Online activity later from the customer profile.</div>
+      <button class="md:col-span-2 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Add Customer</button>
+    </form>`);
+    document.getElementById('newCustomerLeadForm').onsubmit=saveNewCustomerLead;
+  };
+
+  async function saveNewCustomerLead(e){
+    e.preventDefault();
+    const btn=e.target.querySelector('button');if(btn){btn.disabled=true;btn.textContent='Adding Customer...'}
+    const scopeId=crmScopeSalesId();
+    const assigned=document.getElementById('newLeadSalesRep')?.value||scopeId||null;
+    const {data,error}=await db.rpc('create_customer_lead_manual',{
+      p_customer_name:document.getElementById('newLeadName').value.trim(),
+      p_phone:document.getElementById('newLeadPhone').value.trim()||null,
+      p_customer_category:document.getElementById('newLeadCategory').value||null,
+      p_business_code:document.getElementById('newLeadBusiness').value||null,
+      p_stage:document.getElementById('newLeadStage').value,
+      p_interest:document.getElementById('newLeadInterest').value.trim()||null,
+      p_next_follow_up_date:document.getElementById('newLeadFollowup').value||null,
+      p_notes:document.getElementById('newLeadNotes').value.trim()||null,
+      p_assigned_sales_id:assigned
+    });
+    if(error){if(btn){btn.disabled=false;btn.textContent='Add Customer'}return showToast(error.message,'err')}
+    const out=data||{};
+    closeModal();
+    await renderCustomerDatabase();
+    if(out.action==='existing'){
+      showToast('This customer already exists in Customer Database. Opening the existing profile.');
+      setTimeout(()=>openCustomerLead(out.lead_id),80);
+    }else{
+      showToast('Customer added to Customer Database.');
+      if(out.lead_id)setTimeout(()=>openCustomerLead(out.lead_id),80);
+    }
+  }
+
   function leadById(id){return (leadState.rows||[]).find(x=>x.lead_id===id)}
   function leadForm(r){
     return `<div class="grid md:grid-cols-2 gap-4">
