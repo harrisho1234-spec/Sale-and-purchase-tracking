@@ -15,6 +15,7 @@
   function role(){return state.profile?.role||''}
   function managerContext(){return typeof managerRepActive==='function'&&managerRepActive()}
   function canAssignHandler(){return ['super_admin','admin','manager'].includes(role())}
+  function canSeeCustomerId(){return ['super_admin','admin','manager'].includes(role())&&!managerContext()}
   function fmtDate(v){if(!v)return '-';const d=new Date(v);return Number.isNaN(d.getTime())?String(v):d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}
   function metaFor(id){return window._customerAssignmentMeta?.get(id)||{}}
   function metricsFor(id){return window._customerSalesMetrics?.get(id)||{sales:0,paid:0,ar:0,pending:0,orders:0}}
@@ -105,7 +106,7 @@
     root.innerHTML=pageRows.map(c=>{
       const note=String(c.notes||'').trim(),m=metricsFor(c.id);
       return `<div class="customer-edit-row bg-white border border-[#ece8e0] rounded-2xl px-4 py-3 grid lg:grid-cols-[1.12fr_1.18fr_1fr_.82fr_.72fr_.72fr_.72fr_1.05fr_auto] gap-3 lg:gap-4 items-center shadow-[0_3px_14px_rgba(31,25,18,.025)]">
-        <div class="min-w-0"><div class="font-bold text-[14px] truncate">${esc(c.name||'')}</div><div class="flex flex-wrap gap-x-2 gap-y-0.5 mt-0.5 text-[9px] text-gray-400">${c.customer_code?`<span class="text-[#b3871e] font-bold">${esc(c.customer_code)}</span>`:''}<span>Since ${esc(fmtDate(c.created_at))}</span></div></div>
+        <div class="min-w-0"><div class="font-bold text-[14px] truncate">${esc(c.name||'')}</div><div class="flex flex-wrap gap-x-2 gap-y-0.5 mt-0.5 text-[9px] text-gray-400">${canSeeCustomerId()&&c.customer_code?`<span class="text-[#b3871e] font-bold">${esc(c.customer_code)}</span>`:''}<span>Since ${esc(fmtDate(c.created_at))}</span></div></div>
         <div class="min-w-0"><div class="lg:hidden text-[9px] uppercase text-gray-400 font-bold mb-1">Contacts</div>${contactSummary(c)}</div>
         <div class="text-[12px] text-gray-500 min-w-0"><div class="lg:hidden text-[9px] uppercase text-gray-400 font-bold mb-1">Address</div><div class="truncate">${esc(c.address||'-')}</div></div>
         <div class="min-w-0"><div class="lg:hidden text-[9px] uppercase text-gray-400 font-bold mb-1">Handled By</div><span class="inline-flex max-w-full px-2 py-1 rounded-lg border border-amber-100 bg-amber-50 text-[10px] font-bold text-amber-800 truncate">${esc(handlerName(c))}</span></div>
@@ -127,7 +128,7 @@
     const list=(state.customers||[]).filter(c=>{
       const x=metricsFor(c.id),contacts=contactsFor(c.id).flatMap(v=>[v.contact_type,v.label,v.contact_value]);
 
-      const matchesSearch=!q||[c.name,c.customer_code,c.phone,c.email,c.address,c.notes,fmtDate(c.created_at),x.sales,x.paid,x.ar,...contacts]
+      const matchesSearch=!q||[c.name,(canSeeCustomerId()?c.customer_code:''),c.phone,c.email,c.address,c.notes,fmtDate(c.created_at),x.sales,x.paid,x.ar,...contacts]
         .some(v=>String(v||'').toLowerCase().includes(q));
       if(!matchesSearch)return false;
 
@@ -172,8 +173,8 @@
   window.openNewCustomer=async function(){
     const fixed=effectiveHandler(),opts=await handlerOptions(fixed||'');
     openModal('Add Customer',`<form id="multiCustomerForm" class="grid md:grid-cols-2 gap-4">
-      <div><label class="text-xs font-semibold">Customer Name</label><input id="mcName" required class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Customer name"></div>
-      <div><label class="text-xs font-semibold">Customer Code</label><input id="mcCode" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Optional"></div>
+      <div class="md:col-span-2"><label class="text-xs font-semibold">Customer Name</label><input id="mcName" required class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Customer name"></div>
+      <div class="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-700"><b>Customer ID is automatic.</b> The system assigns a permanent ID and checks phone numbers after removing spaces, dashes and Cambodia country-code formatting.</div>
       <div class="md:col-span-2"><label class="text-xs font-semibold">Address</label><input id="mcAddress" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Address"></div>
       ${(canAssignHandler()&&!fixed)
         ?`<div class="md:col-span-2"><label class="text-xs font-semibold">Assign Customer To</label><select id="mcHandler" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${opts}</select><div class="text-[10px] text-gray-400 mt-1">${role()==='manager'?'Optional — leave Unassigned, choose a Sales Rep, or choose yourself as Manager.':'Optional. Leave Unassigned and assign later if preferred.'}</div></div>`
@@ -194,9 +195,16 @@
     e.preventDefault();
     const contacts=readContactRows(),firstPhone=contacts.find(x=>x.contact_type==='phone')?.contact_value||null,firstEmail=contacts.find(x=>x.contact_type==='email')?.contact_value||null;
     const handler=effectiveHandler()||(document.getElementById('mcHandler')?.value||null);
-    const row={name:document.getElementById('mcName').value.trim(),customer_code:document.getElementById('mcCode').value.trim()||null,address:document.getElementById('mcAddress').value.trim()||null,notes:document.getElementById('mcNotes').value.trim()||null,phone:firstPhone,email:firstEmail,assigned_sales_id:handler,created_by:state.user.id,active:true};
+    const row={name:document.getElementById('mcName').value.trim(),address:document.getElementById('mcAddress').value.trim()||null,notes:document.getElementById('mcNotes').value.trim()||null,phone:firstPhone,email:firstEmail,assigned_sales_id:handler,created_by:state.user.id,active:true};
     if(!row.name)return showToast('Customer name is required.','err');
-    const cr=await db.from('customers').insert(row).select('id').single();if(cr.error)return showToast(cr.error.message,'err');
+    if(firstPhone){
+      const match=await db.rpc('find_customer_identity_by_phone',{p_phone:firstPhone});
+      if(match.error)return showToast(match.error.message,'err');
+      if(match.data&&match.data.matched){
+        return showToast('This phone number already belongs to '+(match.data.customer_name||'an existing customer')+'. Use the existing customer instead.','err');
+      }
+    }
+    const cr=await db.from('customers').insert(row).select('id,customer_code').single();if(cr.error)return showToast(cr.error.message,'err');
     if(contacts.length){const ci=await db.from('customer_contacts').insert(contacts.map((x,i)=>({...x,customer_id:cr.data.id,is_primary:i===0,created_by:state.user.id})));if(ci.error)return showToast(`Customer saved, but contacts could not be saved: ${ci.error.message}`,'err');}
     if(managerContext()&&typeof recordManagerRepAction==='function')await recordManagerRepAction('create_customer','customer',cr.data.id,{customer_name:row.name});
     closeModal();
@@ -218,8 +226,8 @@
     const m=metricsFor(c.id),cs=cc.data||[];
     openModal(`Edit Customer — ${c.name||''}`,`<form id="multiEditCustomerForm" class="grid md:grid-cols-2 gap-4">
       <div class="md:col-span-2 grid grid-cols-2 sm:grid-cols-5 gap-3 rounded-xl border bg-[#faf9f6] p-4"><div><div class="text-[9px] uppercase font-bold text-gray-400">Customer Since</div><div class="text-sm font-semibold mt-1">${esc(fmtDate(c.created_at))}</div></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Current Handler</div><div class="text-sm font-semibold mt-1">${esc(handlerName(c))}</div></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Sales</div><div class="text-sm font-semibold mt-1">${money(m.sales)}</div></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Received</div><div class="text-sm font-semibold text-green-600 mt-1">${money(m.paid)}</div></div><div><div class="text-[9px] uppercase font-bold text-gray-400">AR</div><div class="text-sm font-semibold ${m.ar>0?'text-red-500':'text-green-600'} mt-1">${money(m.ar)}</div></div></div>
-      <div><label class="text-xs font-semibold">Customer Name</label><input id="mecName" required value="${esc(c.name||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
-      <div><label class="text-xs font-semibold">Customer Code</label><input id="mecCode" value="${esc(c.customer_code||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+      <div class="md:col-span-2"><label class="text-xs font-semibold">Customer Name</label><input id="mecName" required value="${esc(c.name||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+      ${canSeeCustomerId()?`<div class="md:col-span-2 rounded-xl border bg-[#faf9f6] px-4 py-3"><div class="text-[9px] uppercase font-bold text-gray-400">Customer ID</div><div class="mt-1 font-bold text-[#b3871e]">${esc(c.customer_code||'-')}</div><div class="text-[9px] text-gray-400 mt-1">Automatic and permanent — it cannot be edited.</div></div>`:''}
       <div class="md:col-span-2"><label class="text-xs font-semibold">Address</label><input id="mecAddress" value="${esc(c.address||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
       ${canAssignHandler()?`<div class="md:col-span-2"><label class="text-xs font-semibold">Assign / Reassign Sales Rep</label><select id="mecHandler" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${opts}</select><div class="text-[10px] text-gray-400 mt-1">${role()==='manager'?'Manager can assign an unassigned customer or transfer the customer to another Sales Rep.':'Changing this transfers the customer portfolio to another Sales Rep/Manager.'}</div></div>`:''}
       <div class="md:col-span-2 border-t pt-4"><div class="flex items-center justify-between gap-3"><div><div class="font-bold text-sm">Contact Methods</div><div class="text-[10px] text-gray-400">Phone numbers and social usernames can be added, edited or removed.</div></div><button type="button" onclick="addCustomerContactRow('phone')" class="px-3 py-2 border rounded-lg text-xs font-semibold">+ Contact</button></div><div id="customerContactRows" class="grid gap-2 mt-3">${(cs.length?cs:[...(c.phone?[{contact_type:'phone',label:'Main',contact_value:c.phone}]:[]),...(c.email?[{contact_type:'email',label:'Email',contact_value:c.email}]:[])]).map(contactRow).join('')||contactRow({contact_type:'phone',label:'Main'})}</div></div>
@@ -228,8 +236,15 @@
     </form>`);
     document.getElementById('multiEditCustomerForm').onsubmit=async e=>{
       e.preventDefault();const contacts=readContactRows(),firstPhone=contacts.find(x=>x.contact_type==='phone')?.contact_value||null,firstEmail=contacts.find(x=>x.contact_type==='email')?.contact_value||null;
-      const patch={name:document.getElementById('mecName').value.trim(),customer_code:document.getElementById('mecCode').value.trim()||null,address:document.getElementById('mecAddress').value.trim()||null,notes:document.getElementById('mecNotes').value.trim()||null,phone:firstPhone,email:firstEmail,updated_at:new Date().toISOString()};
+      const patch={name:document.getElementById('mecName').value.trim(),address:document.getElementById('mecAddress').value.trim()||null,notes:document.getElementById('mecNotes').value.trim()||null,phone:firstPhone,email:firstEmail,updated_at:new Date().toISOString()};
       if(canAssignHandler()&&document.getElementById('mecHandler'))patch.assigned_sales_id=document.getElementById('mecHandler').value||null;if(!patch.name)return showToast('Customer name is required.','err');
+      if(firstPhone){
+        const match=await db.rpc('find_customer_identity_by_phone',{p_phone:firstPhone});
+        if(match.error)return showToast(match.error.message,'err');
+        if(match.data&&match.data.matched&&match.data.customer_id&&String(match.data.customer_id)!==String(id)){
+          return showToast('This phone number already belongs to '+(match.data.customer_name||'another customer')+'.','err');
+        }
+      }
       const up=await db.from('customers').update(patch).eq('id',id);if(up.error)return showToast(up.error.message,'err');
       const del=await db.from('customer_contacts').delete().eq('customer_id',id);if(del.error)return showToast(del.error.message,'err');
       if(contacts.length){const ins=await db.from('customer_contacts').insert(contacts.map((x,i)=>({...x,customer_id:id,is_primary:i===0,created_by:state.user.id})));if(ins.error)return showToast(ins.error.message,'err');}
@@ -246,7 +261,7 @@
     if(!rows?.length){root.innerHTML='<div class="py-3 text-xs text-gray-400">No matching customer found.</div>';return;}
     root.innerHTML=`<div class="grid gap-2">${rows.map(r=>{
       const cs=Array.isArray(r.contacts)?r.contacts:[];const owner=r.is_own?'My Customer':(r.handled_by_name||r.handled_by_email?`Handled by ${r.handled_by_name||r.handled_by_email}`:'Unassigned');
-      return `<div class="rounded-xl border bg-white px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div class="min-w-0"><div class="flex flex-wrap items-center gap-2"><b>${esc(r.customer_name||'')}</b>${r.customer_code?`<span class="text-[9px] font-bold text-[#b3871e]">${esc(r.customer_code)}</span>`:''}<span class="px-2 py-1 rounded-md text-[9px] font-bold ${r.is_own?'bg-green-50 border border-green-200 text-green-700':'bg-amber-50 border border-amber-200 text-amber-800'}">${esc(owner)}</span></div><div class="flex flex-wrap gap-1 mt-2">${cs.slice(0,6).map(c=>`<span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-50 border rounded-md text-[10px] text-gray-600"><b>${esc(typeLabel(c.type))}:</b> ${esc(c.value||'')}</span>`).join('')||'<span class="text-[10px] text-gray-400">No contact saved</span>'}</div></div>${r.is_own?'<button onclick="go(\'customers\')" class="px-3 py-2 border rounded-lg text-xs font-semibold whitespace-nowrap">Open My Customers</button>':''}</div>`;
+      return `<div class="rounded-xl border bg-white px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div class="min-w-0"><div class="flex flex-wrap items-center gap-2"><b>${esc(r.customer_name||'')}</b>${canSeeCustomerId()&&r.customer_code?`<span class="text-[9px] font-bold text-[#b3871e]">${esc(r.customer_code)}</span>`:''}<span class="px-2 py-1 rounded-md text-[9px] font-bold ${r.is_own?'bg-green-50 border border-green-200 text-green-700':'bg-amber-50 border border-amber-200 text-amber-800'}">${esc(owner)}</span></div><div class="flex flex-wrap gap-1 mt-2">${cs.slice(0,6).map(c=>`<span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-50 border rounded-md text-[10px] text-gray-600"><b>${esc(typeLabel(c.type))}:</b> ${esc(c.value||'')}</span>`).join('')||'<span class="text-[10px] text-gray-400">No contact saved</span>'}</div></div>${r.is_own?'<button onclick="go(\'customers\')" class="px-3 py-2 border rounded-lg text-xs font-semibold whitespace-nowrap">Open My Customers</button>':''}</div>`;
     }).join('')}</div>`;
   }
 
