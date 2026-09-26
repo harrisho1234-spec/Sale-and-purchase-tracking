@@ -66,6 +66,7 @@ async function openProductDetail(id){
               <button onclick="openAdjustStock('${id}')" class="px-3 py-2.5 border rounded-xl text-sm">Adjust Stock</button>
               <button onclick="openEditCosting('${id}')" class="px-3 py-2.5 border rounded-xl text-sm">Edit Costing</button>
             </div>
+            ${isAppProduct(p)?`<button onclick="deleteAppProduct('${id}')" class="mt-2 w-full px-3 py-2.5 border border-red-200 bg-red-50 text-red-600 rounded-xl text-xs font-semibold">Delete Product</button>`:''}
             ${p.manual_override&&!(String(p.source_row_key||'').startsWith('app:')||['app_created','app_products_sheet'].includes(String(p.source_system||'')))?`<button onclick="resumeProductSheetSync('${id}')" class="mt-2 w-full px-3 py-2 border border-amber-200 text-amber-700 bg-amber-50 rounded-xl text-xs">Resume Google Sheet sync for this product</button>`:''}
             ${history.length?`<div class="mt-5"><div class="text-xs font-bold uppercase text-gray-400 mb-2">Recent Stock Changes</div><div class="divide-y border rounded-xl">${history.map(h=>`<div class="p-2.5 flex justify-between gap-3 text-xs"><div><b>${esc(h.reason)}</b>${h.note?`<div class="text-gray-400">${esc(h.note)}</div>`:''}</div><div class="text-right"><b>${Number(h.previous_qty)} → ${Number(h.new_qty)}</b><div class="text-gray-400">${new Date(h.created_at).toLocaleString()}</div></div></div>`).join('')}</div></div>`:''}
           </div>`:''}
@@ -123,4 +124,25 @@ function openNewProduct(){
     if(location){const {error:e2}=await db.from('product_admin_details').insert({product_id:data.id,location});if(e2)return showToast(e2.message,'err')}
     closeModal();showToast('Product added');await renderProducts();
   };
+}
+
+
+async function deleteAppProduct(id){
+  if(!isAdmin())return showToast('Admin access required.','err');
+  const p=productById(id);
+  if(!p)return showToast('Product not found.','err');
+  if(!isAppProduct(p))return showToast('Only products created in the app / App Products can be deleted here.','err');
+
+  const ok=confirm(
+    'Delete '+(p.code||p.item_name||'this product')+' from the active Product catalog?\n\n'+
+    'Historical Sales Orders and Supplier POs will be kept. The product will no longer be available for new sales or procurement selections.'
+  );
+  if(!ok)return;
+
+  const {data,error}=await db.rpc('delete_app_product_safe',{p_product_id:id});
+  if(error)return showToast(error.message,'err');
+
+  closeModal();
+  showToast('Product deleted from active catalog');
+  await renderProducts();
 }
