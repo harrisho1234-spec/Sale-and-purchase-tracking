@@ -63,7 +63,7 @@
   async function loadProducts(){
     const all=[];
     for(let from=0;;from+=1000){
-      const r=await db.from('product_catalog').select('id,code,item_name,brand,class,image_url,active').order('item_name').range(from,from+999);
+      const r=await db.from('product_catalog').select('id,code,item_name,brand,class,image_url,active').eq('active',true).order('item_name').range(from,from+999);
       if(r.error)throw r.error;
       all.push(...(r.data||[]));
       if(!r.data||r.data.length<1000)break;
