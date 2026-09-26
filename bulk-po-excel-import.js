@@ -22,7 +22,7 @@
       'code':'code','sku':'code','product code':'code','product code sku':'code',
       'qty':'qty','quantity':'qty',
       'unit cost':'unit_cost','cost':'unit_cost',
-      'shipping unit':'shipping_cost','shipping per unit':'shipping_cost','shipping cost unit':'shipping_cost','shipping cost per unit':'shipping_cost',
+      'shipping unit':'shipping_cost','shipping per unit':'shipping_cost','shipping cost unit':'shipping_cost','shipping cost per unit':'shipping_cost','shipping unit usd':'shipping_cost','shipping per unit usd':'shipping_cost','shipping cost per unit usd':'shipping_cost',
       'item name':'item_name','product name':'item_name'
     };
     return m[x]||x.replace(/\s+/g,'_');
@@ -181,7 +181,8 @@
   }
 
   function totalItems(){return bulkState.pos.reduce((a,p)=>a+p.items.length,0)}
-  function totalValue(po){return po.items.reduce((a,i)=>a+(i.qty*i.unit_cost)+(i.qty*i.shipping_cost),0)}
+  function goodsValue(po){return po.items.reduce((a,i)=>a+(i.qty*i.unit_cost),0)}
+  function shippingValue(po){return po.items.reduce((a,i)=>a+(i.qty*i.shipping_cost),0)}
 
   function previewHTML(){
     const errorBox=bulkState.errors.length?`<div class="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700"><b>Fix before importing:</b><div class="mt-2 space-y-1">${bulkState.errors.slice(0,12).map(x=>`<div>• ${esc(x)}</div>`).join('')}${bulkState.errors.length>12?`<div>• + ${bulkState.errors.length-12} more</div>`:''}</div></div>`:'';
@@ -197,12 +198,12 @@
         ${errorBox}${warnBox}
         <div class="rounded-xl border overflow-hidden max-h-[42vh] overflow-y-auto">
           <div class="divide-y">
-            ${bulkState.pos.map(po=>`<div class="p-3 grid md:grid-cols-[1fr_1.2fr_90px_110px_120px] gap-3 items-center">
+            ${bulkState.pos.map(po=>`<div class="p-3 grid md:grid-cols-[1fr_1.2fr_90px_110px_170px] gap-3 items-center">
               <div><b>${esc(po.po_number)}</b><div class="text-[10px] text-gray-400">${esc(po.order_date||'No date')}</div></div>
               <div><div class="text-sm font-semibold">${esc(po.vendor_name||'Missing supplier')}</div><div class="text-[10px] text-gray-400">${esc(po.shipping_agent||'No shipping agent')}</div></div>
               <div class="text-xs">${po.items.length} item${po.items.length===1?'':'s'}</div>
               <div class="text-xs">${esc(po.currency||'USD')}</div>
-              <div class="text-right text-xs font-bold">${money(totalValue(po),po.currency||'USD')}</div>
+              <div class="text-right text-xs"><div class="font-bold">Goods ${money(goodsValue(po),po.currency||'USD')}</div><div class="text-gray-500 mt-1">Shipping ${money(shippingValue(po),'USD')}</div></div>
             </div>`).join('')}
           </div>
         </div>
@@ -264,7 +265,7 @@
           <button type="button" onclick="downloadBulkPOExcelTemplate()" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-xs font-semibold">Download Bulk Template</button>
         </div>
         <input type="file" accept=".xlsx,.xls,.csv" onchange="bulkPOFileChanged(this)" class="w-full border rounded-xl px-3 py-2 bg-white">
-        <div id="bulkPOFileStatus" class="text-[10px] text-gray-400 mt-1">Required: Official PO Number, Vendor / Supplier, Order Date, Currency, Code, QTY, Unit Cost, Shipping / Unit. Item Name is only required for a new SKU.</div>
+        <div id="bulkPOFileStatus" class="text-[10px] text-gray-400 mt-1">Required: Official PO Number, Vendor / Supplier, Order Date, Currency, Code, QTY, Unit Cost, Shipping / Unit (USD). The PO Currency applies to Unit Cost only; Shipping is always USD. Item Name is only required for a new SKU.</div>
       </div>
 
       <label class="flex items-start gap-2 rounded-xl border p-3 text-xs">
@@ -322,7 +323,7 @@
   window.downloadBulkPOExcelTemplate=function(){
     if(!window.XLSX)return showToast('Excel template tool is still loading. Refresh and try again.','err');
     const rows=[
-      ['Official PO Number','Vendor / Supplier','Order Date','Currency','Shipping Agent','ETA','Code','QTY','Unit Cost','Shipping / Unit','Item Name'],
+      ['Official PO Number','Vendor / Supplier','Order Date','Currency','Shipping Agent','ETA','Code','QTY','Unit Cost','Shipping / Unit (USD)','Item Name'],
       ['PO-2026-001','Supplier A','2026-09-24','USD','Agent A','2026-11-15','SKU-001',2,100,10,''],
       ['', '', '', '', '', '', 'SKU-002',1,250,15,''],
       ['PO-2026-002','Supplier B','2026-09-24','USD','','2026-12-01','NEW-SKU-01',3,80,8,'New Product Name'],
