@@ -96,19 +96,48 @@
     leadState.page=Math.max(1,Math.min(pages,leadState.page));
     return rows.slice((leadState.page-1)*size,leadState.page*size);
   }
+  function tabBaseRows(){
+    const q=leadState.search.trim().toLowerCase(),today=todayIso();
+    return scopeRows().filter(r=>{
+      if(leadState.business==='UNASSIGNED'&&r.business_code)return false;
+      if(!['all','UNASSIGNED'].includes(leadState.business)&&r.business_code!==leadState.business)return false;
+      if(leadState.salesRep!=='all'&&String(r.assigned_sales_id||'')!==leadState.salesRep)return false;
+      if(leadState.followup==='overdue'&&!r.follow_up_overdue)return false;
+      if(leadState.followup==='today'&&!r.follow_up_today)return false;
+      if(leadState.followup==='upcoming'){
+        const d=String(r.next_follow_up_date||'');
+        if(!d)return false;
+        const end=new Date(today+'T00:00:00');end.setDate(end.getDate()+7);
+        if(new Date(d+'T00:00:00')<new Date(today+'T00:00:00')||new Date(d+'T00:00:00')>end)return false;
+      }
+      if(leadState.followup==='none'&&r.next_follow_up_date)return false;
+      if(!q)return true;
+      return [
+        r.customer_name,r.phone,r.customer_category,r.stage,r.interest,r.notes,
+        r.latest_remark,r.sales_rep_name,r.business_name,r.first_source,r.last_source
+      ].some(v=>String(v||'').toLowerCase().includes(q));
+    });
+  }
   function counts(){
-    const rows=scopeRows(),out={total:rows.length};
+    const rows=tabBaseRows(),out={total:rows.length};
     STAGES.forEach(s=>out[s]=rows.filter(r=>r.stage===s).length);
-    out.overdue=rows.filter(r=>r.follow_up_overdue).length;
-    out.today=rows.filter(r=>r.follow_up_today).length;
+    out.overdue=scopeRows().filter(r=>r.follow_up_overdue).length;
+    out.today=scopeRows().filter(r=>r.follow_up_today).length;
     return out;
   }
-  function kpi(label,value,sub,tone=''){
-    return `<button type="button" onclick="${label==='Total Customers'?"setLeadStage('all')":STAGES.includes(label)?`setLeadStage('${label}')`:'void(0)'}" class="card rounded-2xl p-4 text-left">
-      <div class="text-[10px] uppercase tracking-wide font-bold text-gray-400">${esc(label)}</div>
-      <div class="text-2xl font-bold mt-1 ${tone}">${value}</div>
-      <div class="text-[10px] text-gray-400 mt-1">${esc(sub)}</div>
-    </button>`;
+  function stageTabs(c){
+    const tabs=[['all','All Leads',c.total],...STAGES.map(s=>[s,s,c[s]||0])];
+    return `<div class="card rounded-2xl px-3 pt-3 mb-4 overflow-x-auto">
+      <div class="flex items-end gap-1 min-w-max border-b">
+        ${tabs.map(([value,label,count])=>{
+          const active=leadState.stage===value;
+          return `<button type="button" onclick="setLeadStage('${value}')" class="px-4 py-3 text-sm font-semibold border-b-2 transition ${active?'border-[#b3871e] text-[#8a650e] bg-[#fffaf0]':'border-transparent text-gray-500 hover:text-gray-800 hover:bg-gray-50'}">
+            <span>${esc(label)}</span>
+            <span class="ml-1.5 inline-flex min-w-[22px] h-[22px] items-center justify-center rounded-full px-1.5 text-[10px] font-bold ${active?'bg-[#b3871e] text-white':'bg-gray-100 text-gray-500'}">${count}</span>
+          </button>`;
+        }).join('')}
+      </div>
+    </div>`;
   }
   function salesFilter(){
     if(!crmCanFilterSales())return '';
@@ -120,9 +149,6 @@
       <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
         <div class="flex flex-col sm:flex-row flex-wrap gap-2 flex-1">
           <input value="${esc(leadState.search)}" oninput="setLeadSearch(this.value)" class="border rounded-xl px-4 py-2.5 bg-white w-full sm:max-w-[320px]" placeholder="Search customer, phone, interest, note...">
-          <select onchange="setLeadStage(this.value)" class="border rounded-xl bg-white px-3 py-2.5 text-sm">
-            <option value="all">All Stages</option>${STAGES.map(s=>`<option value="${s}" ${leadState.stage===s?'selected':''}>${s}</option>`).join('')}
-          </select>
           <select onchange="setLeadBusiness(this.value)" class="border rounded-xl bg-white px-3 py-2.5 text-sm">
             <option value="all">All Business</option><option value="RK" ${leadState.business==='RK'?'selected':''}>LP Home · RK</option><option value="TK" ${leadState.business==='TK'?'selected':''}>L'Imperial Luxury · TK</option><option value="UNASSIGNED" ${leadState.business==='UNASSIGNED'?'selected':''}>Unassigned</option>
           </select>
@@ -180,14 +206,7 @@
     root.innerHTML=`
       ${typeof managerRepActive==='function'&&managerRepActive()?managerRepBanner():''}
       <div class="flex flex-wrap justify-end gap-2 mb-3">${alerts.join('')}</div>
-      <div class="grid grid-cols-2 xl:grid-cols-6 gap-3 mb-4">
-        ${kpi('Total Customers',c.total,'All leads + buyers')}
-        ${kpi('Contacting',c.Contacting,'Initial contact','text-blue-600')}
-        ${kpi('Potential',c.Potential,'Qualified interest','text-amber-600')}
-        ${kpi('Waiting Decision',c['Waiting Decision'],'Decision pending','text-purple-600')}
-        ${kpi('Buy',c.Buy,'Converted / purchased','text-green-600')}
-        ${kpi('Reject',c.Reject,'Lost / rejected','text-red-500')}
-      </div>
+      ${stageTabs(c)}
       ${toolbar()}
       <div class="grid gap-3">${paged.map(rowHtml).join('')||'<div class="card rounded-2xl p-12 text-center text-sm text-gray-400">No customers match this selection.</div>'}</div>
       ${pager(rows.length)}
