@@ -15,6 +15,7 @@
     for(let from=0;;from+=1000){
       const r=await db.from('product_catalog')
         .select('id,code,item_name,brand,class,image_url,active')
+        .eq('active',true)
         .order('code',{ascending:true})
         .range(from,from+999);
       if(r.error)throw r.error;
