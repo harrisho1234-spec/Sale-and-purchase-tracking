@@ -123,13 +123,21 @@
 
   window.renderProcurementWorkspace=async function(){
     inject();requireAdmin();
-    const tabs=[['pos','Supplier POs'],['items','PO Items'],['payments','Supplier Payments'],['shipping','Shipping / ETA'],['allocations','SR Allocations']];
+    const tabs=[['pos','Supplier POs'],['items','PO Items'],['payments','Supplier Payments'],['shipping','Shipping / ETA'],['allocations','SR Allocations'],['flow','PO → SR → TK/RK']];
     let action='';
     if(pw.tab==='pos')action=`<div class="flex flex-wrap gap-2 justify-end"><button onclick="openBulkPOImport()" class="px-4 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-xl text-sm font-semibold">Bulk Import Excel</button><button onclick="openNewSupplierPO()" class="px-4 py-2 bg-[#211d18] text-white rounded-xl text-sm font-semibold">+ Supplier PO</button></div>`;
     if(pw.tab==='payments')action=`<button onclick="openSupplierPayment()" class="px-4 py-2 bg-[#211d18] text-white rounded-xl text-sm font-semibold">+ Supplier Payment</button>`;
     document.getElementById('content').innerHTML=`<div class="max-w-[1500px] mx-auto"><div class="pw-tabs">${tabs.map(([v,l])=>`<button class="pw-tab ${pw.tab===v?'active':''}" onclick="setProcurementTab('${v}')">${l}</button>`).join('')}</div><div class="pw-toolbar"><div><input class="pw-search" value="${esc(pw.search)}" oninput="setProcurementSearch(this.value)" placeholder="Search PO, supplier, SKU, SR, customer..."></div><div>${action}</div></div><div id="procurementWorkspaceBody"><div class="py-16 text-center text-gray-400">Loading...</div></div></div>`;
     try{
-      let html='';if(pw.tab==='pos')html=await renderPOs();else if(pw.tab==='items')html=await renderPOItems();else if(pw.tab==='payments')html=await renderPayments();else if(pw.tab==='shipping')html=await renderShipping();else html=await renderAllocations();document.getElementById('procurementWorkspaceBody').innerHTML=html;
+      let html='';
+      if(pw.tab==='pos')html=await renderPOs();
+      else if(pw.tab==='items')html=await renderPOItems();
+      else if(pw.tab==='payments')html=await renderPayments();
+      else if(pw.tab==='shipping')html=await renderShipping();
+      else if(pw.tab==='allocations')html=await renderAllocations();
+      else if(pw.tab==='flow'&&typeof renderProcurementDocumentFlow==='function')html=await renderProcurementDocumentFlow(pw.search);
+      else html='<div class="card rounded-xl p-5 text-gray-400">Document flow is unavailable.</div>';
+      document.getElementById('procurementWorkspaceBody').innerHTML=html;
     }catch(err){document.getElementById('procurementWorkspaceBody').innerHTML=`<div class="card rounded-xl p-5 text-red-600">Error: ${esc(err.message)}</div>`}
   };
 
@@ -143,7 +151,7 @@
     const r=await prevGo(page);
     if(page==='procurement'){
       document.getElementById('pageTitle').textContent='Procurement';
-      document.getElementById('pageSubtitle').textContent='Supplier POs, PO items, payments, shipping, ETA and SR allocations';
+      document.getElementById('pageSubtitle').textContent='Supplier POs, PO items, payments, shipping, ETA, SR allocations and PO → SR → TK/RK flow';
     }
     return r;
   };
