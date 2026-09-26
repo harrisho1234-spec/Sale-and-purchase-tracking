@@ -6,11 +6,36 @@
     view:'month',
     year:null,
     selectedReps:null,
-    repMenuOpen:false
+    repMenuOpen:false,
+    business:'all'
   };
 
   function n(v){const x=Number(v||0);return Number.isFinite(x)?x:0}
   function repKey(r){return r.sales_rep_id||'__unassigned__'}
+  function reportScopeUserId(){
+    if(typeof managerRepActive==='function'&&managerRepActive())return managerRepId();
+    if(typeof managerTestActive==='function'&&managerTestActive())return state.managerRepContext?.user_id||null;
+    const role=state.profile?.role||'';
+    if(['sales','manager'].includes(role))return state.user?.id||null;
+    return null;
+  }
+  function canChooseReportReps(){
+    return !reportScopeUserId()&&['admin','super_admin'].includes(state.profile?.role||'');
+  }
+  function reportBusinessLabel(){
+    if(reportState.business==='RK')return 'LP Home (RK)';
+    if(reportState.business==='TK')return "L'Imperial Luxury (TK)";
+    if(reportState.business==='OTHER')return 'Pre-Order / Other';
+    return 'All RK + TK';
+  }
+  function rowInReportScope(r,includeBusiness=true){
+    const scopeId=reportScopeUserId();
+    if(scopeId&&r.sales_rep_id!==scopeId)return false;
+    if(canChooseReportReps()&&!repSelected(repKey(r)))return false;
+    if(includeBusiness&&reportState.business!=='all'&&String(r.business_code||'OTHER')!==reportState.business)return false;
+    if(reportState.view!=='year'&&reportState.year&&yearOf(r.order_date)!==Number(reportState.year))return false;
+    return true;
+  }
   function yearOf(v){const y=Number(String(v||'').slice(0,4));return Number.isFinite(y)?y:null}
   function monthOf(v){const m=Number(String(v||'').slice(5,7));return m>=1&&m<=12?m:null}
   function reportYears(){
@@ -28,6 +53,11 @@
     return reportState.selectedReps===null||reportState.selectedReps.has(key);
   }
   function selectedRepLabel(){
+    const scopeId=reportScopeUserId();
+    if(scopeId){
+      const row=reportState.rows.find(r=>r.sales_rep_id===scopeId);
+      return row?.sales_rep_name||((typeof managerTestActive==='function'&&managerTestActive())?state.managerRepContext?.display_name:'My Sales');
+    }
     const reps=reportReps();
     if(reportState.selectedReps===null)return 'All Sales Reps';
     const count=reportState.selectedReps.size;
@@ -39,18 +69,10 @@
     return count+' Sales Reps';
   }
   function periodRows(){
-    let rows=reportState.rows.filter(r=>repSelected(repKey(r)));
-    if(reportState.view!=='year'&&reportState.year){
-      rows=rows.filter(r=>yearOf(r.order_date)===Number(reportState.year));
-    }
-    return rows;
+    return (reportState.rows||[]).filter(r=>rowInReportScope(r,true));
   }
   function reportItemRows(){
-    let rows=(reportState.itemRows||[]).filter(r=>repSelected(repKey(r)));
-    if(reportState.view!=='year'&&reportState.year){
-      rows=rows.filter(r=>yearOf(r.order_date)===Number(reportState.year));
-    }
-    return rows;
+    return (reportState.itemRows||[]).filter(r=>rowInReportScope(r,true));
   }
   function productLineLabel(r){
     const raw=String(r.product_class||'').trim();
@@ -110,6 +132,20 @@
         }).join(''):'<div class="py-12 text-center text-sm text-gray-400">No product sales data for this selection.</div>'}
       </div>
     </div>`;
+  }
+
+  function businessBreakdown(){
+    const map=new Map([
+      ['RK',{label:'LP Home (RK)',net:0,returns:0,gross:0,qty:0,lines:0}],
+      ['TK',{label:"L'Imperial Luxury (TK)",net:0,returns:0,gross:0,qty:0,lines:0}],
+      ['OTHER',{label:'Pre-Order / Other',net:0,returns:0,gross:0,qty:0,lines:0}]
+    ]);
+    (reportState.rows||[]).filter(r=>rowInReportScope(r,false)).forEach(r=>{
+      const key=['RK','TK'].includes(String(r.business_code||''))?String(r.business_code):'OTHER';
+      const x=map.get(key);
+      x.net+=n(r.net_sales);x.returns+=n(r.return_value);x.gross+=n(r.gross_sales);x.lines+=1;
+    });
+    return [...map.values()].filter(x=>x.lines||x.net||x.gross);
   }
 
   function bucketRows(){
@@ -175,7 +211,7 @@
   function renderSalesReportBody(){
     const root=document.getElementById('salesReportRoot');if(!root)return;
     const rows=periodRows(),buckets=bucketRows(),t=totals(rows),years=reportYears(),repRows=repBreakdown();
-    const brandRows=aggregateItemDimension('brand'),productLineRows=aggregateItemDimension('product_line');
+    const brandRows=aggregateItemDimension('brand'),productLineRows=aggregateItemDimension('product_line'),businessRows=businessBreakdown();
     const max=Math.max(...buckets.map(x=>x.net),0);
     const yearSelect=reportState.view==='year'?'':`
       <select id="salesReportYear" onchange="setSalesReportYear(this.value)" class="border rounded-xl bg-white px-3 py-2.5 text-sm">
@@ -192,12 +228,18 @@
           <div class="flex flex-wrap items-center gap-2">
             <div class="flex gap-1 p-1 rounded-xl bg-[#f7f5f1]">${tabButton('month','By Month')}${tabButton('quarter','By Quarter')}${tabButton('year','By Year')}</div>
             ${yearSelect}
-            <div class="relative">
+            <select id="salesReportBusiness" onchange="setSalesReportBusiness(this.value)" class="border rounded-xl bg-white px-3 py-2.5 text-sm min-w-[180px]">
+              <option value="all" ${reportState.business==='all'?'selected':''}>All RK + TK</option>
+              <option value="RK" ${reportState.business==='RK'?'selected':''}>LP Home (RK)</option>
+              <option value="TK" ${reportState.business==='TK'?'selected':''}>L'Imperial Luxury (TK)</option>
+              <option value="OTHER" ${reportState.business==='OTHER'?'selected':''}>Pre-Order / Other</option>
+            </select>
+            ${canChooseReportReps()?`<div class="relative">
               <button type="button" onclick="toggleSalesReportRepMenu()" class="min-w-[190px] flex items-center justify-between gap-3 border rounded-xl bg-white px-3 py-2.5 text-sm">
                 <span class="truncate">${esc(selectedRepLabel())}</span><span class="text-gray-400">⌄</span>
               </button>
               ${reportRepMenu()}
-            </div>
+            </div>`:`<div class="min-w-[170px] border rounded-xl bg-[#faf9f6] px-3 py-2.5 text-sm font-semibold text-gray-600">${esc(selectedRepLabel())}</div>`}
           </div>
         </div>
       </div>
@@ -212,7 +254,7 @@
 
       <div class="grid xl:grid-cols-[1.2fr_.8fr] gap-4">
         <div class="card rounded-2xl p-4">
-          <div class="flex items-center justify-between gap-3 mb-4"><div><h4 class="font-bold">Sales by ${reportState.view==='month'?'Month':reportState.view==='quarter'?'Quarter':'Year'}</h4><div class="text-[10px] text-gray-400 mt-1">${reportState.view==='year'?'All available years':esc(String(reportState.year||''))}</div></div><div class="text-xs text-gray-400">${esc(selectedRepLabel())}</div></div>
+          <div class="flex items-center justify-between gap-3 mb-4"><div><h4 class="font-bold">Sales by ${reportState.view==='month'?'Month':reportState.view==='quarter'?'Quarter':'Year'}</h4><div class="text-[10px] text-gray-400 mt-1">${reportState.view==='year'?'All available years':esc(String(reportState.year||''))} · ${esc(reportBusinessLabel())}</div></div><div class="text-xs text-gray-400">${esc(selectedRepLabel())}</div></div>
           <div class="space-y-3">
             ${buckets.length?buckets.map(b=>{
               const width=max>0?Math.max((b.net/max)*100,b.net>0?2:0):0;
@@ -235,6 +277,22 @@
         </div>
       </div>
 
+      <div class="grid xl:grid-cols-[.8fr_1.2fr] gap-4 mt-4">
+        ${dimensionBarCard('Sales by Business','RK = LP Home · TK = L\'Imperial Luxury',businessRows)}
+        <div class="card rounded-2xl p-4">
+          <div class="flex items-start justify-between gap-3 mb-4">
+            <div><h4 class="font-bold">Business Unit Summary</h4><div class="text-[10px] text-gray-400 mt-1">Uses the invoice/document prefix to classify RK and TK.</div></div>
+            <div class="text-[10px] text-gray-400">${esc(reportBusinessLabel())}</div>
+          </div>
+          <div class="grid sm:grid-cols-2 gap-3">
+            ${['RK','TK'].map(code=>{
+              const x=businessRows.find(b=>b.label.includes('('+code+')'))||{label:code,net:0,returns:0,gross:0,lines:0};
+              return `<div class="rounded-xl border bg-[#faf9f6] p-4"><div class="text-[10px] uppercase font-bold text-gray-400">${esc(x.label)}</div><div class="text-2xl font-bold mt-1">${money(x.net)}</div><div class="text-[10px] text-gray-400 mt-1">Gross ${money(x.gross)} · Returns −${money(x.returns)} · ${x.lines} order${x.lines===1?'':'s'}</div></div>`;
+            }).join('')}
+          </div>
+        </div>
+      </div>
+
       <div class="grid xl:grid-cols-2 gap-4 mt-4">
         ${dimensionBarCard('Sales by Brand','Ranked by Net Sales after discounts and active returns.',brandRows)}
         ${dimensionBarCard('Sales by Product Line','Product classes are normalized (for example Sofa, Chandelier, Wall Lamp, Table).',productLineRows)}
@@ -252,14 +310,14 @@
   }
 
   window.renderReports=async function(){
-    if(!['manager','admin','super_admin'].includes(state.profile?.role||''))throw new Error('Manager, Admin or Super Admin access required');
+    if(!['sales','manager','admin','super_admin'].includes(state.profile?.role||''))throw new Error('Sales, Manager, Admin or Super Admin access required');
     document.getElementById('pageTitle').textContent='Report';
-    document.getElementById('pageSubtitle').textContent='Sales by period, Sales Rep, brand and product line';
+    document.getElementById('pageSubtitle').textContent='Sales by period, RK/TK business, Sales Rep, brand and product line';
     document.getElementById('content').innerHTML='<div id="salesReportRoot"><div class="py-20 text-center text-gray-400">Loading sales report...</div></div>';
 
     const [summaryRes,itemRes]=await Promise.all([
-      db.rpc('get_sales_report_rows'),
-      db.rpc('get_sales_report_item_rows')
+      db.rpc('get_sales_report_rows_v2'),
+      db.rpc('get_sales_report_item_rows_v2')
     ]);
     if(summaryRes.error)throw summaryRes.error;
     if(itemRes.error)throw itemRes.error;
@@ -276,6 +334,7 @@
     reportState.view=v;reportState.repMenuOpen=false;renderSalesReportBody();
   };
   window.setSalesReportYear=function(v){reportState.year=Number(v);reportState.repMenuOpen=false;renderSalesReportBody()};
+  window.setSalesReportBusiness=function(v){reportState.business=['RK','TK','OTHER'].includes(v)?v:'all';reportState.repMenuOpen=false;renderSalesReportBody()};
   window.toggleSalesReportRepMenu=function(){reportState.repMenuOpen=!reportState.repMenuOpen;renderSalesReportBody()};
   window.salesReportSelectAllReps=function(checked){
     if(checked)reportState.selectedReps=null;
@@ -295,7 +354,11 @@
   const previousNavItems=window.navItems;
   if(typeof previousNavItems==='function'){
     window.navItems=function(){
-      return (previousNavItems.apply(this,arguments)||[]).map(x=>x[0]==='reports'?['reports','Report',x[2]||'▥']:x);
+      const items=(previousNavItems.apply(this,arguments)||[]).map(x=>x[0]==='reports'?['reports','Report',x[2]||'▥']:x);
+      if(!items.some(x=>x[0]==='reports')&&['sales','manager'].includes(state.profile?.role||'')){
+        items.push(['reports','Report','▥']);
+      }
+      return items;
     };
   }
 })();
