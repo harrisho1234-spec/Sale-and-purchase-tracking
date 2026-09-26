@@ -165,6 +165,15 @@
       </div>
     </div>`;
   }
+  function stageControl(r){
+    if(!crmCanEditLead(r)){
+      return `<span class="inline-flex mt-1 px-2 py-1 rounded-lg border text-[10px] font-semibold ${stageTone(r.stage)}">${esc(r.stage)}</span>`;
+    }
+    return `<select data-stop-row onchange="openLeadStageChange('${r.lead_id}',this.value);this.value='${esc(r.stage)}'" class="mt-1 w-full min-w-[135px] border rounded-lg px-2 py-1.5 bg-white text-[11px] font-semibold">
+      ${STAGES.map(s=>`<option value="${s}" ${s===r.stage?'selected':''}>${s}</option>`).join('')}
+    </select>`;
+  }
+
   function rowHtml(r){
     const followClass=r.follow_up_overdue?'text-red-600 font-bold':r.follow_up_today?'text-amber-600 font-bold':'text-gray-600';
     const linkBadge=r.linked_customer_id
@@ -172,21 +181,21 @@
       :r.pending_customer_request_id
         ?'<span class="px-2 py-1 rounded-md border bg-amber-50 text-amber-700 border-amber-200 text-[9px] font-bold">APPROVAL PENDING</span>'
         :'';
-    return `<button type="button" onclick="openCustomerLead('${r.lead_id}')" class="card rounded-2xl p-4 w-full text-left hover:border-[#d8c287] transition">
-      <div class="grid lg:grid-cols-[1.35fr_.75fr_.85fr_.9fr_.85fr_.8fr_auto] gap-3 lg:gap-4 items-center">
+    return `<div onclick="if(!event.target.closest('[data-stop-row]'))openCustomerLead('${r.lead_id}')" class="card rounded-2xl p-4 w-full text-left hover:border-[#d8c287] transition cursor-pointer">
+      <div class="grid lg:grid-cols-[1.35fr_.9fr_.85fr_.9fr_.85fr_.8fr_auto] gap-3 lg:gap-4 items-center">
         <div class="min-w-0">
           <div class="flex flex-wrap items-center gap-2"><b class="truncate">${esc(r.customer_name)}</b><span class="px-2 py-1 rounded-md border text-[9px] font-bold ${businessTone(r.business_code)}">${esc(businessText(r.business_code))}</span>${linkBadge}</div>
           <div class="text-[11px] text-gray-400 mt-1">${esc(r.phone||'No phone')} · ${esc(r.customer_category||'No category')}</div>
           ${r.interest?`<div class="text-[11px] text-gray-600 mt-1 truncate">Interest: ${esc(r.interest)}</div>`:''}
         </div>
-        <div><div class="text-[9px] uppercase font-bold text-gray-400">Stage</div><span class="inline-flex mt-1 px-2 py-1 rounded-lg border text-[10px] font-semibold ${stageTone(r.stage)}">${esc(r.stage)}</span></div>
+        <div><div class="text-[9px] uppercase font-bold text-gray-400">Stage</div>${stageControl(r)}</div>
         <div><div class="text-[9px] uppercase font-bold text-gray-400">Last Contact</div><div class="text-xs font-semibold mt-1">${esc(fmtDate(r.last_contact_date))}</div><div class="text-[9px] text-gray-400 mt-0.5">${esc(sourceLabel(r))}</div></div>
         <div><div class="text-[9px] uppercase font-bold text-gray-400">Follow Up</div><div class="text-xs mt-1 ${followClass}">${esc(fmtDate(r.next_follow_up_date))}</div>${r.follow_up_overdue?'<div class="text-[9px] text-red-500">Overdue</div>':r.follow_up_today?'<div class="text-[9px] text-amber-600">Due today</div>':''}</div>
         <div><div class="text-[9px] uppercase font-bold text-gray-400">Sales</div><div class="text-xs mt-1 truncate">${esc(r.sales_rep_name||'-')}</div></div>
         <div><div class="text-[9px] uppercase font-bold text-gray-400">Activity</div><div class="text-xs font-semibold mt-1">${Number(r.activity_count||0)} logs</div><div class="text-[9px] text-gray-400 mt-0.5">${Number(r.showroom_visits||0)} showroom · ${Number(r.online_inquiries||0)} online</div></div>
-        <div class="text-[#b3871e] text-xs font-semibold whitespace-nowrap">View →</div>
+        <button type="button" data-stop-row onclick="openCustomerLead('${r.lead_id}')" class="text-[#b3871e] text-xs font-semibold whitespace-nowrap px-2 py-1.5 rounded-lg hover:bg-[#fffaf0]">View →</button>
       </div>
-    </button>`;
+    </div>`;
   }
   function pager(total){
     const all=leadState.pageSize==='all',size=all?total:Number(leadState.pageSize||20),pages=all?1:Math.max(1,Math.ceil(total/size));
@@ -334,18 +343,78 @@
     if(!rows.length)return '<div class="rounded-xl border border-dashed p-8 text-center text-sm text-gray-400">No activity logs yet.</div>';
     return '<div class="grid gap-2">'+rows.map(a=>`<div class="rounded-xl border p-3 bg-white"><div class="flex flex-wrap items-center justify-between gap-2"><div class="flex items-center gap-2"><b class="text-sm">${esc(activityLabel(a.activity_type))}</b><span class="px-2 py-0.5 rounded-md border text-[9px] font-bold ${businessTone(a.business_code)}">${esc(a.business_code)}</span>${a.status?`<span class="px-2 py-0.5 rounded-md border text-[9px] font-semibold ${stageTone(a.status==='Reject / Lost'?'Reject':a.status)}">${esc(a.status)}</span>`:''}</div><span class="text-[10px] text-gray-400">${esc(fmtDate(a.activity_date))}</span></div><div class="text-[11px] text-gray-500 mt-2">${[a.source_channel&&('Source: '+a.source_channel),a.interest&&('Interest: '+a.interest),a.remark].filter(Boolean).map(esc).join(' · ')||'No note'}</div>${a.follow_up_date?`<div class="text-[10px] text-blue-600 mt-1">Follow up: ${esc(fmtDate(a.follow_up_date))}</div>`:''}</div>`).join('')+'</div>';
   }
+  window.openLeadStageChange=function(id,newStage){
+    const r=leadById(id);if(!r||!crmCanEditLead(r)||!newStage||newStage===r.stage)return;
+    openModal('Change Customer Stage',`<form id="leadStageChangeForm" class="space-y-4">
+      <div class="rounded-xl border bg-gray-50 p-4">
+        <div class="text-xs text-gray-500">${esc(r.customer_name)}</div>
+        <div class="flex items-center gap-2 mt-2">
+          <span class="px-2 py-1 rounded-lg border text-xs font-semibold ${stageTone(r.stage)}">${esc(r.stage)}</span>
+          <span class="text-gray-400">→</span>
+          <span class="px-2 py-1 rounded-lg border text-xs font-semibold ${stageTone(newStage)}">${esc(newStage)}</span>
+        </div>
+      </div>
+      <div><label class="text-xs font-semibold">Stage Change Note</label><textarea id="leadStageNote" required rows="3" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Why is this customer moving to ${esc(newStage)}?"></textarea></div>
+      <div><label class="text-xs font-semibold">Next Follow-up</label><input id="leadStageFollowup" type="date" value="${esc((newStage==='Buy'||newStage==='Reject')?'':(r.next_follow_up_date||''))}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+      <div class="text-[10px] text-gray-400">The note is saved in the customer's stage history. After saving, the customer will move to the ${esc(newStage)} tab.</div>
+      <button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Stage Change</button>
+    </form>`);
+    document.getElementById('leadStageChangeForm').onsubmit=async e=>{
+      e.preventDefault();
+      const note=document.getElementById('leadStageNote').value.trim();
+      if(!note)return showToast('Please enter a note for the stage change.','err');
+      const btn=e.target.querySelector('button');if(btn){btn.disabled=true;btn.textContent='Saving...'}
+      const {error}=await db.rpc('change_customer_lead_stage',{
+        p_lead_id:id,
+        p_new_stage:newStage,
+        p_note:note,
+        p_next_follow_up_date:document.getElementById('leadStageFollowup').value||null
+      });
+      if(error){if(btn){btn.disabled=false;btn.textContent='Save Stage Change'}return showToast(error.message,'err')}
+      closeModal();
+      showToast('Customer moved to '+newStage);
+      await renderCustomerDatabase();
+    };
+  };
+
+  function stageHistoryHtml(rows){
+    if(!rows.length)return '<div class="rounded-xl border border-dashed p-6 text-center text-xs text-gray-400">No stage changes yet.</div>';
+    return '<div class="grid gap-2">'+rows.map(h=>`<div class="rounded-xl border bg-white p-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          ${h.from_stage?`<span class="px-2 py-1 rounded-md border text-[9px] font-semibold ${stageTone(h.from_stage)}">${esc(h.from_stage)}</span><span class="text-gray-400">→</span>`:''}
+          <span class="px-2 py-1 rounded-md border text-[9px] font-semibold ${stageTone(h.to_stage)}">${esc(h.to_stage)}</span>
+        </div>
+        <span class="text-[10px] text-gray-400">${new Date(h.changed_at).toLocaleString()}</span>
+      </div>
+      <div class="text-xs text-gray-600 mt-2">${esc(h.note||'-')}</div>
+      <div class="flex flex-wrap gap-3 mt-2 text-[10px] text-gray-400"><span>By: ${esc(h.changed_by_name||'System')}</span>${h.next_follow_up_date?`<span>Follow-up: ${esc(fmtDate(h.next_follow_up_date))}</span>`:''}</div>
+    </div>`).join('')+'</div>';
+  }
+
   window.openCustomerLead=async function(id){
     const r=leadById(id);if(!r)return showToast('Customer not found','err');
     const editable=crmCanEditLead(r);
     const saveArea=editable?`<div class="flex gap-2 mt-4"><button onclick="saveCustomerLead('${r.lead_id}')" class="flex-1 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Customer</button></div>`:`<div class="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-700">Manager can review this Sales Rep's stage, follow-up and activity history. The Sales Rep keeps ownership of editing this customer.</div>`;
-    openModal('Customer Database — '+r.customer_name,`<div id="leadDetailBody">${leadHeader(r,editable)}${leadForm(r,editable)}${saveArea}<div class="border-t mt-5 pt-5"><div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">Activity History</h4><div class="text-[10px] text-gray-400">Showroom Visit and Online logs for this customer.</div></div></div><div class="py-8 text-center text-xs text-gray-400">Loading history...</div></div></div>`);
-    const {data,error}=await db.rpc('get_customer_lead_activities',{p_lead_id:id});
+    openModal('Customer Database — '+r.customer_name,`<div id="leadDetailBody">${leadHeader(r,editable)}${leadForm(r,editable)}${saveArea}
+      <div id="leadStageHistorySection" class="border-t mt-5 pt-5"><div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">Stage History</h4><div class="text-[10px] text-gray-400">Movement between Contacting, Potential, Waiting Decision, Buy and Reject.</div></div></div><div class="py-6 text-center text-xs text-gray-400">Loading stage history...</div></div>
+      <div id="leadActivityHistorySection" class="border-t mt-5 pt-5"><div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">Activity History</h4><div class="text-[10px] text-gray-400">Showroom Visit and Online logs for this customer.</div></div></div><div class="py-8 text-center text-xs text-gray-400">Loading activity history...</div></div>
+    </div>`);
+    const [activityRes,stageRes]=await Promise.all([
+      db.rpc('get_customer_lead_activities',{p_lead_id:id}),
+      db.rpc('get_customer_lead_stage_history',{p_lead_id:id})
+    ]);
     const body=document.getElementById('leadDetailBody');
     if(!body)return;
-    const holder=body.querySelector('.border-t.mt-5.pt-5');
-    if(holder){
-      const loading=holder.lastElementChild;
-      if(loading)loading.outerHTML=error?`<div class="text-red-500 text-xs">${esc(error.message)}</div>`:historyHtml(data||[]);
+    const stageHolder=document.getElementById('leadStageHistorySection');
+    const activityHolder=document.getElementById('leadActivityHistorySection');
+    if(stageHolder){
+      const loading=stageHolder.lastElementChild;
+      if(loading)loading.outerHTML=stageRes.error?`<div class="text-red-500 text-xs">${esc(stageRes.error.message)}</div>`:stageHistoryHtml(stageRes.data||[]);
+    }
+    if(activityHolder){
+      const loading=activityHolder.lastElementChild;
+      if(loading)loading.outerHTML=activityRes.error?`<div class="text-red-500 text-xs">${esc(activityRes.error.message)}</div>`:historyHtml(activityRes.data||[]);
     }
   };
   window.saveCustomerLead=async function(id){
