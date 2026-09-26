@@ -45,6 +45,7 @@
           <div><label class="text-xs font-semibold">Status</label><select id="epoStatus" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white">${['placed','production','shipping','arrived'].map(s=>`<option value="${s}" ${p.status===s?'selected':''}>${titleCase(s)}</option>`).join('')}</select></div>
           <div><label class="text-xs font-semibold">ETA</label><input id="epoEta" type="date" value="${esc(p.estimated_arrival||'')}" class="mt-1 w-full border rounded-xl px-3 py-2"></div>
           <div><label class="text-xs font-semibold">Shipping Agent</label><input id="epoAgent" value="${esc(p.shipping_agent||'')}" class="mt-1 w-full border rounded-xl px-3 py-2"></div>
+          <div><label class="text-xs font-semibold">PO / Unit Cost Currency</label><div class="mt-1 w-full border rounded-xl px-3 py-2 bg-gray-50 text-sm font-semibold">${esc(p.currency||'USD')}</div><div class="text-[10px] text-gray-400 mt-1">Shipping cost is always USD.</div></div>
           <div><label class="text-xs font-semibold">Order Date</label><input id="epoDate" type="date" value="${esc(p.order_date||'')}" class="mt-1 w-full border rounded-xl px-3 py-2"></div>
           <div class="md:col-span-2"><label class="text-xs font-semibold">Replace / Add PO Document</label><input id="epoFile" type="file" accept=".pdf,image/*" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white">${p.po_document_name?`<div class="text-[10px] text-gray-400 mt-1">Current: ${esc(p.po_document_name)}</div>`:''}</div>
           <div class="md:col-span-2"><label class="text-xs font-semibold">Notes</label><textarea id="epoNotes" class="mt-1 w-full border rounded-xl px-3 py-2">${esc(p.notes||'')}</textarea></div>
@@ -53,7 +54,7 @@
 
         <div class="border-t pt-5">
           <div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">PO Items</h4><div class="text-xs text-gray-400">Items here can be linked to SR customer items.</div></div><span class="lr-badge lr-badge-gray">${d.items.length} items</span></div>
-          <div id="poExistingItems" class="divide-y border rounded-xl mb-4">${d.items.length?d.items.map(i=>`<div class="p-3 grid md:grid-cols-[1fr_90px_120px] gap-2 text-xs"><div><b>${esc(i.product_code_snapshot||'No Code')}</b><div class="text-gray-500 mt-0.5">${esc(i.item_name_snapshot||'')}</div></div><div>Qty <b>${Number(i.qty||0)}</b></div><div class="text-right">Cost <b>${money(i.unit_cost||0,p.currency||'USD')}</b></div></div>`).join(''):'<div class="p-4 text-xs text-gray-400">No PO items yet.</div>'}</div>
+          <div id="poExistingItems" class="divide-y border rounded-xl mb-4">${d.items.length?d.items.map(i=>`<div class="p-3 grid md:grid-cols-[1fr_90px_170px] gap-2 text-xs"><div><b>${esc(i.product_code_snapshot||'No Code')}</b><div class="text-gray-500 mt-0.5">${esc(i.item_name_snapshot||'')}</div></div><div>Qty <b>${Number(i.qty||0)}</b></div><div class="text-right"><div>Cost <b>${money(i.unit_cost||0,p.currency||'USD')}</b></div><div class="text-[10px] text-gray-400 mt-1">Shipping <b>${money(i.shipping_cost||0,'USD')}</b></div></div></div>`).join(''):'<div class="p-4 text-xs text-gray-400">No PO items yet.</div>'}</div>
           <form id="addPOItemForm" class="grid md:grid-cols-12 gap-3 bg-gray-50 rounded-xl p-4">
             <div class="md:col-span-5 min-w-0">
               <label class="text-[10px] font-semibold text-gray-500">Product Code / Item</label>
@@ -68,11 +69,11 @@
               <input id="poiQty" type="number" min="0.01" step="0.01" value="1" required class="mt-1 w-full border rounded-lg px-3 py-2 bg-white" placeholder="Qty">
             </div>
             <div class="md:col-span-6">
-              <label class="text-[10px] font-semibold text-gray-500">Unit Cost</label>
+              <label class="text-[10px] font-semibold text-gray-500">Unit Cost (${esc(p.currency||'USD')})</label>
               <input id="poiCost" type="number" min="0" step="0.01" value="0" class="mt-1 w-full border rounded-lg px-3 py-2 bg-white" placeholder="Unit cost">
             </div>
             <div class="md:col-span-6">
-              <label class="text-[10px] font-semibold text-gray-500">Shipping / Unit</label>
+              <label class="text-[10px] font-semibold text-gray-500">Shipping / Unit (USD $)</label>
               <input id="poiShipping" type="number" min="0" step="0.01" value="0" class="mt-1 w-full border rounded-lg px-3 py-2 bg-white" placeholder="Shipping / unit">
             </div>
             <button class="md:col-span-12 w-full bg-[#b38b2e] text-white rounded-lg py-2.5 font-semibold">+ Add PO Item</button>
@@ -99,7 +100,7 @@
       document.getElementById('addPOItemForm').onsubmit=async e=>{
         e.preventDefault();const code=document.getElementById('poiCode').value.trim(),name=document.getElementById('poiName').value.trim();
         let productId=null;const q=await db.from('product_catalog').select('id').eq('code',code).maybeSingle();if(!q.error&&q.data)productId=q.data.id;
-        const row={supplier_po_id:poId,product_id:productId,product_code_snapshot:code,item_name_snapshot:name,qty:Number(document.getElementById('poiQty').value||0),unit_cost:Number(document.getElementById('poiCost').value||0),shipping_cost:Number(document.getElementById('poiShipping').value||0)};
+        const row={supplier_po_id:poId,product_id:productId,product_code_snapshot:code,item_name_snapshot:name,qty:Number(document.getElementById('poiQty').value||0),unit_cost:Number(document.getElementById('poiCost').value||0),shipping_cost:Number(document.getElementById('poiShipping').value||0),shipping_currency:'USD'};
         const r=await db.from('supplier_po_items').insert(row);if(r.error)return showToast(r.error.message,'err');showToast('PO item added');await openEditSupplierPO(poId);
       };
     }catch(err){showToast(err.message,'err')}
