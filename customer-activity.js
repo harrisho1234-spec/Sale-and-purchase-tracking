@@ -274,11 +274,11 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
   function salesSelectHtml(current){
     const users=activityState.salesUsers.filter(x=>['sales','manager'].includes(x.role));
     const selected=current||'';
-    return `<select id="activitySalesRep" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">
+    return `<select id="activitySalesRep" onchange="activitySalesAssignmentChanged()" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">
       <option value="" ${!selected?'selected':''}>Unassigned</option>
       ${users.map(u=>`<option value="${u.user_id}" ${u.user_id===selected?'selected':''}>${esc(u.display_name||u.email)} · ${esc(titleCase(u.role||''))}</option>`).join('')}
     </select>
-    <div class="text-[9px] text-gray-400 mt-1">Optional. This records who handled this activity and does not replace the customer's Sales Owner.</div>`;
+    <div id="activitySalesAssignmentHint" class="text-[9px] text-gray-400 mt-1">Select a Sales Rep only when a contact phone number is available. With a phone number, the customer will appear in that Sales Rep's Customer Database.</div>`;
   }
   function activityFormBody(row){
     const isOnline=activityState.type==='online';
@@ -289,7 +289,7 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
       <div><label class="text-xs font-semibold">Date</label><input id="activityDate" type="date" required value="${esc(row?.activity_date||isoToday())}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
       <div><label class="text-xs font-semibold">Business</label><select id="activityBusiness" required class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="RK" ${business==='RK'?'selected':''}>LP Home · RK</option><option value="TK" ${business==='TK'?'selected':''}>L'Imperial Luxury · TK</option></select></div>
       <div><label class="text-xs font-semibold">Customer Name</label><input id="activityCustomerName" required value="${esc(row?.customer_name||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Customer name"></div>
-      <div><label class="text-xs font-semibold">Phone Number</label><input id="activityPhone" value="${esc(row?.phone||'')}" onblur="matchActivityCustomerPhone()" oninput="clearActivityCustomerMatch()" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Phone / Telegram / Private"><div id="activityCustomerMatch" class="hidden mt-1.5 text-[10px] rounded-lg border px-2.5 py-2"></div></div>
+      <div><label class="text-xs font-semibold">Phone Number <span class="text-gray-400 font-normal">· required to assign Sales</span></label><input id="activityPhone" value="${esc(row?.phone||'')}" onblur="matchActivityCustomerPhone()" oninput="clearActivityCustomerMatch();activitySalesAssignmentChanged()" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Example: 012 345 678"><div id="activityCustomerMatch" class="hidden mt-1.5 text-[10px] rounded-lg border px-2.5 py-2"></div></div>
       <div><label class="text-xs font-semibold">Customer Category</label><select id="activityCustomerType" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${selectOptions(CUSTOMER_TYPES,row?.customer_type,'Select customer category')}</select></div>
       ${isOnline
         ?`<div><label class="text-xs font-semibold">Page</label><div class="mt-1 border rounded-xl px-3 py-2.5 bg-gray-50 text-sm text-gray-600">RK = Home Page · TK = Luxury Page</div></div>`
@@ -300,14 +300,15 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
       <div><label class="text-xs font-semibold">Follow-up Date</label><input id="activityFollowUp" type="date" value="${esc(row?.follow_up_date||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
       <div class="md:col-span-2"><label class="text-xs font-semibold">Remark</label><textarea id="activityRemark" rows="3" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Customer request / follow-up note...">${esc(row?.remark||'')}</textarea></div>
       <div class="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-700">${isOnline
-        ?'Online records the daily message/inquiry only. Customer Category describes the relationship; Status tracks the sales journey. Sales orders, invoices and payments stay in the existing Sales system.'
-        :'Showroom Visit records the visit and follow-up only. Customer Category describes the relationship; Status tracks the sales journey. Invoice/payment amounts do not need to be re-entered here.'}</div>
+        ?'Online records the daily inquiry. If a phone number and Person In Charge are provided, the customer is linked/created in Customer Database and routed to that Sales Rep. Without a phone number it remains an Online entry only.'
+        :'Showroom Visit records the visit and follow-up. If a phone number and Person In Charge are provided, the customer is linked/created in Customer Database and routed to that Sales Rep. Without a phone number it remains a Showroom Visit entry only.'}</div>
       <button class="md:col-span-2 bg-[#211d18] text-white rounded-xl py-3 font-semibold">${row?'Save Changes':'Save '+esc(activityTypeLabel(activityState.type))}</button>
     </form>`;
   }
   window.openNewCustomerActivity=function(){
     openModal('New '+activityTypeLabel(activityState.type),activityFormBody(null));
     document.getElementById('customerActivityForm').onsubmit=e=>saveCustomerActivity(e,null);
+    activitySalesAssignmentChanged();
   };
   window.clearActivityCustomerMatch=function(){
     const box=document.getElementById('activityCustomerMatch');
@@ -337,17 +338,40 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
     if(name&&data.customer_name)name.value=data.customer_name;
     const owner=data.assigned_sales_name?(' · Sales Owner: '+data.assigned_sales_name):' · Sales Owner: Unassigned';
     box.className='mt-1.5 text-[10px] rounded-lg border border-green-200 bg-green-50 px-2.5 py-2 text-green-700';
-    box.innerHTML='<b>Existing customer found:</b> '+esc(data.customer_name||'Customer')+esc(owner)+'<br>This entry will link to the existing customer automatically. Person In Charge remains optional.';
+    box.innerHTML='<b>Existing customer found:</b> '+esc(data.customer_name||'Customer')+esc(owner)+'<br>This entry will link to the existing customer automatically. If you choose a Person In Charge, the Customer Database record is routed to that Sales Rep; the linked Sales Customer owner is not silently changed.';
   };
   window.openEditCustomerActivity=function(id){
     const row=activityState.rows.find(x=>x.id===id);
     if(!row)return showToast('Entry not found','err');
     openModal('Edit '+activityTypeLabel(activityState.type),activityFormBody(row));
     document.getElementById('customerActivityForm').onsubmit=e=>saveCustomerActivity(e,row);
+    activitySalesAssignmentChanged();
+  };
+  function activityHasContactNumber(){
+    return (document.getElementById('activityPhone')?.value||'').replace(/[^0-9]/g,'').length>0;
+  }
+  window.activitySalesAssignmentChanged=function(){
+    const salesId=document.getElementById('activitySalesRep')?.value||'';
+    const hint=document.getElementById('activitySalesAssignmentHint');
+    if(!hint)return;
+    if(salesId&&!activityHasContactNumber()){
+      hint.className='text-[9px] text-red-600 mt-1 font-semibold';
+      hint.textContent='Enter a contact phone number before assigning this customer to Sales.';
+    }else if(salesId){
+      hint.className='text-[9px] text-green-700 mt-1';
+      hint.textContent="This customer will be routed to the selected Sales Rep's Customer Database.";
+    }else{
+      hint.className='text-[9px] text-gray-400 mt-1';
+      hint.textContent='Unassigned is allowed. With a phone number, the customer can still be identified/linked in Customer Database.';
+    }
   };
   async function saveCustomerActivity(e,row){
     e.preventDefault();
     const salesId=document.getElementById('activitySalesRep')?.value||null;
+    if(salesId&&!activityHasContactNumber()){
+      activitySalesAssignmentChanged();
+      return showToast('Enter a contact phone number before assigning this customer to Sales.','err');
+    }
     const args={
       p_activity_date:document.getElementById('activityDate').value,
       p_business_code:document.getElementById('activityBusiness').value,
@@ -366,8 +390,13 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
     if(row)res=await db.rpc('update_customer_activity',{p_id:row.id,...args});
     else res=await db.rpc('create_customer_activity',{p_activity_type:activityState.type,...args});
     if(res.error){if(btn){btn.disabled=false;btn.textContent=row?'Save Changes':'Save'}return showToast(res.error.message,'err')}
+    const assignedUser=salesId?activityState.salesUsers.find(x=>String(x.user_id)===String(salesId)):null;
     closeModal();
-    showToast((row?'Updated ':'Saved ')+activityTypeLabel(activityState.type));
+    showToast(
+      salesId
+        ?(row?'Updated ':'Saved ')+activityTypeLabel(activityState.type)+' · routed to '+(assignedUser?.display_name||assignedUser?.email||'selected Sales Rep')
+        :(row?'Updated ':'Saved ')+activityTypeLabel(activityState.type)
+    );
     await renderCustomerActivity(activityState.type);
   }
 
