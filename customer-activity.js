@@ -18,7 +18,7 @@
   ];
   const SOURCES=['Showroom','Facebook','Telegram','Friend or Family','Site Location','Other'];
   const STATUSES=[
-    'Just Asking','Follow Up','Potential','Buy','Reject / Lost'
+    'Contacting','Potential','Waiting Decision','Buy','Reject'
   ];
 
   function activityAllowed(){
@@ -146,7 +146,7 @@
             <option value="all" ${activityState.dateRange==='all'?'selected':''}>All Dates</option>
           </select>
           <select onchange="setActivityStatus(this.value)" class="border rounded-xl bg-white px-3 py-2.5 text-sm">
-            <option value="all">All Status</option>
+            <option value="all">All Stages</option>
             ${STATUSES.map(s=>`<option value="${esc(s)}" ${activityState.status===s?'selected':''}>${esc(s)}</option>`).join('')}
           </select>
           ${activitySalesFilter()}
@@ -172,7 +172,7 @@
             <div class="text-[11px] text-gray-400 mt-1">${esc(r.phone||'No phone')} · ${esc(r.customer_type||'-')}</div>
             ${detail?`<div class="text-[11px] text-gray-600 mt-1 line-clamp-2">${esc(detail)}</div>`:''}
           </div>
-          <div><div class="text-[10px] uppercase font-bold text-gray-400">Status</div><span class="inline-flex mt-1 px-2 py-1 rounded-lg border text-[10px] font-semibold ${statusTone(r.status)}">${esc(r.status||'-')}</span></div>
+          <div><div class="text-[10px] uppercase font-bold text-gray-400">Stage</div><span class="inline-flex mt-1 px-2 py-1 rounded-lg border text-[10px] font-semibold ${statusTone(r.status)}">${esc(r.status||'-')}</span></div>
           <div><div class="text-[10px] uppercase font-bold text-gray-400">Sales</div><div class="text-sm mt-1">${esc(r.sales_rep_name||'-')}</div></div>
           <div><div class="text-[10px] uppercase font-bold text-gray-400">Follow Up</div><div class="text-sm mt-1">${esc(r.follow_up_date?fmtActivityDate(r.follow_up_date):'-')}</div></div>
           <div class="flex lg:justify-end">${canEdit?`<button onclick="openEditCustomerActivity('${r.id}')" class="px-3 py-2 border rounded-lg text-xs font-semibold bg-white">Edit</button>`:''}</div>
@@ -265,7 +265,7 @@
   function activityFormBody(row){
     const isOnline=activityState.type==='online';
     const business=row?.business_code||'RK';
-    const status=row?.status||(isOnline?'Just Asking':'Follow Up');
+    const status=row?.status||'Contacting';
     const source=row?.source_channel||(isOnline?'Facebook':'Showroom');
     return `<form id="customerActivityForm" class="grid md:grid-cols-2 gap-4">
       <div><label class="text-xs font-semibold">Date</label><input id="activityDate" type="date" required value="${esc(row?.activity_date||isoToday())}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
@@ -276,7 +276,7 @@
       ${isOnline
         ?`<div><label class="text-xs font-semibold">Page</label><div class="mt-1 border rounded-xl px-3 py-2.5 bg-gray-50 text-sm text-gray-600">RK = Home Page · TK = Luxury Page</div></div>`
         :`<div><label class="text-xs font-semibold">Source From</label><select id="activitySource" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${selectOptions(SOURCES,source,'Select source')}</select></div>`}
-      <div><label class="text-xs font-semibold">Status</label><select id="activityStatusInput" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${selectOptions(STATUSES,status,'Select status')}</select></div>
+      <div><label class="text-xs font-semibold">Customer Stage</label><select id="activityStatusInput" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${selectOptions(STATUSES,status,'Select customer stage')}</select></div>
       <div><label class="text-xs font-semibold">Person In Charge</label>${salesSelectHtml(row?.assigned_sales_id)}</div>
       <div class="md:col-span-2"><label class="text-xs font-semibold">Interest</label><input id="activityInterest" value="${esc(row?.interest||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="${isOnline?'Example: Sofa set, chandelier, bedroom set':'Example: Modern sofa, chandelier, dining table'}"></div>
       <div><label class="text-xs font-semibold">Follow-up Date</label><input id="activityFollowUp" type="date" value="${esc(row?.follow_up_date||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
