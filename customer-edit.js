@@ -99,8 +99,16 @@
         ${kpi('Amount Received',money(t.paid),'Customer payments','text-green-600')}
         ${kpi('Active Balance Due (AR)',money(t.ar),t.pending>0?'Pending pre-orders: '+money(t.pending):'Current collectible customer balance','text-red-600')}
       </div>
-      <div class="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between mb-4">
-        <input id="customerSearch" oninput="filterCustomerRows()" class="border rounded-xl px-4 py-3 w-full max-w-xl bg-white" placeholder="Search customer, phone, address, note...">
+      <div class="flex flex-col lg:flex-row gap-3 lg:items-center lg:justify-between mb-4">
+        <div class="flex flex-col sm:flex-row gap-3 w-full">
+          <input id="customerSearch" oninput="filterCustomerRows()" class="border rounded-xl px-4 py-3 w-full max-w-xl bg-white" placeholder="Search customer, phone, address, note...">
+          <select id="customerStatusFilter" onchange="filterCustomerRows()" class="border rounded-xl px-3 py-3 bg-white text-sm min-w-[190px]">
+            <option value="all">All Customers</option>
+            <option value="active_ar">Active AR</option>
+            <option value="pending_preorder">Pending Pre-Order</option>
+            <option value="clear">No Outstanding Balance</option>
+          </select>
+        </div>
         <button onclick="openNewCustomer()" class="px-4 py-3 bg-[#211d18] text-white rounded-xl text-sm font-semibold whitespace-nowrap">+ Customer</button>
       </div>
       <div class="hidden lg:grid grid-cols-[1.15fr_.9fr_1fr_.85fr_.72fr_.72fr_.72fr_1.1fr_auto] gap-4 px-4 pb-2 text-[9px] uppercase tracking-wide font-bold text-gray-400">
