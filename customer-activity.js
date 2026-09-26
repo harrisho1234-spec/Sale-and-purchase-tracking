@@ -32,7 +32,8 @@
   }
   function activityIsOwner(r){
     const owner=activityScopeSalesId();
-    return !!owner&&String(r?.assigned_sales_id||'')===String(owner);
+    if(owner&&String(r?.assigned_sales_id||'')===String(owner))return true;
+    return !!state.user?.id&&String(r?.created_by||'')===String(state.user.id);
   }
   function activityReviewerMode(){
     if((state.profile?.role||'')==='manager')return true;
@@ -181,7 +182,7 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
       const detail=activityState.type==='online'
         ?[r.interest&&('Interest: '+r.interest),r.remark].filter(Boolean).join(' · ')
         :[r.source_channel&&('Source: '+r.source_channel),r.interest&&('Interest: '+r.interest),r.remark].filter(Boolean).join(' · ');
-      const canEdit=activityCanChooseSales()||activityIsOwner(r);
+      const canEdit=activityReviewerMode()||activityIsOwner(r);
       const canSeeStage=activityCanSeeStage(r);
       return `<div class="card rounded-2xl p-4">
         <div class="grid lg:grid-cols-[110px_1.3fr_.8fr_.85fr_.85fr_auto] gap-3 lg:gap-4 items-center">
@@ -239,14 +240,16 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
   }
   async function loadActivitySalesUsers(){
     if(activityState.salesUsers.length)return;
-    if((state.profile?.role||'')==='sales'){
-      activityState.salesUsers=[{user_id:state.user.id,display_name:state.profile?.display_name,email:state.user?.email,role:'sales'}];
-      return;
-    }
-    const {data,error}=await db.from('app_users').select('user_id,display_name,email,role,active').in('role',['sales','manager']).eq('active',true).order('display_name');
+    const {data,error}=await db.rpc('get_activity_pic_options');
     if(!error)activityState.salesUsers=data||[];
-    if(!activityState.salesUsers.some(x=>x.user_id===state.user?.id)&&['manager','admin','super_admin'].includes(state.profile?.role||'')){
-      activityState.salesUsers.unshift({user_id:state.user.id,display_name:state.profile?.display_name,email:state.user?.email,role:state.profile?.role});
+    else{
+      console.warn('Person In Charge options:',error.message);
+      activityState.salesUsers=[{
+        user_id:state.user?.id,
+        display_name:state.profile?.display_name,
+        email:state.user?.email,
+        role:state.profile?.role
+      }].filter(x=>x.user_id);
     }
   }
   async function renderCustomerActivity(type){
@@ -269,15 +272,13 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
   }
 
   function salesSelectHtml(current){
-    if(!activityCanChooseSales()){
-      const id=activityScopeSalesId()||state.user?.id||'';
-      return `<input id="activitySalesRep" type="hidden" value="${esc(id)}"><div class="mt-1 border rounded-xl px-3 py-2.5 bg-gray-50 text-sm font-semibold">${esc(currentSalesName())}</div>`;
-    }
-    const users=activityState.salesUsers.filter(x=>['sales','manager','admin','super_admin'].includes(x.role));
-    const defaultId=current||state.user?.id||users[0]?.user_id||'';
-    return `<select id="activitySalesRep" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white" required>
-      ${users.map(u=>`<option value="${u.user_id}" ${u.user_id===defaultId?'selected':''}>${esc(u.display_name||u.email)} · ${esc(titleCase(u.role||''))}</option>`).join('')}
-    </select>`;
+    const users=activityState.salesUsers.filter(x=>['sales','manager'].includes(x.role));
+    const selected=current||'';
+    return `<select id="activitySalesRep" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">
+      <option value="" ${!selected?'selected':''}>Unassigned</option>
+      ${users.map(u=>`<option value="${u.user_id}" ${u.user_id===selected?'selected':''}>${esc(u.display_name||u.email)} · ${esc(titleCase(u.role||''))}</option>`).join('')}
+    </select>
+    <div class="text-[9px] text-gray-400 mt-1">Optional. This records who handled this activity and does not replace the customer's Sales Owner.</div>`;
   }
   function activityFormBody(row){
     const isOnline=activityState.type==='online';
@@ -288,7 +289,7 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
       <div><label class="text-xs font-semibold">Date</label><input id="activityDate" type="date" required value="${esc(row?.activity_date||isoToday())}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
       <div><label class="text-xs font-semibold">Business</label><select id="activityBusiness" required class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="RK" ${business==='RK'?'selected':''}>LP Home · RK</option><option value="TK" ${business==='TK'?'selected':''}>L'Imperial Luxury · TK</option></select></div>
       <div><label class="text-xs font-semibold">Customer Name</label><input id="activityCustomerName" required value="${esc(row?.customer_name||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Customer name"></div>
-      <div><label class="text-xs font-semibold">Phone Number</label><input id="activityPhone" value="${esc(row?.phone||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Phone / Telegram / Private"></div>
+      <div><label class="text-xs font-semibold">Phone Number</label><input id="activityPhone" value="${esc(row?.phone||'')}" onblur="matchActivityCustomerPhone()" oninput="clearActivityCustomerMatch()" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Phone / Telegram / Private"><div id="activityCustomerMatch" class="hidden mt-1.5 text-[10px] rounded-lg border px-2.5 py-2"></div></div>
       <div><label class="text-xs font-semibold">Customer Category</label><select id="activityCustomerType" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${selectOptions(CUSTOMER_TYPES,row?.customer_type,'Select customer category')}</select></div>
       ${isOnline
         ?`<div><label class="text-xs font-semibold">Page</label><div class="mt-1 border rounded-xl px-3 py-2.5 bg-gray-50 text-sm text-gray-600">RK = Home Page · TK = Luxury Page</div></div>`
@@ -308,6 +309,36 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
     openModal('New '+activityTypeLabel(activityState.type),activityFormBody(null));
     document.getElementById('customerActivityForm').onsubmit=e=>saveCustomerActivity(e,null);
   };
+  window.clearActivityCustomerMatch=function(){
+    const box=document.getElementById('activityCustomerMatch');
+    if(!box)return;
+    box.className='hidden mt-1.5 text-[10px] rounded-lg border px-2.5 py-2';
+    box.textContent='';
+  };
+  window.matchActivityCustomerPhone=async function(){
+    const phone=document.getElementById('activityPhone')?.value.trim()||'';
+    const box=document.getElementById('activityCustomerMatch');
+    if(!box)return;
+    if(!phone){clearActivityCustomerMatch();return}
+    box.className='mt-1.5 text-[10px] rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-2 text-gray-500';
+    box.textContent='Checking existing customers...';
+    const {data,error}=await db.rpc('find_customer_identity_by_phone',{p_phone:phone});
+    if(error){
+      box.className='mt-1.5 text-[10px] rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-red-600';
+      box.textContent=error.message;
+      return;
+    }
+    if(!data||!data.matched){
+      box.className='hidden mt-1.5 text-[10px] rounded-lg border px-2.5 py-2';
+      box.textContent='';
+      return;
+    }
+    const name=document.getElementById('activityCustomerName');
+    if(name&&data.customer_name)name.value=data.customer_name;
+    const owner=data.assigned_sales_name?(' · Sales Owner: '+data.assigned_sales_name):' · Sales Owner: Unassigned';
+    box.className='mt-1.5 text-[10px] rounded-lg border border-green-200 bg-green-50 px-2.5 py-2 text-green-700';
+    box.innerHTML='<b>Existing customer found:</b> '+esc(data.customer_name||'Customer')+esc(owner)+'<br>This entry will link to the existing customer automatically. Person In Charge remains optional.';
+  };
   window.openEditCustomerActivity=function(id){
     const row=activityState.rows.find(x=>x.id===id);
     if(!row)return showToast('Entry not found','err');
@@ -316,7 +347,7 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
   };
   async function saveCustomerActivity(e,row){
     e.preventDefault();
-    const salesId=document.getElementById('activitySalesRep')?.value||activityScopeSalesId()||state.user?.id||null;
+    const salesId=document.getElementById('activitySalesRep')?.value||null;
     const args={
       p_activity_date:document.getElementById('activityDate').value,
       p_business_code:document.getElementById('activityBusiness').value,
