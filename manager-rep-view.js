@@ -4,27 +4,82 @@
 state.managerRepContext = null;
 try {
   const saved = sessionStorage.getItem('limperial_manager_rep_context');
-  if (saved) state.managerRepContext = JSON.parse(saved);
+  if (saved) {
+    state.managerRepContext = JSON.parse(saved);
+    if(state.managerRepContext&&!state.managerRepContext.target_role)state.managerRepContext.target_role='sales';
+  }
 } catch (_) {}
 
+function workspaceActualRole(){
+  return state.profile?._workspace_actual_role || state.profile?.role || '';
+}
 function canUseRepWorkspace(){
-  return ['manager','super_admin'].includes(state.profile?.role||'');
+  return ['manager','super_admin'].includes(workspaceActualRole());
 }
 function repWorkspaceActorLabel(){
-  return state.profile?.role==='super_admin'?'Super Admin':'Manager';
+  return workspaceActualRole()==='super_admin'?'Super Admin':'Manager';
+}
+function managerTestActive(){
+  return workspaceActualRole()==='super_admin'
+    && state.managerRepContext?.target_role==='manager'
+    && !!state.managerRepContext?.user_id;
 }
 function managerRepActive(){
-  return canUseRepWorkspace() && !!state.managerRepContext?.user_id;
+  return canUseRepWorkspace()
+    && state.managerRepContext?.target_role!=='manager'
+    && !!state.managerRepContext?.user_id;
 }
 function managerRepId(){ return managerRepActive() ? state.managerRepContext.user_id : null; }
 function managerRepName(){ return managerRepActive() ? (state.managerRepContext.display_name || state.managerRepContext.email || 'Sales Rep') : ''; }
+function workspaceTargetName(){
+  return state.managerRepContext?.display_name || state.managerRepContext?.email || (managerTestActive()?'Manager':'Sales Rep');
+}
+function refreshWorkspaceSidebar(){
+  const el=document.getElementById('sidebarUser');
+  if(!el||!state.profile)return;
+  const roleLabel=managerTestActive()?'Manager · Test Mode':titleCase(state.profile.role||'');
+  el.innerHTML=`<div class="font-semibold text-gray-800">${esc(state.profile.display_name||state.user?.email||'')}</div><div>${esc(roleLabel)}</div>`;
+}
+function applyManagerTestContext(){
+  if(!state.profile||state.managerRepContext?.target_role!=='manager')return;
+  if(state.profile.role==='super_admin'){
+    state.profile._workspace_actual_role='super_admin';
+    state.profile._workspace_actual_display_name=state.profile.display_name;
+    state.profile.role='manager';
+    state.profile.display_name=workspaceTargetName();
+  }
+  refreshWorkspaceSidebar();
+}
+function restoreWorkspaceProfile(){
+  if(!state.profile)return;
+  if(state.profile._workspace_actual_role){
+    state.profile.role=state.profile._workspace_actual_role;
+    state.profile.display_name=state.profile._workspace_actual_display_name || state.profile.display_name;
+    delete state.profile._workspace_actual_role;
+    delete state.profile._workspace_actual_display_name;
+  }
+  refreshWorkspaceSidebar();
+}
 function managerRepBanner(){
+  if(managerTestActive()){
+    return `<div class="workspace-mode-banner mb-5 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div><div class="text-xs font-bold text-blue-800 uppercase tracking-wide">Super Admin · Manager Test Mode</div><div class="text-sm text-blue-900 mt-0.5">Acting as <b>${esc(workspaceTargetName())}</b>. The interface follows Manager access while your authenticated login remains Super Admin.</div></div>
+      <div class="flex gap-2"><button onclick="go('rep-workspace')" class="px-3 py-2 rounded-lg border border-blue-300 bg-white text-xs font-semibold text-blue-900">Change Role</button><button onclick="clearManagerRepContext()" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs font-semibold">Full Super Admin</button></div>
+    </div>`;
+  }
   if(!managerRepActive()) return '';
-  return `<div class="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-    <div><div class="text-xs font-bold text-amber-800 uppercase tracking-wide">${esc(repWorkspaceActorLabel())} Rep Workspace</div><div class="text-sm text-amber-900 mt-0.5">Viewing / acting for <b>${esc(managerRepName())}</b>. Actions are still recorded as performed by ${esc(state.profile?.display_name || state.user?.email || repWorkspaceActorLabel())}.</div></div>
-    <div class="flex gap-2"><button onclick="go('rep-workspace')" class="px-3 py-2 rounded-lg border border-amber-300 bg-white text-xs font-semibold text-amber-900">Change Rep</button><button onclick="clearManagerRepContext()" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs font-semibold">${state.profile?.role==='super_admin'?'Full Super Admin':'All Sales'}</button></div>
+  return `<div class="workspace-mode-banner mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <div><div class="text-xs font-bold text-amber-800 uppercase tracking-wide">${esc(repWorkspaceActorLabel())} Rep Workspace</div><div class="text-sm text-amber-900 mt-0.5">Viewing / acting for <b>${esc(managerRepName())}</b>. Actions are still recorded as performed by ${esc(state.user?.email || repWorkspaceActorLabel())}.</div></div>
+    <div class="flex gap-2"><button onclick="go('rep-workspace')" class="px-3 py-2 rounded-lg border border-amber-300 bg-white text-xs font-semibold text-amber-900">Change Rep</button><button onclick="clearManagerRepContext()" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs font-semibold">${workspaceActualRole()==='super_admin'?'Full Super Admin':'All Sales'}</button></div>
   </div>`;
 }
+
+const _managerWorkspaceLoadProfile = loadProfile;
+loadProfile = async function(){
+  const ok=await _managerWorkspaceLoadProfile();
+  if(ok)applyManagerTestContext();
+  return ok;
+};
 
 const _managerRepNavItems = navItems;
 navItems = function(){
@@ -35,10 +90,20 @@ navItems = function(){
 
 const _managerRepGo = go;
 go = async function(page){
-  if(page !== 'rep-workspace') return _managerRepGo(page);
+  if(page !== 'rep-workspace'){
+    const result=await _managerRepGo(page);
+    if(managerTestActive()){
+      const root=document.getElementById('content');
+      if(root&&!root.querySelector('.workspace-mode-banner'))root.insertAdjacentHTML('afterbegin',managerRepBanner());
+      refreshWorkspaceSidebar();
+    }
+    return result;
+  }
   state.page = page; renderNav();
-  document.getElementById('pageTitle').textContent = 'Rep Workspace';
-  document.getElementById('pageSubtitle').textContent = 'View and work in a Sales Rep context without using their password';
+  document.getElementById('pageTitle').textContent = 'Rep / Manager Workspace';
+  document.getElementById('pageSubtitle').textContent = workspaceActualRole()==='super_admin'
+    ? 'Test the app as a Sales Rep or Manager without using their password'
+    : 'View and work in a Sales Rep context without using their password';
   document.getElementById('content').innerHTML = '<div class="py-20 text-center text-gray-400">Loading...</div>';
   try { await renderManagerRepWorkspace(); }
   catch(err){ document.getElementById('content').innerHTML = `<div class="card rounded-xl p-5 text-red-600">Error: ${esc(err.message)}</div>`; }
@@ -46,36 +111,52 @@ go = async function(page){
 
 async function renderManagerRepWorkspace(){
   if(!canUseRepWorkspace()) throw new Error('Manager or Super Admin access required');
-  const {data,error} = await db.from('app_users').select('user_id,display_name,email,role,active').eq('role','sales').eq('active',true).order('display_name');
-  if(error) throw error;
-  window._managerRepUsers = data || [];
-  const current = managerRepId();
+
+  const salesRes=await db.from('app_users').select('user_id,display_name,email,role,active').eq('role','sales').eq('active',true).order('display_name');
+  if(salesRes.error)throw salesRes.error;
+  const salesUsers=(salesRes.data||[]).map(x=>({...x,target_role:'sales'}));
+
+  let managerUsers=[];
+  const superMode=workspaceActualRole()==='super_admin';
+  if(superMode){
+    const mgrRes=await db.from('app_users').select('user_id,display_name,email,role,active').eq('role','manager').eq('active',true).order('display_name');
+    if(mgrRes.error)throw mgrRes.error;
+    managerUsers=(mgrRes.data||[]).map(x=>({...x,target_role:'manager'}));
+  }
+
+  window._managerRepUsers=[...salesUsers,...managerUsers];
+  const currentId=state.managerRepContext?.user_id||'';
+  const currentRole=state.managerRepContext?.target_role||'sales';
+
   document.getElementById('content').innerHTML = `
-    ${current ? managerRepBanner() : ''}
+    ${(managerRepActive()||managerTestActive()) ? managerRepBanner() : ''}
     <div class="grid lg:grid-cols-[420px_1fr] gap-5">
       <div class="card rounded-2xl p-5 h-fit">
-        <h3 class="font-bold text-lg">View / Act as Sales Rep</h3>
-        <p class="text-xs text-gray-400 mt-1">This does not reveal or use the salesperson's password. You stay signed in as ${esc(repWorkspaceActorLabel())}.</p>
+        <h3 class="font-bold text-lg">${superMode?'View / Act as Sales Rep or Manager':'View / Act as Sales Rep'}</h3>
+        <p class="text-xs text-gray-400 mt-1">No staff password is revealed or used.</p>
         <div class="mt-5">
-          <label class="text-xs font-semibold">Sales Rep</label>
+          <label class="text-xs font-semibold">${superMode?'User / Role':'Sales Rep'}</label>
           <select id="managerRepSelect" class="mt-1 w-full border rounded-xl px-3 py-3 bg-white">
-            <option value="">Select Sales Rep</option>
-            ${(data||[]).map(u=>`<option value="${u.user_id}" ${current===u.user_id?'selected':''}>${esc(u.display_name||u.email)}</option>`).join('')}
+            <option value="">Select...</option>
+            <optgroup label="Sales Reps">
+              ${salesUsers.map(u=>`<option value="sales:${u.user_id}" ${currentRole==='sales'&&currentId===u.user_id?'selected':''}>${esc(u.display_name||u.email)}</option>`).join('')}
+            </optgroup>
+            ${superMode&&managerUsers.length?`<optgroup label="Managers">${managerUsers.map(u=>`<option value="manager:${u.user_id}" ${currentRole==='manager'&&currentId===u.user_id?'selected':''}>${esc(u.display_name||u.email)} — Manager</option>`).join('')}</optgroup>`:''}
           </select>
         </div>
-        <button onclick="activateManagerRepContext()" class="mt-4 w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Open Rep Workspace</button>
-        ${current?'<button onclick="clearManagerRepContext()" class="mt-2 w-full border rounded-xl py-3 text-sm font-semibold">Return to All Sales</button>':''}
+        <button onclick="activateManagerRepContext()" class="mt-4 w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Open Workspace</button>
+        ${(managerRepActive()||managerTestActive())?'<button onclick="clearManagerRepContext()" class="mt-2 w-full border rounded-xl py-3 text-sm font-semibold">Return to Normal View</button>':''}
       </div>
       <div class="card rounded-2xl p-5">
         <h3 class="font-bold">How this works</h3>
         <div class="mt-4 grid sm:grid-cols-2 gap-3 text-sm">
-          <div class="bg-gray-50 rounded-xl p-4"><b>Customers</b><div class="text-xs text-gray-500 mt-1">Shows only customers assigned to the selected Sales Rep.</div></div>
-          <div class="bg-gray-50 rounded-xl p-4"><b>Sales Orders</b><div class="text-xs text-gray-500 mt-1">Shows only that rep's assigned orders.</div></div>
-          <div class="bg-gray-50 rounded-xl p-4"><b>Payments & Tracking</b><div class="text-xs text-gray-500 mt-1">Filtered to the same Sales Rep.</div></div>
-          <div class="bg-gray-50 rounded-xl p-4"><b>New Records</b><div class="text-xs text-gray-500 mt-1">Inside Rep Workspace, new customers and orders default to that Sales Rep. Outside Rep Workspace, your normal ${esc(repWorkspaceActorLabel())} assignment controls remain available.</div></div>
+          <div class="bg-gray-50 rounded-xl p-4"><b>Sales Rep Mode</b><div class="text-xs text-gray-500 mt-1">Customers, orders, payments and tracking are scoped to the selected Sales Rep.</div></div>
+          <div class="bg-gray-50 rounded-xl p-4"><b>Manager Mode</b><div class="text-xs text-gray-500 mt-1">${superMode?'The app switches to the Manager interface and Manager-level workflows for testing.':'Manager Mode is available only to Super Admin.'}</div></div>
+          <div class="bg-gray-50 rounded-xl p-4"><b>No Password Sharing</b><div class="text-xs text-gray-500 mt-1">You remain authenticated with your own account.</div></div>
+          <div class="bg-gray-50 rounded-xl p-4"><b>Safe Exit</b><div class="text-xs text-gray-500 mt-1">${superMode?'Use Full Super Admin at any time to restore your normal interface.':'Use Return to All Sales to exit Rep Workspace.'}</div></div>
         </div>
-        <div class="mt-4 rounded-xl border border-blue-100 bg-blue-50 p-4 text-xs text-blue-800">${state.profile?.role==='super_admin'
-          ?'Your Super Admin permissions remain available. Rep Workspace only scopes the sales-facing customer/order/payment views and defaults new records to the selected Sales Rep.'
+        <div class="mt-4 rounded-xl border border-blue-100 bg-blue-50 p-4 text-xs text-blue-800">${superMode
+          ?'Manager Mode is a Super Admin testing view. Your database login remains Super Admin; the visible app controls behave as Manager until you exit.'
           :'Costing, supplier purchasing and other confidential Admin information remain unavailable to the Manager, even while using Rep Workspace.'}</div>
       </div>
     </div>`;
@@ -83,20 +164,40 @@ async function renderManagerRepWorkspace(){
 
 function activateManagerRepContext(){
   if(!canUseRepWorkspace()) return showToast('Manager or Super Admin access required','err');
-  const id = document.getElementById('managerRepSelect')?.value;
-  if(!id) return showToast('Select a Sales Rep first.','err');
-  const u = (window._managerRepUsers||[]).find(x=>x.user_id===id);
-  if(!u) return showToast('Sales Rep not found.','err');
-  state.managerRepContext = {user_id:u.user_id,display_name:u.display_name,email:u.email};
+  const raw=document.getElementById('managerRepSelect')?.value||'';
+  if(!raw)return showToast('Choose a Sales Rep or Manager first','err');
+  const sep=raw.indexOf(':');
+  const targetRole=sep>0?raw.slice(0,sep):'sales';
+  const id=sep>0?raw.slice(sep+1):raw;
+  if(!['sales','manager'].includes(targetRole)||!id)return showToast('Invalid workspace selection','err');
+  if(targetRole==='manager'&&workspaceActualRole()!=='super_admin')return showToast('Only Super Admin can use Manager Mode','err');
+
+  restoreWorkspaceProfile();
+  const u=(window._managerRepUsers||[]).find(x=>x.user_id===id&&x.target_role===targetRole);
+  if(!u)return showToast('Selected user was not found','err');
+
+  state.managerRepContext={user_id:u.user_id,display_name:u.display_name,email:u.email,target_role:targetRole};
   sessionStorage.setItem('limperial_manager_rep_context',JSON.stringify(state.managerRepContext));
-  showToast(`Rep workspace opened for ${u.display_name||u.email}`);
+
+  if(targetRole==='manager'){
+    applyManagerTestContext();
+    showToast(`Manager Test Mode opened for ${u.display_name||u.email}`);
+  }else{
+    showToast(`Rep workspace opened for ${u.display_name||u.email}`);
+  }
+  renderNav();
+  refreshWorkspaceSidebar();
   go('dashboard');
 }
 
 function clearManagerRepContext(){
-  state.managerRepContext = null;
+  const wasManagerTest=managerTestActive();
+  restoreWorkspaceProfile();
+  state.managerRepContext=null;
   sessionStorage.removeItem('limperial_manager_rep_context');
-  showToast(state.profile?.role==='super_admin'?'Returned to full Super Admin view':'Returned to All Sales view');
+  renderNav();
+  refreshWorkspaceSidebar();
+  showToast(wasManagerTest||workspaceActualRole()==='super_admin'?'Returned to full Super Admin view':'Returned to All Sales view');
   go('dashboard');
 }
 
