@@ -8,6 +8,7 @@
   function norm(v=''){return String(v||'').trim().toLowerCase().replace(/[\s-]+/g,'_')}
   function isPre(o){return (o.sales_flow_type||o.order_type)==='pre_order'||String(o.sr_no||o.order_no||'').toUpperCase().startsWith('SR')}
   function isAdminRole(){return typeof isAdmin==='function'&&isAdmin()}
+  function salesTimelineOnly(){return (state.profile?.role||'')==='sales'}
   function canRequestInvoice(){return ['sales','manager','admin','super_admin'].includes(state.profile?.role)}
   function docLabel(o){
     if(isPre(o)){
@@ -471,17 +472,61 @@
   if(baseTrackingBody){
     window.renderOrderTrackingBody=function(){
       const ui=window.trackingRedesign||{};
+      if(salesTimelineOnly()&&ui.trackingTab==='flow')ui.trackingTab='timeline';
       if(ui.trackingTab==='flow'){
         const root=document.getElementById('orderTrackingRoot');if(!root)return;root.innerHTML=`${typeof managerRepBanner==='function'&&managerRepActive()?managerRepBanner():''}<div class="lr-tabs mb-4"><button class="lr-tab" onclick="setTrackingTab('timeline')">Status Timeline</button><button class="lr-tab" onclick="setTrackingTab('eta')">ETA Schedule</button><button class="lr-tab" onclick="setTrackingTab('orders')">Orders</button><button class="lr-tab" onclick="setTrackingTab('items')">Items</button><button class="lr-tab active" onclick="setTrackingTab('flow')">PO → SR → TK/RK</button></div><div class="relative mb-5"><input class="lr-input pl-10" value="${esc(ui.trackingSearch||'')}" oninput="setTrackingSearch(this.value)" placeholder="Search PO, SR, TK/RK, client, item, SKU..."><span class="absolute left-3 top-2.5 text-gray-400">⌕</span></div>${flowTrackingHtml()}`;return;
       }
       baseTrackingBody();
+      if(salesTimelineOnly())return;
       const tabs=document.querySelector('#orderTrackingRoot .lr-tabs');if(tabs&&!tabs.querySelector('[data-flow-tab]')){const b=document.createElement('button');b.dataset.flowTab='1';b.className='lr-tab';b.textContent='PO → SR → TK/RK';b.onclick=()=>setTrackingTab('flow');tabs.appendChild(b)}
     };
   }
   const baseSetTrackingTab=window.setTrackingTab;
-  if(baseSetTrackingTab){window.setTrackingTab=function(tab){if(tab==='flow'){window.trackingRedesign.trackingTab='flow';renderOrderTrackingBody()}else baseSetTrackingTab(tab)}}
+  if(baseSetTrackingTab){window.setTrackingTab=function(tab){if(tab==='flow'){if(salesTimelineOnly())return;baseSetTrackingTab('flow');window.trackingRedesign.trackingTab='flow';renderOrderTrackingBody()}else baseSetTrackingTab(tab)}}
   const baseTracking=window.renderTracking;
   if(baseTracking){window.renderTracking=async function(){await baseTracking();await refreshFlowData(true);renderOrderTrackingBody()}}
+
+  window.renderProcurementDocumentFlow=async function(search=''){
+    if(!isAdminRole())throw new Error('Admin access required');
+    await refreshFlowData(true);
+    const [sr,ir]=await Promise.all([
+      db.from('sales_order_summary').select('*').order('order_date',{ascending:false}),
+      db.from('sales_order_items').select('id,sales_order_id,product_code_snapshot,item_name_snapshot,qty,fulfillment_status')
+    ]);
+    if(sr.error)throw sr.error;
+    if(ir.error)throw ir.error;
+
+    const itemMap=new Map();
+    for(const i of ir.data||[]){
+      if(!itemMap.has(i.sales_order_id))itemMap.set(i.sales_order_id,[]);
+      itemMap.get(i.sales_order_id).push(i);
+    }
+
+    const q=String(search||'').trim().toLowerCase();
+    const orders=(sr.data||[])
+      .map(o=>({...o,...(df.orderMeta.get(o.id)||{}),items:itemMap.get(o.id)||[]}))
+      .filter(isPre)
+      .filter(o=>!q||[
+        o.order_no,o.sr_no,o.sales_invoice_no,o.invoice_no,o.customer_name,
+        ...((o.items||[]).flatMap(i=>[i.product_code_snapshot,i.item_name_snapshot])),
+        ...refsForOrder(o).flatMap(r=>[r.po_number,r.po_status])
+      ].filter(Boolean).join(' ').toLowerCase().includes(q));
+
+    return `<div class="rounded-xl bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800 mb-4"><b>PO → SR → TK/RK</b> is managed under Procurement. Link matching Supplier PO items to each SR, follow production/shipping/arrival, then continue to the final TK/RK invoice.</div>
+      <div class="grid gap-4">${orders.length?orders.map(o=>`<div class="pw-card">
+        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-3">
+          <div><div class="text-[10px] uppercase font-bold text-gray-400">Customer / SR</div><div class="font-bold mt-1">${esc(o.customer_name||'Customer')} · ${esc(o.sr_no||o.order_no||'SR')}</div></div>
+          <div class="flex items-center gap-2 overflow-x-auto">
+            <span class="lr-badge lr-badge-blue">${esc(uniquePOs(o).map(p=>p.no).join(', ')||'PO Pending')}</span>
+            <span>→</span>
+            <span class="lr-badge lr-badge-amber">${esc(o.sr_no||o.order_no||'SR')}</span>
+            <span>→</span>
+            <span class="lr-badge ${o.sales_invoice_no?'lr-badge-green':'lr-badge-gray'}">${esc(o.sales_invoice_no||'TK/RK Pending')}</span>
+          </div>
+        </div>
+        ${flowPanel(o)}
+      </div>`).join(''):'<div class="card rounded-2xl p-10 text-center text-sm text-gray-400">No SR / pre-order document flows found.</div>'}</div>`;
+  };
 
   setTimeout(()=>{if(state?.profile)refreshFlowData().then(()=>{enhanceSalesCards();if(state.page==='tracking')renderOrderTrackingBody()})},500);
 })();
