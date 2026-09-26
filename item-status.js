@@ -3,7 +3,7 @@
 (function(){
   const terminalStatuses=new Set(['delivered']);
   const statusOptions=['ordered','production','shipping','arrived','delivered'];
-  function canEdit(){return ['sales','manager','admin','super_admin'].includes(state.profile?.role||'')}
+  function canEdit(){return ['admin','super_admin'].includes(state.profile?.role||'')}
   function norm(v){return String(v||'').trim().toLowerCase().replace(/[\s-]+/g,'_')}
   function canonical(v){const s=norm(v);return s==='pending'||s==='reserved'?'ordered':s==='ready'?'arrived':s==='installed'?'delivered':s}
   function label(v){return titleCase(canonical(v)||'Ordered')}
