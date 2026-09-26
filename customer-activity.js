@@ -19,8 +19,8 @@
   ];
   const SOURCES=['Showroom','Facebook','Telegram','Friend or Family','Site Location','Other'];
   const STATUSES=[
-    'Follow Up','Just Asking','Contacting','Visit Other Showroom',
-    'Buy','Paid Off','Reject','Return Item','Other'
+    'Follow Up','Just Asking','Contacting','Potential','Visit Other Showroom',
+    'Buy','Add Deposit','Paid Off','Reject','Return Item','Other'
   ];
 
   function activityAllowed(){
