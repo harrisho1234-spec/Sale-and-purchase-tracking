@@ -39,10 +39,11 @@
     return 'bg-blue-50 text-blue-700 border-blue-200';
   }
   function businessTone(code){
-    return code==='RK'
-      ?'bg-[#fff8e7] text-[#8a650e] border-[#ead69b]'
-      :'bg-[#f5f1ff] text-[#6741a5] border-[#d8c9f4]';
+    if(code==='RK')return 'bg-[#fff8e7] text-[#8a650e] border-[#ead69b]';
+    if(code==='TK')return 'bg-[#f5f1ff] text-[#6741a5] border-[#d8c9f4]';
+    return 'bg-gray-50 text-gray-600 border-gray-200';
   }
+  function businessText(code){return code==='RK'?'RK':code==='TK'?'TK':'Unassigned'}
   function activityLabel(type){return type==='online'?'Online':'Showroom Visit'}
   function sourceLabel(r){
     if(r.last_activity_type==='online')return 'Online';
@@ -58,7 +59,8 @@
     const q=leadState.search.trim().toLowerCase(),today=todayIso();
     return scopeRows().filter(r=>{
       if(leadState.stage!=='all'&&r.stage!==leadState.stage)return false;
-      if(leadState.business!=='all'&&r.business_code!==leadState.business)return false;
+      if(leadState.business==='UNASSIGNED'&&r.business_code)return false;
+      if(!['all','UNASSIGNED'].includes(leadState.business)&&r.business_code!==leadState.business)return false;
       if(leadState.salesRep!=='all'&&String(r.assigned_sales_id||'')!==leadState.salesRep)return false;
       if(leadState.followup==='overdue'&&!r.follow_up_overdue)return false;
       if(leadState.followup==='today'&&!r.follow_up_today)return false;
@@ -110,7 +112,7 @@
             <option value="all">All Stages</option>${STAGES.map(s=>`<option value="${s}" ${leadState.stage===s?'selected':''}>${s}</option>`).join('')}
           </select>
           <select onchange="setLeadBusiness(this.value)" class="border rounded-xl bg-white px-3 py-2.5 text-sm">
-            <option value="all">All Business</option><option value="RK" ${leadState.business==='RK'?'selected':''}>LP Home · RK</option><option value="TK" ${leadState.business==='TK'?'selected':''}>L'Imperial Luxury · TK</option>
+            <option value="all">All Business</option><option value="RK" ${leadState.business==='RK'?'selected':''}>LP Home · RK</option><option value="TK" ${leadState.business==='TK'?'selected':''}>L'Imperial Luxury · TK</option><option value="UNASSIGNED" ${leadState.business==='UNASSIGNED'?'selected':''}>Unassigned</option>
           </select>
           <select onchange="setLeadFollowup(this.value)" class="border rounded-xl bg-white px-3 py-2.5 text-sm">
             <option value="all">All Follow Ups</option>
@@ -134,7 +136,7 @@
     return `<button type="button" onclick="openCustomerLead('${r.lead_id}')" class="card rounded-2xl p-4 w-full text-left hover:border-[#d8c287] transition">
       <div class="grid lg:grid-cols-[1.35fr_.75fr_.85fr_.9fr_.85fr_.8fr_auto] gap-3 lg:gap-4 items-center">
         <div class="min-w-0">
-          <div class="flex flex-wrap items-center gap-2"><b class="truncate">${esc(r.customer_name)}</b><span class="px-2 py-1 rounded-md border text-[9px] font-bold ${businessTone(r.business_code)}">${esc(r.business_code)}</span>${linkBadge}</div>
+          <div class="flex flex-wrap items-center gap-2"><b class="truncate">${esc(r.customer_name)}</b><span class="px-2 py-1 rounded-md border text-[9px] font-bold ${businessTone(r.business_code)}">${esc(businessText(r.business_code))}</span>${linkBadge}</div>
           <div class="text-[11px] text-gray-400 mt-1">${esc(r.phone||'No phone')} · ${esc(r.customer_category||'No category')}</div>
           ${r.interest?`<div class="text-[11px] text-gray-600 mt-1 truncate">Interest: ${esc(r.interest)}</div>`:''}
         </div>
@@ -204,7 +206,7 @@
       <div><label class="text-xs font-semibold">Customer Name</label><input id="leadName" value="${esc(r.customer_name||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
       <div><label class="text-xs font-semibold">Phone</label><input id="leadPhone" value="${esc(r.phone||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
       <div><label class="text-xs font-semibold">Customer Category</label><select id="leadCategory" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="">Select category</option>${CATEGORIES.map(x=>`<option value="${x}" ${r.customer_category===x?'selected':''}>${x}</option>`).join('')}</select></div>
-      <div><label class="text-xs font-semibold">Business</label><select id="leadBusiness" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="RK" ${r.business_code==='RK'?'selected':''}>LP Home · RK</option><option value="TK" ${r.business_code==='TK'?'selected':''}>L'Imperial Luxury · TK</option></select></div>
+      <div><label class="text-xs font-semibold">Business</label><select id="leadBusiness" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="" ${!r.business_code?'selected':''}>Unassigned</option><option value="RK" ${r.business_code==='RK'?'selected':''}>LP Home · RK</option><option value="TK" ${r.business_code==='TK'?'selected':''}>L'Imperial Luxury · TK</option></select></div>
       <div><label class="text-xs font-semibold">Current Stage</label><select id="leadStage" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${STAGES.map(x=>`<option value="${x}" ${r.stage===x?'selected':''}>${x}</option>`).join('')}</select></div>
       <div><label class="text-xs font-semibold">Next Follow-up</label><input id="leadFollowup" type="date" value="${esc(r.next_follow_up_date||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
       <div class="md:col-span-2"><label class="text-xs font-semibold">Interest</label><input id="leadInterest" value="${esc(r.interest||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Sofa, chandelier, bedroom set..."></div>
@@ -219,7 +221,7 @@
         :`<button onclick="convertLeadToCustomer('${r.lead_id}')" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs font-semibold">Convert / Link Customer</button>`;
     return `<div class="rounded-2xl border bg-[#faf9f6] p-4 mb-4">
       <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
-        <div><div class="flex flex-wrap items-center gap-2"><h3 class="text-xl font-serif font-bold">${esc(r.customer_name)}</h3><span class="px-2 py-1 rounded-lg border text-[9px] font-bold ${businessTone(r.business_code)}">${esc(r.business_code)}</span><span class="px-2 py-1 rounded-lg border text-[9px] font-bold ${stageTone(r.stage)}">${esc(r.stage)}</span></div><div class="text-xs text-gray-400 mt-1">${esc(r.phone||'No phone')} · ${esc(r.sales_rep_name||'-')}</div></div>
+        <div><div class="flex flex-wrap items-center gap-2"><h3 class="text-xl font-serif font-bold">${esc(r.customer_name)}</h3><span class="px-2 py-1 rounded-lg border text-[9px] font-bold ${businessTone(r.business_code)}">${esc(businessText(r.business_code))}</span><span class="px-2 py-1 rounded-lg border text-[9px] font-bold ${stageTone(r.stage)}">${esc(r.stage)}</span></div><div class="text-xs text-gray-400 mt-1">${esc(r.phone||'No phone')} · ${esc(r.sales_rep_name||'-')}</div></div>
         <div class="flex flex-wrap gap-2">${customerLink}<button onclick="openLeadActivity('${r.lead_id}','showroom_visit')" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">+ Showroom Visit</button><button onclick="openLeadActivity('${r.lead_id}','online')" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">+ Online</button></div>
       </div>
       <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4 text-xs"><div><div class="text-[9px] uppercase font-bold text-gray-400">First Contact</div><b>${esc(fmtDate(r.first_contact_date))}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Last Contact</div><b>${esc(fmtDate(r.last_contact_date))}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Activities</div><b>${Number(r.activity_count||0)}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Showroom</div><b>${Number(r.showroom_visits||0)}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Online</div><b>${Number(r.online_inquiries||0)}</b></div></div>
@@ -248,7 +250,7 @@
       p_customer_name:document.getElementById('leadName').value.trim(),
       p_phone:document.getElementById('leadPhone').value.trim()||null,
       p_customer_category:document.getElementById('leadCategory').value||null,
-      p_business_code:document.getElementById('leadBusiness').value,
+      p_business_code:document.getElementById('leadBusiness').value||null,
       p_interest:document.getElementById('leadInterest').value.trim()||null,
       p_next_follow_up_date:document.getElementById('leadFollowup').value||null,
       p_notes:document.getElementById('leadNotes').value.trim()||null
