@@ -103,7 +103,8 @@
         item_name_snapshot:name,
         qty:Number(document.getElementById('poiQty').value||0),
         unit_cost:Number(document.getElementById('poiCost').value||0),
-        shipping_cost:Number(document.getElementById('poiShipping').value||0)
+        shipping_cost:Number(document.getElementById('poiShipping').value||0),
+        shipping_currency:'USD'
       };
       if(!row.qty||row.qty<=0)return showToast('Enter a valid quantity.','err');
       const save=await db.from('supplier_po_items').insert(row).select('id').single();
