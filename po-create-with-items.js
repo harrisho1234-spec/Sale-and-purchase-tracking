@@ -122,7 +122,7 @@
         </div>
         <div class="space-y-2 text-[10px] text-gray-600">
           <label class="flex items-center gap-2"><input type="checkbox" class="po-update-photo" checked> Use uploaded photo as Product Catalog photo too.</label>
-          <label class="flex items-center gap-2"><input type="checkbox" class="po-create-product" checked> If this is a new SKU, add it to Product Catalog as inactive.</label>
+          <div class="rounded-lg border border-blue-100 bg-blue-50 px-2.5 py-2 text-blue-700"><b>New SKU:</b> it will automatically become an active Product and queue to the <b>App Products</b> sheet.</div>
         </div>
       </div>
     </div>`;
@@ -187,13 +187,25 @@
     const qty=Number(row.querySelector('.po-qty').value||0);if(qty<=0)throw new Error(`Enter a valid quantity for ${code}.`);
 
     let product=poProducts.find(p=>p.id===row.dataset.productId)||poProducts.find(p=>String(p.code||'').toLowerCase()===code.toLowerCase())||null;
-    if(!product&&row.querySelector('.po-create-product')?.checked){
-      const ins=await db.from('product_catalog').insert({code,item_name:name,sales_price:0,stock_qty:0,currency:currency||'USD',active:false,manual_override:true}).select('id,code,item_name,image_url').single();
-      if(ins.error){
-        const again=await db.from('product_catalog').select('id,code,item_name,image_url').eq('code',code).maybeSingle();
-        if(again.error||!again.data)throw ins.error;
-        product=again.data;
-      }else product=ins.data;
+    if(!product){
+      const {data,error}=await db.rpc('ensure_app_product_from_procurement',{
+        p_code:code,
+        p_item_name:name,
+        p_po_currency:currency||'USD',
+        p_vendor_name:document.getElementById('poVendor')?.value.trim()||null,
+        p_unit_cost:Number(row.querySelector('.po-unit-cost')?.value||0),
+        p_shipping_cost_usd:Number(row.querySelector('.po-shipping')?.value||0),
+        p_image_url:null
+      });
+      if(error)throw error;
+      product={
+        id:data.product_id,
+        code:data.code||code,
+        item_name:data.item_name||name,
+        image_url:data.image_url||null,
+        active:data.active!==false
+      };
+      row.dataset.productId=product.id;
       poProducts.push(product);
     }
     return {skip:false,code,name,qty,product};
