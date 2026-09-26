@@ -26,8 +26,16 @@
   }
   function activityScopeSalesId(){
     if(typeof managerRepActive==='function'&&managerRepActive())return managerRepId();
-    if((state.profile?.role||'')==='sales')return state.user?.id||null;
+    if(typeof managerTestActive==='function'&&managerTestActive())return state.managerRepContext?.user_id||null;
+    if(['sales','manager'].includes(state.profile?.role||''))return state.user?.id||null;
     return null;
+  }
+  function activityIsOwner(r){
+    const owner=activityScopeSalesId();
+    return !!owner&&String(r?.assigned_sales_id||'')===String(owner);
+  }
+  function activityCanSeeStage(r){
+    return ['admin','super_admin'].includes(state.profile?.role||'')||activityIsOwner(r);
   }
   function activityCanChooseSales(){
     return ['admin','super_admin'].includes(state.profile?.role||'')
@@ -111,11 +119,11 @@
     return rows.slice((activityState.page-1)*size,activityState.page*size);
   }
   function activitySummary(rows){
-    const today=isoToday(),month=today.slice(0,7);
+    const today=isoToday(),month=today.slice(0,7),owner=activityScopeSalesId()||state.user?.id||'';
     return {
       today:rows.filter(r=>String(r.activity_date||'').slice(0,10)===today).length,
       month:rows.filter(r=>String(r.activity_date||'').slice(0,7)===month).length,
-      follow:rows.filter(r=>String(r.status||'').toLowerCase()==='follow up').length,
+      mine:rows.filter(r=>String(r.assigned_sales_id||'')===String(owner)).length,
       rk:rows.filter(r=>r.business_code==='RK').length,
       tk:rows.filter(r=>r.business_code==='TK').length
     };
@@ -147,10 +155,10 @@
             <option value="month" ${activityState.dateRange==='month'?'selected':''}>This Month</option>
             <option value="all" ${activityState.dateRange==='all'?'selected':''}>All Dates</option>
           </select>
-          <select onchange="setActivityStatus(this.value)" class="border rounded-xl bg-white px-3 py-2.5 text-sm">
+${['admin','super_admin'].includes(state.profile?.role||'')?`          <select onchange="setActivityStatus(this.value)" class="border rounded-xl bg-white px-3 py-2.5 text-sm">
             <option value="all">All Stages</option>
             ${STATUSES.map(s=>`<option value="${esc(s)}" ${activityState.status===s?'selected':''}>${esc(s)}</option>`).join('')}
-          </select>
+          </select>`:''}
           ${activitySalesFilter()}
         </div>
         <button onclick="openNewCustomerActivity()" class="px-4 py-2.5 bg-[#211d18] text-white rounded-xl text-sm font-semibold whitespace-nowrap">+ New ${esc(activityTypeLabel(activityState.type))}</button>
@@ -163,9 +171,8 @@
       const detail=activityState.type==='online'
         ?[r.interest&&('Interest: '+r.interest),r.remark].filter(Boolean).join(' · ')
         :[r.source_channel&&('Source: '+r.source_channel),r.interest&&('Interest: '+r.interest),r.remark].filter(Boolean).join(' · ');
-      const canEdit=['manager','admin','super_admin'].includes(state.profile?.role||'')
-        ||String(r.assigned_sales_id||'')===String(state.user?.id||'')
-        ||(typeof managerRepActive==='function'&&managerRepActive()&&String(r.assigned_sales_id||'')===String(managerRepId()));
+      const canEdit=['admin','super_admin'].includes(state.profile?.role||'')||activityIsOwner(r);
+      const canSeeStage=activityCanSeeStage(r);
       return `<div class="card rounded-2xl p-4">
         <div class="grid lg:grid-cols-[110px_1.3fr_.8fr_.85fr_.85fr_auto] gap-3 lg:gap-4 items-center">
           <div><div class="text-[10px] uppercase font-bold text-gray-400">Date</div><div class="text-sm font-semibold mt-1">${esc(fmtActivityDate(r.activity_date))}</div></div>
@@ -174,9 +181,9 @@
             <div class="text-[11px] text-gray-400 mt-1">${esc(r.phone||'No phone')} · ${esc(r.customer_type||'-')}</div>
             ${detail?`<div class="text-[11px] text-gray-600 mt-1 line-clamp-2">${esc(detail)}</div>`:''}
           </div>
-          <div><div class="text-[10px] uppercase font-bold text-gray-400">Stage</div><span class="inline-flex mt-1 px-2 py-1 rounded-lg border text-[10px] font-semibold ${statusTone(r.status)}">${esc(r.status||'-')}</span></div>
+          <div><div class="text-[10px] uppercase font-bold text-gray-400">Stage</div>${canSeeStage?`<span class="inline-flex mt-1 px-2 py-1 rounded-lg border text-[10px] font-semibold ${statusTone(r.status)}">${esc(r.status||'-')}</span>`:'<div class="text-[11px] text-gray-400 mt-1">Private</div>'}</div>
           <div><div class="text-[10px] uppercase font-bold text-gray-400">Sales</div><div class="text-sm mt-1">${esc(r.sales_rep_name||'-')}</div></div>
-          <div><div class="text-[10px] uppercase font-bold text-gray-400">Follow Up</div><div class="text-sm mt-1">${esc(r.follow_up_date?fmtActivityDate(r.follow_up_date):'-')}</div></div>
+          <div><div class="text-[10px] uppercase font-bold text-gray-400">Follow Up</div><div class="text-sm mt-1">${canSeeStage?esc(r.follow_up_date?fmtActivityDate(r.follow_up_date):'-'):'Private'}</div></div>
           <div class="flex lg:justify-end">${canEdit?`<button onclick="openEditCustomerActivity('${r.id}')" class="px-3 py-2 border rounded-lg text-xs font-semibold bg-white">Edit</button>`:''}</div>
         </div>
       </div>`;
@@ -211,7 +218,7 @@
       <div class="grid grid-cols-2 xl:grid-cols-5 gap-3 mb-4">
         ${activityKpi('Today',summary.today,activityTypeLabel(activityState.type))}
         ${activityKpi('This Month',summary.month,'Current month entries')}
-        ${activityKpi('Follow Up',summary.follow,'Entries needing follow-up')}
+        ${activityKpi('My Entries',summary.mine,'Your own records')}
         ${activityKpi('LP Home · RK',summary.rk,'Total loaded entries')}
         ${activityKpi("L'Imperial Luxury · TK",summary.tk,'Total loaded entries')}
       </div>
@@ -238,16 +245,14 @@
     activityState.page=1;
     document.getElementById('pageTitle').textContent=activityTypeLabel(type);
     document.getElementById('pageSubtitle').textContent=type==='showroom_visit'
-      ?'Daily showroom customer visits · RK / TK'
-      :'Daily social media customer inquiries · RK / TK';
+      ?'Shared daily showroom customer visits · RK / TK'
+      :'Shared daily social media customer inquiries · RK / TK';
     document.getElementById('content').innerHTML='<div id="customerActivityRoot"><div class="py-20 text-center text-gray-400">Loading...</div></div>';
 
     await loadActivitySalesUsers();
     const {data,error}=await db.rpc('get_customer_activity_rows',{p_activity_type:type});
     if(error)throw error;
-    let rows=data||[];
-    const scopeId=activityScopeSalesId();
-    if(scopeId)rows=rows.filter(x=>String(x.assigned_sales_id||'')===String(scopeId));
+    const rows=data||[];
     activityState.rows=rows;
     if(!activityCanChooseSales())activityState.salesRep='all';
     renderActivityBody();
