@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Sales Entry V.1">
+  <rect width="512" height="512" fill="#ffffff"/>
+  <text x="256" y="252" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="155" font-weight="400" fill="#ff6d18">Sales</text>
+  <text x="256" y="348" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="54" letter-spacing="15" fill="#000000">ENTRY</text>
+  <text x="256" y="438" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="42" font-weight="700" fill="#000000">V.1</text>
+</svg>
