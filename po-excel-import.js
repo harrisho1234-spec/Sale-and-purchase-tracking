@@ -85,7 +85,7 @@
       ['code','code'],['sku','code'],['product code','code'],['product code sku','code'],
       ['qty','qty'],['quantity','qty'],
       ['unit cost','unit_cost'],['cost','unit_cost'],
-      ['shipping unit','shipping_unit'],['shipping per unit','shipping_unit'],['shipping cost unit','shipping_unit'],['shipping cost per unit','shipping_unit'],
+      ['shipping unit','shipping_unit'],['shipping per unit','shipping_unit'],['shipping cost unit','shipping_unit'],['shipping cost per unit','shipping_unit'],['shipping unit usd','shipping_unit'],['shipping per unit usd','shipping_unit'],['shipping cost per unit usd','shipping_unit'],
       ['item name','item_name'],['product name','item_name']
     ]);
     return map.get(h)||h.replace(/\s+/g,'_');
@@ -260,7 +260,7 @@
     if(!window.XLSX)return showToast('Excel template tool is still loading. Refresh and try again.','err');
     const headers=[
       'Official PO Number','Vendor / Supplier','Order Date','Currency','Shipping Agent','ETA',
-      'Code','QTY','Unit Cost','Shipping / Unit','Item Name'
+      'Code','QTY','Unit Cost','Shipping / Unit (USD)','Item Name'
     ];
     const sample=[
       'PO-2026-001','Example Supplier',new Date().toISOString().slice(0,10),'USD','', '',
@@ -287,7 +287,7 @@
       const s=document.createElement('div');
       s.id='poExcelImportStatus';
       s.className='text-[10px] text-gray-400 mt-1';
-      s.textContent='Excel columns supported: Official PO Number, Vendor / Supplier, Order Date, Currency, Shipping Agent, ETA, Code, QTY, Unit Cost, Shipping / Unit, Item Name (optional when Code already exists).';
+      s.textContent='Excel columns supported: Official PO Number, Vendor / Supplier, Order Date, Currency, Shipping Agent, ETA, Code, QTY, Unit Cost, Shipping / Unit (USD), Item Name. The selected PO Currency applies to Unit Cost only; Shipping is always USD.';
       help?.insertAdjacentElement('afterend',s);
     }
 
