@@ -268,10 +268,9 @@
         <div id="bulkPOFileStatus" class="text-[10px] text-gray-400 mt-1">Required: Official PO Number, Vendor / Supplier, Order Date, Currency, Code, QTY, Unit Cost, Shipping / Unit (USD). The PO Currency applies to Unit Cost only; Shipping is always USD. Item Name is only required for a new SKU.</div>
       </div>
 
-      <label class="flex items-start gap-2 rounded-xl border p-3 text-xs">
-        <input id="bulkPOCreateProducts" type="checkbox" checked class="mt-0.5">
-        <span><b>Add new SKUs to Products automatically.</b><br><span class="text-gray-400">New codes become active Products and are queued to the App Products sheet. Existing codes are matched automatically.</span></span>
-      </label>
+      <div class="rounded-xl border border-green-100 bg-green-50 p-3 text-xs text-green-800">
+        <b>New SKUs automatically become Products.</b><br><span class="text-green-700/80">Each new code is created as an active Product and queued to the <b>App Products</b> sheet. Existing codes are matched automatically.</span>
+      </div>
 
       <div id="bulkPOPreview"><div class="rounded-xl border border-dashed p-8 text-center text-sm text-gray-400">Choose an Excel file to preview the POs before importing.</div></div>
 
@@ -307,7 +306,7 @@
 
     const {data,error}=await db.rpc('bulk_create_supplier_pos',{
       p_pos:payload,
-      p_create_new_products:document.getElementById('bulkPOCreateProducts')?.checked!==false
+      p_create_new_products:true
     });
     if(error){
       btn.disabled=false;btn.textContent=`Import ${bulkState.pos.length} Supplier PO${bulkState.pos.length===1?'':'s'}`;
