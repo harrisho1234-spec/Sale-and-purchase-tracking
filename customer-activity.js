@@ -35,6 +35,7 @@
     return !!owner&&String(r?.assigned_sales_id||'')===String(owner);
   }
   function activityReviewerMode(){
+    if((state.profile?.role||'')==='manager')return true;
     return ['admin','super_admin'].includes(state.profile?.role||'')
       && !(typeof managerRepActive==='function'&&managerRepActive())
       && !(typeof managerTestActive==='function'&&managerTestActive());
@@ -46,6 +47,10 @@
     return ['admin','super_admin'].includes(state.profile?.role||'')
       && !(typeof managerRepActive==='function'&&managerRepActive())
       && !(typeof managerTestActive==='function'&&managerTestActive());
+  }
+  function activityCanFilterSales(){
+    if((state.profile?.role||'')==='manager')return true;
+    return activityCanChooseSales();
   }
   function activityTypeLabel(type){return type==='showroom_visit'?'Showroom Visit':'Online'}
   function businessLabel(code){return code==='RK'?'LP Home · RK':"L'Imperial Luxury · TK"}
@@ -137,7 +142,7 @@
     return '<div class="card rounded-2xl p-4"><div class="text-[10px] uppercase tracking-wide font-bold text-gray-400">'+esc(label)+'</div><div class="text-2xl font-bold mt-1">'+value+'</div><div class="text-[10px] text-gray-400 mt-1">'+esc(sub)+'</div></div>';
   }
   function activitySalesFilter(){
-    if(!activityCanChooseSales())return '';
+    if(!activityCanFilterSales())return '';
     const users=activityState.salesUsers.filter(x=>['sales','manager'].includes(x.role));
     return `<select onchange="setActivitySalesRep(this.value)" class="border rounded-xl bg-white px-3 py-2.5 text-sm min-w-[170px]">
       <option value="all">All Sales</option>
@@ -176,7 +181,7 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
       const detail=activityState.type==='online'
         ?[r.interest&&('Interest: '+r.interest),r.remark].filter(Boolean).join(' · ')
         :[r.source_channel&&('Source: '+r.source_channel),r.interest&&('Interest: '+r.interest),r.remark].filter(Boolean).join(' · ');
-      const canEdit=activityReviewerMode()||activityIsOwner(r);
+      const canEdit=activityCanChooseSales()||activityIsOwner(r);
       const canSeeStage=activityCanSeeStage(r);
       return `<div class="card rounded-2xl p-4">
         <div class="grid lg:grid-cols-[110px_1.3fr_.8fr_.85fr_.85fr_auto] gap-3 lg:gap-4 items-center">
@@ -259,7 +264,7 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
     if(error)throw error;
     const rows=data||[];
     activityState.rows=rows;
-    if(!activityCanChooseSales())activityState.salesRep='all';
+    if(!activityCanFilterSales())activityState.salesRep='all';
     renderActivityBody();
   }
 
