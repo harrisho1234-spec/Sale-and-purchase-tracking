@@ -14,13 +14,11 @@
   };
 
   const CUSTOMER_TYPES=[
-    'Walk In','Existing','Online','Existing Online','Friend or Family',
-    'Project','Individuals','Company','Other'
+    'New Customer','Existing Customer','Referral','Project / Company','Other'
   ];
   const SOURCES=['Showroom','Facebook','Telegram','Friend or Family','Site Location','Other'];
   const STATUSES=[
-    'Follow Up','Just Asking','Contacting','Potential','Visit Other Showroom',
-    'Buy','Add Deposit','Paid Off','Reject','Return Item','Other'
+    'Just Asking','Follow Up','Potential','Buy','Reject / Lost'
   ];
 
   function activityAllowed(){
@@ -76,7 +74,11 @@
       :'bg-[#f5f1ff] text-[#6741a5] border-[#d8c9f4]';
   }
   function selectOptions(values,current,placeholder='Select'){
-    return '<option value="">'+esc(placeholder)+'</option>'+values.map(v=>'<option value="'+esc(v)+'" '+(String(current||'')===v?'selected':'')+'>'+esc(v)+'</option>').join('');
+    const cur=String(current||'').trim();
+    const legacy=cur&&!values.includes(cur)
+      ?'<option value="'+esc(cur)+'" selected>'+esc(cur)+' (Legacy)</option>'
+      :'';
+    return '<option value="">'+esc(placeholder)+'</option>'+legacy+values.map(v=>'<option value="'+esc(v)+'" '+(cur===v?'selected':'')+'>'+esc(v)+'</option>').join('');
   }
   function currentSalesName(){
     const id=activityScopeSalesId()||state.user?.id;
@@ -270,7 +272,7 @@
       <div><label class="text-xs font-semibold">Business</label><select id="activityBusiness" required class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="RK" ${business==='RK'?'selected':''}>LP Home · RK</option><option value="TK" ${business==='TK'?'selected':''}>L'Imperial Luxury · TK</option></select></div>
       <div><label class="text-xs font-semibold">Customer Name</label><input id="activityCustomerName" required value="${esc(row?.customer_name||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Customer name"></div>
       <div><label class="text-xs font-semibold">Phone Number</label><input id="activityPhone" value="${esc(row?.phone||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Phone / Telegram / Private"></div>
-      <div><label class="text-xs font-semibold">Customer Type</label><select id="activityCustomerType" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${selectOptions(CUSTOMER_TYPES,row?.customer_type,'Select customer type')}</select></div>
+      <div><label class="text-xs font-semibold">Customer Category</label><select id="activityCustomerType" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${selectOptions(CUSTOMER_TYPES,row?.customer_type,'Select customer category')}</select></div>
       ${isOnline
         ?`<div><label class="text-xs font-semibold">Page</label><div class="mt-1 border rounded-xl px-3 py-2.5 bg-gray-50 text-sm text-gray-600">RK = Home Page · TK = Luxury Page</div></div>`
         :`<div><label class="text-xs font-semibold">Source From</label><select id="activitySource" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${selectOptions(SOURCES,source,'Select source')}</select></div>`}
@@ -280,8 +282,8 @@
       <div><label class="text-xs font-semibold">Follow-up Date</label><input id="activityFollowUp" type="date" value="${esc(row?.follow_up_date||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
       <div class="md:col-span-2"><label class="text-xs font-semibold">Remark</label><textarea id="activityRemark" rows="3" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Customer request / follow-up note...">${esc(row?.remark||'')}</textarea></div>
       <div class="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-700">${isOnline
-        ?'Online records the daily message/inquiry only. Sales orders, invoices and payments stay in the existing Sales system.'
-        :'Showroom Visit records the customer visit and follow-up only. Invoice/payment amounts do not need to be re-entered here.'}</div>
+        ?'Online records the daily message/inquiry only. Customer Category describes the relationship; Status tracks the sales journey. Sales orders, invoices and payments stay in the existing Sales system.'
+        :'Showroom Visit records the visit and follow-up only. Customer Category describes the relationship; Status tracks the sales journey. Invoice/payment amounts do not need to be re-entered here.'}</div>
       <button class="md:col-span-2 bg-[#211d18] text-white rounded-xl py-3 font-semibold">${row?'Save Changes':'Save '+esc(activityTypeLabel(activityState.type))}</button>
     </form>`;
   }
