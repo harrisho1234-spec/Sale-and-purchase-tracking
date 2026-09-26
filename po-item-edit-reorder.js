@@ -26,7 +26,6 @@
   }
 
   function rowHtml(i,idx,total,currency,linked){
-    const landed=n(i.unit_cost)+n(i.shipping_cost);
     return `<div class="p-3 po-editable-item" data-po-item-id="${esc(i.id)}">
       <div class="po-item-view grid md:grid-cols-[1fr_88px_115px_115px_250px] gap-2 items-center text-xs">
         <div class="min-w-0">
@@ -35,7 +34,7 @@
             ${linked?'<span class="px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[9px] font-semibold">Linked to SR</span>':''}
           </div>
           <div class="text-gray-600 mt-0.5 truncate">${esc(i.item_name_snapshot||'')}</div>
-          <div class="text-[9px] text-gray-400 mt-1">Shipping/unit ${itemMoney(i.shipping_cost||0,currency)} · Landed/unit ${itemMoney(landed,currency)}</div>
+          <div class="text-[9px] text-gray-400 mt-1">Shipping/unit ${itemMoney(i.shipping_cost||0,'USD')}${currency==='USD'?` · Landed/unit ${itemMoney(n(i.unit_cost)+n(i.shipping_cost),'USD')}`:''}</div>
         </div>
         <div>Qty <b>${n(i.qty)}</b></div>
         <div>Cost <b>${itemMoney(i.unit_cost||0,currency)}</b></div>
@@ -63,11 +62,11 @@
             <input class="pei-qty mt-1 w-full border rounded-lg px-2 py-2 bg-white disabled:bg-gray-100" type="number" min="0.01" step="0.01" value="${n(i.qty)}" ${linked?'disabled':''}>
           </div>
           <div class="md:col-span-2">
-            <label class="text-[9px] font-semibold text-gray-500">Unit Cost</label>
+            <label class="text-[9px] font-semibold text-gray-500">Unit Cost (${esc(currency||'USD')})</label>
             <input class="pei-cost mt-1 w-full border rounded-lg px-2 py-2 bg-white" type="number" min="0" step="0.01" value="${n(i.unit_cost)}">
           </div>
           <div class="md:col-span-2">
-            <label class="text-[9px] font-semibold text-gray-500">Shipping / Unit</label>
+            <label class="text-[9px] font-semibold text-gray-500">Shipping / Unit (USD $)</label>
             <input class="pei-shipping mt-1 w-full border rounded-lg px-2 py-2 bg-white" type="number" min="0" step="0.01" value="${n(i.shipping_cost)}">
           </div>
         </div>
@@ -152,6 +151,7 @@
       qty,
       unit_cost:unitCost,
       shipping_cost:shipping,
+      shipping_currency:'USD',
       updated_at:new Date().toISOString()
     };
     const save=await db.from('supplier_po_items').update(patch).eq('id',itemId);
