@@ -26,13 +26,18 @@
     if(reportState.business==='RK')return 'LP Home (RK)';
     if(reportState.business==='TK')return "L'Imperial Luxury (TK)";
     if(reportState.business==='OTHER')return 'Pre-Order / Other';
-    return 'All RK + TK';
+    if(reportState.business==='RKTK')return 'RK + TK Combined';
+    return 'All Business';
   }
   function rowInReportScope(r,includeBusiness=true){
     const scopeId=reportScopeUserId();
     if(scopeId&&r.sales_rep_id!==scopeId)return false;
     if(canChooseReportReps()&&!repSelected(repKey(r)))return false;
-    if(includeBusiness&&reportState.business!=='all'&&String(r.business_code||'OTHER')!==reportState.business)return false;
+    if(includeBusiness&&reportState.business!=='all'){
+      const code=String(r.business_code||'OTHER');
+      if(reportState.business==='RKTK'&&!['RK','TK'].includes(code))return false;
+      if(reportState.business!=='RKTK'&&code!==reportState.business)return false;
+    }
     if(reportState.view!=='year'&&reportState.year&&yearOf(r.order_date)!==Number(reportState.year))return false;
     return true;
   }
@@ -229,7 +234,8 @@
             <div class="flex gap-1 p-1 rounded-xl bg-[#f7f5f1]">${tabButton('month','By Month')}${tabButton('quarter','By Quarter')}${tabButton('year','By Year')}</div>
             ${yearSelect}
             <select id="salesReportBusiness" onchange="setSalesReportBusiness(this.value)" class="border rounded-xl bg-white px-3 py-2.5 text-sm min-w-[180px]">
-              <option value="all" ${reportState.business==='all'?'selected':''}>All RK + TK</option>
+              <option value="all" ${reportState.business==='all'?'selected':''}>All Business</option>
+              <option value="RKTK" ${reportState.business==='RKTK'?'selected':''}>RK + TK Combined</option>
               <option value="RK" ${reportState.business==='RK'?'selected':''}>LP Home (RK)</option>
               <option value="TK" ${reportState.business==='TK'?'selected':''}>L'Imperial Luxury (TK)</option>
               <option value="OTHER" ${reportState.business==='OTHER'?'selected':''}>Pre-Order / Other</option>
@@ -334,7 +340,7 @@
     reportState.view=v;reportState.repMenuOpen=false;renderSalesReportBody();
   };
   window.setSalesReportYear=function(v){reportState.year=Number(v);reportState.repMenuOpen=false;renderSalesReportBody()};
-  window.setSalesReportBusiness=function(v){reportState.business=['RK','TK','OTHER'].includes(v)?v:'all';reportState.repMenuOpen=false;renderSalesReportBody()};
+  window.setSalesReportBusiness=function(v){reportState.business=['RKTK','RK','TK','OTHER'].includes(v)?v:'all';reportState.repMenuOpen=false;renderSalesReportBody()};
   window.toggleSalesReportRepMenu=function(){reportState.repMenuOpen=!reportState.repMenuOpen;renderSalesReportBody()};
   window.salesReportSelectAllReps=function(checked){
     if(checked)reportState.selectedReps=null;
