@@ -2,6 +2,7 @@
 (function(){
   const reportState={
     rows:[],
+    itemRows:[],
     view:'month',
     year:null,
     selectedReps:null,
@@ -44,6 +45,73 @@
     }
     return rows;
   }
+  function reportItemRows(){
+    let rows=(reportState.itemRows||[]).filter(r=>repSelected(repKey(r)));
+    if(reportState.view!=='year'&&reportState.year){
+      rows=rows.filter(r=>yearOf(r.order_date)===Number(reportState.year));
+    }
+    return rows;
+  }
+  function productLineLabel(r){
+    const raw=String(r.product_class||'').trim();
+    const styleTokens=new Set(['classic','modern','crystal','unspecified','unclassified']);
+    const parts=raw.split(',').map(x=>x.trim()).filter(Boolean)
+      .filter(x=>!styleTokens.has(x.toLowerCase()));
+    if(parts.length)return [...new Set(parts)].join(', ');
+    const type=String(r.product_type||'').trim();
+    return type&& !['unspecified','unclassified'].includes(type.toLowerCase())?type:'Unspecified';
+  }
+  function aggregateItemDimension(kind){
+    const map=new Map();
+    reportItemRows().forEach(r=>{
+      const label=kind==='brand'
+        ?(String(r.brand||'').trim()||'Unspecified')
+        :productLineLabel(r);
+      if(!map.has(label))map.set(label,{label,net:0,returns:0,gross:0,qty:0,lines:0});
+      const x=map.get(label);
+      x.net+=n(r.net_sales);
+      x.returns+=n(r.return_value);
+      x.gross+=n(r.gross_line_value)-n(r.line_discount)-n(r.allocated_order_discount);
+      x.qty+=n(r.qty);
+      x.lines+=1;
+    });
+    return [...map.values()].sort((a,b)=>b.net-a.net);
+  }
+  function compactDimensionRows(rows,limit=12){
+    if(rows.length<=limit)return rows;
+    const head=rows.slice(0,limit);
+    const rest=rows.slice(limit).reduce((a,r)=>{
+      a.net+=r.net;a.returns+=r.returns;a.gross+=r.gross;a.qty+=r.qty;a.lines+=r.lines;return a;
+    },{label:'Other',net:0,returns:0,gross:0,qty:0,lines:0});
+    return [...head,rest];
+  }
+  function dimensionBarCard(title,subtitle,rows){
+    const data=compactDimensionRows(rows,12);
+    const max=Math.max(...data.map(x=>x.net),0);
+    const total=data.reduce((s,x)=>s+x.net,0);
+    return `<div class="card rounded-2xl p-4">
+      <div class="flex items-start justify-between gap-3 mb-4">
+        <div><h4 class="font-bold">${esc(title)}</h4><div class="text-[10px] text-gray-400 mt-1">${esc(subtitle)}</div></div>
+        <div class="text-[10px] text-gray-400 whitespace-nowrap">${rows.length} categor${rows.length===1?'y':'ies'}</div>
+      </div>
+      <div class="space-y-3">
+        ${data.length?data.map((r,i)=>{
+          const width=max>0?Math.max((r.net/max)*100,r.net>0?2:0):0;
+          const share=total>0?r.net/total*100:0;
+          return `<div>
+            <div class="grid grid-cols-[28px_minmax(0,1fr)_auto] gap-2 items-center mb-1">
+              <div class="text-[10px] text-gray-400 font-semibold">#${i+1}</div>
+              <div class="text-xs font-semibold truncate" title="${esc(r.label)}">${esc(r.label)}</div>
+              <div class="text-right"><b class="text-xs">${money(r.net)}</b><span class="text-[9px] text-gray-400 ml-1">${share.toFixed(1)}%</span></div>
+            </div>
+            <div class="ml-[36px] h-2 rounded-full bg-gray-100 overflow-hidden"><div class="h-full rounded-full bg-[#b3871e]" style="width:${width}%"></div></div>
+            ${r.returns>0?`<div class="ml-[36px] mt-0.5 text-[9px] text-amber-600">Returns/CN −${money(r.returns)}</div>`:''}
+          </div>`;
+        }).join(''):'<div class="py-12 text-center text-sm text-gray-400">No product sales data for this selection.</div>'}
+      </div>
+    </div>`;
+  }
+
   function bucketRows(){
     const rows=periodRows();
     const add=(b,r)=>{
@@ -107,6 +175,7 @@
   function renderSalesReportBody(){
     const root=document.getElementById('salesReportRoot');if(!root)return;
     const rows=periodRows(),buckets=bucketRows(),t=totals(rows),years=reportYears(),repRows=repBreakdown();
+    const brandRows=aggregateItemDimension('brand'),productLineRows=aggregateItemDimension('product_line');
     const max=Math.max(...buckets.map(x=>x.net),0);
     const yearSelect=reportState.view==='year'?'':`
       <select id="salesReportYear" onchange="setSalesReportYear(this.value)" class="border rounded-xl bg-white px-3 py-2.5 text-sm">
@@ -166,6 +235,11 @@
         </div>
       </div>
 
+      <div class="grid xl:grid-cols-2 gap-4 mt-4">
+        ${dimensionBarCard('Sales by Brand','Ranked by Net Sales after discounts and active returns.',brandRows)}
+        ${dimensionBarCard('Sales by Product Line','Product classes are normalized (for example Sofa, Chandelier, Wall Lamp, Table).',productLineRows)}
+      </div>
+
       <div class="card rounded-2xl overflow-hidden mt-4">
         <div class="px-4 py-3 border-b flex items-center justify-between"><div><h4 class="font-bold">Sales Rep Summary</h4><div class="text-[10px] text-gray-400 mt-0.5">Based on the selected period and Sales Rep filter.</div></div><div class="text-[10px] text-gray-400">${repRows.length} rep${repRows.length===1?'':'s'}</div></div>
         <div class="overflow-x-auto">
@@ -180,12 +254,17 @@
   window.renderReports=async function(){
     if(!['manager','admin','super_admin'].includes(state.profile?.role||''))throw new Error('Manager, Admin or Super Admin access required');
     document.getElementById('pageTitle').textContent='Report';
-    document.getElementById('pageSubtitle').textContent='Sales by month, quarter and year';
+    document.getElementById('pageSubtitle').textContent='Sales by period, Sales Rep, brand and product line';
     document.getElementById('content').innerHTML='<div id="salesReportRoot"><div class="py-20 text-center text-gray-400">Loading sales report...</div></div>';
 
-    const {data,error}=await db.rpc('get_sales_report_rows');
-    if(error)throw error;
-    reportState.rows=data||[];
+    const [summaryRes,itemRes]=await Promise.all([
+      db.rpc('get_sales_report_rows'),
+      db.rpc('get_sales_report_item_rows')
+    ]);
+    if(summaryRes.error)throw summaryRes.error;
+    if(itemRes.error)throw itemRes.error;
+    reportState.rows=summaryRes.data||[];
+    reportState.itemRows=itemRes.data||[];
 
     const years=reportYears();
     if(!reportState.year||!years.includes(Number(reportState.year)))reportState.year=years[0]||new Date().getFullYear();
