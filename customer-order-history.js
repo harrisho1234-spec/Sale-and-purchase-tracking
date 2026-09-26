@@ -14,7 +14,12 @@
     if(!root)return;
     const rows=[...root.querySelectorAll('.customer-edit-row')];
     rows.forEach((row,i)=>{
-      const c=(list||[])[i];
+      const editButton=row.querySelector('button[onclick*="openEditCustomer"]');
+      const match=editButton?.getAttribute('onclick')?.match(/openEditCustomer\('([^']+)'\)/);
+      const exactId=match?.[1]||row.dataset.customerId||'';
+      const c=(list||[]).find(x=>x.id===exactId)
+        ||(state.customers||[]).find(x=>x.id===exactId)
+        ||(list||[])[i];
       if(!c)return;
       row.dataset.customerId=c.id;
       row.classList.add('cursor-pointer','transition','hover:border-amber-200','hover:shadow-md');
