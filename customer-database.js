@@ -17,11 +17,23 @@
   function crmAllowed(){return ['sales','manager','admin','super_admin'].includes(state.profile?.role||'')}
   function crmScopeSalesId(){
     if(typeof managerRepActive==='function'&&managerRepActive())return managerRepId();
+    if((state.profile?.role||'')==='sales')return state.user?.id||null;
+    return null;
+  }
+  function crmEditSalesId(){
+    if(typeof managerRepActive==='function'&&managerRepActive())return managerRepId();
     if(typeof managerTestActive==='function'&&managerTestActive())return state.managerRepContext?.user_id||null;
     if(['sales','manager'].includes(state.profile?.role||''))return state.user?.id||null;
     return null;
   }
-  function crmCanFilterSales(){return !crmScopeSalesId()&&['admin','super_admin'].includes(state.profile?.role||'')}
+  function crmCanFilterSales(){return !crmScopeSalesId()&&['manager','admin','super_admin'].includes(state.profile?.role||'')}
+  function crmCanEditLead(r){
+    const role=state.profile?.role||'';
+    const delegated=(typeof managerRepActive==='function'&&managerRepActive())||(typeof managerTestActive==='function'&&managerTestActive());
+    if(['admin','super_admin'].includes(role)&&!delegated)return true;
+    const id=crmEditSalesId();
+    return !!id&&String(r?.assigned_sales_id||'')===String(id);
+  }
   function todayIso(){
     const d=new Date(),off=d.getTimezoneOffset();
     return new Date(d.getTime()-off*60000).toISOString().slice(0,10);
@@ -183,7 +195,7 @@
   }
   async function loadSalesUsers(){
     if(leadState.salesUsers.length)return;
-    if(!crmCanFilterSales()&&!['admin','super_admin'].includes(state.profile?.role||''))return;
+    if(!crmCanFilterSales()&&!['manager','admin','super_admin'].includes(state.profile?.role||''))return;
     const {data,error}=await db.from('app_users').select('user_id,display_name,email,role,active').in('role',['sales','manager']).eq('active',true).order('display_name');
     if(!error)leadState.salesUsers=data||[];
   }
@@ -267,28 +279,34 @@
   }
 
   function leadById(id){return (leadState.rows||[]).find(x=>x.lead_id===id)}
-  function leadForm(r){
+  function leadForm(r,editable=true){
+    const dis=editable?'':'disabled';
     return `<div class="grid md:grid-cols-2 gap-4">
-      <div><label class="text-xs font-semibold">Customer Name</label><input id="leadName" value="${esc(r.customer_name||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
-      <div><label class="text-xs font-semibold">Phone</label><input id="leadPhone" value="${esc(r.phone||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
-      <div><label class="text-xs font-semibold">Customer Category</label><select id="leadCategory" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="">Select category</option>${CATEGORIES.map(x=>`<option value="${x}" ${r.customer_category===x?'selected':''}>${x}</option>`).join('')}</select></div>
-      <div><label class="text-xs font-semibold">Business</label><select id="leadBusiness" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="" ${!r.business_code?'selected':''}>Unassigned</option><option value="RK" ${r.business_code==='RK'?'selected':''}>LP Home · RK</option><option value="TK" ${r.business_code==='TK'?'selected':''}>L'Imperial Luxury · TK</option></select></div>
-      <div><label class="text-xs font-semibold">Current Stage</label><select id="leadStage" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${STAGES.map(x=>`<option value="${x}" ${r.stage===x?'selected':''}>${x}</option>`).join('')}</select></div>
-      <div><label class="text-xs font-semibold">Next Follow-up</label><input id="leadFollowup" type="date" value="${esc(r.next_follow_up_date||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
-      <div class="md:col-span-2"><label class="text-xs font-semibold">Interest</label><input id="leadInterest" value="${esc(r.interest||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Sofa, chandelier, bedroom set..."></div>
-      <div class="md:col-span-2"><label class="text-xs font-semibold">Customer Note</label><textarea id="leadNotes" rows="3" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Important customer information / next action...">${esc(r.notes||'')}</textarea></div>
+      <div><label class="text-xs font-semibold">Customer Name</label><input id="leadName" value="${esc(r.customer_name||'')}"  ${dis} class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+      <div><label class="text-xs font-semibold">Phone</label><input id="leadPhone" value="${esc(r.phone||'')}"  ${dis} class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+      <div><label class="text-xs font-semibold">Customer Category</label><select id="leadCategory"  ${dis} class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="">Select category</option>${CATEGORIES.map(x=>`<option value="${x}" ${r.customer_category===x?'selected':''}>${x}</option>`).join('')}</select></div>
+      <div><label class="text-xs font-semibold">Business</label><select id="leadBusiness"  ${dis} class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="" ${!r.business_code?'selected':''}>Unassigned</option><option value="RK" ${r.business_code==='RK'?'selected':''}>LP Home · RK</option><option value="TK" ${r.business_code==='TK'?'selected':''}>L'Imperial Luxury · TK</option></select></div>
+      <div><label class="text-xs font-semibold">Current Stage</label><select id="leadStage"  ${dis} class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${STAGES.map(x=>`<option value="${x}" ${r.stage===x?'selected':''}>${x}</option>`).join('')}</select></div>
+      <div><label class="text-xs font-semibold">Next Follow-up</label><input id="leadFollowup" type="date" value="${esc(r.next_follow_up_date||'')}"  ${dis} class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+      <div class="md:col-span-2"><label class="text-xs font-semibold">Interest</label><input id="leadInterest" value="${esc(r.interest||'')}"  ${dis} class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Sofa, chandelier, bedroom set..."></div>
+      <div class="md:col-span-2"><label class="text-xs font-semibold">Customer Note</label><textarea id="leadNotes" rows="3"  ${dis} class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Important customer information / next action...">${esc(r.notes||'')}</textarea></div>
     </div>`;
   }
-  function leadHeader(r){
+  function leadHeader(r,editable=true){
     const customerLink=r.linked_customer_id
       ?`<button onclick="closeModal();openCustomerOrders('${r.linked_customer_id}')" class="px-3 py-2 rounded-lg bg-green-600 text-white text-xs font-semibold">Open Customer Master</button>`
       :r.pending_customer_request_id
         ?'<span class="px-3 py-2 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 text-xs font-semibold">Customer approval pending</span>'
-        :`<button onclick="convertLeadToCustomer('${r.lead_id}')" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs font-semibold">Convert / Link Customer</button>`;
+        :editable
+          ?`<button onclick="convertLeadToCustomer('${r.lead_id}')" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs font-semibold">Convert / Link Customer</button>`
+          :'<span class="px-3 py-2 rounded-lg border bg-white text-gray-500 text-xs font-semibold">Manager View</span>';
+    const activityActions=editable
+      ?`<button onclick="openLeadActivity('${r.lead_id}','showroom_visit')" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">+ Showroom Visit</button><button onclick="openLeadActivity('${r.lead_id}','online')" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">+ Online</button>`
+      :'';
     return `<div class="rounded-2xl border bg-[#faf9f6] p-4 mb-4">
       <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
         <div><div class="flex flex-wrap items-center gap-2"><h3 class="text-xl font-serif font-bold">${esc(r.customer_name)}</h3><span class="px-2 py-1 rounded-lg border text-[9px] font-bold ${businessTone(r.business_code)}">${esc(businessText(r.business_code))}</span><span class="px-2 py-1 rounded-lg border text-[9px] font-bold ${stageTone(r.stage)}">${esc(r.stage)}</span></div><div class="text-xs text-gray-400 mt-1">${esc(r.phone||'No phone')} · ${esc(r.sales_rep_name||'-')}</div></div>
-        <div class="flex flex-wrap gap-2">${customerLink}<button onclick="openLeadActivity('${r.lead_id}','showroom_visit')" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">+ Showroom Visit</button><button onclick="openLeadActivity('${r.lead_id}','online')" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">+ Online</button></div>
+        <div class="flex flex-wrap gap-2">${customerLink}${activityActions}</div>
       </div>
       <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4 text-xs"><div><div class="text-[9px] uppercase font-bold text-gray-400">First Contact</div><b>${esc(fmtDate(r.first_contact_date))}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Last Contact</div><b>${esc(fmtDate(r.last_contact_date))}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Activities</div><b>${Number(r.activity_count||0)}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Showroom</div><b>${Number(r.showroom_visits||0)}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Online</div><b>${Number(r.online_inquiries||0)}</b></div></div>
     </div>`;
@@ -299,7 +317,9 @@
   }
   window.openCustomerLead=async function(id){
     const r=leadById(id);if(!r)return showToast('Customer not found','err');
-    openModal('Customer Database — '+r.customer_name,`<div id="leadDetailBody">${leadHeader(r)}${leadForm(r)}<div class="flex gap-2 mt-4"><button onclick="saveCustomerLead('${r.lead_id}')" class="flex-1 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Customer</button></div><div class="border-t mt-5 pt-5"><div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">Activity History</h4><div class="text-[10px] text-gray-400">Showroom Visit and Online logs for this customer.</div></div></div><div class="py-8 text-center text-xs text-gray-400">Loading history...</div></div></div>`);
+    const editable=crmCanEditLead(r);
+    const saveArea=editable?`<div class="flex gap-2 mt-4"><button onclick="saveCustomerLead('${r.lead_id}')" class="flex-1 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Customer</button></div>`:`<div class="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-700">Manager can review this Sales Rep's stage, follow-up and activity history. The Sales Rep keeps ownership of editing this customer.</div>`;
+    openModal('Customer Database — '+r.customer_name,`<div id="leadDetailBody">${leadHeader(r,editable)}${leadForm(r,editable)}${saveArea}<div class="border-t mt-5 pt-5"><div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">Activity History</h4><div class="text-[10px] text-gray-400">Showroom Visit and Online logs for this customer.</div></div></div><div class="py-8 text-center text-xs text-gray-400">Loading history...</div></div></div>`);
     const {data,error}=await db.rpc('get_customer_lead_activities',{p_lead_id:id});
     const body=document.getElementById('leadDetailBody');
     if(!body)return;
