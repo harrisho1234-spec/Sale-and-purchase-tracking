@@ -270,7 +270,7 @@
 
       <label class="flex items-start gap-2 rounded-xl border p-3 text-xs">
         <input id="bulkPOCreateProducts" type="checkbox" checked class="mt-0.5">
-        <span><b>Add new SKUs to Product Catalog as active.</b><br><span class="text-gray-400">Existing codes are matched automatically. New codes require Item Name in the Excel file.</span></span>
+        <span><b>Add new SKUs to Products automatically.</b><br><span class="text-gray-400">New codes become active Products and are queued to the App Products sheet. Existing codes are matched automatically.</span></span>
       </label>
 
       <div id="bulkPOPreview"><div class="rounded-xl border border-dashed p-8 text-center text-sm text-gray-400">Choose an Excel file to preview the POs before importing.</div></div>
@@ -316,7 +316,7 @@
 
     closeModal();
     if(window.documentFlowState)window.documentFlowState.loaded=false;
-    showToast(`Imported ${Number(data?.created_po_count||0)} POs with ${Number(data?.created_item_count||0)} item rows${Number(data?.new_product_count||0)>0?` · ${Number(data.new_product_count)} new SKUs added`:''}`);
+    showToast(`Imported ${Number(data?.created_po_count||0)} POs with ${Number(data?.created_item_count||0)} item rows${Number(data?.new_product_count||0)>0?` · ${Number(data.new_product_count)} new Products queued to App Products`:''}`);
     await go('procurement');
   };
 
