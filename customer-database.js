@@ -3,6 +3,7 @@
   const leadState={
     rows:[],
     salesUsers:[],
+    stageRequests:[],
     search:'',
     stage:'all',
     business:'all',
@@ -13,6 +14,16 @@
   };
   const STAGES=['Contacting','Potential','Waiting Decision','Buy','Reject'];
   const CATEGORIES=['New Customer','Existing Customer','Referral','Project / Company','Other'];
+  const STAGE_RANK={Contacting:1,Potential:2,'Waiting Decision':3,Buy:4,Reject:4};
+  function stageRank(s){return STAGE_RANK[s]||0}
+  function pendingStageRequest(r){
+    return (leadState.stageRequests||[]).find(x=>x.status==='pending'&&String(x.lead_id)===String(r?.lead_id));
+  }
+  function correctionTargets(r){
+    if(!r)return [];
+    if(['Buy','Reject'].includes(r.stage))return STAGES.filter(s=>s!==r.stage);
+    return STAGES.filter(s=>s!==r.stage&&stageRank(s)<=stageRank(r.stage));
+  }
 
   function crmAllowed(){return ['sales','manager','admin','super_admin'].includes(state.profile?.role||'')}
   function crmScopeSalesId(){
@@ -166,12 +177,21 @@
     </div>`;
   }
   function stageControl(r){
+    const pending=pendingStageRequest(r);
     if(!crmCanEditLead(r)){
-      return `<span class="inline-flex mt-1 px-2 py-1 rounded-lg border text-[10px] font-semibold ${stageTone(r.stage)}">${esc(r.stage)}</span>`;
+      return `<div class="mt-1 flex flex-wrap items-center gap-1.5"><span class="inline-flex px-2 py-1 rounded-lg border text-[10px] font-semibold ${stageTone(r.stage)}">${esc(r.stage)}</span>${pending?'<span class="px-2 py-1 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 text-[9px] font-bold">CORRECTION PENDING</span>':''}</div>`;
     }
-    return `<select data-stop-row onchange="openLeadStageChange('${r.lead_id}',this.value);this.value='${esc(r.stage)}'" class="mt-1 w-full min-w-[135px] border rounded-lg px-2 py-1.5 bg-white text-[11px] font-semibold">
-      ${STAGES.map(s=>`<option value="${s}" ${s===r.stage?'selected':''}>${s}</option>`).join('')}
-    </select>`;
+    if(pending){
+      return `<div class="mt-1 flex flex-wrap items-center gap-1.5"><span class="inline-flex px-2 py-1 rounded-lg border text-[10px] font-semibold ${stageTone(r.stage)}">${esc(r.stage)}</span><button type="button" data-stop-row onclick="openLeadStageCorrection('${r.lead_id}')" class="px-2 py-1 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 text-[9px] font-bold">CORRECTION PENDING</button></div>`;
+    }
+    const forward=STAGES.filter(s=>stageRank(s)>stageRank(r.stage));
+    const direct=forward.length
+      ?`<select data-stop-row onchange="openLeadStageChange('${r.lead_id}',this.value);this.value='${esc(r.stage)}'" class="w-full min-w-[145px] border rounded-lg px-2 py-1.5 bg-white text-[11px] font-semibold"><option value="${esc(r.stage)}" selected>${esc(r.stage)}</option>${forward.map(s=>`<option value="${s}">${s}</option>`).join('')}</select>`
+      :`<span class="inline-flex px-2 py-1 rounded-lg border text-[10px] font-semibold ${stageTone(r.stage)}">${esc(r.stage)}</span>`;
+    const correction=stageRank(r.stage)>1
+      ?`<button type="button" data-stop-row onclick="openLeadStageCorrection('${r.lead_id}')" class="text-[9px] font-semibold text-amber-700 hover:underline whitespace-nowrap">Request correction</button>`
+      :'';
+    return `<div class="mt-1 flex flex-col items-start gap-1.5">${direct}${correction}</div>`;
   }
 
   function rowHtml(r){
@@ -233,9 +253,14 @@
     document.getElementById('pageSubtitle').textContent='All leads and customers from Showroom Visit and Online';
     document.getElementById('content').innerHTML='<div id="customerLeadRoot"><div class="py-20 text-center text-gray-400">Loading customer database...</div></div>';
     await loadSalesUsers();
-    const {data,error}=await db.rpc('get_customer_lead_rows');
-    if(error)throw error;
-    let rows=data||[];
+    const [leadRes,requestRes]=await Promise.all([
+      db.rpc('get_customer_lead_rows'),
+      db.rpc('get_visible_customer_lead_stage_change_requests',{p_status:'pending'})
+    ]);
+    if(leadRes.error)throw leadRes.error;
+    if(requestRes.error)console.warn('Stage correction requests:',requestRes.error.message);
+    leadState.stageRequests=requestRes.error?[]:(requestRes.data||[]);
+    let rows=leadRes.data||[];
     const scope=crmScopeSalesId();
     if(scope)rows=rows.filter(r=>String(r.assigned_sales_id||'')===String(scope));
     leadState.rows=rows;
@@ -314,7 +339,7 @@
       <div><label class="text-xs font-semibold">Phone</label><input id="leadPhone" value="${esc(r.phone||'')}"  ${dis} class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
       <div><label class="text-xs font-semibold">Customer Category</label><select id="leadCategory"  ${dis} class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="">Select category</option>${CATEGORIES.map(x=>`<option value="${x}" ${r.customer_category===x?'selected':''}>${x}</option>`).join('')}</select></div>
       <div><label class="text-xs font-semibold">Business</label><select id="leadBusiness"  ${dis} class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="" ${!r.business_code?'selected':''}>Unassigned</option><option value="RK" ${r.business_code==='RK'?'selected':''}>LP Home · RK</option><option value="TK" ${r.business_code==='TK'?'selected':''}>L'Imperial Luxury · TK</option></select></div>
-      <div><label class="text-xs font-semibold">Current Stage</label><select id="leadStage"  ${dis} class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${STAGES.map(x=>`<option value="${x}" ${r.stage===x?'selected':''}>${x}</option>`).join('')}</select></div>
+      <div><label class="text-xs font-semibold">Current Stage</label><input id="leadStage" type="hidden" value="${esc(r.stage)}"><div class="mt-1">${stageControl(r)}</div><div class="text-[9px] text-gray-400 mt-1">Stages move forward only. Corrections require approval.</div></div>
       <div><label class="text-xs font-semibold">Next Follow-up</label><input id="leadFollowup" type="date" value="${esc(r.next_follow_up_date||'')}"  ${dis} class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
       <div class="md:col-span-2"><label class="text-xs font-semibold">Interest</label><input id="leadInterest" value="${esc(r.interest||'')}"  ${dis} class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Sofa, chandelier, bedroom set..."></div>
       <div class="md:col-span-2"><label class="text-xs font-semibold">Customer Note</label><textarea id="leadNotes" rows="3"  ${dis} class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Important customer information / next action...">${esc(r.notes||'')}</textarea></div>
@@ -345,7 +370,9 @@
   }
   window.openLeadStageChange=function(id,newStage){
     const r=leadById(id);if(!r||!crmCanEditLead(r)||!newStage||newStage===r.stage)return;
-    openModal('Change Customer Stage',`<form id="leadStageChangeForm" class="space-y-4">
+    if(pendingStageRequest(r))return showToast('Resolve the pending stage correction before moving this customer forward.','err');
+    if(['Buy','Reject'].includes(r.stage)||stageRank(newStage)<=stageRank(r.stage))return openLeadStageCorrection(id);
+    openModal('Move Customer Stage Forward',`<form id="leadStageChangeForm" class="space-y-4">
       <div class="rounded-xl border bg-gray-50 p-4">
         <div class="text-xs text-gray-500">${esc(r.customer_name)}</div>
         <div class="flex items-center gap-2 mt-2">
@@ -354,10 +381,10 @@
           <span class="px-2 py-1 rounded-lg border text-xs font-semibold ${stageTone(newStage)}">${esc(newStage)}</span>
         </div>
       </div>
+      <div class="rounded-xl border border-green-100 bg-green-50 p-3 text-xs text-green-800"><b>Forward move.</b> This can be saved immediately. Once moved, returning to an earlier stage requires Manager/Admin approval.</div>
       <div><label class="text-xs font-semibold">Stage Change Note</label><textarea id="leadStageNote" required rows="3" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Why is this customer moving to ${esc(newStage)}?"></textarea></div>
       <div><label class="text-xs font-semibold">Next Follow-up</label><input id="leadStageFollowup" type="date" value="${esc((newStage==='Buy'||newStage==='Reject')?'':(r.next_follow_up_date||''))}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
-      <div class="text-[10px] text-gray-400">The note is saved in the customer's stage history. After saving, the customer will move to the ${esc(newStage)} tab.</div>
-      <button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Stage Change</button>
+      <button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Forward Stage Change</button>
     </form>`);
     document.getElementById('leadStageChangeForm').onsubmit=async e=>{
       e.preventDefault();
@@ -370,10 +397,54 @@
         p_note:note,
         p_next_follow_up_date:document.getElementById('leadStageFollowup').value||null
       });
-      if(error){if(btn){btn.disabled=false;btn.textContent='Save Stage Change'}return showToast(error.message,'err')}
+      if(error){if(btn){btn.disabled=false;btn.textContent='Save Forward Stage Change'}return showToast(error.message,'err')}
       closeModal();
-      showToast('Customer moved to '+newStage);
+      showToast('Customer moved forward to '+newStage);
       await renderCustomerDatabase();
+    };
+  };
+
+  window.openLeadStageCorrection=function(id){
+    const r=leadById(id);if(!r||!crmCanEditLead(r))return;
+    const pending=pendingStageRequest(r);
+    if(pending){
+      return openModal('Stage Correction Pending',`<div class="space-y-4">
+        <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><b>This customer already has a stage correction waiting for approval.</b><div class="mt-2 flex items-center gap-2"><span class="px-2 py-1 rounded-lg border bg-white">${esc(pending.from_stage)}</span><span>→</span><span class="px-2 py-1 rounded-lg border bg-white">${esc(pending.to_stage)}</span></div></div>
+        <div class="rounded-xl border p-3 text-sm"><div class="text-[10px] uppercase font-bold text-gray-400">Reason</div><div class="mt-1">${esc(pending.request_note||'-')}</div></div>
+        <div class="text-xs text-gray-500">The live stage remains <b>${esc(r.stage)}</b> until Manager/Admin approves.</div>
+        <button onclick="closeModal()" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Close</button>
+      </div>`);
+    }
+    const targets=correctionTargets(r);
+    if(!targets.length)return showToast('There is no earlier stage to request for this customer.','err');
+    openModal('Request Stage Correction',`<form id="leadStageCorrectionForm" class="space-y-4">
+      <div class="rounded-xl border bg-gray-50 p-4">
+        <div class="text-xs text-gray-500">${esc(r.customer_name)}</div>
+        <div class="text-sm font-semibold mt-1">Current stage: <span class="px-2 py-1 rounded-lg border ${stageTone(r.stage)}">${esc(r.stage)}</span></div>
+      </div>
+      <div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>Approval required.</b> The customer's current stage will not change until a Manager/Admin approves this correction.</div>
+      <div><label class="text-xs font-semibold">Requested Stage</label><select id="leadCorrectionStage" required class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${targets.map(s=>`<option value="${s}">${s}</option>`).join('')}</select></div>
+      <div><label class="text-xs font-semibold">Reason for Correction</label><textarea id="leadCorrectionReason" required rows="3" class="mt-1 w-full border border-amber-200 bg-amber-50 rounded-xl px-3 py-2.5" placeholder="Example: Buy was selected by mistake. Customer is still waiting for a decision."></textarea></div>
+      <div><label class="text-xs font-semibold">Next Follow-up</label><input id="leadCorrectionFollowup" type="date" value="${esc(r.next_follow_up_date||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+      <button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Submit for Manager/Admin Approval</button>
+    </form>`);
+    document.getElementById('leadStageCorrectionForm').onsubmit=async e=>{
+      e.preventDefault();
+      const target=document.getElementById('leadCorrectionStage').value;
+      const reason=document.getElementById('leadCorrectionReason').value.trim();
+      if(!reason)return showToast('Please explain why the stage needs correction.','err');
+      const btn=e.target.querySelector('button');if(btn){btn.disabled=true;btn.textContent='Submitting...'}
+      const {error}=await db.rpc('submit_customer_lead_stage_change_request',{
+        p_lead_id:id,
+        p_requested_stage:target,
+        p_reason:reason,
+        p_next_follow_up_date:document.getElementById('leadCorrectionFollowup').value||null
+      });
+      if(error){if(btn){btn.disabled=false;btn.textContent='Submit for Manager/Admin Approval'}return showToast(error.message,'err')}
+      closeModal();
+      showToast('Stage correction submitted. The current stage is unchanged until approval.');
+      await renderCustomerDatabase();
+      if(typeof refreshApprovalNotifications==='function')setTimeout(refreshApprovalNotifications,50);
     };
   };
 
@@ -388,7 +459,21 @@
         <span class="text-[10px] text-gray-400">${new Date(h.changed_at).toLocaleString()}</span>
       </div>
       <div class="text-xs text-gray-600 mt-2">${esc(h.note||'-')}</div>
-      <div class="flex flex-wrap gap-3 mt-2 text-[10px] text-gray-400"><span>By: ${esc(h.changed_by_name||'System')}</span>${h.next_follow_up_date?`<span>Follow-up: ${esc(fmtDate(h.next_follow_up_date))}</span>`:''}</div>
+      <div class="flex flex-wrap gap-3 mt-2 text-[10px] text-gray-400"><span>Changed by: ${esc(h.changed_by_name||'System')}</span>${h.next_follow_up_date?`<span>Follow-up: ${esc(fmtDate(h.next_follow_up_date))}</span>`:''}</div>
+    </div>`).join('')+'</div>';
+  }
+
+  function stageRequestHistoryHtml(rows){
+    if(!rows.length)return '<div class="rounded-xl border border-dashed p-6 text-center text-xs text-gray-400">No correction requests yet.</div>';
+    function tone(s){return s==='approved'?'bg-green-50 text-green-700 border-green-200':s==='rejected'?'bg-red-50 text-red-600 border-red-200':'bg-amber-50 text-amber-700 border-amber-200'}
+    return '<div class="grid gap-2">'+rows.map(h=>`<div class="rounded-xl border bg-white p-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="flex flex-wrap items-center gap-2"><span class="px-2 py-1 rounded-md border text-[9px] font-semibold ${stageTone(h.from_stage)}">${esc(h.from_stage)}</span><span class="text-gray-400">→</span><span class="px-2 py-1 rounded-md border text-[9px] font-semibold ${stageTone(h.to_stage)}">${esc(h.to_stage)}</span><span class="px-2 py-1 rounded-md border text-[9px] font-bold uppercase ${tone(h.status)}">${esc(h.status)}</span></div>
+        <span class="text-[10px] text-gray-400">${new Date(h.requested_at).toLocaleString()}</span>
+      </div>
+      <div class="text-xs text-gray-600 mt-2"><b>Reason:</b> ${esc(h.request_note||'-')}</div>
+      <div class="flex flex-wrap gap-3 mt-2 text-[10px] text-gray-400"><span>Requested by: ${esc(h.requested_by_name||'User')}</span>${h.reviewed_by_name?`<span>Reviewed by: ${esc(h.reviewed_by_name)}</span>`:''}${h.reviewed_at?`<span>${new Date(h.reviewed_at).toLocaleString()}</span>`:''}</div>
+      ${h.review_note?`<div class="text-[10px] text-gray-500 mt-2"><b>Reviewer note:</b> ${esc(h.review_note)}</div>`:''}
     </div>`).join('')+'</div>';
   }
 
@@ -397,17 +482,24 @@
     const editable=crmCanEditLead(r);
     const saveArea=editable?`<div class="flex gap-2 mt-4"><button onclick="saveCustomerLead('${r.lead_id}')" class="flex-1 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Customer</button></div>`:`<div class="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-700">Manager can review this Sales Rep's stage, follow-up and activity history. The Sales Rep keeps ownership of editing this customer.</div>`;
     openModal('Customer Database — '+r.customer_name,`<div id="leadDetailBody">${leadHeader(r,editable)}${leadForm(r,editable)}${saveArea}
-      <div id="leadStageHistorySection" class="border-t mt-5 pt-5"><div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">Stage History</h4><div class="text-[10px] text-gray-400">Movement between Contacting, Potential, Waiting Decision, Buy and Reject.</div></div></div><div class="py-6 text-center text-xs text-gray-400">Loading stage history...</div></div>
+      <div id="leadStageRequestSection" class="border-t mt-5 pt-5"><div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">Stage Correction Requests</h4><div class="text-[10px] text-gray-400">Pending, approved and rejected requests to correct an earlier stage.</div></div></div><div class="py-6 text-center text-xs text-gray-400">Loading correction requests...</div></div>
+      <div id="leadStageHistorySection" class="border-t mt-5 pt-5"><div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">Stage History</h4><div class="text-[10px] text-gray-400">Approved and forward movement between CRM stages.</div></div></div><div class="py-6 text-center text-xs text-gray-400">Loading stage history...</div></div>
       <div id="leadActivityHistorySection" class="border-t mt-5 pt-5"><div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">Activity History</h4><div class="text-[10px] text-gray-400">Showroom Visit and Online logs for this customer.</div></div></div><div class="py-8 text-center text-xs text-gray-400">Loading activity history...</div></div>
     </div>`);
-    const [activityRes,stageRes]=await Promise.all([
+    const [activityRes,stageRes,requestRes]=await Promise.all([
       db.rpc('get_customer_lead_activities',{p_lead_id:id}),
-      db.rpc('get_customer_lead_stage_history',{p_lead_id:id})
+      db.rpc('get_customer_lead_stage_history',{p_lead_id:id}),
+      db.rpc('get_customer_lead_stage_request_history',{p_lead_id:id})
     ]);
     const body=document.getElementById('leadDetailBody');
     if(!body)return;
+    const requestHolder=document.getElementById('leadStageRequestSection');
     const stageHolder=document.getElementById('leadStageHistorySection');
     const activityHolder=document.getElementById('leadActivityHistorySection');
+    if(requestHolder){
+      const loading=requestHolder.lastElementChild;
+      if(loading)loading.outerHTML=requestRes.error?`<div class="text-red-500 text-xs">${esc(requestRes.error.message)}</div>`:stageRequestHistoryHtml(requestRes.data||[]);
+    }
     if(stageHolder){
       const loading=stageHolder.lastElementChild;
       if(loading)loading.outerHTML=stageRes.error?`<div class="text-red-500 text-xs">${esc(stageRes.error.message)}</div>`:stageHistoryHtml(stageRes.data||[]);
@@ -441,7 +533,7 @@
       <div><label class="text-xs font-semibold">Business</label><select id="laBusiness" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="RK" ${r.business_code==='RK'?'selected':''}>LP Home · RK</option><option value="TK" ${r.business_code==='TK'?'selected':''}>L'Imperial Luxury · TK</option></select></div>
       <div><label class="text-xs font-semibold">Customer</label><input value="${esc(r.customer_name)}" disabled class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-gray-50"></div>
       <div><label class="text-xs font-semibold">Phone</label><input value="${esc(r.phone||'')}" disabled class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-gray-50"></div>
-      <div><label class="text-xs font-semibold">Customer Stage</label><select id="laStage" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${STAGES.map(s=>`<option value="${s}" ${s===r.stage?'selected':''}>${s}</option>`).join('')}</select></div>
+      <div><label class="text-xs font-semibold">Customer Stage</label><input id="laStage" type="hidden" value="${esc(r.stage)}"><div class="mt-1 border rounded-xl px-3 py-2.5 bg-gray-50"><span class="px-2 py-1 rounded-lg border text-[10px] font-semibold ${stageTone(r.stage)}">${esc(r.stage)}</span><div class="text-[9px] text-gray-400 mt-1">Activity logs do not move CRM stages. Use the stage control in Customer Database.</div></div></div>
       <div><label class="text-xs font-semibold">Next Follow-up</label><input id="laFollowup" type="date" value="${esc(r.next_follow_up_date||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
       <div class="md:col-span-2"><label class="text-xs font-semibold">Interest</label><input id="laInterest" value="${esc(r.interest||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
       ${type==='showroom_visit'?'<div class="md:col-span-2"><label class="text-xs font-semibold">Source</label><select id="laSource" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option>Showroom</option><option>Friend or Family</option><option>Site Location</option><option>Other</option></select></div>':''}
@@ -462,6 +554,48 @@
       closeModal();showToast(typeName+' added');await renderCustomerDatabase();setTimeout(()=>openCustomerLead(id),60);
     };
   };
+  window.openCustomerStageChangeRequestDetail=async function(id){
+    const role=state.profile?.role||'';
+    if(!['manager','admin','super_admin'].includes(role))return showToast('Manager/Admin access required.','err');
+    const {data,error}=await db.rpc('get_visible_customer_lead_stage_change_requests',{p_status:null});
+    if(error)return showToast(error.message,'err');
+    const r=(data||[]).find(x=>x.request_id===id);
+    if(!r)return showToast('Stage correction request not found.','err');
+    const stale=r.current_stage!==r.from_stage;
+    openModal('Review CRM Stage Correction',`<div class="space-y-4">
+      <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
+        <div class="text-[10px] uppercase font-bold text-amber-700">Stage Correction Request</div>
+        <div class="text-xl font-bold mt-1">${esc(r.customer_name||'Customer')}</div>
+        <div class="text-xs text-gray-500 mt-1">Sales: ${esc(r.sales_rep_name||'-')} · Requested by ${esc(r.requested_by_name||'User')} · ${new Date(r.requested_at).toLocaleString()}</div>
+      </div>
+      <div class="rounded-xl border p-4">
+        <div class="text-[10px] uppercase font-bold text-gray-400">Requested Change</div>
+        <div class="flex items-center gap-2 mt-2"><span class="px-2 py-1 rounded-lg border ${stageTone(r.from_stage)}">${esc(r.from_stage)}</span><span class="text-gray-400">→</span><span class="px-2 py-1 rounded-lg border ${stageTone(r.to_stage)}">${esc(r.to_stage)}</span></div>
+        <div class="text-sm mt-3"><b>Reason:</b> ${esc(r.request_note||'-')}</div>
+        ${r.requested_follow_up_date?`<div class="text-xs text-gray-500 mt-2">Requested follow-up: ${esc(fmtDate(r.requested_follow_up_date))}</div>`:''}
+      </div>
+      ${stale?`<div class="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700"><b>Cannot safely approve:</b> the live stage is now ${esc(r.current_stage)} instead of ${esc(r.from_stage)}. Reject this request and ask for a new correction.</div>`:`<div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">The live stage is still <b>${esc(r.current_stage)}</b>. It will change only if you approve.</div>`}
+      <div><label class="text-xs font-semibold">Reviewer Note</label><textarea id="stageCorrectionReviewNote" rows="2" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Optional for approval; required for rejection."></textarea></div>
+      <div class="flex justify-end gap-2 border-t pt-4"><button type="button" onclick="reviewCustomerStageChangeRequest('${r.request_id}','reject')" class="px-4 py-2.5 border border-red-200 bg-red-50 text-red-600 rounded-xl text-xs font-semibold">Reject</button><button type="button" ${stale?'disabled':''} onclick="reviewCustomerStageChangeRequest('${r.request_id}','approve')" class="px-4 py-2.5 bg-[#211d18] text-white rounded-xl text-xs font-semibold disabled:opacity-40">Approve Stage Correction</button></div>
+    </div>`);
+  };
+
+  window.reviewCustomerStageChangeRequest=async function(id,action){
+    const note=(document.getElementById('stageCorrectionReviewNote')?.value||'').trim();
+    if(action==='reject'&&!note)return showToast('Please enter a reason for rejection.','err');
+    if(!confirm(action==='approve'?'Approve this stage correction and update the live customer stage?':'Reject this stage correction request?'))return;
+    const {error}=await db.rpc('review_customer_lead_stage_change_request',{
+      p_request_id:id,
+      p_action:action,
+      p_review_note:note||null
+    });
+    if(error)return showToast(error.message,'err');
+    closeModal();
+    showToast(action==='approve'?'Stage correction approved and applied.':'Stage correction request rejected.');
+    if(typeof refreshApprovalNotifications==='function')await refreshApprovalNotifications();
+    await go('approvals');
+  };
+
   window.convertLeadToCustomer=async function(id){
     const r=leadById(id);if(!r)return;
     const {data,error}=await db.rpc('convert_customer_lead',{p_lead_id:id});
