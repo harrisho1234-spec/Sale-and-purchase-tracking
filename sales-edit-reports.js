@@ -6,7 +6,7 @@
 
   function role(){return state.profile?.role||''}
   function mgrCtx(){return typeof managerRepActive==='function'&&managerRepActive()}
-  function canEditOrdersUI(){return ['super_admin','admin','sales'].includes(role()) || (role()==='manager'&&mgrCtx())}
+  function canEditOrdersUI(){return ['super_admin','admin','manager','sales'].includes(role())}
   function round2(v){return Math.round((Number(v||0)+Number.EPSILON)*100)/100}
   function docNo(o){return o?.sales_invoice_no||o?.sr_no||o?.invoice_no||o?.order_no||'Order'}
   function flow(o){return (o?.sales_flow_type||o?.order_type)==='pre_order'?'pre_order':'stock_sale'}
@@ -31,7 +31,7 @@
       b.className='sales-edit-order-btn px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-[10px] font-bold';
       b.dataset.orderId=o.id;
       const superAdmin=role()==='super_admin';
-      b.textContent=superAdmin?'Edit Invoice':role()==='sales'?'Request Edit':'Edit Order';
+      b.textContent=role()==='sales'?'Request Edit':(flow(o)==='pre_order'?'Edit SR':'Edit Invoice');
       b.onclick=()=>superAdmin&&typeof window.openSuperAdminInvoiceEdit==='function'
         ? window.openSuperAdminInvoiceEdit(o.id)
         : openEditSalesOrder(o.id);
@@ -228,8 +228,8 @@
     try{await loadEditData(orderId)}catch(e){return showToast(e.message||'Could not load order','err')}
     const o=editState.order,f=flow(o),linkedCount=editState.linked.size,returnedCount=editState.returned.size;
     const currentType=o.sales_invoice_type||String(o.sales_invoice_no||o.order_no||'').toUpperCase().startsWith('RK')?'RK':'TK';
-    openModal(`${role()==='super_admin'?'Edit Invoice':'Edit'} ${docNo(o)}`,`<form id="editSalesOrderForm" class="space-y-5">
-      <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">${role()==='sales'?'<b>Approval required.</b> Your requested changes will be sent to Manager/Admin. The live order will remain unchanged until approved.':'Payments are kept separately. Editing the order changes the order total and AR automatically.'} ${linkedCount?`${linkedCount} item(s) linked to Procurement can still be included in a Sales edit request; Manager/Admin will review the PO impact before final approval.`:''}</div>
+    openModal(`${role()==='sales'?'Request Edit':(f==='pre_order'?'Edit SR':'Edit Invoice')} · ${docNo(o)}`,`<form id="editSalesOrderForm" class="space-y-5">
+      <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">${role()==='sales'?'<b>Approval required.</b> Your requested changes will be sent to Manager/Admin. The live order will remain unchanged until approved.':role()==='manager'?'<b>Manager direct edit.</b> Changes are applied immediately. Payments remain separate and AR recalculates automatically.':'Payments are kept separately. Editing the order changes the order total and AR automatically.'} ${linkedCount?`${linkedCount} item(s) linked to Procurement are protected from product/quantity changes until they are unlinked.`:''}</div>
       ${returnedCount?`<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">${returnedCount} item(s) already have Return/CN records. Sales may still request corrections to these lines. Manager/Admin will review the Return/CN impact before final approval.</div>`:''}
       <div class="grid md:grid-cols-2 gap-3">
         <div><label class="text-xs font-semibold">Customer</label><select id="editOrderCustomer" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white">${state.customers.map(c=>`<option value="${c.id}" ${c.id===o.customer_id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
@@ -245,7 +245,7 @@
       <div><label class="text-xs font-semibold">Notes</label><textarea id="editOrderNotes" class="mt-1 w-full border rounded-xl px-3 py-2" rows="3">${esc(o.notes||'')}</textarea></div>
       ${role()==='sales'?`<div><label class="text-xs font-semibold">Reason for Edit</label><textarea id="editOrderRequestNote" required class="mt-1 w-full border border-amber-200 bg-amber-50 rounded-xl px-3 py-2" rows="2" placeholder="Explain what needs to be corrected and why."></textarea><div class="text-[9px] text-amber-700 mt-1">Manager/Admin will see this note when reviewing your request.</div></div>`:'' }
       ${role()==='super_admin'?`<div><label class="text-xs font-semibold">Reason for correction</label><textarea id="editOrderAuditReason" required class="mt-1 w-full border border-amber-200 bg-amber-50 rounded-xl px-3 py-2" rows="2" placeholder="Example: wrong item, wrong quantity, duplicated line"></textarea><div class="text-[9px] text-amber-700 mt-1">Required for Super Admin changes and stored in the audit log.</div></div>`:''}
-      <button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">${role()==='sales'?'Submit Edit Request':role()==='super_admin'?'Save Invoice & Item Changes':'Save Order Changes'}</button>
+      <button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">${role()==='sales'?'Submit Edit Request':f==='pre_order'?'Save SR Changes':'Save Invoice Changes'}</button>
     </form>`);
     editState.discountBasis='amount';editOrderRecalc();
     document.getElementById('editSalesOrderForm').onsubmit=saveEditSalesOrder;
@@ -303,7 +303,7 @@
       if(audit.error)return showToast('Invoice saved, but audit log failed: '+audit.error.message,'err');
     }
     if(role()==='manager'&&mgrCtx()&&typeof recordManagerRepAction==='function')await recordManagerRepAction('edit_sales_order','sales_order',o.id,{document_no:doc,total});
-    closeModal();showToast(role()==='super_admin'?'Invoice and items updated':'Order updated');await go('sales-orders');
+    closeModal();showToast(f==='pre_order'?'SR updated':'Invoice updated');await go('sales-orders');
   }
 
   // ----- Dedicated Reports page -----
