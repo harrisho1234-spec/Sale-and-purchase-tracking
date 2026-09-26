@@ -60,22 +60,67 @@
     document.head.appendChild(style);
   }
 
+  function driveUploadUrl(){return String(window.APP_CONFIG?.DRIVE_PHOTO_UPLOAD_URL||'').trim()}
+  function driveUploaderReady(){return /^https:\/\/script\.google\.com\/macros\/s\//i.test(driveUploadUrl())}
+  function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
+  function fileToBase64(file){return new Promise((resolve,reject)=>{const fr=new FileReader();fr.onload=()=>resolve(String(fr.result||'').split(',').pop()||'');fr.onerror=()=>reject(new Error('Could not read photo file.'));fr.readAsDataURL(file)})}
+  function addHidden(form,name,value){const i=document.createElement('input');i.type='hidden';i.name=name;i.value=String(value??'');form.appendChild(i)}
+
   async function uploadProductPhoto(productId,code,file){
     if(!file)return '';
     if(!String(file.type||'').startsWith('image/'))throw new Error('Please choose an image file.');
     if(file.size>8*1024*1024)throw new Error('Photo must be 8 MB or smaller.');
+    if(!driveUploaderReady())throw new Error('Google Drive photo uploader is not connected yet.');
 
-    const ext=(file.name.split('.').pop()||'jpg').replace(/[^a-zA-Z0-9]/g,'').toLowerCase()||'jpg';
-    const token=(crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random().toString(36).slice(2));
-    const path=`products/${safePathPart(code)}/${productId}-${token}.${ext}`;
-    const up=await db.storage.from(BUCKET).upload(path,file,{cacheControl:'3600',upsert:false,contentType:file.type||undefined});
-    if(up.error)throw up.error;
-    const pub=db.storage.from(BUCKET).getPublicUrl(path);
-    const url=pub?.data?.publicUrl||'';
-    if(!url)throw new Error('Photo uploaded but public URL could not be created.');
-    const saved=await db.from('product_catalog').update({image_url:url,manual_override:true}).eq('id',productId);
-    if(saved.error)throw saved.error;
-    return url;
+    const {data:sessionData,error:sessionErr}=await db.auth.getSession();
+    if(sessionErr||!sessionData?.session?.access_token)throw new Error('Your login session expired. Please sign in again.');
+
+    const prepared=await db.rpc('prepare_product_drive_photo_upload',{p_product_id:productId});
+    if(prepared.error)throw prepared.error;
+    const uploadId=prepared.data;
+    if(!uploadId)throw new Error('Could not prepare Google Drive photo upload.');
+
+    let form=null,iframe=null;
+    try{
+      const base64=await fileToBase64(file);
+      const frameName='product-drive-photo-'+Date.now()+'-'+Math.random().toString(36).slice(2);
+      iframe=document.createElement('iframe');
+      iframe.name=frameName;
+      iframe.style.display='none';
+      document.body.appendChild(iframe);
+
+      form=document.createElement('form');
+      form.method='POST';
+      form.action=driveUploadUrl();
+      form.target=frameName;
+      form.style.display='none';
+      addHidden(form,'access_token',sessionData.session.access_token);
+      addHidden(form,'supabase_url',APP_CONFIG.SUPABASE_URL);
+      addHidden(form,'supabase_key',APP_CONFIG.SUPABASE_PUBLISHABLE_KEY);
+      addHidden(form,'po_item_id',uploadId);
+      addHidden(form,'file_name',file.name||safePathPart(code)+'-photo.jpg');
+      addHidden(form,'mime_type',file.type||'image/jpeg');
+      addHidden(form,'update_product','true');
+      addHidden(form,'base64',base64);
+      document.body.appendChild(form);
+      form.submit();
+
+      let result=null;
+      for(let i=0;i<45;i++){
+        await sleep(1000);
+        const s=await db.rpc('get_product_drive_photo_upload_status',{p_upload_id:uploadId});
+        if(!s.error){
+          const row=Array.isArray(s.data)?s.data[0]:s.data;
+          if(row?.image_url&&row?.drive_file_id){result=row;break;}
+        }
+      }
+      if(!result)throw new Error('Google Drive upload did not finish. Please try again or check the Drive uploader.');
+      return result.image_url;
+    }finally{
+      if(form)form.remove();
+      if(iframe)setTimeout(()=>iframe.remove(),1000);
+      await db.rpc('cleanup_product_drive_photo_upload',{p_upload_id:uploadId});
+    }
   }
 
   function recalc(){
