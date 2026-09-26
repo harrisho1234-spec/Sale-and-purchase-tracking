@@ -957,13 +957,19 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
     </div>`;
   }
 
-  window.setTrackingTab=function(tab){ui.trackingTab=tab;renderOrderTrackingBody();};
+  function salesTrackingTimelineOnly(){return (state.profile?.role||'')==='sales'}
+  window.setTrackingTab=function(tab){
+    if(salesTrackingTimelineOnly()&&tab!=='timeline')return;
+    ui.trackingTab=tab;
+    renderOrderTrackingBody();
+  };
   window.setTrackingSearch=function(v){ui.trackingSearch=v;renderOrderTrackingBody();};
   window.toggleTrackingOrder=function(id){
     ui.trackingExpanded.has(id)?ui.trackingExpanded.delete(id):ui.trackingExpanded.add(id);
     renderOrderTrackingBody();
   };
   window.openTrackingOrder=function(id){
+    if(salesTrackingTimelineOnly())return;
     ui.trackingTab='orders';
     ui.trackingExpanded.add(id);
     renderOrderTrackingBody();
@@ -972,6 +978,7 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
 
   window.renderOrderTrackingBody=function(){
     const root=document.getElementById('orderTrackingRoot');if(!root)return;
+    if(salesTrackingTimelineOnly()&&ui.trackingTab!=='timeline')ui.trackingTab='timeline';
     const orders=ui.trackingOrders.filter(trackingMatches);
     const flat=orders.flatMap(o=>(o.items||[]).map(i=>({...i,_order:o})));
     const stages=['placed','production','shipping','completed'];
@@ -996,7 +1003,7 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
     root.innerHTML=`
       ${repContextBanner()}
       <div class="lr-tabs mb-4">
-        ${[['timeline','Status Timeline'],['eta','ETA Schedule'],['orders','Orders'],['items','Items']].map(([v,l])=>`<button class="lr-tab ${ui.trackingTab===v?'active':''}" onclick="setTrackingTab('${v}')">${l}</button>`).join('')}
+        ${(salesTrackingTimelineOnly()?[['timeline','Status Timeline']]:[['timeline','Status Timeline'],['eta','ETA Schedule'],['orders','Orders'],['items','Items']]).map(([v,l])=>`<button class="lr-tab ${ui.trackingTab===v?'active':''}" onclick="setTrackingTab('${v}')">${l}</button>`).join('')}
       </div>
       <div class="relative mb-5">
         <input class="lr-input pl-10" value="${esc(ui.trackingSearch)}" oninput="setTrackingSearch(this.value)" placeholder="Search Order, Client, Item, Brand, SKU...">
