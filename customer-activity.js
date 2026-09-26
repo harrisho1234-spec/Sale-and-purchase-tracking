@@ -34,8 +34,13 @@
     const owner=activityScopeSalesId();
     return !!owner&&String(r?.assigned_sales_id||'')===String(owner);
   }
+  function activityReviewerMode(){
+    return ['admin','super_admin'].includes(state.profile?.role||'')
+      && !(typeof managerRepActive==='function'&&managerRepActive())
+      && !(typeof managerTestActive==='function'&&managerTestActive());
+  }
   function activityCanSeeStage(r){
-    return ['admin','super_admin'].includes(state.profile?.role||'')||activityIsOwner(r);
+    return activityReviewerMode()||activityIsOwner(r);
   }
   function activityCanChooseSales(){
     return ['admin','super_admin'].includes(state.profile?.role||'')
@@ -155,7 +160,7 @@
             <option value="month" ${activityState.dateRange==='month'?'selected':''}>This Month</option>
             <option value="all" ${activityState.dateRange==='all'?'selected':''}>All Dates</option>
           </select>
-${['admin','super_admin'].includes(state.profile?.role||'')?`          <select onchange="setActivityStatus(this.value)" class="border rounded-xl bg-white px-3 py-2.5 text-sm">
+${activityReviewerMode()?`          <select onchange="setActivityStatus(this.value)" class="border rounded-xl bg-white px-3 py-2.5 text-sm">
             <option value="all">All Stages</option>
             ${STATUSES.map(s=>`<option value="${esc(s)}" ${activityState.status===s?'selected':''}>${esc(s)}</option>`).join('')}
           </select>`:''}
@@ -171,7 +176,7 @@ ${['admin','super_admin'].includes(state.profile?.role||'')?`          <select o
       const detail=activityState.type==='online'
         ?[r.interest&&('Interest: '+r.interest),r.remark].filter(Boolean).join(' · ')
         :[r.source_channel&&('Source: '+r.source_channel),r.interest&&('Interest: '+r.interest),r.remark].filter(Boolean).join(' · ');
-      const canEdit=['admin','super_admin'].includes(state.profile?.role||'')||activityIsOwner(r);
+      const canEdit=activityReviewerMode()||activityIsOwner(r);
       const canSeeStage=activityCanSeeStage(r);
       return `<div class="card rounded-2xl p-4">
         <div class="grid lg:grid-cols-[110px_1.3fr_.8fr_.85fr_.85fr_auto] gap-3 lg:gap-4 items-center">
