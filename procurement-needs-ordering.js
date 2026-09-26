@@ -177,6 +177,13 @@
     },0);
   };
 
+  window.syncNeedsExistingPOCurrency=function(){
+    const sel=document.getElementById('needsPOId');
+    const cur=sel?.selectedOptions?.[0]?.dataset?.currency||'USD';
+    const label=document.getElementById('needsCostLabel');
+    if(label)label.textContent=`Unit Cost (${cur})`;
+  };
+
   window.needsAddExistingPO=async function(itemId){
     const x=needById(itemId);if(!x)return showToast('This item is no longer in Needs Ordering. Refresh the page.','err');
     const pr=await db.from('supplier_pos').select('id,po_number,po_pending_reference,vendor_name,currency,status').order('created_at',{ascending:false});
@@ -185,17 +192,18 @@
     if(!pos.length)return showToast('Create a Supplier PO first.','err');
     openModal('Add Needed Item to Existing PO',`<form id="needsExistingPOForm" class="space-y-4">
       <div class="flex items-center gap-3 rounded-xl bg-amber-50 border border-amber-100 p-3">${imageHtml(x.image_url,58)}<div><div class="text-xs font-bold text-[#a77d1a]">${esc(x.product_code_snapshot||'')}</div><div class="font-semibold">${esc(x.item_name_snapshot||'')}</div><div class="text-xs text-gray-500">${esc(x.sr_no)} · ${esc(x.customer_name||'')} · Need ${fmtQty(x.need_qty)}</div></div></div>
-      <div><label class="text-xs font-semibold">Supplier PO</label><select id="needsPOId" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${pos.map(p=>`<option value="${p.id}" data-currency="${esc(p.currency||'USD')}">${esc(p.po_number||p.po_pending_reference||'PO Pending')} · ${esc(p.vendor_name||'')}</option>`).join('')}</select></div>
-      <div class="grid md:grid-cols-3 gap-3"><div><label class="text-xs font-semibold">Qty to Order / Allocate</label><input id="needsQty" type="number" min="0.01" max="${x.need_qty}" step="0.01" value="${fmtQty(x.need_qty)}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div><div><label class="text-xs font-semibold">Unit Cost</label><input id="needsCost" type="number" min="0" step="0.01" value="0" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div><div><label class="text-xs font-semibold">Shipping / Unit</label><input id="needsShipping" type="number" min="0" step="0.01" value="0" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div></div>
+      <div><label class="text-xs font-semibold">Supplier PO</label><select id="needsPOId" onchange="syncNeedsExistingPOCurrency()" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${pos.map(p=>`<option value="${p.id}" data-currency="${esc(p.currency||'USD')}">${esc(p.po_number||p.po_pending_reference||'PO Pending')} · ${esc(p.vendor_name||'')}</option>`).join('')}</select></div>
+      <div class="grid md:grid-cols-3 gap-3"><div><label class="text-xs font-semibold">Qty to Order / Allocate</label><input id="needsQty" type="number" min="0.01" max="${x.need_qty}" step="0.01" value="${fmtQty(x.need_qty)}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div><div><label id="needsCostLabel" class="text-xs font-semibold">Unit Cost (USD)</label><input id="needsCost" type="number" min="0" step="0.01" value="0" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div><div><label class="text-xs font-semibold">Shipping / Unit (USD $)</label><input id="needsShipping" type="number" min="0" step="0.01" value="0" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div></div>
       <div class="text-xs text-gray-500">This creates the PO item and immediately allocates that quantity to ${esc(x.sr_no)}, so the remaining quantity updates automatically.</div>
       <button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Add Item & Allocate to SR</button>
     </form>`);
+    syncNeedsExistingPOCurrency();
     document.getElementById('needsExistingPOForm').onsubmit=async e=>{
       e.preventDefault();
       const alloc=qty(document.getElementById('needsQty').value);
       if(alloc<=0||alloc>x.need_qty+0.0001)return showToast(`Quantity must be between 0 and ${fmtQty(x.need_qty)}.`,'err');
       const poId=document.getElementById('needsPOId').value;
-      const item={supplier_po_id:poId,product_id:x.product_id||null,product_code_snapshot:x.product_code_snapshot,item_name_snapshot:x.item_name_snapshot,image_url_snapshot:x.image_url||null,qty:alloc,unit_cost:qty(document.getElementById('needsCost').value),shipping_cost:qty(document.getElementById('needsShipping').value)};
+      const item={supplier_po_id:poId,product_id:x.product_id||null,product_code_snapshot:x.product_code_snapshot,item_name_snapshot:x.item_name_snapshot,image_url_snapshot:x.image_url||null,qty:alloc,unit_cost:qty(document.getElementById('needsCost').value),shipping_cost:qty(document.getElementById('needsShipping').value),shipping_currency:'USD'};
       const ir=await db.from('supplier_po_items').insert(item).select('id').single();
       if(ir.error)return showToast(ir.error.message,'err');
       const lr=await db.from('fulfillment_links').insert({sales_order_item_id:x.id,supplier_po_item_id:ir.data.id,qty_allocated:alloc});
