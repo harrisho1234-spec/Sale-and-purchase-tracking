@@ -122,10 +122,21 @@
   window.filterCustomerRows=function(){
     customerPage=1;
     const q=(document.getElementById('customerSearch')?.value||'').trim().toLowerCase();
-    const list=!q?state.customers:state.customers.filter(c=>{
+    const status=document.getElementById('customerStatusFilter')?.value||'all';
+
+    const list=(state.customers||[]).filter(c=>{
       const x=metricsFor(c.id),contacts=contactsFor(c.id).flatMap(v=>[v.contact_type,v.label,v.contact_value]);
-      return [c.name,c.customer_code,c.phone,c.email,c.address,c.notes,fmtDate(c.created_at),x.sales,x.paid,x.ar,...contacts].some(v=>String(v||'').toLowerCase().includes(q));
+
+      const matchesSearch=!q||[c.name,c.customer_code,c.phone,c.email,c.address,c.notes,fmtDate(c.created_at),x.sales,x.paid,x.ar,...contacts]
+        .some(v=>String(v||'').toLowerCase().includes(q));
+      if(!matchesSearch)return false;
+
+      if(status==='active_ar')return Number(x.ar||0)>0.001;
+      if(status==='pending_preorder')return Number(x.pending||0)>0.001;
+      if(status==='clear')return Number(x.ar||0)<=0.001&&Number(x.pending||0)<=0.001;
+      return true;
     });
+
     renderCustomerEditRows(list);
   };
 
