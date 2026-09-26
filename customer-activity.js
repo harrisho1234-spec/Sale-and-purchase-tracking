@@ -30,8 +30,9 @@
     return null;
   }
   function activityCanChooseSales(){
-    return ['manager','admin','super_admin'].includes(state.profile?.role||'')
-      && !(typeof managerRepActive==='function'&&managerRepActive());
+    return ['admin','super_admin'].includes(state.profile?.role||'')
+      && !(typeof managerRepActive==='function'&&managerRepActive())
+      && !(typeof managerTestActive==='function'&&managerTestActive());
   }
   function activityTypeLabel(type){return type==='showroom_visit'?'Showroom Visit':'Online'}
   function businessLabel(code){return code==='RK'?'LP Home · RK':"L'Imperial Luxury · TK"}
@@ -62,10 +63,11 @@
   }
   function statusTone(status){
     const s=String(status||'').toLowerCase();
-    if(s.includes('buy')||s.includes('paid'))return 'bg-green-50 text-green-700 border-green-200';
-    if(s.includes('follow')||s.includes('contact'))return 'bg-blue-50 text-blue-700 border-blue-200';
-    if(s.includes('reject')||s.includes('return'))return 'bg-red-50 text-red-700 border-red-200';
-    if(s.includes('ask'))return 'bg-amber-50 text-amber-700 border-amber-200';
+    if(s.includes('buy'))return 'bg-green-50 text-green-700 border-green-200';
+    if(s.includes('potential'))return 'bg-amber-50 text-amber-700 border-amber-200';
+    if(s.includes('waiting'))return 'bg-purple-50 text-purple-700 border-purple-200';
+    if(s.includes('reject'))return 'bg-red-50 text-red-700 border-red-200';
+    if(s.includes('contact'))return 'bg-blue-50 text-blue-700 border-blue-200';
     return 'bg-gray-50 text-gray-600 border-gray-200';
   }
   function businessTone(code){
