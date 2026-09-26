@@ -312,23 +312,132 @@
     document.getElementById('issueInvoiceForm').onsubmit=async e=>{e.preventDefault();const type=document.getElementById('finalInvoiceType').value,no=document.getElementById('finalInvoiceNo').value.trim(),note=document.getElementById('finalInvoiceNote').value.trim()||null;const {error}=await db.rpc('issue_sales_invoice',{p_order_id:orderId,p_invoice_type:type,p_invoice_no:no,p_note:note});if(error)return showToast(error.message,'err');closeModal();showToast(`${type} invoice issued`);df.loaded=false;await go('sales-orders')};
   };
 
-  async function loadLinkModalData(orderId){
-    const [sr,pr]=await Promise.all([
-      db.from('sales_order_items').select('id,product_code_snapshot,item_name_snapshot,qty').eq('sales_order_id',orderId).eq('line_kind','product').not('product_id','is',null).order('created_at'),
-      db.from('supplier_po_items').select('id,product_code_snapshot,item_name_snapshot,qty,supplier_po_id,supplier_pos(id,po_number,status,estimated_arrival)').order('created_at',{ascending:false}).limit(2000)
-    ]);
-    if(sr.error)throw sr.error;if(pr.error)throw pr.error;
-    const ids=(sr.data||[]).map(x=>x.id);let links=[];
-    if(ids.length){const x=await db.from('fulfillment_links').select('id,sales_order_item_id,supplier_po_item_id,qty_allocated').in('sales_order_item_id',ids);if(x.error)throw x.error;links=x.data||[]}
-    return {sales:sr.data||[],po:pr.data||[],links};
+  function normLinkCode(v){
+    return String(v||'').trim().toUpperCase().replace(/\s+/g,'');
   }
+  function poMatchesSalesItem(s,p){
+    if(!s||!p)return false;
+    if(s.product_id&&p.product_id&&String(s.product_id)===String(p.product_id))return true;
+    const a=normLinkCode(s.product_code_snapshot),b=normLinkCode(p.product_code_snapshot);
+    return !!a&&a===b;
+  }
+  function sumAllocated(rows,key,id){
+    return (rows||[]).filter(x=>String(x?.[key]||'')===String(id||'')).reduce((t,x)=>t+Number(x.qty_allocated||0),0);
+  }
+  function salesLinkRemaining(s,d){
+    return Math.max(Number(s?.qty||0)-sumAllocated(d.links,'sales_order_item_id',s?.id),0);
+  }
+  function poLinkRemaining(p,d){
+    return Math.max(Number(p?.qty||0)-sumAllocated(d.allLinks,'supplier_po_item_id',p?.id),0);
+  }
+
+  async function loadLinkModalData(orderId){
+    const [sr,pr,allLinkRes]=await Promise.all([
+      db.from('sales_order_items').select('id,product_id,product_code_snapshot,item_name_snapshot,qty').eq('sales_order_id',orderId).eq('line_kind','product').not('product_id','is',null).order('created_at'),
+      db.from('supplier_po_items').select('id,product_id,product_code_snapshot,item_name_snapshot,qty,supplier_po_id,supplier_pos(id,po_number,status,estimated_arrival)').order('created_at',{ascending:false}).limit(2000),
+      db.from('fulfillment_links').select('id,sales_order_item_id,supplier_po_item_id,qty_allocated')
+    ]);
+    if(sr.error)throw sr.error;
+    if(pr.error)throw pr.error;
+    if(allLinkRes.error)throw allLinkRes.error;
+    const ids=(sr.data||[]).map(x=>x.id);
+    const allLinks=allLinkRes.data||[];
+    const links=ids.length?allLinks.filter(x=>ids.includes(x.sales_order_item_id)):[];
+    return {sales:sr.data||[],po:pr.data||[],links,allLinks};
+  }
+
+  window.refreshLinkPOItemChoices=function(){
+    const d=window._dfLinkData;if(!d)return;
+    const salesSel=document.getElementById('linkSalesItem');
+    const poSel=document.getElementById('linkPOItem');
+    const qty=document.getElementById('linkQty');
+    const btn=document.getElementById('linkPOSubmit');
+    const hint=document.getElementById('linkPOHint');
+    if(!salesSel||!poSel||!qty||!btn)return;
+
+    const s=d.sales.find(x=>String(x.id)===String(salesSel.value));
+    const srRemaining=salesLinkRemaining(s,d);
+    const matches=d.po.filter(p=>poMatchesSalesItem(s,p)&&poLinkRemaining(p,d)>0);
+
+    if(!matches.length){
+      poSel.innerHTML='<option value="">No matching Supplier PO item found</option>';
+      poSel.disabled=true;
+      qty.value='';
+      qty.disabled=true;
+      btn.disabled=true;
+      btn.classList.add('opacity-50','cursor-not-allowed');
+      if(hint){
+        hint.className='md:col-span-3 text-[10px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2';
+        hint.textContent='No available Supplier PO item matches '+(s?.product_code_snapshot||'this SR item')+'. Only the same Product / SKU can be linked.';
+      }
+      return;
+    }
+
+    poSel.disabled=false;
+    poSel.innerHTML=matches.map(p=>{
+      const rem=poLinkRemaining(p,d);
+      return `<option value="${p.id}">${esc(p.supplier_pos?.po_number||'PO Pending')} · ${esc(p.product_code_snapshot||'No Code')} · ${esc(p.item_name_snapshot||'Item')} · Available ${Number(rem)}</option>`;
+    }).join('');
+    const first=matches[0];
+    const max=Math.min(srRemaining,poLinkRemaining(first,d));
+    qty.disabled=false;
+    qty.max=String(max);
+    qty.value=String(Math.min(max,1));
+    btn.disabled=max<=0;
+    btn.classList.toggle('opacity-50',max<=0);
+    btn.classList.toggle('cursor-not-allowed',max<=0);
+    if(hint){
+      hint.className='md:col-span-3 text-[10px] text-green-700 bg-green-50 border border-green-100 rounded-lg px-3 py-2';
+      hint.textContent=matches.length===1
+        ?'1 matching PO item found for '+(s?.product_code_snapshot||'this SR item')+'.'
+        :matches.length+' matching PO items found for '+(s?.product_code_snapshot||'this SR item')+'. Choose the correct PO.';
+    }
+  };
+
+  window.refreshLinkPOQty=function(){
+    const d=window._dfLinkData;if(!d)return;
+    const s=d.sales.find(x=>String(x.id)===String(document.getElementById('linkSalesItem')?.value||''));
+    const p=d.po.find(x=>String(x.id)===String(document.getElementById('linkPOItem')?.value||''));
+    const qty=document.getElementById('linkQty');
+    if(!s||!p||!qty)return;
+    const max=Math.min(salesLinkRemaining(s,d),poLinkRemaining(p,d));
+    qty.max=String(max);
+    if(Number(qty.value||0)>max||Number(qty.value||0)<=0)qty.value=String(Math.min(max,1));
+  };
 
   window.openLinkPOItems=async function(orderId){
     if(!isAdminRole())return showToast('Admin access required','err');
     try{
       const d=await loadLinkModalData(orderId);window._dfLinkData=d;const poMap=new Map(d.po.map(p=>[p.id,p]));
-      openModal('Link Supplier PO Items to SR',`<div class="space-y-5"><div class="rounded-xl bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800">Link each customer pre-order item to the supplier PO item that will fulfill it. PO status and ETA will then flow automatically into Sales tracking.</div><form id="linkPOForm" class="grid md:grid-cols-3 gap-3"><select id="linkSalesItem" class="border rounded-xl px-3 py-2">${d.sales.map(i=>`<option value="${i.id}">${esc(i.product_code_snapshot||'No Code')} · ${esc(i.item_name_snapshot||'Item')} · Qty ${Number(i.qty||0)}</option>`).join('')}</select><select id="linkPOItem" class="border rounded-xl px-3 py-2">${d.po.map(i=>`<option value="${i.id}">${esc(i.supplier_pos?.po_number||'PO Pending')} · ${esc(i.product_code_snapshot||'No Code')} · ${esc(i.item_name_snapshot||'Item')} · Qty ${Number(i.qty||0)}</option>`).join('')}</select><input id="linkQty" type="number" min="0.01" step="0.01" value="1" class="border rounded-xl px-3 py-2" placeholder="Allocated qty"><button class="md:col-span-3 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Link PO Item</button></form><div><div class="text-xs font-bold uppercase text-gray-400 mb-2">Existing Links</div><div class="divide-y border rounded-xl">${d.links.length?d.links.map(l=>{const s=d.sales.find(x=>x.id===l.sales_order_item_id),p=poMap.get(l.supplier_po_item_id);return `<div class="p-3 flex justify-between gap-3 text-xs"><div><b>${esc(s?.product_code_snapshot||'Sales item')}</b> → <b>${esc(p?.supplier_pos?.po_number||'PO Pending')}</b> · ${esc(p?.product_code_snapshot||'PO item')} · Qty ${Number(l.qty_allocated||0)}</div><button onclick="unlinkPOItem('${l.id}','${orderId}')" class="text-red-600 font-semibold">Unlink</button></div>`}).join(''):'<div class="p-4 text-xs text-gray-400">No PO items linked yet.</div>'}</div></div></div>`);
-      document.getElementById('linkPOForm').onsubmit=async e=>{e.preventDefault();const row={sales_order_item_id:document.getElementById('linkSalesItem').value,supplier_po_item_id:document.getElementById('linkPOItem').value,qty_allocated:Number(document.getElementById('linkQty').value||0)};const {error}=await db.from('fulfillment_links').insert(row);if(error)return showToast(error.message,'err');showToast('PO item linked');df.loaded=false;await openLinkPOItems(orderId)};
+      openModal('Link Supplier PO Items to SR',`<div class="space-y-5">
+        <div class="rounded-xl bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800">Select the SR item first. The Supplier PO dropdown will show <b>only matching Product / SKU items</b> with remaining quantity available.</div>
+        <form id="linkPOForm" class="grid md:grid-cols-3 gap-3">
+          <select id="linkSalesItem" onchange="refreshLinkPOItemChoices()" class="border rounded-xl px-3 py-2">${d.sales.map(i=>`<option value="${i.id}">${esc(i.product_code_snapshot||'No Code')} · ${esc(i.item_name_snapshot||'Item')} · Qty ${Number(i.qty||0)} · Remaining ${Number(salesLinkRemaining(i,d))}</option>`).join('')}</select>
+          <select id="linkPOItem" onchange="refreshLinkPOQty()" class="border rounded-xl px-3 py-2"></select>
+          <input id="linkQty" type="number" min="0.01" step="0.01" value="1" class="border rounded-xl px-3 py-2" placeholder="Allocated qty">
+          <div id="linkPOHint" class="md:col-span-3 text-[10px] text-gray-500"></div>
+          <button id="linkPOSubmit" class="md:col-span-3 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Link PO Item</button>
+        </form>
+        <div><div class="text-xs font-bold uppercase text-gray-400 mb-2">Existing Links</div><div class="divide-y border rounded-xl">${d.links.length?d.links.map(l=>{const s=d.sales.find(x=>x.id===l.sales_order_item_id),p=poMap.get(l.supplier_po_item_id);return `<div class="p-3 flex justify-between gap-3 text-xs"><div><b>${esc(s?.product_code_snapshot||'Sales item')}</b> → <b>${esc(p?.supplier_pos?.po_number||'PO Pending')}</b> · ${esc(p?.product_code_snapshot||'PO item')} · Qty ${Number(l.qty_allocated||0)}</div><button onclick="unlinkPOItem('${l.id}','${orderId}')" class="text-red-600 font-semibold">Unlink</button></div>`}).join(''):'<div class="p-4 text-xs text-gray-400">No PO items linked yet.</div>'}</div></div>
+      </div>`);
+      refreshLinkPOItemChoices();
+      document.getElementById('linkPOForm').onsubmit=async e=>{
+        e.preventDefault();
+        const salesId=document.getElementById('linkSalesItem').value;
+        const poId=document.getElementById('linkPOItem').value;
+        const qty=Number(document.getElementById('linkQty').value||0);
+        const s=d.sales.find(x=>String(x.id)===String(salesId));
+        const p=d.po.find(x=>String(x.id)===String(poId));
+        if(!s||!p||!poMatchesSalesItem(s,p))return showToast('Choose a matching Supplier PO item for this SR product.','err');
+        const max=Math.min(salesLinkRemaining(s,d),poLinkRemaining(p,d));
+        if(qty<=0||qty>max)return showToast('Allocated quantity cannot exceed the remaining SR / PO quantity.','err');
+        const row={sales_order_item_id:salesId,supplier_po_item_id:poId,qty_allocated:qty};
+        const {error}=await db.from('fulfillment_links').insert(row);
+        if(error)return showToast(error.message,'err');
+        showToast('Matching PO item linked');
+        df.loaded=false;
+        await openLinkPOItems(orderId);
+      };
     }catch(err){showToast(err.message,'err')}
   };
 
