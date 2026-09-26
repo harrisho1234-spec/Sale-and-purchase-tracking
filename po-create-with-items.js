@@ -93,11 +93,11 @@
             <input class="po-qty mt-1 w-full border rounded-xl px-3 py-2.5" type="number" min="0.01" step="0.01" value="1" oninput="poCreateRecalcRow(this)">
           </div>
           <div class="xl:col-span-1">
-            <label class="text-[10px] uppercase font-bold text-gray-400">Unit Cost</label>
+            <label class="po-unit-cost-label text-[10px] uppercase font-bold text-gray-400">Unit Cost (USD)</label>
             <input class="po-unit-cost mt-1 w-full border rounded-xl px-3 py-2.5" type="number" min="0" step="0.01" value="0" oninput="poCreateRecalcRow(this)">
           </div>
           <div class="xl:col-span-1">
-            <label class="text-[10px] uppercase font-bold text-gray-400">Shipping / Unit</label>
+            <label class="text-[10px] uppercase font-bold text-gray-400">Shipping / Unit (USD $)</label>
             <input class="po-shipping mt-1 w-full border rounded-xl px-3 py-2.5" type="number" min="0" step="0.01" value="0" oninput="poCreateRecalcRow(this)">
           </div>
           <div class="md:col-span-1 xl:col-span-2">
@@ -109,7 +109,7 @@
             <input class="po-name mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Item name">
           </div>
           <div class="xl:col-span-1 flex items-end">
-            <div class="w-full rounded-xl bg-gray-50 border px-3 py-2.5"><div class="text-[9px] uppercase font-bold text-gray-400">Line Cost</div><div class="po-line-total text-sm font-bold mt-0.5">$0.00</div></div>
+            <div class="w-full rounded-xl bg-gray-50 border px-3 py-2.5"><div class="text-[9px] uppercase font-bold text-gray-400">Line Value</div><div class="po-line-total text-sm font-bold mt-0.5">$0.00</div></div>
           </div>
         </div>
         <button type="button" onclick="poCreateRemoveItem(this)" class="self-start w-10 h-10 border rounded-xl text-red-500 font-bold">×</button>
@@ -164,9 +164,20 @@
     const row=input.closest('.po-create-item');if(!row)return;
     const qty=Number(row.querySelector('.po-qty')?.value||0),cost=Number(row.querySelector('.po-unit-cost')?.value||0),ship=Number(row.querySelector('.po-shipping')?.value||0);
     const cur=document.getElementById('poCurrency')?.value||'USD';
-    row.querySelector('.po-line-total').textContent=money(round2(qty*(cost+ship)),cur);
+    const goods=round2(qty*cost),shipping=round2(qty*ship);
+    const total=row.querySelector('.po-line-total');
+    if(!total)return;
+    if(cur==='USD'){
+      total.innerHTML=`${money(round2(goods+shipping),'USD')}<div class="text-[9px] font-normal text-gray-400 mt-0.5">Goods ${money(goods,'USD')} · Shipping ${money(shipping,'USD')}</div>`;
+    }else{
+      total.innerHTML=`<div>${money(goods,cur)}</div><div class="text-[9px] font-normal text-gray-500 mt-0.5">+ Shipping ${money(shipping,'USD')}</div>`;
+    }
   };
-  window.poCreateRecalcAll=function(){document.querySelectorAll('#poCreateItems .po-create-item .po-qty').forEach(poCreateRecalcRow)};
+  window.poCreateRecalcAll=function(){
+    const cur=document.getElementById('poCurrency')?.value||'USD';
+    document.querySelectorAll('#poCreateItems .po-unit-cost-label').forEach(x=>x.textContent=`Unit Cost (${cur})`);
+    document.querySelectorAll('#poCreateItems .po-create-item .po-qty').forEach(poCreateRecalcRow);
+  };
 
   async function ensureProduct(row,currency){
     const code=row.querySelector('.po-code').value.trim();
@@ -242,7 +253,8 @@
           image_url_snapshot:product?.image_url||null,
           qty:x.qty,
           unit_cost:Number(x.row.querySelector('.po-unit-cost').value||0),
-          shipping_cost:Number(x.row.querySelector('.po-shipping').value||0)
+          shipping_cost:Number(x.row.querySelector('.po-shipping').value||0),
+          shipping_currency:'USD'
         };
         const ir=await db.from('supplier_po_items').insert(item).select('id').single();
         if(ir.error)throw ir.error;
@@ -278,7 +290,7 @@
           <div><label class="text-xs font-semibold">Official PO Number</label><input id="poOfficialNo" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Leave blank if pending"></div>
           <div><label class="text-xs font-semibold">Vendor / Supplier</label><input id="poVendor" required class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
           <div><label class="text-xs font-semibold">Order Date</label><input id="poOrderDate" type="date" value="${new Date().toISOString().slice(0,10)}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
-          <div><label class="text-xs font-semibold">Currency</label><select id="poCurrency" onchange="poCreateRecalcAll()" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option>USD</option><option>EUR</option><option>CNY</option><option>GBP</option></select></div>
+          <div><label class="text-xs font-semibold">PO / Unit Cost Currency</label><select id="poCurrency" onchange="poCreateRecalcAll()" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option>USD</option><option>EUR</option><option>CNY</option><option>GBP</option></select><div class="text-[10px] text-gray-400 mt-1">Applies to supplier unit cost only. Shipping is always USD.</div></div>
           <div><label class="text-xs font-semibold">Shipping Agent</label><input id="poAgent" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
           <div><label class="text-xs font-semibold">ETA</label><input id="poEta" type="date" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
           <div class="md:col-span-2"><label class="text-xs font-semibold">PO Document / Supplier Order File</label><input id="poFile" type="file" accept=".pdf,image/*" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"><div class="text-[10px] text-gray-400 mt-1">If Accounting has not issued a PO number yet, upload the supplier/order document here.</div></div>
