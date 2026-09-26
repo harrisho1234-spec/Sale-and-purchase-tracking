@@ -81,7 +81,7 @@
         return `<div class="p-4 grid xl:grid-cols-[64px_1.05fr_1.5fr_90px_230px_120px] gap-3 items-center">
           ${photoHtml(photo,56)}
           <div><b>${esc(poLabel(p))}</b><div class="text-[10px] text-gray-400">${esc(p.vendor_name||'')}</div><div class="text-[10px] text-gray-400 mt-1">ETA ${esc(p.estimated_arrival||'TBD')}</div></div>
-          <div class="min-w-0"><div class="text-xs font-extrabold text-[#a77d1a] truncate">${esc(i.product_code_snapshot||'No Code')}</div><div class="text-sm font-semibold truncate">${esc(i.item_name_snapshot||'')}</div><div class="text-[10px] text-gray-400 mt-1">Cost ${money(i.unit_cost||0,p.currency||'USD')} + Shipping ${money(i.shipping_cost||0,p.currency||'USD')}</div></div>
+          <div class="min-w-0"><div class="text-xs font-extrabold text-[#a77d1a] truncate">${esc(i.product_code_snapshot||'No Code')}</div><div class="text-sm font-semibold truncate">${esc(i.item_name_snapshot||'')}</div><div class="text-[10px] text-gray-400 mt-1">Cost ${money(i.unit_cost||0,p.currency||'USD')} + Shipping ${money(i.shipping_cost||0,'USD')}</div></div>
           <div class="text-sm">Qty <b>${Number(i.qty||0)}</b></div>
           <div><label class="text-[9px] uppercase font-bold text-gray-400">Item Status</label><select onchange="saveSupplierPOItemStatus('${i.id}',this.value,this)" class="mt-1 w-full border rounded-xl px-3 py-2 text-xs bg-white ${statusClass(i.procurement_status)}">${options(i.procurement_status)}</select></div>
           <div class="text-right"><button onclick="openEditSupplierPO('${i.supplier_po_id}')" class="px-3 py-2 border rounded-lg text-[10px] font-semibold">Open PO</button></div>
