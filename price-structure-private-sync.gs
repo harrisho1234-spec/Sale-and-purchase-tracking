@@ -64,16 +64,10 @@ function setupProductSync() {
     `Sync triggers installed. Secure connection: ${ping.ok ? 'OK' : 'FAILED'}.`
   );
 
-  try {
-    SpreadsheetApp.getUi().alert(
-      'Sync Installed',
-      `Secure connection: ${ping.ok ? 'OK' : 'FAILED'}\n` +
-      `Product sync: every ${LPH_PRODUCT_SYNC.everyMinutes} minutes\n` +
-      `Customer backup: every ${LPH_PRODUCT_SYNC.everyMinutes} minutes\n\n` +
-      'Setup no longer runs the full product sync, so it should finish quickly.',
-      SpreadsheetApp.getUi().ButtonSet.OK
-    );
-  } catch (_) {}
+  notify_(
+    'Sync Installed',
+    `Secure connection: ${ping.ok ? 'OK' : 'FAILED'} | Product sync: every ${LPH_PRODUCT_SYNC.everyMinutes} min | Customer backup: every ${LPH_PRODUCT_SYNC.everyMinutes} min`
+  );
 
   return {
     ok: true,
@@ -93,13 +87,10 @@ function syncAllProducts(showUi = true) {
     saveSyncStatus_('success', `Full product sync: ${result.upserted}/${result.sent} products updated; ${result.sheetWrites} app changes written to App Products.`);
 
     if (showUi) {
-      try {
-        SpreadsheetApp.getUi().alert(
-          'Product Sync Complete',
-          `${result.upserted} of ${result.sent} products updated in L'Imperial Sales & Order Management.\n${result.sheetWrites || 0} app changes written to App Products.`,
-          SpreadsheetApp.getUi().ButtonSet.OK
-        );
-      } catch (_) {}
+      notify_(
+        'Product Sync Complete',
+        `${result.upserted} of ${result.sent} products updated; ${result.sheetWrites || 0} app changes written to App Products.`
+      );
     }
     return result;
   } catch (err) {
@@ -176,13 +167,7 @@ function syncAppProductsToSheet_(showUi = false) {
   if (!changes.length) {
     const result = { pulled: 0, written: 0, acked: 0, superseded: 0 };
     if (showUi) {
-      try {
-        SpreadsheetApp.getUi().alert(
-          'App → App Products',
-          'No pending app product changes.',
-          SpreadsheetApp.getUi().ButtonSet.OK
-        );
-      } catch (_) {}
+      notify_('App → App Products','No pending app product changes.');
     }
     return result;
   }
@@ -260,13 +245,10 @@ function syncAppProductsToSheet_(showUi = false) {
   };
 
   if (showUi) {
-    try {
-      SpreadsheetApp.getUi().alert(
-        'App → App Products Complete',
-        `${result.written} product change(s) written to the App Products sheet.\n${result.acked} acknowledged by Supabase.`,
-        SpreadsheetApp.getUi().ButtonSet.OK
-      );
-    } catch (_) {}
+    notify_(
+      'App → App Products Complete',
+      `${result.written} product change(s) written; ${result.acked} acknowledged by Supabase.`
+    );
   }
 
   return result;
@@ -311,15 +293,12 @@ function testProductSyncConnection(showUi = true) {
   const ok = !!response.ok;
 
   if (showUi) {
-    try {
-      SpreadsheetApp.getUi().alert(
-        ok ? 'Secure Connection OK' : 'Secure Connection Failed',
-        ok
-          ? `Authenticated as ${response.caller || 'authorized Google account'}.`
-          : (response.error || 'Unknown error'),
-        SpreadsheetApp.getUi().ButtonSet.OK
-      );
-    } catch (_) {}
+    notify_(
+      ok ? 'Secure Connection OK' : 'Secure Connection Failed',
+      ok
+        ? `Authenticated as ${response.caller || 'authorized Google account'}.`
+        : (response.error || 'Unknown error')
+    );
   }
   return response;
 }
@@ -329,10 +308,9 @@ function showProductSyncStatus() {
   const when = props.getProperty('LPH_PRODUCT_SYNC_LAST_TIME') || 'Not yet run';
   const status = props.getProperty('LPH_PRODUCT_SYNC_LAST_STATUS') || 'Unknown';
   const message = props.getProperty('LPH_PRODUCT_SYNC_LAST_MESSAGE') || '';
-  SpreadsheetApp.getUi().alert(
+  notify_(
     'L\'Imperial Product Sync Status',
-    `Last run: ${when}\nStatus: ${status}\n${message}`,
-    SpreadsheetApp.getUi().ButtonSet.OK
+    `Last run: ${when} | Status: ${status} | ${message}`
   );
 }
 
@@ -490,13 +468,10 @@ function syncCustomerBackupToSheet_(showUi = false) {
   };
 
   if (showUi) {
-    try {
-      SpreadsheetApp.getUi().alert(
-        'Customer Backup Complete',
-        `${result.customers} customers, ${result.crm} CRM leads, ${result.showroom} showroom visits, ${result.online} online customers and ${result.contacts} contacts written to Google Sheets.`,
-        SpreadsheetApp.getUi().ButtonSet.OK
-      );
-    } catch (_) {}
+    notify_(
+      'Customer Backup Complete',
+      `${result.customers} customers, ${result.crm} CRM leads, ${result.showroom} showroom visits, ${result.online} online customers and ${result.contacts} contacts written to Google Sheets.`
+    );
   }
   return result;
 }
@@ -577,6 +552,15 @@ function removeProductSyncTriggers_() {
   ScriptApp.getProjectTriggers().forEach(t => {
     if (handlers.has(t.getHandlerFunction())) ScriptApp.deleteTrigger(t);
   });
+}
+
+
+function notify_(title, message) {
+  const text = String(message || '');
+  console.log(title + ': ' + text);
+  try {
+    SpreadsheetApp.openById(LPH_PRODUCT_SYNC.spreadsheetId).toast(text, title, 8);
+  } catch (_) {}
 }
 
 function saveSyncStatus_(status, message) {
