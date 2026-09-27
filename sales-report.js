@@ -7,6 +7,9 @@
     year:null,
     selectedReps:null,
     repMenuOpen:false,
+    selectedMonths:null,
+    selectedQuarters:null,
+    periodMenuOpen:false,
     business:'all'
   };
 
@@ -39,12 +42,51 @@
       if(reportState.business!=='RKTK'&&code!==reportState.business)return false;
     }
     if(reportState.view!=='year'&&reportState.year&&yearOf(r.order_date)!==Number(reportState.year))return false;
+    if(reportState.view==='month'&&reportState.selectedMonths!==null){
+      const m=monthOf(r.order_date);
+      if(!m||!reportState.selectedMonths.has(m))return false;
+    }
+    if(reportState.view==='quarter'&&reportState.selectedQuarters!==null){
+      const m=monthOf(r.order_date);
+      const q=m?Math.floor((m-1)/3)+1:null;
+      if(!q||!reportState.selectedQuarters.has(q))return false;
+    }
     return true;
   }
   function yearOf(v){const y=Number(String(v||'').slice(0,4));return Number.isFinite(y)?y:null}
   function monthOf(v){const m=Number(String(v||'').slice(5,7));return m>=1&&m<=12?m:null}
   function reportYears(){
     return [...new Set(reportState.rows.map(r=>yearOf(r.order_date)).filter(Boolean))].sort((a,b)=>b-a);
+  }
+  function monthNames(){return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']}
+  function periodSelectionLabel(){
+    if(reportState.view==='month'){
+      if(reportState.selectedMonths===null)return 'All Months';
+      const vals=[...reportState.selectedMonths].sort((a,b)=>a-b);
+      if(vals.length===0)return 'No Months';
+      if(vals.length<=3)return vals.map(m=>monthNames()[m-1]).join(', ');
+      return vals.length+' Months';
+    }
+    if(reportState.view==='quarter'){
+      if(reportState.selectedQuarters===null)return 'All Quarters';
+      const vals=[...reportState.selectedQuarters].sort((a,b)=>a-b);
+      if(vals.length===0)return 'No Quarters';
+      if(vals.length<=3)return vals.map(q=>'Q'+q).join(', ');
+      return vals.length+' Quarters';
+    }
+    return '';
+  }
+  function periodFilterMenu(){
+    if(reportState.view==='year')return '';
+    const isMonth=reportState.view==='month';
+    const values=isMonth?monthNames().map((label,i)=>({key:i+1,label})):[1,2,3,4].map(q=>({key:q,label:'Q'+q}));
+    const selected=isMonth?reportState.selectedMonths:reportState.selectedQuarters;
+    const allLabel=isMonth?'All Months':'All Quarters';
+    return '<div id="salesReportPeriodMenu" class="'+(reportState.periodMenuOpen?'':'hidden ')+'absolute z-[95] right-0 mt-2 w-[240px] max-h-[380px] overflow-y-auto bg-white border rounded-xl shadow-xl p-2">'
+      +'<label class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-50 cursor-pointer"><input type="checkbox" '+(selected===null?'checked':'')+' onchange="salesReportSelectAllPeriods(this.checked)"><span class="font-semibold text-sm">'+allLabel+'</span></label>'
+      +'<div class="border-t my-1"></div>'
+      +values.map(x=>'<label class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-50 cursor-pointer"><input type="checkbox" '+(selected===null||selected.has(x.key)?'checked':'')+' onchange="salesReportTogglePeriod('+x.key+',this.checked)"><span class="text-sm">'+x.label+'</span></label>').join('')
+      +'</div>';
   }
   function reportReps(){
     const map=new Map();
@@ -168,15 +210,15 @@
     };
 
     if(reportState.view==='month'){
-      const names=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const names=monthNames();
       const out=names.map((label,i)=>({key:i+1,label,actual:0,collection:0,confirmed:0,returns:0,invoice:0,prepayment:0,pending:0,orders:0}));
       rows.forEach(r=>{const m=monthOf(r.order_date);if(m)add(out[m-1],r)});
-      return out;
+      return reportState.selectedMonths===null?out:out.filter(x=>reportState.selectedMonths.has(x.key));
     }
     if(reportState.view==='quarter'){
       const out=[1,2,3,4].map(q=>({key:q,label:'Q'+q,actual:0,collection:0,confirmed:0,returns:0,invoice:0,prepayment:0,pending:0,orders:0}));
       rows.forEach(r=>{const m=monthOf(r.order_date);if(m)add(out[Math.floor((m-1)/3)],r)});
-      return out;
+      return reportState.selectedQuarters===null?out:out.filter(x=>reportState.selectedQuarters.has(x.key));
     }
 
     const years=[...new Set(rows.map(r=>yearOf(r.order_date)).filter(Boolean))].sort((a,b)=>a-b);
@@ -245,6 +287,12 @@
           <div class="flex flex-wrap items-center gap-2">
             <div class="flex gap-1 p-1 rounded-xl bg-[#f7f5f1]">${tabButton('month','By Month')}${tabButton('quarter','By Quarter')}${tabButton('year','By Year')}</div>
             ${yearSelect}
+            ${reportState.view!=='year'?`<div class="relative">
+              <button type="button" onclick="toggleSalesReportPeriodMenu()" class="min-w-[150px] flex items-center justify-between gap-3 border rounded-xl bg-white px-3 py-2.5 text-sm">
+                <span class="truncate">${esc(periodSelectionLabel())}</span><span class="text-gray-400">⌄</span>
+              </button>
+              ${periodFilterMenu()}
+            </div>`:''}
             <select id="salesReportBusiness" onchange="setSalesReportBusiness(this.value)" class="border rounded-xl bg-white px-3 py-2.5 text-sm min-w-[180px]">
               <option value="all" ${reportState.business==='all'?'selected':''}>All Business</option>
               <option value="RKTK" ${reportState.business==='RKTK'?'selected':''}>RK + TK Combined</option>
@@ -278,7 +326,7 @@
 
       <div class="grid xl:grid-cols-[1.2fr_.8fr] gap-4">
         <div class="card rounded-2xl p-4">
-          <div class="flex items-center justify-between gap-3 mb-4"><div><h4 class="font-bold">Sales by ${reportState.view==='month'?'Month':reportState.view==='quarter'?'Quarter':'Year'}</h4><div class="text-[10px] text-gray-400 mt-1">${reportState.view==='year'?'All available years':esc(String(reportState.year||''))} · ${esc(reportBusinessLabel())}</div></div><div class="text-xs text-gray-400">${esc(selectedRepLabel())}</div></div>
+          <div class="flex items-center justify-between gap-3 mb-4"><div><h4 class="font-bold">Sales by ${reportState.view==='month'?'Month':reportState.view==='quarter'?'Quarter':'Year'}</h4><div class="text-[10px] text-gray-400 mt-1">${reportState.view==='year'?'All available years':esc(String(reportState.year||''))+(periodSelectionLabel()?' · '+esc(periodSelectionLabel()):'')} · ${esc(reportBusinessLabel())}</div></div><div class="text-xs text-gray-400">${esc(selectedRepLabel())}</div></div>
           <div class="space-y-3">
             ${buckets.length?buckets.map(b=>{
               const width=max>0?Math.max((b.actual/max)*100,b.actual>0?2:0):0;
@@ -355,15 +403,52 @@
 
   window.setSalesReportView=function(v){
     if(!['month','quarter','year'].includes(v))return;
-    reportState.view=v;reportState.repMenuOpen=false;renderSalesReportBody();
+    reportState.view=v;
+    reportState.repMenuOpen=false;
+    reportState.periodMenuOpen=false;
+    renderSalesReportBody();
   };
-  window.setSalesReportYear=function(v){reportState.year=Number(v);reportState.repMenuOpen=false;renderSalesReportBody()};
-  window.setSalesReportBusiness=function(v){reportState.business=['RKTK','RK','TK','OTHER'].includes(v)?v:'all';reportState.repMenuOpen=false;renderSalesReportBody()};
-  window.toggleSalesReportRepMenu=function(){reportState.repMenuOpen=!reportState.repMenuOpen;renderSalesReportBody()};
+  window.setSalesReportYear=function(v){
+    reportState.year=Number(v);
+    reportState.repMenuOpen=false;
+    reportState.periodMenuOpen=false;
+    renderSalesReportBody();
+  };
+  window.setSalesReportBusiness=function(v){
+    reportState.business=['RKTK','RK','TK','OTHER'].includes(v)?v:'all';
+    reportState.repMenuOpen=false;
+    reportState.periodMenuOpen=false;
+    renderSalesReportBody();
+  };
+  window.toggleSalesReportPeriodMenu=function(){
+    reportState.periodMenuOpen=!reportState.periodMenuOpen;
+    reportState.repMenuOpen=false;
+    renderSalesReportBody();
+  };
+  window.salesReportSelectAllPeriods=function(checked){
+    if(reportState.view==='month')reportState.selectedMonths=checked?null:new Set();
+    else if(reportState.view==='quarter')reportState.selectedQuarters=checked?null:new Set();
+    reportState.periodMenuOpen=true;
+    renderSalesReportBody();
+  };
+  window.salesReportTogglePeriod=function(key,checked){
+    if(reportState.view==='month'){
+      let set=reportState.selectedMonths===null?new Set([1,2,3,4,5,6,7,8,9,10,11,12]):new Set(reportState.selectedMonths);
+      if(checked)set.add(Number(key));else set.delete(Number(key));
+      reportState.selectedMonths=set.size===12?null:set;
+    }else if(reportState.view==='quarter'){
+      let set=reportState.selectedQuarters===null?new Set([1,2,3,4]):new Set(reportState.selectedQuarters);
+      if(checked)set.add(Number(key));else set.delete(Number(key));
+      reportState.selectedQuarters=set.size===4?null:set;
+    }
+    reportState.periodMenuOpen=true;
+    renderSalesReportBody();
+  };
+  window.toggleSalesReportRepMenu=function(){reportState.repMenuOpen=!reportState.repMenuOpen;reportState.periodMenuOpen=false;renderSalesReportBody()};
   window.salesReportSelectAllReps=function(checked){
     if(checked)reportState.selectedReps=null;
     else reportState.selectedReps=new Set();
-    reportState.repMenuOpen=true;renderSalesReportBody();
+    reportState.repMenuOpen=true;reportState.periodMenuOpen=false;renderSalesReportBody();
   };
   window.salesReportToggleRep=function(key,checked){
     const reps=reportReps();
@@ -372,7 +457,7 @@
     else set=new Set(reportState.selectedReps);
     if(checked)set.add(key);else set.delete(key);
     reportState.selectedReps=set.size===reps.length?null:set;
-    reportState.repMenuOpen=true;renderSalesReportBody();
+    reportState.repMenuOpen=true;reportState.periodMenuOpen=false;renderSalesReportBody();
   };
 
   const previousNavItems=window.navItems;
