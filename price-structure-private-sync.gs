@@ -37,44 +37,75 @@ function onOpen() {
 
 /** Run this ONCE from Apps Script after adding the code. */
 function setupProductSync() {
-  removeProductSyncTriggers_();
+  // Idempotent/lightweight setup: never runs a full sync, never calls Supabase,
+  // never opens a large sheet, and never deletes working triggers first.
+  const existing = ScriptApp.getProjectTriggers();
+  const hasHandler = name => existing.some(t => t.getHandlerFunction() === name);
+  const created = [];
+  const kept = [];
 
-  // Keep setup very light. Do not open or scan the large Price Structure workbook here.
-  // The actual sync functions create/repair their required sheets when they run.
-  ScriptApp.newTrigger('syncEditedProducts')
-    .forSpreadsheet(LPH_PRODUCT_SYNC.spreadsheetId)
-    .onEdit()
-    .create();
+  try {
+    if (hasHandler('syncEditedProducts')) {
+      kept.push('syncEditedProducts');
+    } else {
+      ScriptApp.newTrigger('syncEditedProducts')
+        .forSpreadsheet(LPH_PRODUCT_SYNC.spreadsheetId)
+        .onEdit()
+        .create();
+      created.push('syncEditedProducts');
+    }
 
-  ScriptApp.newTrigger('syncAllProducts')
-    .timeBased()
-    .everyMinutes(LPH_PRODUCT_SYNC.everyMinutes)
-    .create();
+    if (hasHandler('syncAllProducts')) {
+      kept.push('syncAllProducts');
+    } else {
+      ScriptApp.newTrigger('syncAllProducts')
+        .timeBased()
+        .everyMinutes(LPH_PRODUCT_SYNC.everyMinutes)
+        .create();
+      created.push('syncAllProducts');
+    }
 
-  ScriptApp.newTrigger('syncCustomerBackupToSheet')
-    .timeBased()
-    .everyMinutes(LPH_PRODUCT_SYNC.everyMinutes)
-    .create();
+    if (hasHandler('syncCustomerBackupToSheet')) {
+      kept.push('syncCustomerBackupToSheet');
+    } else {
+      ScriptApp.newTrigger('syncCustomerBackupToSheet')
+        .timeBased()
+        .everyMinutes(LPH_PRODUCT_SYNC.everyMinutes)
+        .create();
+      created.push('syncCustomerBackupToSheet');
+    }
 
-  // Keep setup intentionally light. The old setup also ran a full product sync,
-  // which can exceed Apps Script's 6-minute execution limit on a large workbook.
-  const ping = testProductSyncConnection(false);
-  saveSyncStatus_(
-    ping.ok ? 'success' : 'error',
-    `Sync triggers installed. Secure connection: ${ping.ok ? 'OK' : 'FAILED'}.`
-  );
+    const message =
+      'Trigger setup complete. Created: ' + (created.join(', ') || 'none') +
+      '. Already present: ' + (kept.join(', ') || 'none') + '.';
+    console.log(message);
+    saveSyncStatus_('success', message);
+    return { ok:true, created, kept };
+  } catch (err) {
+    const message = 'Trigger setup failed: ' + String(err && err.message ? err.message : err);
+    console.error(message);
+    saveSyncStatus_('error', message);
+    throw new Error(message);
+  }
+}
 
-  notify_(
-    'Sync Installed',
-    `Secure connection: ${ping.ok ? 'OK' : 'FAILED'} | Product sync: every ${LPH_PRODUCT_SYNC.everyMinutes} min | Customer backup: every ${LPH_PRODUCT_SYNC.everyMinutes} min`
-  );
-
-  return {
-    ok: true,
-    connection: ping.ok,
-    productAutomatic: true,
-    customerBackupAutomatic: true
-  };
+/**
+ * Diagnostic helper. Run this if setupProductSync reports an error.
+ * It only reads trigger metadata and does not change anything.
+ */
+function diagnoseProductSyncSetup() {
+  const triggers = ScriptApp.getProjectTriggers().map(t => ({
+    handler: t.getHandlerFunction(),
+    eventType: String(t.getEventType()),
+    source: String(t.getTriggerSource())
+  }));
+  console.log(JSON.stringify({
+    spreadsheetId: LPH_PRODUCT_SYNC.spreadsheetId,
+    customerBackupSpreadsheetId: LPH_PRODUCT_SYNC.customerBackupSpreadsheetId,
+    everyMinutes: LPH_PRODUCT_SYNC.everyMinutes,
+    triggers
+  }, null, 2));
+  return triggers;
 }
 
 /** Full sync. Can also be run manually from the custom menu. */
