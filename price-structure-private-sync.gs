@@ -53,17 +53,26 @@ function setupProductSync() {
     .everyMinutes(LPH_PRODUCT_SYNC.everyMinutes)
     .create();
 
+  ScriptApp.newTrigger('syncCustomerBackupToSheet')
+    .timeBased()
+    .everyMinutes(LPH_PRODUCT_SYNC.everyMinutes)
+    .create();
+
+  // Keep setup intentionally light. The old setup also ran a full product sync,
+  // which can exceed Apps Script's 6-minute execution limit on a large workbook.
   const ping = testProductSyncConnection(false);
-  const result = syncAllProducts(false);
+  saveSyncStatus_(
+    ping.ok ? 'success' : 'error',
+    `Sync triggers installed. Secure connection: ${ping.ok ? 'OK' : 'FAILED'}.`
+  );
 
   try {
     SpreadsheetApp.getUi().alert(
-      'Product Sync Installed',
+      'Sync Installed',
       `Secure connection: ${ping.ok ? 'OK' : 'FAILED'}\n` +
-      `Products sent: ${result.sent}\n` +
-      `Products updated: ${result.upserted}\n` +
-      `App changes written to Sheet: ${result.sheetWrites || 0}\n` +
-      `Automatic sync: Sheet edits + app changes every ${LPH_PRODUCT_SYNC.everyMinutes} minutes.`,
+      `Product sync: every ${LPH_PRODUCT_SYNC.everyMinutes} minutes\n` +
+      `Customer backup: every ${LPH_PRODUCT_SYNC.everyMinutes} minutes\n\n` +
+      'Setup no longer runs the full product sync, so it should finish quickly.',
       SpreadsheetApp.getUi().ButtonSet.OK
     );
   } catch (_) {}
@@ -71,10 +80,8 @@ function setupProductSync() {
   return {
     ok: true,
     connection: ping.ok,
-    sent: result.sent,
-    upserted: result.upserted,
-    sheetWrites: result.sheetWrites || 0,
-    automatic: true
+    productAutomatic: true,
+    customerBackupAutomatic: true
   };
 }
 
@@ -82,12 +89,10 @@ function setupProductSync() {
 function syncAllProducts(showUi = true) {
   try {
     const appToSheet = syncAppProductsToSheet_(false);
-    const customerBackup = syncCustomerBackupToSheet_(false);
     const products = buildAggregatedProducts_();
     const result = pushProducts_(products, 'full');
     result.sheetWrites = appToSheet.written || 0;
-    result.customerBackup = customerBackup;
-    saveSyncStatus_('success', `Full sync: ${result.upserted}/${result.sent} products updated; ${result.sheetWrites} app changes written to App Products; customer backup refreshed.`);
+    saveSyncStatus_('success', `Full product sync: ${result.upserted}/${result.sent} products updated; ${result.sheetWrites} app changes written to App Products.`);
 
     if (showUi) {
       try {
@@ -415,7 +420,7 @@ function pushProducts_(products, mode) {
 }
 
 
-/** Manual customer backup refresh. Also runs automatically inside syncAllProducts(). */
+/** Manual customer backup refresh. Also runs automatically from its own time trigger. */
 function syncCustomerBackupToSheet(showUi = true) {
   try {
     const result = syncCustomerBackupToSheet_(showUi);
@@ -570,7 +575,7 @@ function getHeaderMap_(sheet) {
 }
 
 function removeProductSyncTriggers_() {
-  const handlers = new Set(['syncEditedProducts', 'syncAllProducts']);
+  const handlers = new Set(['syncEditedProducts', 'syncAllProducts', 'syncCustomerBackupToSheet']);
   ScriptApp.getProjectTriggers().forEach(t => {
     if (handlers.has(t.getHandlerFunction())) ScriptApp.deleteTrigger(t);
   });
