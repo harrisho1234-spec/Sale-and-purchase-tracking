@@ -201,7 +201,7 @@
   }
   function tabButton(id,label){
     const active=reportState.view===id;
-    return '<button type="button" onclick="setSalesReportView(\''+id+'\')" class="px-4 py-2 rounded-lg text-xs font-semibold '+(active?'bg-[#211d18] text-white':'bg-white border text-gray-600')+'">'+label+'</button>';
+    return '<button type="button" onclick="setSalesReportView(\''+id+'\')" class="px-4 py-2 rounded-lg text-xs font-semibold '+(active?'bg-[#b88a2c] text-white border border-[#b88a2c]':'bg-white border text-gray-600')+'">'+label+'</button>';
   }
   function kpiCard(label,value,sub,cls=''){
     return '<div class="card rounded-2xl p-4"><div class="text-[10px] uppercase tracking-wide font-bold text-gray-400">'+label+'</div><div class="text-2xl font-bold mt-1 '+cls+'">'+value+'</div><div class="text-[10px] text-gray-400 mt-1">'+sub+'</div></div>';
@@ -263,10 +263,10 @@
       </div>
 
       <div class="grid xl:grid-cols-3 gap-3 mb-3">
-        <div class="rounded-2xl p-5 bg-[#211d18] text-white shadow-sm">
-          <div class="text-[10px] uppercase tracking-[.16em] font-bold text-white/60">Main Result · Actual Sales</div>
-          <div class="text-3xl font-bold mt-2">${money(t.actual)}</div>
-          <div class="text-[10px] text-white/60 mt-2">Invoices ${money(t.invoice)} + Pre-payment ${money(t.prepayment)} − Returns ${money(t.returns)}</div>
+        <div class="rounded-2xl p-5 bg-[#fff8e8] border border-[#e6c776] shadow-sm">
+          <div class="text-[10px] uppercase tracking-[.16em] font-bold text-[#9a6b12]">Main Result · Actual Sales</div>
+          <div class="text-3xl font-bold mt-2 text-[#1f2937]">${money(t.actual)}</div>
+          <div class="text-[10px] text-[#7c6a48] mt-2">Invoices ${money(t.invoice)} + Pre-payment ${money(t.prepayment)} − Returns ${money(t.returns)}</div>
         </div>
         ${kpiCard('Collection',money(t.collection),'Deposits + all payments actually received','text-green-600')}
         ${kpiCard('Confirmed Sales',money(t.confirmed),'Invoices + Pre-payment + Pending ('+money(t.pending)+' pending)','text-[#8a6514]')}
