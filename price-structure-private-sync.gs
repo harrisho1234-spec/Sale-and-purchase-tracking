@@ -39,10 +39,8 @@ function onOpen() {
 function setupProductSync() {
   removeProductSyncTriggers_();
 
-  const ss = SpreadsheetApp.openById(LPH_PRODUCT_SYNC.spreadsheetId);
-  ensureAppProductsSheet_(ss);
-  ensureCustomerBackupSheets_();
-
+  // Keep setup very light. Do not open or scan the large Price Structure workbook here.
+  // The actual sync functions create/repair their required sheets when they run.
   ScriptApp.newTrigger('syncEditedProducts')
     .forSpreadsheet(LPH_PRODUCT_SYNC.spreadsheetId)
     .onEdit()
