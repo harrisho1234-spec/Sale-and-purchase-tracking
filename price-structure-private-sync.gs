@@ -18,7 +18,8 @@ const LPH_PRODUCT_SYNC = {
   appSheetColumns: 24,
   endpoint: 'https://msxvnaintafqdgheutfu.supabase.co/functions/v1/sync-price-structure',
   batchSize: 150,
-  everyMinutes: 15
+  everyMinutes: 15,
+  customerBackupSpreadsheetId: '1_1P235nfxjW2etIkP034iG8YsmbnsOcwzwY8ocywdXE'
 };
 
 function onOpen() {
@@ -26,6 +27,7 @@ function onOpen() {
     .createMenu("L'Imperial Product Sync")
     .addItem('Sync Products Now', 'syncAllProducts')
     .addItem('Sync App Changes to Sheet Now', 'syncAppProductsToSheet')
+    .addItem('Sync Customer Backup Now', 'syncCustomerBackupToSheet')
     .addItem('Install / Repair Auto Sync', 'setupProductSync')
     .addItem('Test Secure Connection', 'testProductSyncConnection')
     .addSeparator()
@@ -39,6 +41,7 @@ function setupProductSync() {
 
   const ss = SpreadsheetApp.openById(LPH_PRODUCT_SYNC.spreadsheetId);
   ensureAppProductsSheet_(ss);
+  ensureCustomerBackupSheets_();
 
   ScriptApp.newTrigger('syncEditedProducts')
     .forSpreadsheet(LPH_PRODUCT_SYNC.spreadsheetId)
@@ -79,10 +82,12 @@ function setupProductSync() {
 function syncAllProducts(showUi = true) {
   try {
     const appToSheet = syncAppProductsToSheet_(false);
+    const customerBackup = syncCustomerBackupToSheet_(false);
     const products = buildAggregatedProducts_();
     const result = pushProducts_(products, 'full');
     result.sheetWrites = appToSheet.written || 0;
-    saveSyncStatus_('success', `Full sync: ${result.upserted}/${result.sent} products updated; ${result.sheetWrites} app changes written to App Products.`);
+    result.customerBackup = customerBackup;
+    saveSyncStatus_('success', `Full sync: ${result.upserted}/${result.sent} products updated; ${result.sheetWrites} app changes written to App Products; customer backup refreshed.`);
 
     if (showUi) {
       try {
@@ -407,6 +412,122 @@ function pushProducts_(products, mode) {
   }
 
   return { sent: products.length, upserted: upserted, skipped: skipped };
+}
+
+
+/** Manual customer backup refresh. Also runs automatically inside syncAllProducts(). */
+function syncCustomerBackupToSheet(showUi = true) {
+  try {
+    const result = syncCustomerBackupToSheet_(showUi);
+    saveSyncStatus_('success', `Customer backup refreshed: ${result.customers} customers, ${result.crm} CRM leads, ${result.showroom} showroom visits, ${result.online} online customers, ${result.contacts} contacts.`);
+    return result;
+  } catch (err) {
+    saveSyncStatus_('error', String(err && err.message ? err.message : err));
+    throw err;
+  }
+}
+
+function syncCustomerBackupToSheet_(showUi = false) {
+  const response = callSyncApi_({
+    mode: 'pull_customer_backup',
+    spreadsheet_id: LPH_PRODUCT_SYNC.spreadsheetId
+  });
+  if (!response.ok) throw new Error(response.error || 'Customer backup sync failed.');
+
+  const ss = SpreadsheetApp.openById(LPH_PRODUCT_SYNC.customerBackupSpreadsheetId);
+  const sets = [
+    {
+      name: 'Customers',
+      headers: ['Record ID','Customer ID','Customer Name','Phone','Email','Address','Assigned Sales ID','Assigned Sales','Active','Notes','Customer Since','Created At','Updated At'],
+      keys: ['id','customer_code','name','phone','email','address','assigned_sales_id','assigned_sales_name','active','notes','customer_since','created_at','updated_at'],
+      rows: response.customers || []
+    },
+    {
+      name: 'Customer CRM',
+      headers: ['Lead ID','Customer ID','Customer Name','Phone','Normalized Phone','Category','Business','Stage','First Contact','Last Contact','First Activity','Last Activity','First Source','Last Source','Interest','Next Follow-up','Notes','Latest Remark','Assigned Sales ID','Assigned Sales','Linked Customer ID','Created At','Updated At'],
+      keys: ['id','customer_code','customer_name','phone','normalized_phone','customer_category','business_code','stage','first_contact_date','last_contact_date','first_activity_type','last_activity_type','first_source','last_source','interest','next_follow_up_date','notes','latest_remark','assigned_sales_id','assigned_sales_name','linked_customer_id','created_at','updated_at'],
+      rows: response.crm || []
+    },
+    {
+      name: 'Showroom Visits',
+      headers: ['Activity ID','Date','Business','Customer Name','Phone','Customer Type','Source','Status','Interest','Remark','Follow-up Date','Assigned Sales ID','Assigned Sales','Lead ID','Linked Customer ID','Created By','Created At','Updated At'],
+      keys: ['id','activity_date','business_code','customer_name','phone','customer_type','source_channel','status','interest','remark','follow_up_date','assigned_sales_id','assigned_sales_name','lead_id','linked_customer_id','created_by','created_at','updated_at'],
+      rows: response.showroom || []
+    },
+    {
+      name: 'Online Customers',
+      headers: ['Activity ID','Date','Business','Customer Name','Phone','Customer Type','Source','Status','Interest','Remark','Follow-up Date','Assigned Sales ID','Assigned Sales','Lead ID','Linked Customer ID','Created By','Created At','Updated At'],
+      keys: ['id','activity_date','business_code','customer_name','phone','customer_type','source_channel','status','interest','remark','follow_up_date','assigned_sales_id','assigned_sales_name','lead_id','linked_customer_id','created_by','created_at','updated_at'],
+      rows: response.online || []
+    },
+    {
+      name: 'Customer Contacts',
+      headers: ['Contact ID','Customer Record ID','Customer ID','Customer Name','Contact Type','Label','Contact Value','Primary','Created At','Updated At'],
+      keys: ['id','customer_id','customer_code','customer_name','contact_type','label','contact_value','is_primary','created_at','updated_at'],
+      rows: response.contacts || []
+    }
+  ];
+
+  sets.forEach(x => writeCustomerBackupSheet_(ss, x.name, x.headers, x.keys, x.rows));
+
+  const status = getOrCreateCustomerBackupSheet_(ss, 'Sync Status', 8);
+  status.clearContents();
+  status.getRange(1,1,2,7).setValues([
+    ['Last Sync','Customers','CRM Leads','Showroom Visits','Online Customers','Contacts','Source'],
+    [new Date(),(response.customers||[]).length,(response.crm||[]).length,(response.showroom||[]).length,(response.online||[]).length,(response.contacts||[]).length,'Supabase']
+  ]);
+  status.setFrozenRows(1);
+
+  const result = {
+    customers:(response.customers||[]).length,
+    crm:(response.crm||[]).length,
+    showroom:(response.showroom||[]).length,
+    online:(response.online||[]).length,
+    contacts:(response.contacts||[]).length
+  };
+
+  if (showUi) {
+    try {
+      SpreadsheetApp.getUi().alert(
+        'Customer Backup Complete',
+        `${result.customers} customers, ${result.crm} CRM leads, ${result.showroom} showroom visits, ${result.online} online customers and ${result.contacts} contacts written to Google Sheets.`,
+        SpreadsheetApp.getUi().ButtonSet.OK
+      );
+    } catch (_) {}
+  }
+  return result;
+}
+
+function ensureCustomerBackupSheets_() {
+  const ss = SpreadsheetApp.openById(LPH_PRODUCT_SYNC.customerBackupSpreadsheetId);
+  [
+    ['Customers',24],
+    ['Customer CRM',24],
+    ['Showroom Visits',20],
+    ['Online Customers',20],
+    ['Customer Contacts',12],
+    ['Sync Status',8]
+  ].forEach(x => getOrCreateCustomerBackupSheet_(ss, x[0], x[1]));
+}
+
+function getOrCreateCustomerBackupSheet_(ss, name, cols) {
+  let sh = ss.getSheetByName(name);
+  if (!sh) sh = ss.insertSheet(name);
+  if (sh.getMaxColumns() < cols) sh.insertColumnsAfter(sh.getMaxColumns(), cols - sh.getMaxColumns());
+  sh.setFrozenRows(1);
+  return sh;
+}
+
+function writeCustomerBackupSheet_(ss, name, headers, keys, rows) {
+  const sh = getOrCreateCustomerBackupSheet_(ss, name, headers.length);
+  sh.clearContents();
+  const values = [headers].concat((rows || []).map(r => keys.map(k => {
+    const v = r && Object.prototype.hasOwnProperty.call(r,k) ? r[k] : '';
+    return v === null || v === undefined ? '' : v;
+  })));
+  if (values.length) sh.getRange(1,1,values.length,headers.length).setValues(values);
+  sh.setFrozenRows(1);
+  if (headers.length) sh.autoResizeColumns(1, headers.length);
 }
 
 function callSyncApi_(payload) {
