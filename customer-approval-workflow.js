@@ -142,7 +142,7 @@
       if(p)return openModal('Customer Change Pending','<div class="space-y-4"><div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><b>Your customer change request is pending review.</b><div class="mt-1">The live customer profile has not changed.</div></div>'+(p.request_note?'<div class="rounded-xl border p-3 text-sm"><b>Request note:</b> '+esc(p.request_note)+'</div>':'')+'<button onclick="closeModal()" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Close</button></div>');
     }
     var out=await baseEdit.apply(this,arguments);
-    if(!sales())return out;
+    if(!requester())return out;
     var form=document.getElementById('multiEditCustomerForm');if(!form)return out;
     var c=(state.customers||[]).find(function(x){return x.id===id});
     var banner=document.createElement('div');banner.className='md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800';banner.innerHTML='<b>Approval required.</b> Your changes will be sent to Manager/Admin. The live customer profile stays unchanged until approval.';form.prepend(banner);
