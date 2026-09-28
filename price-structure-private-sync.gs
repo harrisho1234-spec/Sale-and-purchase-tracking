@@ -768,6 +768,7 @@ function buildCustomerHistoryIndex_(sheet,activityType) {
         assigned_sales_email:salesEmail||null,
         source_counts:{},
         interest_counts:{},
+        activity_events:[],
         source_sheet:sheet.getName()
       };
       map.set(key,x);
@@ -776,6 +777,14 @@ function buildCustomerHistoryIndex_(sheet,activityType) {
     x.entry_count++;
     historyCountAdd_(x.source_counts,source);
     historyCountAdd_(x.interest_counts,interest);
+    x.activity_events.push({
+      date:date,
+      business_code:business,
+      stage:stage||null,
+      source:source||null,
+      interest:interest||null,
+      sales:sales||null
+    });
 
     if (date>=x.latest_activity_date) {
       x.customer_name=name||x.customer_name;
