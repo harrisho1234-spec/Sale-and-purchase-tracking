@@ -213,10 +213,10 @@
     var out=await baseNew.apply(this,arguments);
     if(!sales())return out;
     var form=document.getElementById('multiCustomerForm');if(!form)return out;
-    var banner=document.createElement('div');banner.className='md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800';banner.innerHTML='<b>Manager/Admin review required.</b> After you submit, this customer is added immediately to your Customer Master as <b>Pending Review</b>. You can continue working and create orders while it waits for review.';form.prepend(banner);
+    var banner=document.createElement('div');banner.className='md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800';banner.innerHTML='<b>Manager/Admin approval required.</b> Submitting this form creates a request only. <b>No Customer Master or Customer ID is created until the request is approved.</b> Sales can add working leads directly in Customer Database / CRM.';form.prepend(banner);
     var note=document.createElement('div');note.className='md:col-span-2';note.innerHTML='<label class="text-xs font-semibold">Request Note</label><textarea id="customerCreateRequestNote" rows="2" class="mt-1 w-full border border-amber-200 bg-amber-50 rounded-xl px-3 py-2" placeholder="Optional context for Manager/Admin"></textarea>';form.insertBefore(note,form.lastElementChild);
     installCreateCustomerNameSuggestions(form);
-    var btn=form.querySelector('button:not([type="button"])');if(btn)btn.textContent='Submit Customer for Approval';
+    var btn=form.querySelector('button:not([type="button"])');if(btn)btn.textContent='Submit New Customer Request';
     form.onsubmit=async function(e){
       e.preventDefault();
       var contacts=contactRows(form),name=clean(document.getElementById('mcName').value);if(!name)return showToast('Customer name is required.','err');
@@ -230,9 +230,9 @@
         }
       }
       var payload={name:name,address:clean(document.getElementById('mcAddress').value)||null,notes:clean(document.getElementById('mcNotes').value)||null,assigned_sales_id:state.user.id,active:true,customer_since:new Date().toISOString().slice(0,10)};
-      var x=await db.rpc('submit_customer_change_request',{p_request_type:'create',p_customer_id:null,p_requested_customer:payload,p_requested_contacts:contacts,p_request_note:clean(document.getElementById('customerCreateRequestNote').value)||null});
+      var x=await db.rpc('submit_sales_customer_master_create_request',{p_requested_customer:payload,p_requested_contacts:contacts,p_request_note:clean(document.getElementById('customerCreateRequestNote').value)||null});
       if(x.error)return showToast(x.error.message,'err');
-      closeModal();showToast('Customer added as Pending Review. You can create orders while Manager/Admin reviews it.');await go('customers');
+      closeModal();showToast('New customer request sent to Manager/Admin. The Customer Master will be created only after approval.');await go('customers');
     };
     return out;
   };
@@ -274,7 +274,7 @@
 
   function addTopButton(){
     if(!reviewer()&&!requester())return;
-    var add=document.querySelector('#content button[onclick="openNewCustomer()"]'),box=add&&add.parentElement;if(!box)return;
+    var add=document.querySelector('#content button[onclick="openNewCustomer()"]'),box=add&&add.parentElement;if(!box)return;if(sales())add.textContent='+ Request Customer';
     var old=box.querySelector('.customer-request-review-btn');if(old)old.remove();
     var count=C.requests.filter(function(x){return x.status==='pending'}).length,b=document.createElement('button');
     b.type='button';b.className='customer-request-review-btn px-4 py-3 border border-amber-200 bg-amber-50 text-amber-800 rounded-xl text-sm font-semibold whitespace-nowrap';
@@ -316,10 +316,10 @@
       if(!orderRes.error)pendingOrders=orderRes.data||[];
     }
     var kind=requestKind(r);
-    var html='<form id="reviewCustomerRequestForm" class="grid md:grid-cols-2 gap-4"><div class="md:col-span-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>'+esc(kind)+' awaiting review.</b> Requested by '+esc(r.requested_by_name||'Sales')+'.'+(r.request_type==='create'?'<div class="mt-1">The provisional customer is already usable for Sales Orders but remains clearly marked Pending Review until you approve, merge, or reject it.</div>':'')+(r.request_note?'<div class="mt-2"><b>Request note:</b> '+esc(r.request_note)+'</div>':'')+'</div>'
+    var html='<form id="reviewCustomerRequestForm" class="grid md:grid-cols-2 gap-4"><div class="md:col-span-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>'+esc(kind)+' awaiting review.</b> Requested by '+esc(r.requested_by_name||'Sales')+'.'+(r.request_type==='create'?(r.customer_id?'<div class="mt-1">This is an older provisional request. Review it before the customer is finalized.</div>':'<div class="mt-1"><b>No Customer Master has been created yet.</b> Approval will create the Customer Master and assign its Customer ID. Rejection creates nothing.</div>'):'')+(r.request_note?'<div class="mt-2"><b>Request note:</b> '+esc(r.request_note)+'</div>':'')+'</div>'
       +customerRequestChangesHtml(r)
       +(pendingOrders.length?'<div class="md:col-span-2 rounded-xl border border-purple-100 bg-purple-50 p-3"><div class="flex items-center justify-between gap-3"><div><b class="text-sm text-purple-900">Orders created while customer review is pending</b><div class="text-[10px] text-purple-700 mt-0.5">These orders remain attached to this provisional customer. Approving or merging the customer will finalize their customer review status automatically.</div></div><span class="min-w-[26px] h-[26px] rounded-full bg-purple-100 text-purple-800 text-[10px] font-bold inline-flex items-center justify-center">'+pendingOrders.length+'</span></div><div class="grid gap-1.5 mt-3">'+pendingOrders.slice(0,8).map(function(o){var doc=o.sales_invoice_no||o.sr_no||o.order_no||'Order';return '<div class="rounded-lg border border-purple-100 bg-white px-3 py-2 flex justify-between gap-3 text-xs"><b>'+esc(doc)+'</b><span class="text-gray-500">'+esc(o.order_date||'')+' · '+esc(o.customer_review_status||'pending')+'</span></div>'}).join('')+'</div></div>':'')
-      +'<div class="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800"><b>Final review draft below.</b> Sales\' requested values are prefilled. You can adjust them before approval; Pending Review status remains until you approve, merge, or reject.</div>'
+      +'<div class="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800"><b>Final review draft below.</b> Sales\' requested values are prefilled. You can adjust them before approval.'+(r.request_type==='create'&&!r.customer_id?' The Customer Master is created only when you approve.':'')+'</div>'
       +'<div class="md:col-span-2"><label class="text-xs font-semibold">Customer Name</label><input id="rcName" value="'+esc(o.name||'')+'" class="mt-1 w-full border rounded-xl px-3 py-2"></div>'
       +'<div class="md:col-span-2 rounded-xl border bg-[#faf9f6] p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Customer ID</div><div class="mt-1 font-bold text-[#b3871e]">'+esc(o.customer_code||'Assigned automatically on approval')+'</div><div class="text-[9px] text-gray-400 mt-1">Automatic and permanent — reviewers cannot edit it.</div></div>'
       +'<div class="md:col-span-2"><label class="text-xs font-semibold">Address</label><input id="rcAddress" value="'+esc(o.address||'')+'" class="mt-1 w-full border rounded-xl px-3 py-2"></div>'
@@ -335,7 +335,7 @@
     if(!r)return showToast('Customer request not found.','err');
     openModal('Link / Merge Existing Customer',
       '<div class="space-y-4">'
-      +'<div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800"><b>Use this when the Sales-created Pending Review customer is actually an existing customer.</b><div class="mt-1">Orders, Showroom/Online activity and CRM history attached to the pending customer will be moved to the approved existing customer. The entered name is saved as an alias for future matching.</div></div>'
+      +'<div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">'+(r.customer_id?'<b>Use this when the Pending Review customer is actually an existing customer.</b><div class="mt-1">Linked orders/activity will be moved to the approved existing customer and the duplicate provisional record will be retired.</div>':'<b>Use this when the Sales request is actually an existing customer.</b><div class="mt-1">The request will be linked to the approved existing Customer Master instead of creating a new customer. The requested name is kept as an alias for future matching.</div>')+'</div>'
       +'<div><label class="text-xs font-semibold">Search existing customer</label><input id="mergeCustomerSearch" autocomplete="off" oninput="searchCustomerMergeTargets(\''+requestId+'\')" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Type customer name, phone or Customer ID..."></div>'
       +'<div id="mergeCustomerResults" class="grid gap-2 max-h-[45vh] overflow-y-auto"><div class="rounded-xl border border-dashed p-8 text-center text-sm text-gray-400">Type at least 2 characters to search.</div></div>'
       +'<div><label class="text-xs font-semibold">Reviewer Note</label><textarea id="mergeCustomerReviewNote" rows="2" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Optional note about why these records are the same customer"></textarea></div>'
@@ -359,7 +359,7 @@
   window.mergeCustomerRequestToExisting=async function(requestId,targetId,encodedName){
     if(!reviewer())return showToast('Manager/Admin access required.','err');
     var name=decodeURIComponent(encodedName||'Customer');
-    if(!confirm('Merge this Pending Review customer into '+name+'? Orders and activity will move to the existing customer.'))return;
+    var req=C.requests.find(function(x){return x.request_id===requestId});var msg=req&&req.customer_id?'Merge this Pending Review customer into '+name+'? Orders and activity will move to the existing customer.':'Link this new-customer request to '+name+'? No new Customer Master will be created.';if(!confirm(msg))return;
     var note=clean(document.getElementById('mergeCustomerReviewNote')?.value)||null;
     var res=await db.rpc('review_customer_request_merge_existing',{p_request_id:requestId,p_target_customer_id:targetId,p_review_note:note});
     if(res.error)return showToast(res.error.message,'err');
