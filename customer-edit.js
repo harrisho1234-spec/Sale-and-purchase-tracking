@@ -6,6 +6,7 @@
   function role(){return state.profile?.role||''}
   function isSalesUser(){return role()==='sales'}
   function canAssignHandler(){return ['super_admin','admin','manager'].includes(role())}
+  function canDeleteCustomer(){return role()==='super_admin'&&!managerContext()}
   function fmtDate(v){if(!v)return '-';const d=new Date(v);return Number.isNaN(d.getTime())?String(v):d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}
   function norm(v=''){return String(v||'').trim().toLowerCase().replace(/[\s-]+/g,'_')}
   function isPendingPre(o){const pre=['pre_order','mixed'].includes(norm(o?.order_type))||norm(o?.sales_flow_type)==='pre_order'||String(o?.sr_no||'').toUpperCase().startsWith('SR');return pre&&!o?.sales_invoice_no&&!o?.invoice_issued_at}
@@ -34,7 +35,7 @@
       <div><div class="lg:hidden text-[9px] uppercase text-gray-400 font-bold mb-1">Received</div><div class="text-[12px] font-bold text-green-600">${money(m.paid)}</div></div>
       <div><div class="lg:hidden text-[9px] uppercase text-gray-400 font-bold mb-1">AR</div><div class="text-[12px] font-bold ${m.ar>0?'text-red-500':'text-green-600'}">${money(m.ar)}</div></div>
       <div class="min-w-0"><div class="lg:hidden text-[9px] uppercase text-gray-400 font-bold mb-1">Note</div>${note?`<div class="text-[11px] text-gray-500 line-clamp-2" title="${esc(note)}">${esc(note)}</div>`:'<span class="text-[11px] text-gray-300">No note</span>'}</div>
-      <div class="flex justify-end"><button onclick="openEditCustomer('${c.id}')" class="px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-xs font-semibold hover:bg-gray-50">Edit</button></div>
+      <div class="flex justify-end gap-2"><button onclick="openEditCustomer('${c.id}')" class="px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-xs font-semibold hover:bg-gray-50">Edit</button>${canDeleteCustomer()?`<button onclick="openDeleteCustomer('${c.id}')" class="px-3 py-2 rounded-lg border border-red-200 bg-red-50 text-red-600 text-xs font-semibold hover:bg-red-100">Delete</button>`:''}</div>
     </div>`;
   }
 
@@ -180,4 +181,66 @@
       closeModal();showToast('Customer updated');await renderCustomers();
     };
   };
+  window.openDeleteCustomer=async function(id){
+    if(!canDeleteCustomer())return showToast('Super Admin access required.','err');
+
+    let c=(state.customers||[]).find(x=>x.id===id);
+    if(!c){
+      const cr=await db.from('customers').select('*').eq('id',id).single();
+      if(cr.error)return showToast(cr.error.message,'err');
+      c=cr.data;
+    }
+
+    const {count,error}=await db.from('sales_orders')
+      .select('id',{count:'exact',head:true})
+      .eq('customer_id',id);
+
+    if(error)return showToast(error.message,'err');
+
+    const txCount=Number(count||0);
+    if(txCount>0){
+      openModal(`Cannot Delete Customer — ${c.name||''}`,`
+        <div class="space-y-4">
+          <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            <b>This customer has transaction history and cannot be deleted.</b>
+            <div class="mt-2">${txCount} sales order${txCount===1?'':'s'} found. The customer must remain so invoices, payments, returns and accounting history stay linked correctly.</div>
+          </div>
+          <button type="button" onclick="closeModal()" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Close</button>
+        </div>
+      `);
+      return;
+    }
+
+    openModal(`Delete Customer — ${c.name||''}`,`
+      <div class="space-y-4">
+        <div class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <b>Delete this customer permanently?</b>
+          <div class="mt-2">This is allowed only because no sales transaction exists. Customer contact records will be removed and CRM/activity links to this Customer Master will be unlinked automatically.</div>
+        </div>
+        <div class="rounded-xl border bg-white p-4">
+          <div class="font-bold">${esc(c.name||'Customer')}</div>
+          <div class="text-xs text-gray-500 mt-1">${esc(c.phone||'No phone')}${c.customer_code?' · '+esc(c.customer_code):''}</div>
+        </div>
+        <div class="flex gap-2">
+          <button type="button" onclick="closeModal()" class="flex-1 border rounded-xl py-3 font-semibold">Cancel</button>
+          <button type="button" id="deleteCustomerMasterBtn" onclick="deleteCustomerNow('${id}')" class="flex-1 bg-red-600 text-white rounded-xl py-3 font-semibold">Delete Customer</button>
+        </div>
+      </div>
+    `);
+  };
+
+  window.deleteCustomerNow=async function(id){
+    if(!canDeleteCustomer())return showToast('Super Admin access required.','err');
+    const btn=document.getElementById('deleteCustomerMasterBtn');
+    if(btn){btn.disabled=true;btn.textContent='Deleting...'}
+    const {data,error}=await db.rpc('delete_customer_master_superadmin',{p_customer_id:id});
+    if(error){
+      if(btn){btn.disabled=false;btn.textContent='Delete Customer'}
+      return showToast(error.message,'err');
+    }
+    closeModal();
+    showToast('Customer deleted.');
+    await renderCustomers();
+  };
+
 })();
