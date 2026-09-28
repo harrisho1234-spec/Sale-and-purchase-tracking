@@ -195,6 +195,7 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
       const canEdit=!r.is_history&&(activityReviewerMode()||activityIsOwner(r));
       const canSeeStage=activityCanSeeStage(r);
       const historyBadge=r.is_history?`<span class="px-2 py-1 rounded-lg border border-[#ead69b] bg-[#fffaf0] text-[9px] font-bold text-[#8a6514]">Google History · ${entryWeight(r)} ${activityState.type==='online'?'inquir'+(entryWeight(r)===1?'y':'ies'):'visit'+(entryWeight(r)===1?'':'s')}</span>`:'';
+      const canRequestMaster=!r.is_history&&(state.profile?.role||'')==='sales';
       return `<div class="card rounded-2xl p-4 ${r.is_history?'cursor-pointer hover:border-[#d8c287] transition':''}" ${r.is_history?`onclick="openCustomerHistoryGroup('${r.id}')"`:''}>
         <div class="grid lg:grid-cols-[110px_1.3fr_.8fr_.85fr_.85fr_auto] gap-3 lg:gap-4 items-center">
           <div><div class="text-[10px] uppercase font-bold text-gray-400">${r.is_history?'Latest Date':'Date'}</div><div class="text-sm font-semibold mt-1">${esc(fmtActivityDate(r.activity_date))}</div>${r.is_history?`<div class="text-[9px] text-gray-400 mt-1">Monthly archive</div>`:''}</div>
@@ -206,7 +207,7 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
           <div><div class="text-[10px] uppercase font-bold text-gray-400">Stage</div>${canSeeStage?`<span class="inline-flex mt-1 px-2 py-1 rounded-lg border text-[10px] font-semibold ${statusTone(r.status)}">${esc(r.status||'-')}</span>`:'<div class="text-[11px] text-gray-400 mt-1">Private</div>'}</div>
           <div><div class="text-[10px] uppercase font-bold text-gray-400">Sales</div><div class="text-sm mt-1">${esc(r.sales_rep_name||'-')}</div></div>
           <div><div class="text-[10px] uppercase font-bold text-gray-400">Follow Up</div><div class="text-sm mt-1">${canSeeStage?esc(r.follow_up_date?fmtActivityDate(r.follow_up_date):'-'):'Private'}</div></div>
-          <div class="flex lg:justify-end">${canEdit?`<button onclick="event.stopPropagation();openEditCustomerActivity('${r.id}')" class="px-3 py-2 border rounded-lg text-xs font-semibold bg-white">Edit</button>`:r.is_history?'<span class="text-[10px] font-semibold text-[#9a6b12]">View history →</span>':''}</div>
+          <div class="flex flex-wrap lg:justify-end gap-2">${canEdit?`<button onclick="event.stopPropagation();openEditCustomerActivity('${r.id}')" class="px-3 py-2 border rounded-lg text-xs font-semibold bg-white">Edit</button>`:r.is_history?'<span class="text-[10px] font-semibold text-[#9a6b12]">View history →</span>:''}${canRequestMaster?`<button onclick="event.stopPropagation();openActivityCustomerMasterRequest('${r.id}')" class="px-3 py-2 border border-amber-200 bg-amber-50 text-amber-800 rounded-lg text-[10px] font-semibold whitespace-nowrap">${r.linked_customer_id?'Customer Master':'Request as My Customer'}</button>`:''}</div>
         </div>
       </div>`;
     }).join('')+'</div>';
@@ -439,8 +440,9 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
     }
     activityHideCustomerSuggestions();
 
-    const registered=(data.source||data.source_type)==='customer_master';
-    const label=registered?(data.is_buyer?'Registered Buyer':'Registered Customer'):'Existing CRM Customer';
+    const src=(data.source||data.source_type);
+    const registered=src==='customer_master'||src==='pending_customer';
+    const label=src==='pending_customer'?'Pending Review Customer':registered?(data.is_buyer?'Registered Buyer':'Registered Customer'):'Existing CRM Customer';
     const owner=data.assigned_sales_name||'Unassigned';
     if(lock){
       lock.className='mt-1.5 text-[10px] rounded-lg border border-[#ead69b] bg-[#fffaf0] px-2.5 py-2 text-[#7a5a14]';
@@ -484,7 +486,7 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
     if(!activityCustomerCandidates.length){activityHideCustomerSuggestions();return}
     box.classList.remove('hidden');
     box.innerHTML=activityCustomerCandidates.map((x,i)=>{
-      const type=x.source_type==='customer_master'?(x.is_buyer?'Registered Buyer':'Registered Customer'):'CRM Customer';
+      const type=x.source_type==='pending_customer'?'Pending Review Customer':x.source_type==='customer_master'?(x.is_buyer?'Registered Buyer':'Registered Customer'):'CRM Customer';
       const owner=x.assigned_sales_name||'Unassigned';
       return '<button type="button" onclick="selectActivityCustomerCandidate('+i+')" class="w-full text-left px-3 py-2.5 border-b last:border-b-0 hover:bg-[#fffaf0]">'
         +'<div class="flex items-center justify-between gap-2"><b class="text-sm">'+esc(x.customer_name||'Customer')+'</b><span class="text-[9px] font-bold text-[#9a6b12]">'+esc(type)+'</span></div>'
@@ -529,6 +531,36 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
       +(data.is_buyer?'<br><b>Registered buyer:</b> identity and ownership are locked to the existing customer.':'');
     return data;
   };
+  window.openActivityCustomerMasterRequest=function(id){
+    const row=activityState.rows.find(x=>String(x.id)===String(id));
+    if(!row||row.is_history)return showToast('Only live Showroom/Online entries can be requested.','err');
+    if((state.profile?.role||'')!=='sales')return showToast('Sales request workflow only.','err');
+    openModal('Request Customer Master',
+      '<form id="activityCustomerMasterRequestForm" class="space-y-4">'
+      +'<div class="rounded-xl border bg-[#faf9f6] p-4"><div class="text-[10px] uppercase font-bold text-gray-400">Customer</div><div class="font-bold mt-1">'+esc(row.customer_name||'Customer')+'</div><div class="text-xs text-gray-500 mt-1">'+esc(row.phone||'Private / no phone')+' · '+esc(row.business_code||'-')+'</div></div>'
+      +'<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>Manager/Admin review required.</b><div class="mt-1">If this is a new/private customer, it will be added immediately to your Customer Master as <b>Pending Review</b> so you can create an order. If it already belongs to another Sales Rep, this becomes an ownership request instead of taking the customer automatically.</div></div>'
+      +'<div><label class="text-xs font-semibold">Request Note</label><textarea id="activityCustomerMasterRequestNote" rows="3" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Optional: why you believe this should be your customer, or any identity details you know"></textarea></div>'
+      +'<button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Submit for Review</button>'
+      +'</form>');
+    document.getElementById('activityCustomerMasterRequestForm').onsubmit=async function(e){
+      e.preventDefault();
+      const btn=e.target.querySelector('button');btn.disabled=true;btn.textContent='Submitting...';
+      const note=String(document.getElementById('activityCustomerMasterRequestNote')?.value||'').trim()||null;
+      const res=await db.rpc('request_activity_customer_master',{p_activity_id:id,p_request_note:note});
+      if(res.error){btn.disabled=false;btn.textContent='Submit for Review';return showToast(res.error.message,'err')}
+      const out=res.data||{};
+      closeModal();
+      if(out.action==='linked'){
+        showToast('Existing Customer Master linked. No approval was needed because it is already your customer.');
+      }else if(out.action==='ownership_request'){
+        showToast('Ownership request sent to Manager/Admin.');
+      }else{
+        showToast(out.message||'Customer added as Pending Review. You can create an order while it is reviewed.');
+      }
+      await renderCustomerActivity(activityState.type);
+    };
+  };
+
   window.openCustomerHistoryGroup=async function(id){
     const indexId=Number(String(id||'').replace('history-',''));
     if(!Number.isFinite(indexId)||indexId<=0)return showToast('History record not found','err');
