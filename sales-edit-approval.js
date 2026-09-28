@@ -190,7 +190,7 @@
       <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">Payments, Return/CN records, fulfillment status and supplier-PO links are preserved. Protected returned/PO-linked item rules are checked again when approval is applied.</div>
 
       ${isReviewer()&&pending?`
-        <div><label class="text-xs font-semibold">Review Note</label><textarea id="salesEditReviewNote" rows="2" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Optional for approval; required for rejection."></textarea></div>
+        <div><label class="text-xs font-semibold">Review Note</label><textarea id="salesEditReviewNote" rows="2" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Optional for approval; Super Admin may also leave it blank on rejection."></textarea></div>
         <div class="flex flex-col sm:flex-row gap-2 justify-end">
           <button onclick="reviewSalesEditRequest('${r.request_id}','reject')" class="px-4 py-2.5 rounded-xl border border-red-200 bg-red-50 text-red-600 text-xs font-semibold">Reject</button>
           <button onclick="reviewSalesEditRequest('${r.request_id}','approve')" class="px-4 py-2.5 rounded-xl bg-[#211d18] text-white text-xs font-semibold">Approve & Apply</button>
@@ -202,7 +202,7 @@
   window.reviewSalesEditRequest=async function(id,action){
     if(!isReviewer())return showToast('Manager/Admin access required.','err');
     const note=String(document.getElementById('salesEditReviewNote')?.value||'').trim();
-    if(action==='reject'&&!note)return showToast('Enter a rejection reason.','err');
+    if(action==='reject'&&!note&&appRole()!=='super_admin')return showToast('Enter a rejection reason.','err');
     const confirmText=action==='approve'
       ?'Approve and apply these changes to the live order?'
       :'Reject this Sales edit request?';
