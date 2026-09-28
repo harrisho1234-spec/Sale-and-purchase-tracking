@@ -11,6 +11,9 @@
   })();
   let customerCurrentList=null;
   const contactTypes=['phone','telegram','whatsapp','line','wechat','email','other'];
+  let customerSort=(function(){
+    try{return sessionStorage.getItem('customer_sort')||'latest_invoice'}catch(_){return 'latest_invoice'}
+  })();
 
   function role(){return state.profile?.role||''}
   function managerContext(){return typeof managerRepActive==='function'&&managerRepActive()}
@@ -18,11 +21,30 @@
   function canSeeCustomerId(){return ['super_admin','admin','manager'].includes(role())&&!managerContext()}
   function fmtDate(v){if(!v)return '-';const d=new Date(v);return Number.isNaN(d.getTime())?String(v):d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}
   function metaFor(id){return window._customerAssignmentMeta?.get(id)||{}}
-  function metricsFor(id){return window._customerSalesMetrics?.get(id)||{sales:0,paid:0,ar:0,pending:0,orders:0}}
+  function metricsFor(id){return window._customerSalesMetrics?.get(id)||{sales:0,paid:0,ar:0,pending:0,orders:0,lastInvoiceAt:null,lastOrderAt:null,lastActivityAt:null}}
   function handlerName(c){const m=metaFor(c.id);if(m.assigned_sales_name)return m.assigned_sales_name;if(m.assigned_sales_email)return m.assigned_sales_email;if(c.assigned_sales_id===state.user?.id)return state.profile?.display_name||state.user?.email||'Me';return c.assigned_sales_id?'Assigned':'Unassigned'}
   function contactsFor(id){return window._customerContactsMap?.get(id)||[]}
   function typeLabel(t){return ({phone:'Phone',telegram:'Telegram',whatsapp:'WhatsApp',line:'LINE',wechat:'WeChat',email:'Email',other:'Other'})[t]||titleCase(t||'Contact')}
   function contactIcon(t){return ({phone:'☎',telegram:'✈',whatsapp:'◉',line:'L',wechat:'W',email:'@',other:'•'})[t]||'•'}
+  function dateMs(v){const t=Date.parse(v||'');return Number.isFinite(t)?t:0}
+  function sortCustomers(list){
+    const rows=[...(list||[])];
+    const selected=document.getElementById('customerSortFilter')?.value||customerSort||'latest_invoice';
+    customerSort=selected;
+    try{sessionStorage.setItem('customer_sort',selected)}catch(_){}
+    rows.sort((a,b)=>{
+      const am=metricsFor(a.id),bm=metricsFor(b.id);
+      if(selected==='newest_customer')return dateMs(b.created_at)-dateMs(a.created_at)||String(a.name||'').localeCompare(String(b.name||''));
+      if(selected==='oldest_customer')return dateMs(a.created_at)-dateMs(b.created_at)||String(a.name||'').localeCompare(String(b.name||''));
+      if(selected==='name_az')return String(a.name||'').localeCompare(String(b.name||''));
+      if(selected==='highest_sales')return Number(bm.sales||0)-Number(am.sales||0)||String(a.name||'').localeCompare(String(b.name||''));
+      if(selected==='highest_ar')return Number(bm.ar||0)-Number(am.ar||0)||String(a.name||'').localeCompare(String(b.name||''));
+      const ad=dateMs(am.lastInvoiceAt||am.lastActivityAt||am.lastOrderAt||a.created_at);
+      const bd=dateMs(bm.lastInvoiceAt||bm.lastActivityAt||bm.lastOrderAt||b.created_at);
+      return bd-ad||dateMs(b.created_at)-dateMs(a.created_at)||String(a.name||'').localeCompare(String(b.name||''));
+    });
+    return rows;
+  }
 
   async function loadVisibleContacts(){
     const ids=(state.customers||[]).map(c=>c.id);
@@ -138,7 +160,7 @@
       return true;
     });
 
-    renderCustomerEditRows(list);
+    renderCustomerEditRows(sortCustomers(list));
   };
 
   const baseRenderCustomers=window.renderCustomers;
@@ -149,7 +171,9 @@
     const head=document.querySelector('#content .hidden.lg\\:grid');
     if(head){const cols=head.children;if(cols[1])cols[1].textContent='Contacts';}
     ensureCustomerPager();
-    renderCustomerEditRows(state.customers||[]);
+    const sortEl=document.getElementById('customerSortFilter');
+    if(sortEl)sortEl.value=customerSort;
+    filterCustomerRows();
   };
 
   function contactTypeOptions(selected='phone'){return contactTypes.map(t=>`<option value="${t}" ${t===selected?'selected':''}>${typeLabel(t)}</option>`).join('')}
