@@ -19,7 +19,6 @@
   function managerContext(){return typeof managerRepActive==='function'&&managerRepActive()}
   function canAssignHandler(){return ['super_admin','admin','manager'].includes(role())}
   function canSeeCustomerId(){return ['super_admin','admin','manager'].includes(role())&&!managerContext()}
-  function canDeleteCustomer(){return role()==='super_admin'&&!managerContext()}
   function fmtDate(v){if(!v)return '-';const d=new Date(v);return Number.isNaN(d.getTime())?String(v):d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}
   function metaFor(id){return window._customerAssignmentMeta?.get(id)||{}}
   function metricsFor(id){return window._customerSalesMetrics?.get(id)||{sales:0,paid:0,ar:0,pending:0,orders:0,lastInvoiceAt:null,lastOrderAt:null,lastActivityAt:null}}
@@ -137,7 +136,7 @@
         <div><div class="lg:hidden text-[9px] uppercase text-gray-400 font-bold mb-1">Received</div><div class="text-[12px] font-bold text-green-600">${money(m.paid)}</div></div>
         <div><div class="lg:hidden text-[9px] uppercase text-gray-400 font-bold mb-1">Active AR</div><div class="text-[12px] font-bold ${m.ar>0?'text-red-500':'text-green-600'}">${money(m.ar)}</div>${m.pending>0?`<div class="text-[9px] text-blue-500">+${money(m.pending)} pending</div>`:''}</div>
         <div class="min-w-0"><div class="lg:hidden text-[9px] uppercase text-gray-400 font-bold mb-1">Note</div>${note?`<div class="text-[11px] text-gray-500 line-clamp-2" title="${esc(note)}">${esc(note)}</div>`:'<span class="text-[11px] text-gray-300">No note</span>'}</div>
-        <div class="flex justify-end gap-2"><button onclick="openEditCustomer('${c.id}')" class="px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-xs font-semibold hover:bg-gray-50">Edit</button>${canDeleteCustomer()?`<button type="button" onclick="openDeleteCustomer('${c.id}')" class="px-3 py-2 rounded-lg border border-red-200 bg-red-50 text-red-600 text-xs font-semibold hover:bg-red-100">Delete</button>`:''}</div>
+        <div class="flex justify-end"><button onclick="openEditCustomer('${c.id}')" class="px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-xs font-semibold hover:bg-gray-50">Edit</button></div>
       </div>`;
     }).join('')||empty('No customers yet.');
     renderCustomerPager();
@@ -257,10 +256,7 @@
       ${canAssignHandler()?`<div class="md:col-span-2"><label class="text-xs font-semibold">Assign / Reassign Sales Rep</label><select id="mecHandler" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${opts}</select><div class="text-[10px] text-gray-400 mt-1">${role()==='manager'?'Manager can assign an unassigned customer or transfer the customer to another Sales Rep.':'Changing this transfers the customer portfolio to another Sales Rep/Manager.'}</div></div>`:''}
       <div class="md:col-span-2 border-t pt-4"><div class="flex items-center justify-between gap-3"><div><div class="font-bold text-sm">Contact Methods</div><div class="text-[10px] text-gray-400">Phone numbers and social usernames can be added, edited or removed.</div></div><button type="button" onclick="addCustomerContactRow('phone')" class="px-3 py-2 border rounded-lg text-xs font-semibold">+ Contact</button></div><div id="customerContactRows" class="grid gap-2 mt-3">${(cs.length?cs:[...(c.phone?[{contact_type:'phone',label:'Main',contact_value:c.phone}]:[]),...(c.email?[{contact_type:'email',label:'Email',contact_value:c.email}]:[])]).map(contactRow).join('')||contactRow({contact_type:'phone',label:'Main'})}</div></div>
       <div class="md:col-span-2"><label class="text-xs font-semibold">Customer Note</label><textarea id="mecNotes" rows="3" class="mt-1 w-full border rounded-xl px-3 py-2.5">${esc(c.notes||'')}</textarea></div>
-      <div class="md:col-span-2 flex flex-col sm:flex-row gap-2 pt-2 border-t">
-        ${canDeleteCustomer()?`<button type="button" onclick="openDeleteCustomer('${id}')" class="sm:w-auto px-5 py-3 border border-red-200 bg-red-50 text-red-600 rounded-xl font-semibold hover:bg-red-100">Delete Customer</button>`:''}
-        <button class="flex-1 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Customer Changes</button>
-      </div>
+      <button class="md:col-span-2 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Customer Changes</button>
     </form>`);
     document.getElementById('multiEditCustomerForm').onsubmit=async e=>{
       e.preventDefault();const contacts=readContactRows(),firstPhone=contacts.find(x=>x.contact_type==='phone')?.contact_value||null,firstEmail=contacts.find(x=>x.contact_type==='email')?.contact_value||null;
