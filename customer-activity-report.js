@@ -25,6 +25,8 @@
 
   function role(){return state.profile?.role||''}
   function n(v){const x=Number(v||0);return Number.isFinite(x)?x:0}
+  function entryWeight(r){return Math.max(1,n(r?.entry_count)||1)}
+  function weightedCount(rows){return (rows||[]).reduce((s,r)=>s+entryWeight(r),0)}
   function yOf(v){const y=Number(String(v||'').slice(0,4));return Number.isFinite(y)?y:null}
   function mOf(v){const m=Number(String(v||'').slice(5,7));return m>=1&&m<=12?m:null}
   function qOf(v){const m=mOf(v);return m?Math.floor((m-1)/3)+1:null}
@@ -212,10 +214,10 @@
       });
       const customers=latestCustomerRows(br);
       const sc=stageCounts(customers);
-      b.total=br.length;
+      b.total=weightedCount(br);
       b.unique=customers.length;
-      b.rk=br.filter(r=>r.business_code==='RK').length;
-      b.tk=br.filter(r=>r.business_code==='TK').length;
+      b.rk=weightedCount(br.filter(r=>r.business_code==='RK'));
+      b.tk=weightedCount(br.filter(r=>r.business_code==='TK'));
       b.buy=sc.Buy;
       b.followup=sc.Potential+sc['Waiting Decision'];
       b.contacting=sc.Contacting;
@@ -231,9 +233,9 @@
     const active=customers.filter(r=>['Potential','Waiting Decision','Contacting'].includes(String(r.status||'')));
     const overdue=active.filter(r=>r.follow_up_date&&String(r.follow_up_date)<today).length;
     const scheduled=active.filter(r=>r.follow_up_date&&String(r.follow_up_date)>=today).length;
-    const unassigned=rows.filter(r=>!r.assigned_sales_id).length;
+    const unassigned=weightedCount(rows.filter(r=>!r.assigned_sales_id));
     return {
-      total:rows.length,
+      total:weightedCount(rows),
       unique:customers.length,
       buy:stages.Buy,
       followup:stages.Potential+stages['Waiting Decision'],
@@ -260,11 +262,22 @@
   function topInterests(rows){
     const map=new Map();
     rows.forEach(r=>{
+      const counts=r?.interest_counts&&typeof r.interest_counts==='object'?r.interest_counts:null;
+      if(counts&&Object.keys(counts).length){
+        Object.entries(counts).forEach(([label,count])=>{
+          const raw=String(label||'').trim();
+          if(!raw)return;
+          const key=raw.toLowerCase();
+          if(!map.has(key))map.set(key,{label:raw,value:0});
+          map.get(key).value+=n(count);
+        });
+        return;
+      }
       const raw=String(r.interest||'').trim();
       if(!raw)return;
       const key=raw.toLowerCase();
       if(!map.has(key))map.set(key,{label:raw,value:0});
-      map.get(key).value++;
+      map.get(key).value+=entryWeight(r);
     });
     return [...map.values()].sort((a,b)=>b.value-a.value).slice(0,10);
   }
@@ -274,7 +287,7 @@
       const key=r.assigned_sales_id||'__unassigned__';
       if(!map.has(key))map.set(key,{name:r.sales_rep_name||'Unassigned',entries:0,unique:new Set(),buy:0});
       const x=map.get(key);
-      x.entries++;
+      x.entries+=entryWeight(r);
       x.unique.add(identityKey(r));
     });
     const latest=latestCustomerRows(rows);
@@ -288,8 +301,16 @@
   function sourceBreakdown(rows){
     const map=new Map();
     rows.forEach(r=>{
+      const counts=r?.source_counts&&typeof r.source_counts==='object'?r.source_counts:null;
+      if(counts&&Object.keys(counts).length){
+        Object.entries(counts).forEach(([label,count])=>{
+          const raw=String(label||'Unknown').trim()||'Unknown';
+          map.set(raw,(map.get(raw)||0)+n(count));
+        });
+        return;
+      }
       const label=String(r.source_channel||'Unknown').trim()||'Unknown';
-      map.set(label,(map.get(label)||0)+1);
+      map.set(label,(map.get(label)||0)+entryWeight(r));
     });
     return [...map.entries()].map(([label,value])=>({label,value})).sort((a,b)=>b.value-a.value);
   }
@@ -303,9 +324,49 @@
       activityReportState.rows=activityReportState.cache[type]||[];
       return;
     }
-    const res=await db.rpc('get_customer_activity_rows',{p_activity_type:type});
-    if(res.error)throw res.error;
-    activityReportState.cache[type]=res.data||[];
+    const [liveRes,historyRes]=await Promise.all([
+      db.rpc('get_customer_activity_rows',{p_activity_type:type}),
+      db.rpc('get_customer_history_index',{p_activity_type:type})
+    ]);
+    if(liveRes.error)throw liveRes.error;
+    if(historyRes.error)throw historyRes.error;
+
+    const live=(liveRes.data||[]).map(r=>({
+      ...r,
+      entry_count:1,
+      is_history:false,
+      source_counts:null,
+      interest_counts:null
+    }));
+    const history=(historyRes.data||[]).map(r=>({
+      id:'history-'+r.id,
+      activity_date:r.activity_date,
+      activity_type:r.activity_type,
+      business_code:r.business_code,
+      business_name:r.business_code==='RK'?'LP Home':r.business_code==='TK'?"L'Imperial Luxury":'Other',
+      customer_name:r.customer_name,
+      phone:r.normalized_phone,
+      customer_type:r.customer_type,
+      source_channel:r.source_channel,
+      status:r.status,
+      interest:r.interest,
+      remark:null,
+      follow_up_date:r.follow_up_date,
+      assigned_sales_id:r.assigned_sales_id,
+      sales_rep_name:r.sales_rep_name,
+      linked_customer_id:null,
+      created_by:null,
+      created_at:(r.activity_date||r.period_month)+'T00:00:00Z',
+      updated_at:(r.activity_date||r.period_month)+'T00:00:00Z',
+      entry_count:r.entry_count||1,
+      identity_key:r.identity_key,
+      source_counts:r.source_counts||{},
+      interest_counts:r.interest_counts||{},
+      source_sheet:r.source_sheet,
+      is_history:true
+    }));
+
+    activityReportState.cache[type]=[...live,...history];
     activityReportState.loaded[type]=true;
     activityReportState.rows=activityReportState.cache[type];
   }
@@ -371,13 +432,15 @@
 
       +'<div class="grid xl:grid-cols-2 gap-4 mt-4">'
       +activityBarList('Customer Stage Funnel','Unique customers classified by their latest stage in the selected period.',funnel,summary.unique)
-      +activityBarList(isShowroom?'Visit Source':'Top Interests',isShowroom?'Where showroom customers came from.':'Most common product interests from online inquiries.',isShowroom?sources:interests,isShowroom?rows.length:rows.filter(r=>String(r.interest||'').trim()).length)
+      +activityBarList(isShowroom?'Visit Source':'Top Interests',isShowroom?'Where showroom customers came from.':'Most common product interests from online inquiries.',isShowroom?sources:interests,isShowroom?weightedCount(rows):interests.reduce((s,x)=>s+x.value,0))
       +'</div>'
 
       +'<div class="grid xl:grid-cols-2 gap-4 mt-4">'
-      +'<div class="card rounded-2xl p-4"><div class="mb-4"><h4 class="font-bold">RK / TK Summary</h4><div class="text-[10px] text-gray-400 mt-1">'+(isShowroom?'Customer traffic by showroom.':'Inquiry traffic by business page.')+'</div></div><div class="grid grid-cols-2 gap-3">'+['RK','TK'].map(code=>{const rr=rows.filter(r=>r.business_code===code);const ss=activitySummary(rr);return '<div class="rounded-xl border bg-[#faf9f6] p-4"><div class="text-[10px] uppercase font-bold text-gray-400">'+(code==='RK'?'LP Home · RK':'L\'Imperial Luxury · TK')+'</div><div class="text-2xl font-bold mt-1">'+rr.length+'</div><div class="text-[10px] text-gray-400 mt-1">'+ss.unique+' unique · '+ss.buy+' buy · '+ss.conversion.toFixed(1)+'% conversion</div></div>';}).join('')+'</div></div>'
-      +activityBarList(isShowroom?'Top Interests':'Online Stage Funnel Detail',isShowroom?'Most common products customers asked about.':'Active online customers by stage.',isShowroom?interests:funnel, isShowroom?rows.filter(r=>String(r.interest||'').trim()).length:summary.unique)
+      +'<div class="card rounded-2xl p-4"><div class="mb-4"><h4 class="font-bold">RK / TK Summary</h4><div class="text-[10px] text-gray-400 mt-1">'+(isShowroom?'Customer traffic by showroom.':'Inquiry traffic by business page.')+'</div></div><div class="grid grid-cols-2 gap-3">'+['RK','TK'].map(code=>{const rr=rows.filter(r=>r.business_code===code);const ss=activitySummary(rr);return '<div class="rounded-xl border bg-[#faf9f6] p-4"><div class="text-[10px] uppercase font-bold text-gray-400">'+(code==='RK'?'LP Home · RK':'L\'Imperial Luxury · TK')+'</div><div class="text-2xl font-bold mt-1">'+weightedCount(rr)+'</div><div class="text-[10px] text-gray-400 mt-1">'+ss.unique+' unique · '+ss.buy+' buy · '+ss.conversion.toFixed(1)+'% conversion</div></div>';}).join('')+'</div></div>'
+      +activityBarList(isShowroom?'Top Interests':'Online Stage Funnel Detail',isShowroom?'Most common products customers asked about.':'Active online customers by stage.',isShowroom?interests:funnel, isShowroom?interests.reduce((s,x)=>s+x.value,0):summary.unique)
       +'</div>'
+
+      +'<div class="card rounded-2xl p-4 mt-4 border border-[#ead69b] bg-[#fffaf0]"><div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2"><div><div class="text-xs font-bold text-[#8a6514]">Google Sheet History Included</div><div class="text-[10px] text-gray-500 mt-1">Historical rows stay in Google Sheets. This report uses only the compact monthly index in Supabase together with live app activity.</div></div><div class="text-[10px] text-gray-400">'+weightedCount(rows.filter(r=>r.is_history))+' historical '+noun.toLowerCase()+' represented</div></div></div>'
 
       +'<div class="card rounded-2xl overflow-hidden mt-4"><div class="px-4 py-3 border-b flex items-center justify-between"><div><h4 class="font-bold">Sales Rep Activity</h4><div class="text-[10px] text-gray-400 mt-0.5">'+noun+', unique customers and buy conversion by Person In Charge.</div></div><div class="text-[10px] text-gray-400">'+reps.length+' rep'+(reps.length===1?'':'s')+'</div></div><div class="overflow-x-auto"><table class="w-full text-xs"><thead class="bg-[#faf9f6] text-gray-400 uppercase text-[9px]"><tr><th class="text-left px-4 py-2">Sales Rep</th><th class="text-right px-4 py-2">'+noun+'</th><th class="text-right px-4 py-2">Unique</th><th class="text-right px-4 py-2">Buy</th><th class="text-right px-4 py-2">Conversion</th></tr></thead><tbody class="divide-y">'+(reps.length?reps.map(r=>'<tr><td class="px-4 py-3 font-semibold">'+esc(r.name)+'</td><td class="px-4 py-3 text-right">'+r.entries+'</td><td class="px-4 py-3 text-right">'+r.unique+'</td><td class="px-4 py-3 text-right text-green-600">'+r.buy+'</td><td class="px-4 py-3 text-right">'+r.conversion.toFixed(1)+'%</td></tr>').join(''):'<tr><td colspan="5" class="px-4 py-10 text-center text-gray-400">No activity data for this selection.</td></tr>')+'</tbody></table></div></div>';
   }
