@@ -20,6 +20,8 @@
     var reason=String((r.requested_customer||{})._workflow_reason||'');
     if(reason==='ownership_claim')return 'Ownership / Customer Claim';
     if(reason==='activity_customer_request')return 'Showroom / Online Customer Request';
+    if(reason==='history_customer_request')return 'Historical Showroom / Online Customer';
+    if(reason==='history_customer_link')return 'Link Historical Customer';
     if(reason==='buy_conversion')return 'Buyer → Customer Master';
     return r.request_type==='create'?'New Customer':'Customer Change';
   }
@@ -269,7 +271,7 @@
   }
   window.reviewCustomerRequest=async function(id,action){
     if(!reviewer())return showToast('Manager/Admin access required.','err');var r=C.requests.find(function(x){return x.request_id===id});if(!r)return showToast('Request not found.','err');
-    var note=clean(document.getElementById('rcReviewNote')&&document.getElementById('rcReviewNote').value);if(action==='reject'&&!note)return showToast('Enter a rejection reason.','err');
+    var note=clean(document.getElementById('rcReviewNote')&&document.getElementById('rcReviewNote').value);if(action==='reject'&&!note&&role()!=='super_admin')return showToast('Enter a rejection reason.','err');
     var finalCustomer=null,finalContacts=null;
     if(action==='approve'){
       var name=clean(document.getElementById('rcName').value);if(!name)return showToast('Customer name is required.','err');
