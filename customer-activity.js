@@ -535,9 +535,18 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
     openModal('Customer Visit History','<div id="customerHistoryGroupBody" class="py-10 text-center text-sm text-gray-400">Loading history...</div>');
     const {data,error}=await db.rpc('get_customer_history_detail_by_index',{p_id:indexId});
     const root=document.getElementById('customerHistoryGroupBody');if(!root)return;
-    if(error){root.innerHTML='<div class="rounded-xl border border-red-200 bg-red-50 p-4 text-red-600">'+esc(error.message)+'</div>';return}
+    if(error){
+      root.className='text-left text-sm text-gray-800';
+      root.innerHTML='<div class="rounded-xl border border-red-200 bg-red-50 p-4 text-red-600">'+esc(error.message)+'</div>';
+      return;
+    }
     const rows=data||[];
-    if(!rows.length){root.innerHTML='<div class="rounded-xl border border-dashed p-8 text-gray-400">No additional history found.</div>';return}
+    if(!rows.length){
+      root.className='text-left text-sm text-gray-800';
+      root.innerHTML='<div class="rounded-xl border border-dashed p-8 text-center text-gray-400">No additional history found.</div>';
+      return;
+    }
+    root.className='text-left text-sm text-gray-800';
     const sum=code=>rows.filter(r=>!code||r.business_code===code).reduce((s,r)=>s+Number(r.entry_count||0),0);
     const total=sum(),rk=sum('RK'),tk=sum('TK');
     root.innerHTML=`
