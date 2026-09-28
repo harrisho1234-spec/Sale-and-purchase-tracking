@@ -313,6 +313,20 @@
     salesEntryRecalc();
   };
 
+  window.updateSalesCustomerReviewHint=function(){
+    const sel=document.getElementById('orderCustomer');
+    const box=document.getElementById('salesCustomerReviewHint');
+    if(!sel||!box)return;
+    const customer=(state.customers||[]).find(c=>String(c.id)===String(sel.value));
+    if(customer?.review_status==='pending'){
+      box.className='mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] text-amber-800';
+      box.innerHTML='<b>Customer Pending Review.</b> You can create this order now. Manager/Admin will review the customer request; this order will stay marked Customer Review Pending until the customer is approved or merged.';
+    }else{
+      box.className='hidden';
+      box.innerHTML='';
+    }
+  };
+
   window.openNewOrder=async function(){
     await ensureOrderFormData();
     if(!state.customers.length) return showToast('Add a customer first','err');
@@ -322,7 +336,7 @@
       <form id="orderForm" class="space-y-5">
         <div class="rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs text-amber-900" id="salesFlowHint"><b>Stock Sale:</b> enter the official TK or RK invoice number for the stock sale.</div>
         <div class="grid md:grid-cols-2 gap-3">
-          <div><label class="text-xs font-semibold">Customer</label><select id="orderCustomer" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white">${state.customers.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></div>
+          <div><label class="text-xs font-semibold">Customer</label><select id="orderCustomer" onchange="updateSalesCustomerReviewHint()" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white">${state.customers.map(c=>`<option value="${c.id}">${esc(c.name)}${c.review_status==='pending'?' · Pending Review':''}</option>`).join('')}</select><div id="salesCustomerReviewHint" class="hidden"></div></div>
           <div><label class="text-xs font-semibold">Sale Type</label><select id="salesFlowType" onchange="updateSalesDocumentFields()" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"><option value="stock_sale">Stock Sale — TK / RK</option><option value="pre_order">Pre-Order — SR</option></select></div>
           <div id="invoiceTypeWrap"><label class="text-xs font-semibold">Invoice Type</label><select id="salesInvoiceType" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"><option value="TK">TK</option><option value="RK">RK</option></select></div>
           <div><label id="salesDocumentLabel" class="text-xs font-semibold">TK / RK Invoice Number</label><input id="salesDocumentNo" required class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Example: TK2609-001 or RK2609-001"></div>
@@ -356,6 +370,7 @@
 
     addOrderItemRow();
     updateSalesDocumentFields();
+    updateSalesCustomerReviewHint();
     document.getElementById('orderForm').onsubmit=saveOrder;
   };
 
@@ -385,7 +400,10 @@
     const repId=effectiveSalesRepId();
     const repName=effectiveSalesRepName();
     const orderDate=document.getElementById('orderDate').value;
-    const order={customer_id:document.getElementById('orderCustomer').value,sales_rep_id:repId,sales_rep_name_snapshot:repName||null,order_date:orderDate,order_type:flow==='pre_order'?'pre_order':'in_stock',sales_flow_type:flow,status:'confirmed',currency:'USD',order_discount:calc.orderDiscount,notes:document.getElementById('orderNotes').value.trim()||null,created_by:state.user.id,order_no:docNo,invoice_no:flow==='stock_sale'?docNo:null,sr_no:flow==='pre_order'?docNo:null,sales_invoice_no:flow==='stock_sale'?docNo:null,sales_invoice_type:flow==='stock_sale'?invoiceType:null,invoice_request_status:flow==='stock_sale'?'not_needed':'not_requested',deposit_input_type:calc.depositMode,deposit_input_value:calc.depositValue};
+    const selectedCustomerId=document.getElementById('orderCustomer').value;
+    const selectedCustomer=(state.customers||[]).find(c=>String(c.id)===String(selectedCustomerId));
+    const customerReviewPending=selectedCustomer?.review_status==='pending';
+    const order={customer_id:selectedCustomerId,sales_rep_id:repId,sales_rep_name_snapshot:repName||null,order_date:orderDate,order_type:flow==='pre_order'?'pre_order':'in_stock',sales_flow_type:flow,status:'confirmed',currency:'USD',order_discount:calc.orderDiscount,notes:document.getElementById('orderNotes').value.trim()||null,created_by:state.user.id,order_no:docNo,invoice_no:flow==='stock_sale'?docNo:null,sr_no:flow==='pre_order'?docNo:null,sales_invoice_no:flow==='stock_sale'?docNo:null,sales_invoice_type:flow==='stock_sale'?invoiceType:null,invoice_request_status:flow==='stock_sale'?'not_needed':'not_requested',deposit_input_type:calc.depositMode,deposit_input_value:calc.depositValue};
 
     const {data:so,error}=await db.from('sales_orders').insert(order).select().single();
     if(error){const msg=String(error.message||'');return showToast(msg.toLowerCase().includes('duplicate')?'That SR/TK/RK number already exists.':msg,'err');}
@@ -420,7 +438,9 @@
     }
     if(window.documentFlowState) window.documentFlowState.loaded=false;
     closeModal();
-    showToast((flow==='pre_order'?`Pre-order ${docNo} created`:`${invoiceType} invoice ${docNo} created`)+(state.profile?.role==='sales'&&calc.depositAmount>0?' · Deposit pending approval':''));
+    showToast((flow==='pre_order'?`Pre-order ${docNo} created`:`${invoiceType} invoice ${docNo} created`)
+      +(customerReviewPending?' · Customer review pending':'')
+      +(state.profile?.role==='sales'&&calc.depositAmount>0?' · Deposit pending approval':''));
     await go('sales-orders');
   };
 
