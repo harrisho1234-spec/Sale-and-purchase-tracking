@@ -449,6 +449,9 @@
     const type=section==='showroom'?'showroom_visit':'online';
     activityReportState.section=section;
     activityReportState.type=type;
+    // Always refresh when opening an activity report so newly indexed Google history
+    // appears immediately without requiring a full browser reload.
+    activityReportState.loaded[type]=false;
     document.getElementById('pageTitle').textContent='Report';
     document.getElementById('pageSubtitle').textContent='Sales, showroom and online performance reports';
     document.getElementById('content').innerHTML=unifiedTabs(section)+'<div id="activityReportRoot"><div class="py-20 text-center text-gray-400">Loading '+(section==='showroom'?'showroom':'online')+' report...</div></div>';
