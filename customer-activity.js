@@ -54,6 +54,8 @@
     return activityCanChooseSales();
   }
   function activityTypeLabel(type){return type==='showroom_visit'?'Showroom Visit':'Online'}
+  function entryWeight(r){return Math.max(1,Number(r?.entry_count||1)||1)}
+  function weightedCount(rows){return (rows||[]).reduce((s,r)=>s+entryWeight(r),0)}
   function businessLabel(code){return code==='RK'?'LP Home · RK':"L'Imperial Luxury · TK"}
   function fmtActivityDate(v){
     if(!v)return '-';
@@ -64,13 +66,17 @@
     const d=new Date(),off=d.getTimezoneOffset();
     return new Date(d.getTime()-off*60000).toISOString().slice(0,10);
   }
-  function dateInRange(v){
+  function dateInRange(v,row){
     if(activityState.dateRange==='all')return true;
     const raw=String(v||'').slice(0,10);
     const today=isoToday();
-    if(activityState.dateRange==='today')return raw===today;
+    if(activityState.dateRange==='today'){
+      if(row?.is_history)return false;
+      return raw===today;
+    }
     if(activityState.dateRange==='month')return raw.slice(0,7)===today.slice(0,7);
     if(activityState.dateRange==='week'){
+      if(row?.is_history)return false;
       const now=new Date(today+'T00:00:00');
       const day=(now.getDay()+6)%7;
       const start=new Date(now);start.setDate(now.getDate()-day);
@@ -113,7 +119,7 @@
       if(activityState.business!=='all'&&r.business_code!==activityState.business)return false;
       if(activityState.status!=='all'&&String(r.status||'')!==activityState.status)return false;
       if(activityState.salesRep!=='all'&&String(r.assigned_sales_id||'')!==activityState.salesRep)return false;
-      if(!dateInRange(r.activity_date))return false;
+      if(!dateInRange(r.activity_date,r))return false;
       if(!q)return true;
       return [
         r.customer_name,r.phone,r.customer_type,r.source_channel,r.status,
@@ -132,11 +138,11 @@
   function activitySummary(rows){
     const today=isoToday(),month=today.slice(0,7),owner=activityScopeSalesId()||state.user?.id||'';
     return {
-      today:rows.filter(r=>String(r.activity_date||'').slice(0,10)===today).length,
-      month:rows.filter(r=>String(r.activity_date||'').slice(0,7)===month).length,
-      mine:rows.filter(r=>String(r.assigned_sales_id||'')===String(owner)).length,
-      rk:rows.filter(r=>r.business_code==='RK').length,
-      tk:rows.filter(r=>r.business_code==='TK').length
+      today:weightedCount(rows.filter(r=>!r.is_history&&String(r.activity_date||'').slice(0,10)===today)),
+      month:weightedCount(rows.filter(r=>String(r.activity_date||'').slice(0,7)===month)),
+      mine:weightedCount(rows.filter(r=>String(r.assigned_sales_id||'')===String(owner))),
+      rk:weightedCount(rows.filter(r=>r.business_code==='RK')),
+      tk:weightedCount(rows.filter(r=>r.business_code==='TK'))
     };
   }
   function activityKpi(label,value,sub){
@@ -182,13 +188,14 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
       const detail=activityState.type==='online'
         ?[r.interest&&('Interest: '+r.interest),r.remark].filter(Boolean).join(' · ')
         :[r.source_channel&&('Source: '+r.source_channel),r.interest&&('Interest: '+r.interest),r.remark].filter(Boolean).join(' · ');
-      const canEdit=activityReviewerMode()||activityIsOwner(r);
+      const canEdit=!r.is_history&&(activityReviewerMode()||activityIsOwner(r));
       const canSeeStage=activityCanSeeStage(r);
+      const historyBadge=r.is_history?`<span class="px-2 py-1 rounded-lg border border-[#ead69b] bg-[#fffaf0] text-[9px] font-bold text-[#8a6514]">Google History · ${entryWeight(r)} ${activityState.type==='online'?'inquir'+(entryWeight(r)===1?'y':'ies'):'visit'+(entryWeight(r)===1?'':'s')}</span>`:'';
       return `<div class="card rounded-2xl p-4">
         <div class="grid lg:grid-cols-[110px_1.3fr_.8fr_.85fr_.85fr_auto] gap-3 lg:gap-4 items-center">
-          <div><div class="text-[10px] uppercase font-bold text-gray-400">Date</div><div class="text-sm font-semibold mt-1">${esc(fmtActivityDate(r.activity_date))}</div></div>
+          <div><div class="text-[10px] uppercase font-bold text-gray-400">${r.is_history?'Latest Date':'Date'}</div><div class="text-sm font-semibold mt-1">${esc(fmtActivityDate(r.activity_date))}</div>${r.is_history?`<div class="text-[9px] text-gray-400 mt-1">Monthly archive</div>`:''}</div>
           <div class="min-w-0">
-            <div class="flex flex-wrap items-center gap-2"><b class="truncate">${esc(r.customer_name)}</b><span class="px-2 py-1 rounded-lg border text-[9px] font-bold ${businessTone(r.business_code)}">${esc(r.business_code)}</span></div>
+            <div class="flex flex-wrap items-center gap-2"><b class="truncate">${esc(r.customer_name)}</b><span class="px-2 py-1 rounded-lg border text-[9px] font-bold ${businessTone(r.business_code)}">${esc(r.business_code)}</span>${historyBadge}</div>
             <div class="text-[11px] text-gray-400 mt-1">${esc(r.phone||'No phone')} · ${esc(r.customer_type||'-')}</div>
             ${detail?`<div class="text-[11px] text-gray-600 mt-1 line-clamp-2">${esc(detail)}</div>`:''}
           </div>
@@ -200,14 +207,16 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
       </div>`;
     }).join('')+'</div>';
   }
-  function activityPager(total){
+  function activityPager(rows){
+    const total=rows.length;
+    const represented=weightedCount(rows);
     const all=activityState.pageSize==='all';
     const size=all?total:Number(activityState.pageSize||20);
     const pages=all?1:Math.max(1,Math.ceil(total/size));
     const start=total?(all?1:(activityState.page-1)*size+1):0;
     const end=total?(all?total:Math.min(activityState.page*size,total)):0;
     return `<div class="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-gray-500">
-      <div>Showing <b>${start}–${end}</b> of <b>${total}</b></div>
+      <div>Showing <b>${start}–${end}</b> of <b>${total}</b> record groups${represented!==total?` · representing <b>${represented}</b> entries`:''}</div>
       <div class="flex items-center gap-2">
         <select onchange="setActivityPageSize(this.value)" class="border rounded-lg bg-white px-2.5 py-2">
           <option value="20" ${activityState.pageSize===20?'selected':''}>20 / page</option>
@@ -235,7 +244,7 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
       </div>
       ${activityToolbar()}
       ${activityRowsHtml(pageRows)}
-      ${activityPager(filtered.length)}
+      ${activityPager(filtered)}
     `;
   }
   async function loadActivitySalesUsers(){
@@ -263,11 +272,42 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
     document.getElementById('content').innerHTML='<div id="customerActivityRoot"><div class="py-20 text-center text-gray-400">Loading...</div></div>';
 
     await loadActivitySalesUsers();
-    const {data,error}=await db.rpc('get_customer_activity_rows',{p_activity_type:type});
-    if(error)throw error;
-    const rows=data||[];
-    activityState.rows=rows;
+    const [liveRes,historyRes]=await Promise.all([
+      db.rpc('get_customer_activity_rows',{p_activity_type:type}),
+      db.rpc('get_customer_history_index',{p_activity_type:type})
+    ]);
+    if(liveRes.error)throw liveRes.error;
+    if(historyRes.error)throw historyRes.error;
+
+    const live=(liveRes.data||[]).map(r=>({...r,entry_count:1,is_history:false}));
+    const history=(historyRes.data||[]).map(r=>({
+      id:'history-'+r.id,
+      activity_date:r.activity_date,
+      activity_type:r.activity_type,
+      business_code:r.business_code,
+      business_name:r.business_code==='RK'?'LP Home':r.business_code==='TK'?"L'Imperial Luxury":'Other',
+      customer_name:r.customer_name,
+      phone:r.normalized_phone,
+      customer_type:r.customer_type,
+      source_channel:r.source_channel,
+      status:r.status,
+      interest:r.interest,
+      remark:r.source_sheet?('Archived in '+r.source_sheet):'Google Sheet history',
+      follow_up_date:r.follow_up_date,
+      assigned_sales_id:r.assigned_sales_id,
+      sales_rep_name:r.sales_rep_name,
+      linked_customer_id:null,
+      created_by:null,
+      created_at:(r.activity_date||r.period_month)+'T00:00:00Z',
+      updated_at:(r.activity_date||r.period_month)+'T00:00:00Z',
+      entry_count:r.entry_count||1,
+      is_history:true,
+      source_sheet:r.source_sheet
+    }));
+
+    activityState.rows=[...live,...history].sort((a,b)=>String(b.activity_date||'').localeCompare(String(a.activity_date||'')));
     if(!activityCanFilterSales())activityState.salesRep='all';
+    if(activityState.dateRange==='today'&&live.length===0&&history.length>0)activityState.dateRange='all';
     renderActivityBody();
   }
 
@@ -343,6 +383,7 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
   window.openEditCustomerActivity=function(id){
     const row=activityState.rows.find(x=>x.id===id);
     if(!row)return showToast('Entry not found','err');
+    if(row.is_history)return showToast('Google Sheet history is read-only in the app. Edit the History sheet and sync again.','err');
     openModal('Edit '+activityTypeLabel(activityState.type),activityFormBody(row));
     document.getElementById('customerActivityForm').onsubmit=e=>saveCustomerActivity(e,row);
     activitySalesAssignmentChanged();
