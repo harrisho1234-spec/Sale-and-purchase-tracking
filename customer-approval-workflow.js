@@ -18,7 +18,8 @@
   function pendingForCustomer(id){return C.requests.find(function(x){return x.status==='pending'&&x.customer_id===id})}
   function requestKind(r){
     var reason=String((r.requested_customer||{})._workflow_reason||'');
-    if(reason==='ownership_claim')return 'Ownership / Customer Claim';
+    if(reason==='ownership_claim'||reason==='ownership_claim_phone')return 'Ownership / Customer Claim';
+    if(reason==='crm_ownership_claim')return 'CRM Customer Ownership Claim';
     if(reason==='activity_customer_request')return 'Showroom / Online Customer Request';
     if(reason==='history_customer_request')return 'Historical Showroom / Online Customer';
     if(reason==='history_customer_link')return 'Link Historical Customer';
@@ -111,6 +112,102 @@
       +'</div></details>';
   }
 
+  function customerPhoneOwnerText(m){
+    if(!m)return 'Unassigned';
+    return m.assigned_sales_name||'Unassigned';
+  }
+
+  window.openCrmCustomerFromCreate=async function(leadId){
+    closeModal();
+    await go('customer-database');
+    setTimeout(function(){
+      if(typeof openCustomerLead==='function')openCustomerLead(leadId);
+    },120);
+  };
+
+  window.openExistingMasterFromCreate=async function(customerId){
+    closeModal();
+    await go('customers');
+    if(customerId&&typeof openCustomerOrders==='function')setTimeout(function(){openCustomerOrders(customerId)},120);
+  };
+
+  window.submitPhoneOwnershipRequest=async function(phone){
+    var note=clean(document.getElementById('phoneOwnershipRequestNote')?.value)||null;
+    var btn=document.getElementById('phoneOwnershipRequestBtn');
+    if(btn){btn.disabled=true;btn.textContent='Submitting...'}
+    var r=await db.rpc('request_customer_ownership_by_phone',{p_phone:phone,p_request_note:note});
+    if(r.error){
+      if(btn){btn.disabled=false;btn.textContent='Request Ownership'}
+      return showToast(r.error.message,'err');
+    }
+    var out=r.data||{};
+    closeModal();
+    if(out.action==='own_crm'){
+      showToast('This customer is already in your Customer Database. Convert / Link the CRM customer first.');
+      return window.openCrmCustomerFromCreate(out.lead_id);
+    }
+    if(out.action==='own_customer'){
+      showToast('This customer is already in your Customer Master.');
+      return window.openExistingMasterFromCreate(out.customer_id);
+    }
+    showToast(out.message||'Ownership request sent to Manager/Admin.');
+    if(typeof refreshApprovalNotifications==='function')setTimeout(refreshApprovalNotifications,50);
+  };
+
+  function openCustomerPhoneConflict(phone,m){
+    var mine=String(m?.assigned_sales_id||'')===String(state.user?.id||'');
+    var source=m?.source==='customer_master'?'Customer Master':'Customer Database / CRM';
+    var owner=customerPhoneOwnerText(m);
+    var action='';
+    if(mine&&m?.source==='crm'&&m?.lead_id){
+      action='<button type="button" onclick="openCrmCustomerFromCreate(\''+m.lead_id+'\')" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Open CRM Customer & Convert / Link</button>';
+    }else if(mine&&m?.source==='customer_master'&&m?.customer_id){
+      action='<button type="button" onclick="openExistingMasterFromCreate(\''+m.customer_id+'\')" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Open Existing Customer</button>';
+    }else{
+      action='<div><label class="text-xs font-semibold">Request Note <span class="text-gray-400 font-normal">· optional</span></label><textarea id="phoneOwnershipRequestNote" rows="2" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Optional context for Manager/Admin"></textarea></div>'
+        +'<button id="phoneOwnershipRequestBtn" type="button" onclick="submitPhoneOwnershipRequest(\''+String(phone).replace(/'/g,"\\'")+'\')" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Request Ownership</button>';
+    }
+    openModal('Existing Customer Found',
+      '<div class="space-y-4">'
+      +'<div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><b>This phone number already exists.</b><div class="mt-2">A duplicate customer cannot be created for a Sales Order.</div></div>'
+      +'<div class="rounded-xl border bg-white p-4"><div class="font-bold">'+esc(m?.customer_name||'Customer')+'</div><div class="text-xs text-gray-500 mt-1">'+esc(phone)+' · '+esc(source)+'</div><div class="text-xs mt-2"><span class="text-gray-400">Handled by:</span> <b>'+esc(owner)+'</b></div></div>'
+      +(mine?'<div class="text-xs text-blue-700 rounded-xl border border-blue-100 bg-blue-50 p-3">This customer is already assigned to you. Use the existing CRM/Customer Master record instead of creating another one.</div>':'<div class="text-xs text-blue-700 rounded-xl border border-blue-100 bg-blue-50 p-3">Manager/Admin approval is required before this customer can move to your ownership and be used for your Sales Order.</div>')
+      +action
+      +'<button type="button" onclick="closeModal()" class="w-full border rounded-xl py-3 font-semibold">Cancel</button>'
+      +'</div>');
+  }
+
+  function installCreateCustomerNameSuggestions(form){
+    var nameInput=document.getElementById('mcName');if(!nameInput)return;
+    var box=document.createElement('div');
+    box.id='customerCreatePossibleMatches';
+    box.className='md:col-span-2 hidden rounded-xl border border-dashed bg-[#faf9f6] p-3';
+    var banner=form.querySelector('.border-blue-100');
+    if(banner&&banner.nextSibling)form.insertBefore(box,banner.nextSibling);else form.prepend(box);
+    var timer=null,seq=0;
+    nameInput.addEventListener('input',function(){
+      clearTimeout(timer);
+      var q=clean(nameInput.value);
+      if(q.length<2){box.classList.add('hidden');box.innerHTML='';return}
+      var my=++seq;
+      timer=setTimeout(async function(){
+        var r=await db.rpc('search_activity_customer_candidates',{p_query:q});
+        if(my!==seq||r.error)return;
+        var rows=(r.data||[]).slice(0,5);
+        if(!rows.length){box.classList.add('hidden');box.innerHTML='';return}
+        box.classList.remove('hidden');
+        box.innerHTML='<div class="text-[10px] uppercase font-bold text-gray-400 mb-2">Possible existing customers · suggestion only</div>'
+          +'<div class="grid gap-2">'+rows.map(function(x){
+            var type=x.source_type==='customer_master'?'Customer Master':x.source_type==='pending_customer'?'Pending Customer':'CRM';
+            var owner=x.assigned_sales_name||'Unassigned';
+            return '<div class="rounded-lg border bg-white px-3 py-2 flex items-center justify-between gap-3"><div class="min-w-0"><b class="text-xs">'+esc(x.customer_name||'Customer')+'</b><div class="text-[10px] text-gray-500 mt-0.5">'+esc(type)+' · '+esc(x.phone||'Private / no phone')+' · '+esc(owner)+'</div></div>'
+              +(x.source_type==='crm'&&String(x.assigned_sales_id||'')===String(state.user?.id||'')?'<button type="button" onclick="openCrmCustomerFromCreate(\''+x.lead_id+'\')" class="px-2.5 py-1.5 border rounded-lg text-[10px] font-semibold whitespace-nowrap">View CRM</button>':'')
+              +'</div>';
+          }).join('')+'</div><div class="text-[10px] text-gray-400 mt-2">Names alone never block or merge customers. Phone remains the strong identity check.</div>';
+      },250);
+    });
+  }
+
   var baseNew=window.openNewCustomer;
   if(typeof baseNew==='function')window.openNewCustomer=async function(){
     var out=await baseNew.apply(this,arguments);
@@ -118,6 +215,7 @@
     var form=document.getElementById('multiCustomerForm');if(!form)return out;
     var banner=document.createElement('div');banner.className='md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800';banner.innerHTML='<b>Manager/Admin review required.</b> After you submit, this customer is added immediately to your Customer Master as <b>Pending Review</b>. You can continue working and create orders while it waits for review.';form.prepend(banner);
     var note=document.createElement('div');note.className='md:col-span-2';note.innerHTML='<label class="text-xs font-semibold">Request Note</label><textarea id="customerCreateRequestNote" rows="2" class="mt-1 w-full border border-amber-200 bg-amber-50 rounded-xl px-3 py-2" placeholder="Optional context for Manager/Admin"></textarea>';form.insertBefore(note,form.lastElementChild);
+    installCreateCustomerNameSuggestions(form);
     var btn=form.querySelector('button:not([type="button"])');if(btn)btn.textContent='Submit Customer for Approval';
     form.onsubmit=async function(e){
       e.preventDefault();
@@ -126,7 +224,10 @@
       if(phone){
         var match=await db.rpc('find_customer_identity_by_phone',{p_phone:phone});
         if(match.error)return showToast(match.error.message,'err');
-        if(match.data&&match.data.matched)return showToast('This phone number already belongs to '+(match.data.customer_name||'an existing customer')+'. Use the existing customer instead.','err');
+        if(match.data&&match.data.matched){
+          openCustomerPhoneConflict(phone,match.data);
+          return;
+        }
       }
       var payload={name:name,address:clean(document.getElementById('mcAddress').value)||null,notes:clean(document.getElementById('mcNotes').value)||null,assigned_sales_id:state.user.id,active:true,customer_since:new Date().toISOString().slice(0,10)};
       var x=await db.rpc('submit_customer_change_request',{p_request_type:'create',p_customer_id:null,p_requested_customer:payload,p_requested_contacts:contacts,p_request_note:clean(document.getElementById('customerCreateRequestNote').value)||null});
