@@ -49,7 +49,7 @@
     return res.data||[];
   }
 
-  function scoreRow(r,queries){
+  function scoreRow(r){
     let score=10,reason='Possible name match';
     const nameExact=normName(r.customer_name)===normName(linkPicker.context?.customer_name);
     if(nameExact){score=80;reason='Exact name match'}
@@ -57,8 +57,9 @@
     if(p){
       const contacts=Array.isArray(r.contacts)?r.contacts:[];
       const exact=contacts.some(function(c){return c.type==='phone'&&normPhone(c.value)===p});
+      const matchedPhone=(r._matchedQueries||[]).some(function(q){return normPhone(q)===p});
       if(exact){score=100;reason='Exact phone match'}
-      else if(queries.some(function(q){return normPhone(q)===p})){score=Math.max(score,90);reason='Phone/contact search match'}
+      else if(matchedPhone){score=Math.max(score,90);reason='Phone/contact search match'}
     }
     return {score:score,reason:reason};
   }
@@ -81,15 +82,22 @@
     }));
 
     const map=new Map();
-    responses.forEach(function(res){
+    responses.forEach(function(res,index){
       if(res.error)return;
+      const query=unique[index]||'';
       (res.data||[]).forEach(function(r){
-        if(!map.has(r.customer_id))map.set(r.customer_id,Object.assign({},r));
+        if(!map.has(r.customer_id)){
+          const copy=Object.assign({},r);
+          copy._matchedQueries=[];
+          map.set(r.customer_id,copy);
+        }
+        const row=map.get(r.customer_id);
+        if(query&&!row._matchedQueries.includes(query))row._matchedQueries.push(query);
       });
     });
 
     const rows=[...map.values()].map(function(r){
-      const s=scoreRow(r,unique);
+      const s=scoreRow(r);
       r._matchScore=s.score;
       r._matchReason=clean(manualQuery)?'Manual search result':s.reason;
       return r;
