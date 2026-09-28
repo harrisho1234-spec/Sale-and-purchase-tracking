@@ -135,6 +135,14 @@
     };
   }
 
+  function customerRequestKind(r){
+    var reason=String((r.requested_customer||{})._workflow_reason||'');
+    if(reason==='ownership_claim')return 'Ownership Claim';
+    if(reason==='activity_customer_request')return 'Showroom / Online Customer';
+    if(reason==='buy_conversion')return 'Buyer → Customer Master';
+    return r.request_type==='create'?'New Customer':'Customer Change';
+  }
+
   function requestHtml(r,type){
     var order=type==='order',payment=type==='payment',stage=type==='stage';
     var title=order
@@ -150,7 +158,7 @@
         ?((r.customer_name||'Customer')+' · '+money(r.amount,r.currency||'USD'))
         :stage
           ?((r.sales_rep_name||'Sales Rep')+' · '+(r.from_stage||'-')+' → '+(r.to_stage||'-'))
-          :(r.request_type==='create'?'New Customer':'Customer Change');
+          :customerRequestKind(r);
     var click=order
       ? "openSalesEditRequestDetail('"+r.request_id+"')"
       :payment
@@ -165,7 +173,7 @@
         :stage
           ?'bg-amber-50 text-amber-700'
           :'bg-green-50 text-green-700';
-    var badgeText=order?'ORDER EDIT':payment?'PAYMENT':stage?'STAGE CORRECTION':'CUSTOMER';
+    var badgeText=order?'ORDER EDIT':payment?'PAYMENT':stage?'STAGE CORRECTION':((r.requested_customer||{})._workflow_reason==='ownership_claim'?'CUSTOMER CLAIM':'CUSTOMER');
     var detail=payment
       ?((r.method||'Payment')+(r.reference_no?' · '+r.reference_no:''))
       :(r.request_note||'No request note');
