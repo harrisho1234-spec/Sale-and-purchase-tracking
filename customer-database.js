@@ -659,7 +659,8 @@
     if(error)return showToast(error.message,'err');
     const out=data||{};
     closeModal();
-    if(out.action==='pending')showToast('Customer creation submitted for Manager/Admin approval.');
+    if(out.action==='pending')showToast(out.message||'Customer added as Pending Review. You can create a Sales Order while Manager/Admin reviews it.');
+    else if(out.action==='ownership_request'||out.action==='crm_ownership_request')showToast(out.message||'Ownership request sent to Manager/Admin.');
     else if(out.action==='linked')showToast('Linked to the existing Customer Master record.');
     else showToast('Customer created and linked to Customer Master.');
     await renderCustomerDatabase();
@@ -670,7 +671,25 @@
     const {data,error}=await db.rpc('search_customer_directory',{p_query:q});
     if(error)return showToast(error.message,'err');
     const rows=data||[];
-    openModal('Link Existing Customer',`<div class="space-y-2">${rows.map(x=>`<button onclick="linkLeadToCustomer('${id}','${x.customer_id}')" class="w-full text-left border rounded-xl p-3 hover:bg-gray-50"><b>${esc(x.customer_name)}</b><div class="text-[10px] text-gray-400 mt-1">${esc((x.contacts||[]).map(c=>c.value).join(' · ')||'No contact')} · ${esc(x.handled_by_name||'Unassigned')}</div></button>`).join('')||'<div class="p-8 text-center text-sm text-gray-400">No matching Customer Master records found.</div>'}</div>`);
+    const isSales=(state.profile?.role||'')==='sales';
+    openModal('Link Existing Customer',`<div class="space-y-2">${rows.map(x=>{
+      const own=String(x.assigned_sales_id||'')===String(state.user?.id||'');
+      const contact=(x.contacts||[]).map(c=>c.value).join(' · ')||'No contact';
+      const action=isSales&&!own
+        ?`<button onclick="requestLeadCustomerOwnership('${id}','${encodeURIComponent(r.phone||'')}')" class="w-full text-left border border-amber-200 bg-amber-50 rounded-xl p-3 hover:bg-amber-100"><div class="flex justify-between gap-3"><div><b>${esc(x.customer_name)}</b><div class="text-[10px] text-gray-500 mt-1">${esc(contact)} · ${esc(x.handled_by_name||'Unassigned')}</div></div><span class="text-[10px] font-bold text-amber-700 whitespace-nowrap">Request Ownership</span></div></button>`
+        :`<button onclick="linkLeadToCustomer('${id}','${x.customer_id}')" class="w-full text-left border rounded-xl p-3 hover:bg-gray-50"><b>${esc(x.customer_name)}</b><div class="text-[10px] text-gray-400 mt-1">${esc(contact)} · ${esc(x.handled_by_name||'Unassigned')}</div></button>`;
+      return action;
+    }).join('')||'<div class="p-8 text-center text-sm text-gray-400">No matching Customer Master records found.</div>'}</div>`);
+  };
+  window.requestLeadCustomerOwnership=async function(leadId,encodedPhone){
+    const phone=decodeURIComponent(encodedPhone||'');
+    if(!phone)return showToast('A valid phone number is required for ownership request.','err');
+    const {data,error}=await db.rpc('request_customer_ownership_by_phone',{p_phone:phone,p_request_note:'Requested while linking an existing CRM customer.'});
+    if(error)return showToast(error.message,'err');
+    closeModal();
+    showToast(data?.message||'Ownership request sent to Manager/Admin.');
+    await renderCustomerDatabase();
+    if(typeof refreshApprovalNotifications==='function')setTimeout(refreshApprovalNotifications,50);
   };
   window.linkLeadToCustomer=async function(leadId,customerId){
     const {error}=await db.rpc('link_customer_lead',{p_lead_id:leadId,p_customer_id:customerId});
