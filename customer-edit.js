@@ -18,7 +18,7 @@
     if(c.assigned_sales_id===state.user?.id)return state.profile?.display_name||state.user?.email||'Me';
     return c.assigned_sales_id?'Assigned':'Unassigned';
   }
-  function metricsFor(id){return window._customerSalesMetrics?.get(id)||{sales:0,paid:0,ar:0,pending:0,orders:0}}
+  function metricsFor(id){return window._customerSalesMetrics?.get(id)||{sales:0,paid:0,ar:0,pending:0,orders:0,lastInvoiceAt:null,lastOrderAt:null,lastActivityAt:null}}
 
   function customerCard(c){
     const note=String(c.notes||'').trim(),m=metricsFor(c.id);
@@ -59,7 +59,7 @@
   }
 
   async function loadCustomerSalesMetrics(){
-    let q=db.from('sales_order_summary').select('customer_id,sales_rep_id,order_total,amount_paid,balance_due,status,payment_status,order_type,sales_flow_type,sr_no,sales_invoice_no,invoice_issued_at');
+    let q=db.from('sales_order_summary').select('customer_id,sales_rep_id,order_total,amount_paid,balance_due,status,payment_status,order_type,sales_flow_type,sr_no,sales_invoice_no,invoice_issued_at,order_date');
     if(isSalesUser())q=q.eq('sales_rep_id',state.user.id);
     else if(managerContext())q=q.eq('sales_rep_id',managerRepId());
     const {data,error}=await q;
@@ -67,8 +67,15 @@
     const map=new Map();
     for(const o of data||[]){
       if(String(o.status||'').toLowerCase()==='cancelled')continue;
-      const x=map.get(o.customer_id)||{sales:0,paid:0,ar:0,pending:0,orders:0};
-      x.sales+=Number(o.order_total||0);x.paid+=Number(o.amount_paid||0);if(isPendingPre(o)&&!isSettled(o))x.pending+=Number(o.balance_due||0);else if(!isSettled(o))x.ar+=Number(o.balance_due||0);x.orders+=1;
+      const x=map.get(o.customer_id)||{sales:0,paid:0,ar:0,pending:0,orders:0,lastInvoiceAt:null,lastOrderAt:null,lastActivityAt:null};
+      x.sales+=Number(o.order_total||0);
+      x.paid+=Number(o.amount_paid||0);
+      if(isPendingPre(o)&&!isSettled(o))x.pending+=Number(o.balance_due||0);else if(!isSettled(o))x.ar+=Number(o.balance_due||0);
+      x.orders+=1;
+      if(o.order_date&&(!x.lastOrderAt||String(o.order_date)>String(x.lastOrderAt)))x.lastOrderAt=o.order_date;
+      if(o.invoice_issued_at&&(!x.lastInvoiceAt||String(o.invoice_issued_at)>String(x.lastInvoiceAt)))x.lastInvoiceAt=o.invoice_issued_at;
+      const activityDate=o.invoice_issued_at||o.order_date||null;
+      if(activityDate&&(!x.lastActivityAt||String(activityDate)>String(x.lastActivityAt)))x.lastActivityAt=activityDate;
       map.set(o.customer_id,x);
     }
     window._customerSalesMetrics=map;
@@ -107,6 +114,14 @@
             <option value="active_ar">Active AR</option>
             <option value="pending_preorder">Pending Pre-Order</option>
             <option value="clear">No Outstanding Balance</option>
+          </select>
+          <select id="customerSortFilter" onchange="filterCustomerRows()" class="border rounded-xl px-3 py-3 bg-white text-sm min-w-[210px]">
+            <option value="latest_invoice">Newest Invoice / Order</option>
+            <option value="newest_customer">Newest Customers</option>
+            <option value="oldest_customer">Oldest Customers</option>
+            <option value="name_az">Customer Name A–Z</option>
+            <option value="highest_sales">Highest Sales</option>
+            <option value="highest_ar">Highest Active AR</option>
           </select>
         </div>
         <button onclick="openNewCustomer()" class="px-4 py-3 bg-[#211d18] text-white rounded-xl text-sm font-semibold whitespace-nowrap">+ Customer</button>
