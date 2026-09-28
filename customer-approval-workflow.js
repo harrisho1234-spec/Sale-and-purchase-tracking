@@ -13,7 +13,14 @@
   async function loadRequests(){
     var r=await db.rpc('get_visible_customer_change_requests',{p_status:null});if(r.error)throw r.error;C.requests=r.data||[];return C.requests;
   }
-  function pendingForCustomer(id){return C.requests.find(function(x){return x.status==='pending'&&x.request_type==='update'&&x.customer_id===id})}
+  function pendingForCustomer(id){return C.requests.find(function(x){return x.status==='pending'&&x.customer_id===id})}
+  function requestKind(r){
+    var reason=String((r.requested_customer||{})._workflow_reason||'');
+    if(reason==='ownership_claim')return 'Ownership / Customer Claim';
+    if(reason==='activity_customer_request')return 'Showroom / Online Customer Request';
+    if(reason==='buy_conversion')return 'Buyer → Customer Master';
+    return r.request_type==='create'?'New Customer':'Customer Change';
+  }
   function statusBadge(s){
     var cls=s==='approved'?'bg-green-50 text-green-700 border-green-200':s==='rejected'?'bg-red-50 text-red-600 border-red-200':'bg-amber-50 text-amber-700 border-amber-200';
     return '<span class="inline-flex px-2 py-1 border rounded-lg text-[9px] font-bold uppercase '+cls+'">'+esc(s||'pending')+'</span>';
@@ -105,7 +112,7 @@
     var out=await baseNew.apply(this,arguments);
     if(!sales())return out;
     var form=document.getElementById('multiCustomerForm');if(!form)return out;
-    var banner=document.createElement('div');banner.className='md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800';banner.innerHTML='<b>Approval required.</b> This customer will stay Pending and will not appear in the live customer master until Manager/Admin approves and publishes it.';form.prepend(banner);
+    var banner=document.createElement('div');banner.className='md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800';banner.innerHTML='<b>Manager/Admin review required.</b> After you submit, this customer is added immediately to your Customer Master as <b>Pending Review</b>. You can continue working and create orders while it waits for review.';form.prepend(banner);
     var note=document.createElement('div');note.className='md:col-span-2';note.innerHTML='<label class="text-xs font-semibold">Request Note</label><textarea id="customerCreateRequestNote" rows="2" class="mt-1 w-full border border-amber-200 bg-amber-50 rounded-xl px-3 py-2" placeholder="Optional context for Manager/Admin"></textarea>';form.insertBefore(note,form.lastElementChild);
     var btn=form.querySelector('button:not([type="button"])');if(btn)btn.textContent='Submit Customer for Approval';
     form.onsubmit=async function(e){
@@ -120,7 +127,7 @@
       var payload={name:name,address:clean(document.getElementById('mcAddress').value)||null,notes:clean(document.getElementById('mcNotes').value)||null,assigned_sales_id:state.user.id,active:true,customer_since:new Date().toISOString().slice(0,10)};
       var x=await db.rpc('submit_customer_change_request',{p_request_type:'create',p_customer_id:null,p_requested_customer:payload,p_requested_contacts:contacts,p_request_note:clean(document.getElementById('customerCreateRequestNote').value)||null});
       if(x.error)return showToast(x.error.message,'err');
-      closeModal();showToast('Customer submitted for Manager/Admin approval. It is not public yet.');await go('customers');
+      closeModal();showToast('Customer added as Pending Review. You can create orders while Manager/Admin reviews it.');await go('customers');
     };
     return out;
   };
@@ -177,7 +184,7 @@
     try{await loadRequests()}catch(e){return showToast(e.message,'err')}
     var rows=reviewer()?C.requests.filter(function(x){return x.status==='pending'}):C.requests.slice(0,30);
     var html='<div class="space-y-4"><div class="rounded-xl border bg-gray-50 p-3 text-xs text-gray-600">'+(reviewer()?'Review, adjust, then publish customer changes.':'Pending requests do not change the live customer master until approved.')+'</div><div class="grid gap-2 max-h-[60vh] overflow-y-auto">';
-    html+=rows.length?rows.map(function(r){return '<button type="button" onclick="openCustomerRequestDetail(\''+r.request_id+'\')" class="w-full text-left rounded-xl border bg-white p-4"><div class="flex justify-between gap-3"><div><div class="flex gap-2 items-center"><b>'+esc(r.customer_name||'Customer')+'</b>'+statusBadge(r.status)+'</div><div class="text-[10px] text-gray-400 mt-1">'+(r.request_type==='create'?'New Customer':'Customer Change')+' · Requested by '+esc(r.requested_by_name||'Sales')+' · '+new Date(r.requested_at).toLocaleString()+'</div>'+(r.request_note?'<div class="text-xs text-gray-600 mt-2">'+esc(r.request_note)+'</div>':'')+'</div></div></button>'}).join(''):'<div class="p-8 text-center text-sm text-gray-400 border border-dashed rounded-xl">No customer requests.</div>';
+    html+=rows.length?rows.map(function(r){return '<button type="button" onclick="openCustomerRequestDetail(\''+r.request_id+'\')" class="w-full text-left rounded-xl border bg-white p-4"><div class="flex justify-between gap-3"><div><div class="flex gap-2 items-center"><b>'+esc(r.customer_name||'Customer')+'</b>'+statusBadge(r.status)+'</div><div class="text-[10px] text-gray-400 mt-1">'+esc(requestKind(r))+' · Requested by '+esc(r.requested_by_name||'Sales')+' · '+new Date(r.requested_at).toLocaleString()+'</div>'+(r.request_note?'<div class="text-xs text-gray-600 mt-2">'+esc(r.request_note)+'</div>':'')+'</div></div></button>'}).join(''):'<div class="p-8 text-center text-sm text-gray-400 border border-dashed rounded-xl">No customer requests.</div>';
     html+='</div></div>';openModal(reviewer()?'Pending Customer Requests':'My Customer Requests',html);
   };
 
@@ -194,7 +201,8 @@
     try{await loadRequests()}catch(e){return showToast(e.message,'err')}var r=C.requests.find(function(x){return x.request_id===id});if(!r)return showToast('Customer request not found.','err');
     if(!reviewer())return openModal('Customer Request','<div class="space-y-4"><div class="rounded-xl border p-4"><div class="flex gap-2 items-center"><b>'+esc(r.customer_name||'Customer')+'</b>'+statusBadge(r.status)+'</div><div class="text-xs text-gray-500 mt-2">'+esc(r.request_note||'No request note')+'</div></div>'+customerRequestChangesHtml(r)+'<button onclick="closeModal()" class="w-full bg-[#211d18] text-white rounded-xl py-3">Close</button></div>');
     var o=r.requested_customer||{},contacts=Array.isArray(r.requested_contacts)?r.requested_contacts:[],opts;try{opts=await assignmentOptions(o.assigned_sales_id||'')}catch(e){return showToast(e.message,'err')}
-    var html='<form id="reviewCustomerRequestForm" class="grid md:grid-cols-2 gap-4"><div class="md:col-span-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>'+(r.request_type==='create'?'New customer awaiting publication.':'Customer change awaiting approval.')+'</b> Requested by '+esc(r.requested_by_name||'Sales')+'.'+(r.request_note?'<div class="mt-2"><b>Sales note:</b> '+esc(r.request_note)+'</div>':'')+'</div>'
+    var kind=requestKind(r);
+    var html='<form id="reviewCustomerRequestForm" class="grid md:grid-cols-2 gap-4"><div class="md:col-span-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>'+esc(kind)+' awaiting review.</b> Requested by '+esc(r.requested_by_name||'Sales')+'.'+(r.request_type==='create'?'<div class="mt-1">The provisional customer is already usable for Sales Orders but remains clearly marked Pending Review until you approve, merge, or reject it.</div>':'')+(r.request_note?'<div class="mt-2"><b>Sales note:</b> '+esc(r.request_note)+'</div>':'')+'</div>'
       +customerRequestChangesHtml(r)
       +'<div class="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800"><b>Final review draft below.</b> Sales\' requested values are prefilled. You can adjust them before approval; live customer information stays unchanged until you approve.</div>'
       +'<div class="md:col-span-2"><label class="text-xs font-semibold">Customer Name</label><input id="rcName" value="'+esc(o.name||'')+'" class="mt-1 w-full border rounded-xl px-3 py-2"></div>'
@@ -204,9 +212,45 @@
       +'<div class="md:col-span-2"><div class="flex justify-between items-center mb-2"><div><b class="text-sm">Contact Methods</b><div class="text-[10px] text-gray-400">Edit before publishing if needed.</div></div><button type="button" onclick="addReviewCustomerContact()" class="px-3 py-2 border rounded-lg text-xs">+ Contact</button></div><div id="reviewCustomerContacts" class="grid gap-2">'+(contacts.length?contacts.map(contactRow).join(''):contactRow({contact_type:'phone'}))+'</div></div>'
       +'<div class="md:col-span-2"><label class="text-xs font-semibold">Customer Note</label><textarea id="rcNotes" rows="3" class="mt-1 w-full border rounded-xl px-3 py-2">'+esc(o.notes||'')+'</textarea></div>'
       +'<div class="md:col-span-2"><label class="text-xs font-semibold">Reviewer Note</label><textarea id="rcReviewNote" rows="2" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Optional for approval; required for rejection."></textarea></div>'
-      +'<div class="md:col-span-2 flex justify-end gap-2 border-t pt-4"><button type="button" onclick="reviewCustomerRequest(\''+r.request_id+'\',\'reject\')" class="px-4 py-2.5 border border-red-200 bg-red-50 text-red-600 rounded-xl text-xs font-semibold">Reject</button><button type="button" onclick="reviewCustomerRequest(\''+r.request_id+'\',\'approve\')" class="px-4 py-2.5 bg-[#211d18] text-white rounded-xl text-xs font-semibold">'+(r.request_type==='create'?'Approve & Publish':'Approve & Apply')+'</button></div></form>';
+      +'<div class="md:col-span-2 flex flex-wrap justify-end gap-2 border-t pt-4">'+(r.request_type==='create'?'<button type="button" onclick="openCustomerMergePicker(\''+r.request_id+'\')" class="px-4 py-2.5 border border-blue-200 bg-blue-50 text-blue-700 rounded-xl text-xs font-semibold">Link / Merge Existing</button>':'')+'<button type="button" onclick="reviewCustomerRequest(\''+r.request_id+'\',\'reject\')" class="px-4 py-2.5 border border-red-200 bg-red-50 text-red-600 rounded-xl text-xs font-semibold">Reject</button><button type="button" onclick="reviewCustomerRequest(\''+r.request_id+'\',\'approve\')" class="px-4 py-2.5 bg-[#211d18] text-white rounded-xl text-xs font-semibold">'+(r.request_type==='create'?'Approve Customer':'Approve & Apply')+'</button></div></form>';
     openModal((r.request_type==='create'?'Review New Customer':'Review Customer Change'),html);
   };
+  window.openCustomerMergePicker=function(requestId){
+    var r=C.requests.find(function(x){return x.request_id===requestId});
+    if(!r)return showToast('Customer request not found.','err');
+    openModal('Link / Merge Existing Customer',
+      '<div class="space-y-4">'
+      +'<div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800"><b>Use this when the Sales-created Pending Review customer is actually an existing customer.</b><div class="mt-1">Orders, Showroom/Online activity and CRM history attached to the pending customer will be moved to the approved existing customer. The entered name is saved as an alias for future matching.</div></div>'
+      +'<div><label class="text-xs font-semibold">Search existing customer</label><input id="mergeCustomerSearch" autocomplete="off" oninput="searchCustomerMergeTargets(\''+requestId+'\')" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Type customer name, phone or Customer ID..."></div>'
+      +'<div id="mergeCustomerResults" class="grid gap-2 max-h-[45vh] overflow-y-auto"><div class="rounded-xl border border-dashed p-8 text-center text-sm text-gray-400">Type at least 2 characters to search.</div></div>'
+      +'<div><label class="text-xs font-semibold">Reviewer Note</label><textarea id="mergeCustomerReviewNote" rows="2" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Optional note about why these records are the same customer"></textarea></div>'
+      +'<button type="button" onclick="openCustomerRequestDetail(\''+requestId+'\')" class="w-full border rounded-xl py-2.5 text-xs font-semibold">Back to Review</button>'
+      +'</div>');
+    setTimeout(function(){document.getElementById('mergeCustomerSearch')?.focus()},20);
+  };
+  window.searchCustomerMergeTargets=async function(requestId){
+    var q=clean(document.getElementById('mergeCustomerSearch')?.value);
+    var box=document.getElementById('mergeCustomerResults');if(!box)return;
+    if(q.length<2){box.innerHTML='<div class="rounded-xl border border-dashed p-8 text-center text-sm text-gray-400">Type at least 2 characters to search.</div>';return}
+    box.innerHTML='<div class="p-5 text-center text-xs text-gray-400">Searching...</div>';
+    var res=await db.rpc('search_activity_customer_candidates',{p_query:q});
+    if(res.error){box.innerHTML='<div class="p-4 text-red-600 text-xs">'+esc(res.error.message)+'</div>';return}
+    var req=C.requests.find(function(x){return x.request_id===requestId});
+    var rows=(res.data||[]).filter(function(x){return x.source_type==='customer_master'&&String(x.customer_id)!==String(req&&req.customer_id||'')});
+    box.innerHTML=rows.length?rows.map(function(x){
+      return '<button type="button" onclick="mergeCustomerRequestToExisting(\''+requestId+'\',\''+x.customer_id+'\',\''+encodeURIComponent(x.customer_name||'Customer')+'\')" class="w-full text-left rounded-xl border bg-white p-3 hover:bg-blue-50"><div class="flex justify-between gap-3"><div><b>'+esc(x.customer_name||'Customer')+'</b><div class="text-[10px] text-gray-500 mt-1">'+esc(x.phone||'No phone')+(x.customer_code?' · '+esc(x.customer_code):'')+'</div></div><div class="text-right text-[10px] text-gray-500">Owner<br><b class="text-gray-700">'+esc(x.assigned_sales_name||'Unassigned')+'</b><div class="mt-1">'+Number(x.order_count||0)+' order'+(Number(x.order_count||0)===1?'':'s')+'</div></div></div></button>';
+    }).join(''):'<div class="rounded-xl border border-dashed p-8 text-center text-sm text-gray-400">No approved Customer Master match found.</div>';
+  };
+  window.mergeCustomerRequestToExisting=async function(requestId,targetId,encodedName){
+    if(!reviewer())return showToast('Manager/Admin access required.','err');
+    var name=decodeURIComponent(encodedName||'Customer');
+    if(!confirm('Merge this Pending Review customer into '+name+'? Orders and activity will move to the existing customer.'))return;
+    var note=clean(document.getElementById('mergeCustomerReviewNote')?.value)||null;
+    var res=await db.rpc('review_customer_request_merge_existing',{p_request_id:requestId,p_target_customer_id:targetId,p_review_note:note});
+    if(res.error)return showToast(res.error.message,'err');
+    closeModal();showToast('Customer linked/merged into '+name+'.');await go('customers');
+  };
+
   async function duplicateWarning(contacts,excludeId){
     var hits=[];for(var i=0;i<contacts.length;i++){var c=contacts[i];if(!c.contact_value)continue;var r=await db.rpc('check_customer_contact_duplicate',{p_type:c.contact_type,p_value:c.contact_value,p_exclude_customer_id:excludeId||null});if(!r.error&&(r.data||[]).length)hits.push(c.contact_value)}
     return hits;
