@@ -137,7 +137,8 @@
 
   function customerRequestKind(r){
     var reason=String((r.requested_customer||{})._workflow_reason||'');
-    if(reason==='ownership_claim')return 'Ownership Claim';
+    if(reason==='ownership_claim'||reason==='ownership_claim_phone')return 'Ownership Claim';
+    if(reason==='crm_ownership_claim')return 'CRM Customer Ownership Claim';
     if(reason==='activity_customer_request')return 'Showroom / Online Customer';
     if(reason==='history_customer_request')return 'Historical Showroom / Online Customer';
     if(reason==='history_customer_link')return 'Link Historical Customer';
