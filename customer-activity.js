@@ -607,7 +607,7 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
     }
 
     const salesId=document.getElementById('activitySalesRep')?.value||null;
-    if(salesId&&!activityHasContactNumber()&&!activitySelectedIdentity?.customer_id){
+    if(salesId&&!activityHasContactNumber()&&!activitySelectedIdentity?.assigned_sales_id){
       activitySalesAssignmentChanged();
       return showToast('Enter a valid contact phone number before claiming this customer.','err');
     }
@@ -629,8 +629,8 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
     };
     const btn=e.target.querySelector('button');if(btn){btn.disabled=true;btn.textContent='Saving...'}
     let res;
-    if(row)res=await db.rpc('update_customer_activity_v2',{p_id:row.id,...args});
-    else res=await db.rpc('create_customer_activity_v2',{p_activity_type:activityState.type,...args});
+    if(row)res=await db.rpc('update_customer_activity_v3',{p_id:row.id,...args});
+    else res=await db.rpc('create_customer_activity_v3',{p_activity_type:activityState.type,...args});
     if(res.error){
       if(btn){btn.disabled=false;btn.textContent=row?'Save Changes':'Save'}
       return showToast(res.error.message,'err');
