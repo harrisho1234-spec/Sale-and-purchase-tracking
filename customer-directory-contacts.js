@@ -34,8 +34,8 @@
     try{sessionStorage.setItem('customer_sort',selected)}catch(_){}
     rows.sort((a,b)=>{
       const am=metricsFor(a.id),bm=metricsFor(b.id);
-      if(selected==='newest_customer')return dateMs(b.created_at)-dateMs(a.created_at)||String(a.name||'').localeCompare(String(b.name||''));
-      if(selected==='oldest_customer')return dateMs(a.created_at)-dateMs(b.created_at)||String(a.name||'').localeCompare(String(b.name||''));
+      if(selected==='newest_customer')return dateMs(b.customer_since||b.created_at)-dateMs(a.customer_since||a.created_at)||dateMs(b.created_at)-dateMs(a.created_at)||String(a.name||'').localeCompare(String(b.name||''));
+      if(selected==='oldest_customer')return dateMs(a.customer_since||a.created_at)-dateMs(b.customer_since||b.created_at)||dateMs(a.created_at)-dateMs(b.created_at)||String(a.name||'').localeCompare(String(b.name||''));
       if(selected==='name_az')return String(a.name||'').localeCompare(String(b.name||''));
       if(selected==='highest_sales')return Number(bm.sales||0)-Number(am.sales||0)||String(a.name||'').localeCompare(String(b.name||''));
       if(selected==='highest_ar')return Number(bm.ar||0)-Number(am.ar||0)||String(a.name||'').localeCompare(String(b.name||''));
@@ -150,7 +150,7 @@
     const list=(state.customers||[]).filter(c=>{
       const x=metricsFor(c.id),contacts=contactsFor(c.id).flatMap(v=>[v.contact_type,v.label,v.contact_value]);
 
-      const matchesSearch=!q||[c.name,(canSeeCustomerId()?c.customer_code:''),c.phone,c.email,c.address,c.notes,fmtDate(c.created_at),x.sales,x.paid,x.ar,...contacts]
+      const matchesSearch=!q||[c.name,(canSeeCustomerId()?c.customer_code:''),c.phone,c.email,c.address,c.notes,fmtDate(c.customer_since||c.created_at),x.sales,x.paid,x.ar,...contacts]
         .some(v=>String(v||'').toLowerCase().includes(q));
       if(!matchesSearch)return false;
 
