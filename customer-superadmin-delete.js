@@ -35,7 +35,7 @@
   function decorateCustomerDeleteButtons(){
     if(!canDeleteCustomerMaster())return;
     document.querySelectorAll('#customerRows .customer-edit-row').forEach(row=>{
-      if(row.querySelector('.customer-master-delete-btn'))return;
+      if(row.querySelector('.customer-master-delete-btn, button[onclick*="openDeleteCustomer"]'))return;
       const id=customerIdFromRow(row);if(!id)return;
       const edit=row.querySelector('button[onclick*="openEditCustomer"]');
       if(!edit)return;
@@ -76,7 +76,7 @@
       const out=await baseEdit.apply(this,arguments);
       if(!canDeleteCustomerMaster())return out;
       const form=document.getElementById('multiEditCustomerForm')||document.getElementById('editCustomerForm');
-      if(!form||form.querySelector('.customer-master-delete-modal-btn'))return out;
+      if(!form||form.querySelector('.customer-master-delete-modal-btn, button[onclick*="openDeleteCustomer"]'))return out;
 
       const submit=[...form.querySelectorAll('button')].find(b=>b.type!=='button');
       if(!submit)return out;
