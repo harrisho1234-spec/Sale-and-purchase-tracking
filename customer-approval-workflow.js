@@ -3,6 +3,8 @@
   var C={requests:[]};
   function role(){return state.profile&&state.profile.role||''}
   function sales(){return role()==='sales'}
+  function accountant(){return role()==='accountant'}
+  function requester(){return sales()||accountant()}
   function reviewer(){return ['manager','admin','super_admin'].includes(role())}
   function clean(v){return String(v==null?'':v).trim()}
   function contactRows(root){
@@ -100,7 +102,7 @@
     };
 
     return '<details open class="md:col-span-2 rounded-xl border border-amber-200 bg-amber-50/40 overflow-hidden">'
-      +'<summary class="cursor-pointer px-4 py-3 flex items-center justify-between gap-3"><div><div class="font-bold text-sm">Sales Requested Changes</div><div class="text-[10px] text-gray-500">'+(r.request_type==='create'?'Everything below is proposed as a new customer.':'Original customer information compared with the Sales request.')+'</div></div><span class="min-w-[24px] h-[24px] px-2 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold inline-flex items-center justify-center">'+count+'</span></summary>'
+      +'<summary class="cursor-pointer px-4 py-3 flex items-center justify-between gap-3"><div><div class="font-bold text-sm">Requested Changes</div><div class="text-[10px] text-gray-500">'+(r.request_type==='create'?'Everything below is proposed as a new customer.':'Original customer information compared with the request.')+'</div></div><span class="min-w-[24px] h-[24px] px-2 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold inline-flex items-center justify-center">'+count+'</span></summary>'
       +'<div class="border-t border-amber-100 p-4 space-y-4">'
       +'<div><div class="text-[10px] uppercase font-bold text-gray-400 mb-2">Customer Information</div><div class="grid gap-2">'+(fields.length?fields.map(row).join(''):'<div class="rounded-lg border border-dashed p-3 text-xs text-gray-400">No customer-field changes.</div>')+'</div></div>'
       +'<div><div class="text-[10px] uppercase font-bold text-gray-400 mb-2">Contact Changes</div><div class="grid gap-2">'+(contacts.length?contacts.map(row).join(''):'<div class="rounded-lg border border-dashed p-3 text-xs text-gray-400">No contact changes.</div>')+'</div></div>'
@@ -134,7 +136,7 @@
 
   var baseEdit=window.openEditCustomer;
   if(typeof baseEdit==='function')window.openEditCustomer=async function(id){
-    if(sales()){
+    if(requester()){
       try{await loadRequests()}catch(e){return showToast(e.message,'err')}
       var p=pendingForCustomer(id);
       if(p)return openModal('Customer Change Pending','<div class="space-y-4"><div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><b>Your customer change request is pending review.</b><div class="mt-1">The live customer profile has not changed.</div></div>'+(p.request_note?'<div class="rounded-xl border p-3 text-sm"><b>Request note:</b> '+esc(p.request_note)+'</div>':'')+'<button onclick="closeModal()" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Close</button></div>');
@@ -150,13 +152,17 @@
       e.preventDefault();
       var contacts=contactRows(form),name=clean(document.getElementById('mecName').value),reason=clean(document.getElementById('customerEditRequestNote').value);if(!name)return showToast('Customer name is required.','err');if(!reason)return showToast('Enter the reason for this change.','err');
       var phone=contacts.find(function(x){return x.contact_type==='phone'})?.contact_value||'';
-      if(phone){
+      if(phone&&sales()){
         var match=await db.rpc('find_customer_identity_by_phone',{p_phone:phone});
         if(match.error)return showToast(match.error.message,'err');
         if(match.data&&match.data.matched&&match.data.customer_id&&String(match.data.customer_id)!==String(id))return showToast('This phone number already belongs to '+(match.data.customer_name||'another customer')+'.','err');
       }
-      var payload={name:name,address:clean(document.getElementById('mecAddress').value)||null,notes:clean(document.getElementById('mecNotes').value)||null,assigned_sales_id:c&&c.assigned_sales_id||state.user.id,active:c?c.active!==false:true,customer_since:c&&c.customer_since||null};
-      var x=await db.rpc('submit_customer_change_request',{p_request_type:'update',p_customer_id:id,p_requested_customer:payload,p_requested_contacts:contacts,p_request_note:reason});
+      var payload={name:name,address:clean(document.getElementById('mecAddress').value)||null,notes:clean(document.getElementById('mecNotes').value)||null,assigned_sales_id:c?c.assigned_sales_id:(sales()?state.user.id:null),active:c?c.active!==false:true,customer_since:c&&c.customer_since||null};
+      var rpc=accountant()?'submit_accountant_customer_change_request':'submit_customer_change_request';
+      var args=accountant()
+        ?{p_customer_id:id,p_requested_customer:payload,p_requested_contacts:contacts,p_request_note:reason}
+        :{p_request_type:'update',p_customer_id:id,p_requested_customer:payload,p_requested_contacts:contacts,p_request_note:reason};
+      var x=await db.rpc(rpc,args);
       if(x.error)return showToast(x.error.message,'err');
       closeModal();showToast('Customer change submitted for Manager/Admin approval. Live information is unchanged.');await renderCustomers();
     };
@@ -164,14 +170,14 @@
   };
 
   function addTopButton(){
-    if(!reviewer()&&!sales())return;
+    if(!reviewer()&&!requester())return;
     var add=document.querySelector('#content button[onclick="openNewCustomer()"]'),box=add&&add.parentElement;if(!box)return;
     var old=box.querySelector('.customer-request-review-btn');if(old)old.remove();
     var count=C.requests.filter(function(x){return x.status==='pending'}).length,b=document.createElement('button');
     b.type='button';b.className='customer-request-review-btn px-4 py-3 border border-amber-200 bg-amber-50 text-amber-800 rounded-xl text-sm font-semibold whitespace-nowrap';
     b.textContent=reviewer()?'Pending Customer Requests ('+count+')':'My Customer Requests'+(count?' ('+count+' pending)':'');
     b.onclick=openCustomerRequests;box.insertBefore(b,add);
-    if(sales())C.requests.filter(function(x){return x.status==='pending'&&x.request_type==='update'}).forEach(function(r){var btn=document.querySelector('button[onclick="openEditCustomer(\''+r.customer_id+'\')"]');if(btn){btn.textContent='Change Pending';btn.classList.add('text-amber-700','bg-amber-50')}});
+    if(requester())C.requests.filter(function(x){return x.status==='pending'&&x.request_type==='update'}).forEach(function(r){var btn=document.querySelector('button[onclick="openEditCustomer(\''+r.customer_id+'\')"]');if(btn){btn.textContent='Change Pending';btn.classList.add('text-amber-700','bg-amber-50')}});
   }
   var baseRender=window.renderCustomers;
   if(typeof baseRender==='function')window.renderCustomers=async function(){
@@ -207,7 +213,7 @@
       if(!orderRes.error)pendingOrders=orderRes.data||[];
     }
     var kind=requestKind(r);
-    var html='<form id="reviewCustomerRequestForm" class="grid md:grid-cols-2 gap-4"><div class="md:col-span-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>'+esc(kind)+' awaiting review.</b> Requested by '+esc(r.requested_by_name||'Sales')+'.'+(r.request_type==='create'?'<div class="mt-1">The provisional customer is already usable for Sales Orders but remains clearly marked Pending Review until you approve, merge, or reject it.</div>':'')+(r.request_note?'<div class="mt-2"><b>Sales note:</b> '+esc(r.request_note)+'</div>':'')+'</div>'
+    var html='<form id="reviewCustomerRequestForm" class="grid md:grid-cols-2 gap-4"><div class="md:col-span-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>'+esc(kind)+' awaiting review.</b> Requested by '+esc(r.requested_by_name||'Sales')+'.'+(r.request_type==='create'?'<div class="mt-1">The provisional customer is already usable for Sales Orders but remains clearly marked Pending Review until you approve, merge, or reject it.</div>':'')+(r.request_note?'<div class="mt-2"><b>Request note:</b> '+esc(r.request_note)+'</div>':'')+'</div>'
       +customerRequestChangesHtml(r)
       +(pendingOrders.length?'<div class="md:col-span-2 rounded-xl border border-purple-100 bg-purple-50 p-3"><div class="flex items-center justify-between gap-3"><div><b class="text-sm text-purple-900">Orders created while customer review is pending</b><div class="text-[10px] text-purple-700 mt-0.5">These orders remain attached to this provisional customer. Approving or merging the customer will finalize their customer review status automatically.</div></div><span class="min-w-[26px] h-[26px] rounded-full bg-purple-100 text-purple-800 text-[10px] font-bold inline-flex items-center justify-center">'+pendingOrders.length+'</span></div><div class="grid gap-1.5 mt-3">'+pendingOrders.slice(0,8).map(function(o){var doc=o.sales_invoice_no||o.sr_no||o.order_no||'Order';return '<div class="rounded-lg border border-purple-100 bg-white px-3 py-2 flex justify-between gap-3 text-xs"><b>'+esc(doc)+'</b><span class="text-gray-500">'+esc(o.order_date||'')+' · '+esc(o.customer_review_status||'pending')+'</span></div>'}).join('')+'</div></div>':'')
       +'<div class="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800"><b>Final review draft below.</b> Sales\' requested values are prefilled. You can adjust them before approval; Pending Review status remains until you approve, merge, or reject.</div>'
