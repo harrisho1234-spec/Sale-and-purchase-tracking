@@ -2,7 +2,7 @@
 // Loaded last so it can apply a final read-only/request-only boundary over all other modules.
 (function(){
   function isAccountant(){return (state.profile?.role||'')==='accountant'}
-  const allowedPages=new Set(['dashboard','customers','sales-orders']);
+  const allowedPages=new Set(['dashboard','customers','sales-orders','reports']);
 
   const previousNavItems=window.navItems;
   if(typeof previousNavItems==='function'){
@@ -17,7 +17,7 @@
   if(typeof previousGo==='function'){
     window.go=async function(page){
       if(isAccountant()&&!allowedPages.has(page)){
-        showToast('Accountant access is read-only for Customers and Sales Tracking.','err');
+        showToast('Accountant access is limited to Customers, Sales Tracking and Sales Report.','err');
         return previousGo('dashboard');
       }
       return previousGo.apply(this,arguments);
