@@ -16,14 +16,15 @@
   function n(v){const x=Number(v||0);return Number.isFinite(x)?x:0}
   function repKey(r){return r.sales_rep_id||'__unassigned__'}
   function reportScopeUserId(){
+    // Sales users see only their own report. Managers see the full team report.
+    // An explicit Rep Workspace selection still scopes the report to that Sales Rep.
     if(typeof managerRepActive==='function'&&managerRepActive())return managerRepId();
-    if(typeof managerTestActive==='function'&&managerTestActive())return state.managerRepContext?.user_id||null;
     const role=state.profile?.role||'';
-    if(['sales','manager'].includes(role))return state.user?.id||null;
+    if(role==='sales')return state.user?.id||null;
     return null;
   }
   function canChooseReportReps(){
-    return !reportScopeUserId()&&['accountant','admin','super_admin'].includes(state.profile?.role||'');
+    return !reportScopeUserId()&&['manager','accountant','admin','super_admin'].includes(state.profile?.role||'');
   }
   function reportBusinessLabel(){
     if(reportState.business==='RK')return 'LP Home (RK)';
