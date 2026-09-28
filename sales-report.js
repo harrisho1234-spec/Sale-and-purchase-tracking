@@ -23,7 +23,7 @@
     return null;
   }
   function canChooseReportReps(){
-    return !reportScopeUserId()&&['admin','super_admin'].includes(state.profile?.role||'');
+    return !reportScopeUserId()&&['accountant','admin','super_admin'].includes(state.profile?.role||'');
   }
   function reportBusinessLabel(){
     if(reportState.business==='RK')return 'LP Home (RK)';
@@ -382,7 +382,7 @@
   }
 
   window.renderReports=async function(){
-    if(!['sales','manager','admin','super_admin'].includes(state.profile?.role||''))throw new Error('Sales, Manager, Admin or Super Admin access required');
+    if(!['sales','manager','accountant','admin','super_admin'].includes(state.profile?.role||''))throw new Error('Sales Report access required');
     document.getElementById('pageTitle').textContent='Report';
     document.getElementById('pageSubtitle').textContent='Sales by period, RK/TK business, Sales Rep, brand and product line';
     document.getElementById('content').innerHTML='<div id="salesReportRoot"><div class="py-20 text-center text-gray-400">Loading sales report...</div></div>';
@@ -464,7 +464,7 @@
   if(typeof previousNavItems==='function'){
     window.navItems=function(){
       const items=(previousNavItems.apply(this,arguments)||[]).map(x=>x[0]==='reports'?['reports','Report',x[2]||'▥']:x);
-      if(!items.some(x=>x[0]==='reports')&&['sales','manager'].includes(state.profile?.role||'')){
+      if(!items.some(x=>x[0]==='reports')&&['sales','manager','accountant'].includes(state.profile?.role||'')){
         items.push(['reports','Report','▥']);
       }
       return items;
