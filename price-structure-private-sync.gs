@@ -28,6 +28,7 @@ function onOpen() {
     .addItem('Sync Products Now', 'syncAllProducts')
     .addItem('Sync App Changes to Sheet Now', 'syncAppProductsToSheet')
     .addItem('Sync Customer Backup Now', 'syncCustomerBackupToSheet')
+    .addItem('Sync Customer History Index Now', 'syncCustomerHistoryIndex')
     .addItem('Install / Repair Auto Sync', 'setupProductSync')
     .addItem('Test Secure Connection', 'testProductSyncConnection')
     .addSeparator()
@@ -537,6 +538,288 @@ function writeCustomerBackupSheet_(ss, name, headers, keys, rows) {
   if (values.length) sh.getRange(1,1,values.length,headers.length).setValues(values);
   sh.setFrozenRows(1);
   if (headers.length) sh.autoResizeColumns(1, headers.length);
+}
+
+
+/**
+ * GOOGLE-SHEET HISTORY MODEL
+ * Raw historical customer rows stay in Google Sheets.
+ * Only a compact monthly customer index is sent to Supabase so the app can
+ * calculate reports and match history to current CRM customers.
+ *
+ * Paste old data into:
+ * - Showroom History
+ * - Online History
+ * Then run: Sync Customer History Index Now
+ */
+function syncCustomerHistoryIndex(showUi = true) {
+  const ss = SpreadsheetApp.openById(LPH_PRODUCT_SYNC.customerBackupSpreadsheetId);
+  ensureCustomerHistorySheets_(ss);
+
+  const showroom = buildCustomerHistoryIndex_(ss.getSheetByName('Showroom History'), 'showroom_visit');
+  const online = buildCustomerHistoryIndex_(ss.getSheetByName('Online History'), 'online');
+
+  const showroomResult = pushCustomerHistoryIndex_('showroom_visit', showroom.rows, showroom.sourceRows);
+  const onlineResult = pushCustomerHistoryIndex_('online', online.rows, online.sourceRows);
+
+  const status = getOrCreateCustomerBackupSheet_(ss, 'History Sync Status', 10);
+  status.clearContents();
+  status.getRange(1,1,2,10).setValues([
+    ['Last Sync','Showroom Indexed Rows','Online Indexed Rows','Showroom Source Rows','Online Source Rows','Status','Message','Showroom Batch','Online Batch','Storage Model'],
+    [
+      new Date(),
+      showroomResult.indexedRows,
+      onlineResult.indexedRows,
+      showroom.sourceRows,
+      online.sourceRows,
+      'Success',
+      'Raw history stays in Google Sheets. Only compact monthly index is mirrored to Supabase.',
+      showroomResult.batchId,
+      onlineResult.batchId,
+      'Google Sheets = history / Supabase = compact index'
+    ]
+  ]);
+  status.setFrozenRows(1);
+
+  const result = {
+    showroomSourceRows:showroom.sourceRows,
+    showroomIndexedRows:showroomResult.indexedRows,
+    onlineSourceRows:online.sourceRows,
+    onlineIndexedRows:onlineResult.indexedRows
+  };
+
+  console.log(JSON.stringify(result));
+  saveSyncStatus_(
+    'success',
+    `Customer history index refreshed: Showroom ${result.showroomIndexedRows}/${result.showroomSourceRows}; Online ${result.onlineIndexedRows}/${result.onlineSourceRows}.`
+  );
+
+  if (showUi) {
+    notify_(
+      'Customer History Indexed',
+      `Showroom: ${result.showroomSourceRows} source rows → ${result.showroomIndexedRows} compact index rows. Online: ${result.onlineSourceRows} source rows → ${result.onlineIndexedRows} compact index rows.`
+    );
+  }
+  return result;
+}
+
+function ensureCustomerHistorySheets_(ss) {
+  const headers = [
+    'Date','Business','Customer Name','Phone','Customer Type','Source','Stage',
+    'Interest','Follow-up Date','Assigned Sales','Assigned Sales Email','Remark',
+    'Original Sheet','Original Row','Imported At','Notes'
+  ];
+  ['Showroom History','Online History'].forEach(name => {
+    const sh = getOrCreateCustomerBackupSheet_(ss,name,headers.length);
+    const current = sh.getRange(1,1,1,headers.length).getDisplayValues()[0];
+    const hasHeader = current.some(v => String(v||'').trim());
+    if (!hasHeader) sh.getRange(1,1,1,headers.length).setValues([headers]);
+    sh.setFrozenRows(1);
+  });
+  getOrCreateCustomerBackupSheet_(ss,'History Sync Status',10);
+}
+
+function historyNormHeader_(v) {
+  return String(v||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+}
+
+function historyHeaderMap_(headers) {
+  const by = {};
+  headers.forEach((h,i) => {
+    const k = historyNormHeader_(h);
+    if (k) by[k]=i;
+  });
+  const find = aliases => {
+    for (const a of aliases) {
+      const k=historyNormHeader_(a);
+      if (Object.prototype.hasOwnProperty.call(by,k)) return by[k];
+    }
+    return -1;
+  };
+  return {
+    date:find(['Date','Activity Date','Visit Date','Inquiry Date','Customer Date']),
+    business:find(['Business','Business Code','Company','Branch','Showroom','RK TK','RK/TK','Page']),
+    name:find(['Customer Name','Name','Client Name','Customer']),
+    phone:find(['Phone','Phone Number','Contact Number','Mobile','Telephone','Contact']),
+    customerType:find(['Customer Type','Customer Category','Category','Type']),
+    source:find(['Source','Source From','Source Channel','Channel','Lead Source']),
+    stage:find(['Stage','Status','Customer Stage','Lead Stage']),
+    interest:find(['Interest','Product Interest','Interested Product','Product','Looking For']),
+    followUp:find(['Follow-up Date','Follow Up Date','Followup Date','Next Follow Up','Next Follow-up']),
+    sales:find(['Assigned Sales','Sales Rep','Sales Representative','PIC','Person In Charge','Sales In Charge']),
+    salesEmail:find(['Assigned Sales Email','Sales Email','PIC Email']),
+    remark:find(['Remark','Remarks','Notes','Note','Comment'])
+  };
+}
+
+function historyDateIso_(v, timezone) {
+  if (v instanceof Date && !isNaN(v.getTime())) {
+    return Utilities.formatDate(v,timezone||'Asia/Phnom_Penh','yyyy-MM-dd');
+  }
+  const raw=String(v||'').trim();
+  if (!raw) return '';
+  let m=raw.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})$/);
+  if (m) return m[1]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[3]).padStart(2,'0');
+  m=raw.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})$/);
+  if (m) return m[3]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0');
+  const d=new Date(raw);
+  if (!isNaN(d.getTime())) return Utilities.formatDate(d,timezone||'Asia/Phnom_Penh','yyyy-MM-dd');
+  return '';
+}
+
+function historyPhone_(v) {
+  let s=String(v||'').replace(/\D/g,'');
+  if (s.indexOf('00855')===0) s='0'+s.slice(5);
+  else if (s.indexOf('855')===0) s='0'+s.slice(3);
+  return s;
+}
+
+function historyBusiness_(v) {
+  const s=String(v||'').trim().toUpperCase();
+  if (!s) return 'OTHER';
+  if (s==='RK' || s.indexOf('LP HOME')>=0 || s.indexOf('HOME')>=0) return 'RK';
+  if (s==='TK' || s.indexOf('LUXURY')>=0 || s.indexOf('LIMPERIAL')>=0 || s.indexOf("L'IMPERIAL")>=0) return 'TK';
+  return 'OTHER';
+}
+
+function historyStage_(v) {
+  const s=String(v||'').trim();
+  const k=s.toLowerCase();
+  if (!s) return 'Contacting';
+  if (k.indexOf('buy')>=0 || k.indexOf('purchas')>=0 || k==='sale' || k==='sold') return 'Buy';
+  if (k.indexOf('waiting')>=0 || k.indexOf('decision')>=0) return 'Waiting Decision';
+  if (k.indexOf('potential')>=0 || k.indexOf('follow')>=0 || k.indexOf('active')>=0) return 'Potential';
+  if (k.indexOf('reject')>=0 || k.indexOf('lost')>=0 || k.indexOf('not interest')>=0) return 'Reject';
+  if (k.indexOf('contact')>=0 || k.indexOf('ask')>=0 || k.indexOf('inquir')>=0 || k.indexOf('new')>=0) return 'Contacting';
+  return s;
+}
+
+function historyCountAdd_(obj,key) {
+  const k=String(key||'').trim();
+  if (!k) return;
+  obj[k]=(obj[k]||0)+1;
+}
+
+function buildCustomerHistoryIndex_(sheet,activityType) {
+  if (!sheet) return {rows:[],sourceRows:0};
+  const values=sheet.getDataRange().getValues();
+  if (values.length<2) return {rows:[],sourceRows:0};
+
+  const idx=historyHeaderMap_(values[0]);
+  if (idx.date<0 || idx.name<0) {
+    throw new Error(sheet.getName()+': Date and Customer Name columns are required.');
+  }
+
+  const tz=sheet.getParent().getSpreadsheetTimeZone()||'Asia/Phnom_Penh';
+  const map=new Map();
+  let sourceRows=0;
+
+  for (let r=1;r<values.length;r++) {
+    const row=values[r];
+    const date=historyDateIso_(row[idx.date],tz);
+    const name=idx.name>=0?String(row[idx.name]||'').trim():'';
+    if (!date || !name) continue;
+    sourceRows++;
+
+    const phone=idx.phone>=0?historyPhone_(row[idx.phone]):'';
+    const business=idx.business>=0?historyBusiness_(row[idx.business]):'OTHER';
+    const periodMonth=date.slice(0,7)+'-01';
+    const identity=phone
+      ? 'phone:'+phone
+      : 'name:'+name.toLowerCase().replace(/\s+/g,' ')+'|'+business;
+    const key=[activityType,periodMonth,identity,business].join('|');
+
+    const source=idx.source>=0?String(row[idx.source]||'').trim():'';
+    const interest=idx.interest>=0?String(row[idx.interest]||'').trim():'';
+    const followUp=idx.followUp>=0?historyDateIso_(row[idx.followUp],tz):'';
+    const stage=idx.stage>=0?historyStage_(row[idx.stage]):'Contacting';
+    const customerType=idx.customerType>=0?String(row[idx.customerType]||'').trim():'';
+    const sales=idx.sales>=0?String(row[idx.sales]||'').trim():'';
+    const salesEmail=idx.salesEmail>=0?String(row[idx.salesEmail]||'').trim():'';
+
+    let x=map.get(key);
+    if (!x) {
+      x={
+        period_month:periodMonth,
+        identity_key:identity,
+        normalized_phone:phone||null,
+        customer_name:name,
+        business_code:business,
+        customer_type:customerType||null,
+        source_channel:source||null,
+        latest_stage:stage,
+        latest_activity_date:date,
+        entry_count:0,
+        latest_interest:interest||null,
+        latest_follow_up_date:followUp||null,
+        assigned_sales_name:sales||null,
+        assigned_sales_email:salesEmail||null,
+        source_counts:{},
+        interest_counts:{},
+        source_sheet:sheet.getName()
+      };
+      map.set(key,x);
+    }
+
+    x.entry_count++;
+    historyCountAdd_(x.source_counts,source);
+    historyCountAdd_(x.interest_counts,interest);
+
+    if (date>=x.latest_activity_date) {
+      x.customer_name=name||x.customer_name;
+      x.customer_type=customerType||x.customer_type;
+      x.source_channel=source||x.source_channel;
+      x.latest_stage=stage||x.latest_stage;
+      x.latest_activity_date=date;
+      x.latest_interest=interest||x.latest_interest;
+      x.latest_follow_up_date=followUp||x.latest_follow_up_date;
+      x.assigned_sales_name=sales||x.assigned_sales_name;
+      x.assigned_sales_email=salesEmail||x.assigned_sales_email;
+    }
+  }
+
+  return {rows:[...map.values()],sourceRows:sourceRows};
+}
+
+function pushCustomerHistoryIndex_(activityType,rows,sourceRows) {
+  const begin=callSyncApi_({
+    mode:'begin_customer_history_sync',
+    spreadsheet_id:LPH_PRODUCT_SYNC.spreadsheetId,
+    activity_type:activityType
+  });
+  if (!begin.ok || !begin.batch_id) throw new Error(begin.error||'Could not start customer history sync.');
+
+  const batchId=begin.batch_id;
+  let indexed=0;
+  const batchSize=250;
+  for (let i=0;i<rows.length;i+=batchSize) {
+    const chunk=rows.slice(i,i+batchSize);
+    const out=callSyncApi_({
+      mode:'push_customer_history_index',
+      spreadsheet_id:LPH_PRODUCT_SYNC.spreadsheetId,
+      activity_type:activityType,
+      batch_id:batchId,
+      rows:chunk
+    });
+    if (!out.ok) throw new Error(out.error||'Customer history batch failed.');
+    indexed+=Number(out.upserted||0);
+  }
+
+  const done=callSyncApi_({
+    mode:'finalize_customer_history_sync',
+    spreadsheet_id:LPH_PRODUCT_SYNC.spreadsheetId,
+    activity_type:activityType,
+    batch_id:batchId,
+    source_row_count:sourceRows,
+    source_spreadsheet_id:LPH_PRODUCT_SYNC.customerBackupSpreadsheetId
+  });
+  if (!done.ok) throw new Error(done.error||'Could not finalize customer history sync.');
+
+  return {
+    batchId:batchId,
+    indexedRows:Number(done.indexed_rows||indexed||0),
+    sourceRows:Number(done.source_rows||sourceRows||0)
+  };
 }
 
 function callSyncApi_(payload) {
