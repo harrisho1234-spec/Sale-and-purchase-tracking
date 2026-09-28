@@ -5,7 +5,7 @@
 
   function appRole(){return state.profile?.role||''}
   function isReviewer(){return ['manager','admin','super_admin'].includes(appRole())}
-  function isSales(){return appRole()==='sales'}
+  function isRequester(){return ['sales','accountant'].includes(appRole())}
   function n(v){const x=Number(v||0);return Number.isFinite(x)?x:0}
   function fmt(v){
     if(!v)return '-';
@@ -45,15 +45,16 @@
       if(!head||head.querySelector('.sales-edit-pending-badge'))continue;
       const badge=document.createElement('span');
       badge.className='sales-edit-pending-badge lr-badge lr-badge-amber';
-      badge.textContent=isSales()?'✎ Edit Pending':'✎ Edit Review Pending';
+      badge.textContent=isRequester()?'✎ Edit Pending':'✎ Edit Review Pending';
       head.appendChild(badge);
     }
   }
 
   function addTopButton(){
-    if(!isReviewer()&&!isSales())return;
+    if(!isReviewer()&&!isRequester())return;
     const newOrder=document.querySelector('#salesTrackingRoot button[onclick="openNewOrder()"]');
-    const actions=newOrder?.parentElement;
+    const exportBtn=document.querySelector('#salesTrackingRoot button[onclick="exportSalesTrackingCsv()"]');
+    const actions=(newOrder||exportBtn)?.parentElement;
     if(!actions)return;
     let btn=actions.querySelector('.sales-edit-review-btn');
     if(!btn){
@@ -61,7 +62,7 @@
       btn.type='button';
       btn.className='sales-edit-review-btn px-3 py-2 border border-amber-200 bg-amber-50 text-amber-800 rounded-lg text-[10px] font-bold';
       btn.onclick=()=>openSalesEditRequests();
-      actions.insertBefore(btn,newOrder);
+      actions.insertBefore(btn,newOrder||actions.firstElementChild);
     }
     const count=pendingRequests().length;
     btn.textContent=isReviewer()?`PENDING EDITS (${count})`:`MY EDIT REQUESTS${count?` (${count} pending)`:''}`;
@@ -130,7 +131,7 @@
     const rows=isReviewer()?approvalState.requests.filter(r=>r.status==='pending'):approvalState.requests.slice(0,30);
     openModal(isReviewer()?'Pending Order Edit Requests':'My Order Edit Requests',`<div class="space-y-4">
       <div class="rounded-xl border ${isReviewer()?'border-amber-200 bg-amber-50 text-amber-900':'bg-gray-50 text-gray-600'} p-3 text-xs">
-        ${isReviewer()?'Sales-requested edits do not change live orders until you approve them. Review the differences before applying.':'Your live order stays unchanged while an edit request is pending.'}
+        ${isReviewer()?'Requested edits do not change live orders until you approve them. Review the differences before applying.':'Your live order stays unchanged while an edit request is pending.'}
       </div>
       <div class="grid gap-2 max-h-[60vh] overflow-y-auto pr-1">
         ${rows.length?rows.map(r=>`<button type="button" onclick="openSalesEditRequestDetail('${r.request_id}')" class="w-full text-left rounded-xl border bg-white p-4 hover:bg-amber-50/30">
@@ -169,7 +170,7 @@
           </div>
           ${statusBadge(r.status)}
         </div>
-        ${r.request_note?`<div class="mt-3 pt-3 border-t"><div class="text-[9px] uppercase font-bold text-gray-400">Sales Reason</div><div class="text-sm mt-1">${esc(r.request_note)}</div></div>`:''}
+        ${r.request_note?`<div class="mt-3 pt-3 border-t"><div class="text-[9px] uppercase font-bold text-gray-400">Request Reason</div><div class="text-sm mt-1">${esc(r.request_note)}</div></div>`:''}
       </div>
 
       <div>
