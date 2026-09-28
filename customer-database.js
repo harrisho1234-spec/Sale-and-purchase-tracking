@@ -348,7 +348,7 @@
   }
   function leadHeader(r,editable=true){
     const customerLink=r.linked_customer_id
-      ?`<button onclick="closeModal();openCustomerOrders('${r.linked_customer_id}')" class="px-3 py-2 rounded-lg bg-green-600 text-white text-xs font-semibold">Open Customer Master</button>`
+      ?`<button onclick="closeModal();openCustomerOrders('${r.linked_customer_id}')" class="px-3 py-2 rounded-lg bg-green-600 text-white text-xs font-semibold">Open Customer Master</button>${(state.profile?.role||'')==='super_admin'?`<button onclick="openRevertCustomerLink('${r.lead_id}')" class="px-3 py-2 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 text-xs font-semibold">Revert / Unlink Customer</button>`:''}`
       :r.pending_customer_request_id
         ?'<span class="px-3 py-2 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 text-xs font-semibold">Customer approval pending</span>'
         :editable
@@ -410,8 +410,9 @@
 
   window.openLeadStageCorrection=function(id){
     const r=leadById(id);if(!r||!crmCanEditLead(r))return;
+    const isSuper=(state.profile?.role||'')==='super_admin';
     const pending=pendingStageRequest(r);
-    if(pending){
+    if(pending&&!isSuper){
       return openModal('Stage Correction Pending',`<div class="space-y-4">
         <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><b>This customer already has a stage correction waiting for approval.</b><div class="mt-2 flex items-center gap-2"><span class="px-2 py-1 rounded-lg border bg-white">${esc(pending.from_stage)}</span><span>→</span><span class="px-2 py-1 rounded-lg border bg-white">${esc(pending.to_stage)}</span></div></div>
         <div class="rounded-xl border p-3 text-sm"><div class="text-[10px] uppercase font-bold text-gray-400">Reason</div><div class="mt-1">${esc(pending.request_note||'-')}</div></div>
@@ -420,35 +421,34 @@
       </div>`);
     }
     const targets=correctionTargets(r);
-    if(!targets.length)return showToast('There is no earlier stage to request for this customer.','err');
-    openModal('Request Stage Correction',`<form id="leadStageCorrectionForm" class="space-y-4">
+    if(!targets.length)return showToast('There is no earlier stage to correct for this customer.','err');
+    openModal(isSuper?'Correct CRM Stage':'Request Stage Correction',`<form id="leadStageCorrectionForm" class="space-y-4">
       <div class="rounded-xl border bg-gray-50 p-4">
         <div class="text-xs text-gray-500">${esc(r.customer_name)}</div>
         <div class="text-sm font-semibold mt-1">Current stage: <span class="px-2 py-1 rounded-lg border ${stageTone(r.stage)}">${esc(r.stage)}</span></div>
       </div>
-      <div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>Approval required.</b> The customer's current stage will not change until a Manager/Admin approves this correction.</div>
-      <div><label class="text-xs font-semibold">Requested Stage</label><select id="leadCorrectionStage" required class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${targets.map(s=>`<option value="${s}">${s}</option>`).join('')}</select></div>
-      <div><label class="text-xs font-semibold">Reason for Correction</label><textarea id="leadCorrectionReason" required rows="3" class="mt-1 w-full border border-amber-200 bg-amber-50 rounded-xl px-3 py-2.5" placeholder="Example: Buy was selected by mistake. Customer is still waiting for a decision."></textarea></div>
+      ${r.linked_customer_id?'<div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800"><b>This CRM is linked to Customer Master.</b> Correcting the stage alone will not remove that link. Use <b>Revert / Unlink Customer</b> if the conversion/link itself was a mistake.</div>':''}
+      ${isSuper?'<div class="rounded-xl border border-green-100 bg-green-50 p-3 text-xs text-green-800"><b>Super Admin:</b> This correction applies immediately. A reason is optional.</div>':'<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>Approval required.</b> The customer\'s current stage will not change until a Manager/Admin approves this correction.</div>'}
+      <div><label class="text-xs font-semibold">${isSuper?'New Stage':'Requested Stage'}</label><select id="leadCorrectionStage" required class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${targets.map(s=>`<option value="${s}">${s}</option>`).join('')}</select></div>
+      <div><label class="text-xs font-semibold">${isSuper?'Note (optional)':'Reason for Correction'}</label><textarea id="leadCorrectionReason" ${isSuper?'':'required'} rows="3" class="mt-1 w-full border ${isSuper?'border-gray-200':'border-amber-200 bg-amber-50'} rounded-xl px-3 py-2.5" placeholder="${isSuper?'Optional note':'Example: Buy was selected by mistake. Customer is still waiting for a decision.'}"></textarea></div>
       <div><label class="text-xs font-semibold">Next Follow-up</label><input id="leadCorrectionFollowup" type="date" value="${esc(r.next_follow_up_date||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
-      <button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Submit for Manager/Admin Approval</button>
+      <button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">${isSuper?'Correct Stage Now':'Submit for Manager/Admin Approval'}</button>
     </form>`);
     document.getElementById('leadStageCorrectionForm').onsubmit=async e=>{
       e.preventDefault();
       const target=document.getElementById('leadCorrectionStage').value;
       const reason=document.getElementById('leadCorrectionReason').value.trim();
-      if(!reason)return showToast('Please explain why the stage needs correction.','err');
-      const btn=e.target.querySelector('button');if(btn){btn.disabled=true;btn.textContent='Submitting...'}
-      const {error}=await db.rpc('submit_customer_lead_stage_change_request',{
-        p_lead_id:id,
-        p_requested_stage:target,
-        p_reason:reason,
-        p_next_follow_up_date:document.getElementById('leadCorrectionFollowup').value||null
-      });
-      if(error){if(btn){btn.disabled=false;btn.textContent='Submit for Manager/Admin Approval'}return showToast(error.message,'err')}
+      if(!isSuper&&!reason)return showToast('Please explain why the stage needs correction.','err');
+      const btn=e.target.querySelector('button');if(btn){btn.disabled=true;btn.textContent=isSuper?'Updating...':'Submitting...'}
+      const follow=document.getElementById('leadCorrectionFollowup').value||null;
+      const res=isSuper
+        ?await db.rpc('superadmin_correct_customer_lead_stage',{p_lead_id:id,p_new_stage:target,p_next_follow_up_date:follow,p_note:reason||null})
+        :await db.rpc('submit_customer_lead_stage_change_request',{p_lead_id:id,p_requested_stage:target,p_reason:reason,p_next_follow_up_date:follow});
+      if(res.error){if(btn){btn.disabled=false;btn.textContent=isSuper?'Correct Stage Now':'Submit for Manager/Admin Approval'}return showToast(res.error.message,'err')}
       closeModal();
-      showToast('Stage correction submitted. The current stage is unchanged until approval.');
+      showToast(isSuper?'CRM stage corrected.':'Stage correction submitted. The current stage is unchanged until approval.');
       await renderCustomerDatabase();
-      if(typeof refreshApprovalNotifications==='function')setTimeout(refreshApprovalNotifications,50);
+      if(!isSuper&&typeof refreshApprovalNotifications==='function')setTimeout(refreshApprovalNotifications,50);
     };
   };
 
@@ -623,7 +623,7 @@
 
   window.reviewCustomerStageChangeRequest=async function(id,action){
     const note=(document.getElementById('stageCorrectionReviewNote')?.value||'').trim();
-    if(action==='reject'&&!note)return showToast('Please enter a reason for rejection.','err');
+    if(action==='reject'&&!note&&(state.profile?.role||'')!=='super_admin')return showToast('Please enter a reason for rejection.','err');
     if(!confirm(action==='approve'?'Approve this stage correction and update the live customer stage?':'Reject this stage correction request?'))return;
     const {error}=await db.rpc('review_customer_lead_stage_change_request',{
       p_request_id:id,
@@ -637,7 +637,23 @@
     await go('approvals');
   };
 
-  window.convertLeadToCustomer=async function(id){
+  window.convertLeadToCustomer=function(id){
+    const r=leadById(id);if(!r)return;
+    openModal('Convert / Link Customer — '+r.customer_name,`
+      <div class="space-y-4">
+        <div class="rounded-xl border bg-[#faf9f6] p-4 text-sm">
+          <b>${esc(r.customer_name)}</b>
+          <div class="text-xs text-gray-500 mt-1">${esc(r.phone||'Private / no phone')} · Current CRM stage: ${esc(r.stage||'-')}</div>
+        </div>
+        <div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>Choose carefully.</b> Converting/linking connects this CRM record to Customer Master and moves the CRM stage to <b>Buy</b>.</div>
+        <button type="button" onclick="findExistingCustomerForLead('${id}')" class="w-full border rounded-xl py-3 font-semibold bg-white">Search Existing Customer</button>
+        <button type="button" onclick="convertLeadToCustomerNow('${id}')" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Create / Convert as Customer</button>
+        <button type="button" onclick="openCustomerLead('${id}')" class="w-full border rounded-xl py-3 font-semibold">Cancel</button>
+      </div>
+    `);
+  };
+
+  window.convertLeadToCustomerNow=async function(id){
     const r=leadById(id);if(!r)return;
     const {data,error}=await db.rpc('convert_customer_lead',{p_lead_id:id});
     if(error)return showToast(error.message,'err');
@@ -660,6 +676,44 @@
     const {error}=await db.rpc('link_customer_lead',{p_lead_id:leadId,p_customer_id:customerId});
     if(error)return showToast(error.message,'err');
     closeModal();showToast('Customer linked');await renderCustomerDatabase();
+  };
+
+  window.openRevertCustomerLink=function(id){
+    if((state.profile?.role||'')!=='super_admin')return showToast('Super Admin access required.','err');
+    const r=leadById(id);if(!r||!r.linked_customer_id)return showToast('This CRM record is not linked to Customer Master.','err');
+    const customer=(state.customers||[]).find(x=>String(x.id)===String(r.linked_customer_id));
+    openModal('Revert / Unlink Customer — '+r.customer_name,`
+      <form id="revertCustomerLinkForm" class="space-y-4">
+        <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <b>This removes the CRM → Customer Master link and moves the CRM back to an earlier stage.</b>
+          <div class="mt-2">Customer Master is kept by default. You may also archive it only when it has no Sales Orders and is not used by other CRM/history records.</div>
+        </div>
+        <div class="rounded-xl border bg-white p-4 text-sm">
+          <div><b>CRM:</b> ${esc(r.customer_name)}</div>
+          <div class="mt-1 text-xs text-gray-500"><b>Customer Master:</b> ${esc(customer?.name||r.linked_customer_id)}</div>
+        </div>
+        <div><label class="text-xs font-semibold">Return CRM to Stage</label><select id="revertCustomerStage" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option>Contacting</option><option selected>Potential</option><option>Waiting Decision</option><option>Reject</option></select></div>
+        <label class="flex items-start gap-3 rounded-xl border p-3 cursor-pointer"><input id="revertArchiveCustomer" type="checkbox" class="mt-1"><span class="text-xs"><b>Also archive the Customer Master if it is empty</b><br><span class="text-gray-500">The system will block this if the customer has any order or is still used elsewhere.</span></span></label>
+        <div><label class="text-xs font-semibold">Note (optional)</label><textarea id="revertCustomerNote" rows="2" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Optional"></textarea></div>
+        <button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Revert / Unlink Now</button>
+      </form>
+    `);
+    document.getElementById('revertCustomerLinkForm').onsubmit=async e=>{
+      e.preventDefault();
+      if(!confirm('Revert this CRM customer link now?'))return;
+      const btn=e.target.querySelector('button');btn.disabled=true;btn.textContent='Reverting...';
+      const {data,error}=await db.rpc('revert_customer_lead_link_superadmin',{
+        p_lead_id:id,
+        p_new_stage:document.getElementById('revertCustomerStage').value,
+        p_archive_empty_customer:!!document.getElementById('revertArchiveCustomer').checked,
+        p_note:(document.getElementById('revertCustomerNote').value||'').trim()||null
+      });
+      if(error){btn.disabled=false;btn.textContent='Revert / Unlink Now';return showToast(error.message,'err')}
+      closeModal();
+      showToast(data?.customer_archived?'CRM reverted and empty Customer Master archived.':'CRM reverted and Customer Master kept.');
+      await renderCustomerDatabase();
+      setTimeout(()=>openCustomerLead(id),80);
+    };
   };
 
   window.setLeadSearch=function(v){leadState.search=v;leadState.page=1;renderLeadBody()};
