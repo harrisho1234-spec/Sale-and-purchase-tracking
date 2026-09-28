@@ -648,7 +648,8 @@ function historyHeaderMap_(headers) {
     followUp:find(['Follow-up Date','Follow Up Date','Followup Date','Next Follow Up','Next Follow-up']),
     sales:find(['Assigned Sales','Sales Rep','Sales Representative','PIC','Person In Charge','Sales In Charge']),
     salesEmail:find(['Assigned Sales Email','Sales Email','PIC Email']),
-    remark:find(['Remark','Remarks','Notes','Note','Comment'])
+    remark:find(['Remark','Remarks','Note','Comment']),
+    notes:find(['Notes','Legacy Interest','Original Interest'])
   };
 }
 
@@ -686,12 +687,19 @@ function historyStage_(v) {
   const s=String(v||'').trim();
   const k=s.toLowerCase();
   if (!s) return 'Contacting';
-  if (k.indexOf('buy')>=0 || k.indexOf('purchas')>=0 || k==='sale' || k==='sold') return 'Buy';
+  if (k.indexOf('buy')>=0 || k.indexOf('purchas')>=0 || k==='sale' || k==='sold' || k.indexOf('paid off')>=0 || k.indexOf('deposit')>=0 || k.indexOf('payment')>=0) return 'Buy';
+  if (k.indexOf('return')>=0) return 'Other';
   if (k.indexOf('waiting')>=0 || k.indexOf('decision')>=0) return 'Waiting Decision';
   if (k.indexOf('potential')>=0 || k.indexOf('follow')>=0 || k.indexOf('active')>=0) return 'Potential';
   if (k.indexOf('reject')>=0 || k.indexOf('lost')>=0 || k.indexOf('not interest')>=0) return 'Reject';
   if (k.indexOf('contact')>=0 || k.indexOf('ask')>=0 || k.indexOf('inquir')>=0 || k.indexOf('new')>=0) return 'Contacting';
   return s;
+}
+
+function historyLooksLikeProductInterest_(v) {
+  const s=String(v||'').toLowerCase();
+  if (!s) return false;
+  return /(looking|interest|sofa|lamp|chandelier|bedroom|bed\b|table|chair|armchair|carpet|cabinet|console|mirror|furniture|lighting|accessor|crystal|wall lamp|dining|dressing)/i.test(s);
 }
 
 function historyCountAdd_(obj,key) {
@@ -730,7 +738,11 @@ function buildCustomerHistoryIndex_(sheet,activityType) {
     const key=[activityType,periodMonth,identity,business].join('|');
 
     const source=idx.source>=0?String(row[idx.source]||'').trim():'';
-    const interest=idx.interest>=0?String(row[idx.interest]||'').trim():'';
+    const rawInterest=idx.interest>=0?String(row[idx.interest]||'').trim():'';
+    const legacyNotes=idx.notes>=0?String(row[idx.notes]||'').trim():'';
+    const interest=(activityType==='online' && legacyNotes && (historyLooksLikeProductInterest_(legacyNotes) || !rawInterest))
+      ?legacyNotes
+      :rawInterest;
     const followUp=idx.followUp>=0?historyDateIso_(row[idx.followUp],tz):'';
     const stage=idx.stage>=0?historyStage_(row[idx.stage]):'Contacting';
     const customerType=idx.customerType>=0?String(row[idx.customerType]||'').trim():'';
