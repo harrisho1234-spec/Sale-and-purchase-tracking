@@ -139,6 +139,8 @@
     var reason=String((r.requested_customer||{})._workflow_reason||'');
     if(reason==='ownership_claim')return 'Ownership Claim';
     if(reason==='activity_customer_request')return 'Showroom / Online Customer';
+    if(reason==='history_customer_request')return 'Historical Showroom / Online Customer';
+    if(reason==='history_customer_link')return 'Link Historical Customer';
     if(reason==='buy_conversion')return 'Buyer → Customer Master';
     return r.request_type==='create'?'New Customer':'Customer Change';
   }
