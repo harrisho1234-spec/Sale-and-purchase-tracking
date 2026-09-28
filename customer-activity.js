@@ -360,7 +360,7 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
       follow_up_date:r.follow_up_date,
       assigned_sales_id:r.assigned_sales_id,
       sales_rep_name:r.sales_rep_name,
-      linked_customer_id:null,
+      linked_customer_id:r.linked_customer_id||null,
       created_by:null,
       created_at:(r.activity_date||r.period_month)+'T00:00:00Z',
       updated_at:(r.activity_date||r.period_month)+'T00:00:00Z',
@@ -674,6 +674,12 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
     const latestSales=latestEvent?.sales||latest.assigned_sales_name||'Unassigned';
     const latestSource=latestEvent?.source||latest.source_channel||'-';
     const latestInterest=latestEvent?.interest||latest.latest_interest||'-';
+    const linkedCustomerId=rows.find(r=>r.linked_customer_id)?.linked_customer_id||null;
+    const historyCustomerAction=linkedCustomerId
+      ?`<button type="button" onclick="closeModal();openCustomerOrders('${linkedCustomerId}')" class="px-3 py-2 rounded-lg bg-green-600 text-white text-xs font-semibold">Open Customer Master</button>`
+      :['sales','manager','admin','super_admin'].includes(state.profile?.role||'')
+        ?`<button type="button" onclick="requestHistoryCustomerMaster(${indexId},'${encodeURIComponent(customerName)}')" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs font-semibold">Convert / Link Customer</button>`
+        :'';
     document.getElementById('modalTitle').textContent=(activityState.type==='online'?'Customer Online History — ':'Customer Visit History — ')+customerName;
     root.innerHTML=`
       <div class="rounded-2xl border bg-[#fffaf0] p-4 mb-4">
@@ -682,6 +688,7 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
             <div class="text-[10px] uppercase tracking-wide font-bold text-[#9a6b12]">Customer</div>
             <div class="text-xl font-bold mt-1">${esc(customerName)}</div>
             <div class="text-xs text-gray-500 mt-1">${esc(phone)} · ${esc(customerType)}</div>
+            <div class="mt-3">${historyCustomerAction}</div>
           </div>
           <div class="grid grid-cols-2 md:grid-cols-4 gap-3 flex-1 lg:max-w-[620px]">
             <div><div class="text-[9px] uppercase font-bold text-gray-400">Latest Stage</div><div class="font-semibold mt-1">${esc(latestStage)}</div></div>
@@ -709,6 +716,40 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
         </table></div>
       </div>
     `;
+  };
+
+  window.requestHistoryCustomerMaster=function(indexId,encodedName){
+    const role=state.profile?.role||'';
+    if(!['sales','manager','admin','super_admin'].includes(role))return showToast('Customer conversion access required.','err');
+    const name=decodeURIComponent(encodedName||'Customer');
+    openModal('Convert / Link Historical Customer — '+name,`
+      <form id="historyCustomerMasterRequestForm" class="space-y-4">
+        <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <b>Manager/Admin approval required.</b>
+          <div class="mt-2">This keeps the original Google Sheet history unchanged. If the phone matches an existing Customer Master, the request will link to it after approval. Otherwise a Pending Review customer will be created for review.</div>
+        </div>
+        <div class="rounded-xl border bg-white p-4 text-sm"><b>${esc(name)}</b><div class="text-xs text-gray-500 mt-1">Historical Showroom / Online customer</div></div>
+        <div><label class="text-xs font-semibold">Request Note ${role==='super_admin'?'<span class="text-gray-400 font-normal">· optional</span>':'<span class="text-gray-400 font-normal">· optional</span>'}</label><textarea id="historyCustomerRequestNote" rows="3" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Optional"></textarea></div>
+        <button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Submit for Manager/Admin Approval</button>
+      </form>
+    `);
+    document.getElementById('historyCustomerMasterRequestForm').onsubmit=async e=>{
+      e.preventDefault();
+      const btn=e.target.querySelector('button');btn.disabled=true;btn.textContent='Submitting...';
+      const note=(document.getElementById('historyCustomerRequestNote')?.value||'').trim()||null;
+      const {data,error}=await db.rpc('request_customer_history_master',{p_history_index_id:Number(indexId),p_request_note:note});
+      if(error){btn.disabled=false;btn.textContent='Submit for Manager/Admin Approval';return showToast(error.message,'err')}
+      const out=data||{};
+      if(out.action==='linked'&&out.customer_id){
+        closeModal();
+        showToast('This historical customer is already linked to Customer Master.');
+        return openCustomerOrders(out.customer_id);
+      }
+      closeModal();
+      showToast(out.message||'Historical customer submitted for Manager/Admin approval.');
+      if(typeof refreshApprovalNotifications==='function')setTimeout(refreshApprovalNotifications,50);
+      await renderCustomerActivity(activityState.type);
+    };
   };
 
   window.openEditCustomerActivity=async function(id){
