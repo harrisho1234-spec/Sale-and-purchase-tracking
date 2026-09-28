@@ -38,6 +38,7 @@
     return null;
   }
   function crmCanFilterSales(){return !crmScopeSalesId()&&['manager','admin','super_admin'].includes(state.profile?.role||'')}
+  function crmCanDeleteLead(){return (state.profile?.role||'')==='super_admin'}
   function crmCanEditLead(r){
     const role=state.profile?.role||'';
     const delegated=(typeof managerRepActive==='function'&&managerRepActive())||(typeof managerTestActive==='function'&&managerTestActive());
@@ -356,10 +357,13 @@
     const activityActions=editable
       ?`<button onclick="openLeadActivity('${r.lead_id}','showroom_visit')" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">+ Showroom Visit</button><button onclick="openLeadActivity('${r.lead_id}','online')" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">+ Online</button>`
       :'';
+    const deleteAction=crmCanDeleteLead()
+      ?`<button onclick="openDeleteCustomerLead('${r.lead_id}')" class="px-3 py-2 rounded-lg border border-red-200 bg-red-50 text-red-600 text-xs font-semibold">Delete CRM Record</button>`
+      :'';
     return `<div class="rounded-2xl border bg-[#faf9f6] p-4 mb-4">
       <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
         <div><div class="flex flex-wrap items-center gap-2"><h3 class="text-xl font-serif font-bold">${esc(r.customer_name)}</h3><span class="px-2 py-1 rounded-lg border text-[9px] font-bold ${businessTone(r.business_code)}">${esc(businessText(r.business_code))}</span><span class="px-2 py-1 rounded-lg border text-[9px] font-bold ${stageTone(r.stage)}">${esc(r.stage)}</span></div><div class="text-xs text-gray-400 mt-1">${esc(r.phone||'No phone')} · ${esc(r.sales_rep_name||'-')}</div></div>
-        <div class="flex flex-wrap gap-2">${customerLink}${activityActions}</div>
+        <div class="flex flex-wrap gap-2">${customerLink}${activityActions}${deleteAction}</div>
       </div>
       <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4 text-xs"><div><div class="text-[9px] uppercase font-bold text-gray-400">First Contact</div><b>${esc(fmtDate(r.first_contact_date))}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Last Contact</div><b>${esc(fmtDate(r.last_contact_date))}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Activities</div><b>${Number(r.activity_count||0)}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Showroom</div><b>${Number(r.showroom_visits||0)}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Online</div><b>${Number(r.online_inquiries||0)}</b></div></div>
     </div>`;
@@ -509,6 +513,43 @@
       if(loading)loading.outerHTML=activityRes.error?`<div class="text-red-500 text-xs">${esc(activityRes.error.message)}</div>`:historyHtml(activityRes.data||[]);
     }
   };
+  window.openDeleteCustomerLead=function(id){
+    if(!crmCanDeleteLead())return showToast('Super Admin access required.','err');
+    const r=leadById(id);if(!r)return showToast('Customer not found','err');
+    openModal('Delete CRM Record — '+r.customer_name,`
+      <div class="space-y-4">
+        <div class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <b>This permanently deletes only the Customer Database / CRM record.</b>
+          <div class="mt-2">Showroom Visit and Online activity logs are kept, but they will be unlinked from this CRM record. CRM stage history and correction requests for this record will be deleted.</div>
+          <div class="mt-2"><b>Customer Master and Sales Orders are not deleted.</b>${r.linked_customer_id?' This CRM record is linked to an existing Customer Master, which will remain untouched.':''}</div>
+        </div>
+        <div class="rounded-xl border bg-white p-4 text-sm">
+          <div class="font-bold">${esc(r.customer_name||'Customer')}</div>
+          <div class="text-xs text-gray-500 mt-1">${esc(r.phone||'No phone')} · ${Number(r.activity_count||0)} activity log${Number(r.activity_count||0)===1?'':'s'}</div>
+        </div>
+        <div><label class="text-xs font-semibold">Type DELETE to confirm</label><input id="deleteLeadConfirm" autocomplete="off" class="mt-1 w-full border border-red-200 rounded-xl px-3 py-2.5" placeholder="DELETE"></div>
+        <div class="flex gap-2">
+          <button type="button" onclick="openCustomerLead('${r.lead_id}')" class="flex-1 border rounded-xl py-3 font-semibold">Cancel</button>
+          <button type="button" onclick="deleteCustomerLeadNow('${r.lead_id}')" class="flex-1 bg-red-600 text-white rounded-xl py-3 font-semibold">Delete CRM Record</button>
+        </div>
+      </div>
+    `);
+  };
+
+  window.deleteCustomerLeadNow=async function(id){
+    if(!crmCanDeleteLead())return showToast('Super Admin access required.','err');
+    const confirmText=(document.getElementById('deleteLeadConfirm')?.value||'').trim().toUpperCase();
+    if(confirmText!=='DELETE')return showToast('Type DELETE to confirm.','err');
+    const r=leadById(id);
+    const btn=[...document.querySelectorAll('#modalBody button')].find(b=>/Delete CRM Record/i.test(b.textContent||''));
+    if(btn){btn.disabled=true;btn.textContent='Deleting...'}
+    const {data,error}=await db.rpc('delete_customer_lead_superadmin',{p_lead_id:id});
+    if(error){if(btn){btn.disabled=false;btn.textContent='Delete CRM Record'}return showToast(error.message,'err')}
+    closeModal();
+    showToast((r?.customer_name||data?.customer_name||'CRM record')+' deleted.');
+    await renderCustomerDatabase();
+  };
+
   window.saveCustomerLead=async function(id){
     const args={
       p_lead_id:id,
