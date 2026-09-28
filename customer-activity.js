@@ -60,7 +60,8 @@
   function activityTypeLabel(type){return type==='showroom_visit'?'Showroom Visit':'Online'}
   function entryWeight(r){return Math.max(1,Number(r?.entry_count||1)||1)}
   function weightedCount(rows){return (rows||[]).reduce((s,r)=>s+entryWeight(r),0)}
-  function businessLabel(code){return code==='RK'?'LP Home · RK':"L'Imperial Luxury · TK"}
+  function exactHistoryEvents(r){return Array.isArray(r?.activity_events)?r.activity_events.filter(e=>e&&e.date):[]}
+  function businessLabel(code){return code==='RK'?'LP Home · RK':code==='TK'?"L'Imperial Luxury · TK":code==='MULTI'?'RK + TK':'Other'}
   function fmtActivityDate(v){
     if(!v)return '-';
     const d=new Date(String(v).slice(0,10)+'T00:00:00');
@@ -74,13 +75,9 @@
     if(activityState.dateRange==='all')return true;
     const raw=String(v||'').slice(0,10);
     const today=isoToday();
-    if(activityState.dateRange==='today'){
-      if(row?.is_history)return false;
-      return raw===today;
-    }
+    if(activityState.dateRange==='today')return raw===today;
     if(activityState.dateRange==='month')return raw.slice(0,7)===today.slice(0,7);
     if(activityState.dateRange==='week'){
-      if(row?.is_history)return false;
       const now=new Date(today+'T00:00:00');
       const day=(now.getDay()+6)%7;
       const start=new Date(now);start.setDate(now.getDate()-day);
@@ -89,6 +86,14 @@
       return d>=start&&d<=end;
     }
     return true;
+  }
+  function historyEventsInCurrentFilter(r){
+    const events=exactHistoryEvents(r);
+    if(!events.length)return [];
+    return events.filter(e=>{
+      if(activityState.business!=='all'&&String(e.business_code||'')!==activityState.business)return false;
+      return dateInRange(e.date,null);
+    });
   }
   function statusTone(status){
     const s=String(status||'').toLowerCase();
@@ -100,9 +105,45 @@
     return 'bg-gray-50 text-gray-600 border-gray-200';
   }
   function businessTone(code){
-    return code==='RK'
-      ?'bg-[#fff8e7] text-[#8a650e] border-[#ead69b]'
-      :'bg-[#f5f1ff] text-[#6741a5] border-[#d8c9f4]';
+    if(code==='RK')return 'bg-[#fff8e7] text-[#8a650e] border-[#ead69b]';
+    if(code==='TK')return 'bg-[#f5f1ff] text-[#6741a5] border-[#d8c9f4]';
+    return 'bg-[#f4f7fb] text-[#40536b] border-[#cfd8e3]';
+  }
+  function groupHistoricalActivityRows(rows){
+    const map=new Map();
+    (rows||[]).forEach(r=>{
+      const key=r.identity_key||('history:'+r.id);
+      const events=exactHistoryEvents(r).length
+        ?exactHistoryEvents(r).map(e=>({...e,business_code:e.business_code||r.business_code}))
+        :Array.from({length:entryWeight(r)},()=>({
+            date:r.activity_date,
+            business_code:r.business_code,
+            stage:r.status||null,
+            source:r.source_channel||null,
+            interest:r.interest||null,
+            sales:r.sales_rep_name||null
+          }));
+      let g=map.get(key);
+      if(!g){
+        g={...r,entry_count:0,activity_events:[],business_counts:{},business_codes:[],identity_key:key};
+        map.set(key,g);
+      }
+      g.entry_count+=entryWeight(r);
+      g.business_counts[r.business_code]=(g.business_counts[r.business_code]||0)+entryWeight(r);
+      g.activity_events.push(...events);
+      if(!g.business_codes.includes(r.business_code))g.business_codes.push(r.business_code);
+      if(String(r.activity_date||'')>=String(g.activity_date||'')){
+        const keep={entry_count:g.entry_count,activity_events:g.activity_events,business_counts:g.business_counts,business_codes:g.business_codes,identity_key:g.identity_key};
+        Object.assign(g,r,keep);
+      }
+    });
+    return [...map.values()].map(g=>{
+      g.activity_events.sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+      g.entry_count=g.activity_events.length||g.entry_count;
+      g.business_code=g.business_codes.length>1?'MULTI':(g.business_codes[0]||g.business_code);
+      g.business_name=g.business_code==='MULTI'?"LP Home + L'Imperial Luxury":businessLabel(g.business_code);
+      return g;
+    });
   }
   function selectOptions(values,current,placeholder='Select'){
     const cur=String(current||'').trim();
@@ -120,10 +161,20 @@
   function filteredActivityRows(){
     const q=activityState.search.trim().toLowerCase();
     return (activityState.rows||[]).filter(r=>{
-      if(activityState.business!=='all'&&r.business_code!==activityState.business)return false;
+      if(r.is_history){
+        const events=exactHistoryEvents(r);
+        if(events.length){
+          if(!historyEventsInCurrentFilter(r).length)return false;
+        }else{
+          if(activityState.business!=='all'&&!r.business_codes?.includes(activityState.business)&&r.business_code!==activityState.business)return false;
+          if(!dateInRange(r.activity_date,r))return false;
+        }
+      }else{
+        if(activityState.business!=='all'&&r.business_code!==activityState.business)return false;
+        if(!dateInRange(r.activity_date,r))return false;
+      }
       if(activityState.status!=='all'&&String(r.status||'')!==activityState.status)return false;
       if(activityState.salesRep!=='all'&&String(r.assigned_sales_id||'')!==activityState.salesRep)return false;
-      if(!dateInRange(r.activity_date,r))return false;
       if(!q)return true;
       return [
         r.customer_name,r.phone,r.customer_type,r.source_channel,r.status,
@@ -141,12 +192,20 @@
   }
   function activitySummary(rows){
     const today=isoToday(),month=today.slice(0,7),owner=activityScopeSalesId()||state.user?.id||'';
+    const countWhere=(predicate,businessCode=null)=>(rows||[]).reduce((sum,r)=>{
+      if(r.is_history){
+        const events=exactHistoryEvents(r);
+        if(events.length)return sum+events.filter(e=>(!businessCode||e.business_code===businessCode)&&predicate(e.date)).length;
+      }
+      if(businessCode&&r.business_code!==businessCode)return sum;
+      return sum+(predicate(r.activity_date)?1:0);
+    },0);
     return {
-      today:weightedCount(rows.filter(r=>!r.is_history&&String(r.activity_date||'').slice(0,10)===today)),
-      month:weightedCount(rows.filter(r=>String(r.activity_date||'').slice(0,7)===month)),
-      mine:weightedCount(rows.filter(r=>String(r.assigned_sales_id||'')===String(owner))),
-      rk:weightedCount(rows.filter(r=>r.business_code==='RK')),
-      tk:weightedCount(rows.filter(r=>r.business_code==='TK'))
+      today:countWhere(v=>String(v||'').slice(0,10)===today),
+      month:countWhere(v=>String(v||'').slice(0,7)===month),
+      mine:(rows||[]).filter(r=>String(r.assigned_sales_id||'')===String(owner)).reduce((s,r)=>s+entryWeight(r),0),
+      rk:countWhere(()=>true,'RK'),
+      tk:countWhere(()=>true,'TK')
     };
   }
   function activityKpi(label,value,sub){
@@ -200,7 +259,7 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
         <div class="grid lg:grid-cols-[110px_1.3fr_.8fr_.85fr_.85fr_auto] gap-3 lg:gap-4 items-center">
           <div><div class="text-[10px] uppercase font-bold text-gray-400">${r.is_history?'Latest Date':'Date'}</div><div class="text-sm font-semibold mt-1">${esc(fmtActivityDate(r.activity_date))}</div>${r.is_history?`<div class="text-[9px] text-gray-400 mt-1">Monthly archive</div>`:''}</div>
           <div class="min-w-0">
-            <div class="flex flex-wrap items-center gap-2"><b class="truncate">${esc(r.customer_name)}</b><span class="px-2 py-1 rounded-lg border text-[9px] font-bold ${businessTone(r.business_code)}">${esc(r.business_code)}</span>${historyBadge}</div>
+            <div class="flex flex-wrap items-center gap-2"><b class="truncate">${esc(r.customer_name)}</b><span class="px-2 py-1 rounded-lg border text-[9px] font-bold ${businessTone(r.business_code)}">${esc(r.business_code==='MULTI'?'RK + TK':r.business_code)}</span>${historyBadge}</div>
             <div class="text-[11px] text-gray-400 mt-1">${esc(r.phone||'No phone')} · ${esc(r.customer_type||'-')}</div>
             ${detail?`<div class="text-[11px] text-gray-600 mt-1 line-clamp-2">${esc(detail)}</div>`:''}
           </div>
@@ -306,13 +365,16 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
       created_at:(r.activity_date||r.period_month)+'T00:00:00Z',
       updated_at:(r.activity_date||r.period_month)+'T00:00:00Z',
       entry_count:r.entry_count||1,
+      identity_key:r.identity_key,
+      activity_events:Array.isArray(r.activity_events)?r.activity_events:[],
       is_history:true,
       source_sheet:r.source_sheet
     }));
 
-    activityState.rows=[...live,...history].sort((a,b)=>String(b.activity_date||'').localeCompare(String(a.activity_date||'')));
+    const groupedHistory=groupHistoricalActivityRows(history);
+    activityState.rows=[...live,...groupedHistory].sort((a,b)=>String(b.activity_date||'').localeCompare(String(a.activity_date||'')));
     if(!activityCanFilterSales())activityState.salesRep='all';
-    if(activityState.dateRange==='today'&&live.length===0&&history.length>0)activityState.dateRange='all';
+    if(activityState.dateRange==='today'&&live.length===0&&groupedHistory.length>0)activityState.dateRange='all';
     renderActivityBody();
   }
 
