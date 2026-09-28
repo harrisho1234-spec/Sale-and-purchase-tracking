@@ -13,6 +13,10 @@
     pageSize:20
   };
 
+  let activityCustomerSearchTimer=null;
+  let activityCustomerCandidates=[];
+  let activitySelectedIdentity=null;
+
   const CUSTOMER_TYPES=[
     'New Customer','Existing Customer','Referral','Project / Company','Other'
   ];
@@ -311,14 +315,23 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
     renderActivityBody();
   }
 
-  function salesSelectHtml(current){
+  function activitySelectableSalesUsers(){
     const users=activityState.salesUsers.filter(x=>['sales','manager'].includes(x.role));
+    const role=state.profile?.role||'';
+    if(role==='sales')return users.filter(x=>String(x.user_id)===String(state.user?.id||''));
+    if(typeof managerRepActive==='function'&&managerRepActive())return users.filter(x=>String(x.user_id)===String(managerRepId()||''));
+    if(typeof managerTestActive==='function'&&managerTestActive())return users.filter(x=>String(x.user_id)===String(state.managerRepContext?.user_id||''));
+    return users;
+  }
+  function salesSelectHtml(current){
+    const users=activitySelectableSalesUsers();
     const selected=current||'';
+    const meOnly=(state.profile?.role||'')==='sales';
     return `<select id="activitySalesRep" onchange="activitySalesAssignmentChanged()" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">
       <option value="" ${!selected?'selected':''}>Unassigned</option>
-      ${users.map(u=>`<option value="${u.user_id}" ${u.user_id===selected?'selected':''}>${esc(u.display_name||u.email)} · ${esc(titleCase(u.role||''))}</option>`).join('')}
+      ${users.map(u=>`<option value="${u.user_id}" ${u.user_id===selected?'selected':''}>${meOnly?'Claim for me · ':''}${esc(u.display_name||u.email)} · ${esc(titleCase(u.role||''))}</option>`).join('')}
     </select>
-    <div id="activitySalesAssignmentHint" class="text-[9px] text-gray-400 mt-1">Select a Sales Rep only when a contact phone number is available. With a phone number, the customer will appear in that Sales Rep's Customer Database.</div>`;
+    <div id="activitySalesAssignmentHint" class="text-[9px] text-gray-400 mt-1">A valid phone number is required before an unassigned customer can be claimed.</div>`;
   }
   function activityFormBody(row){
     const isOnline=activityState.type==='online';
@@ -328,8 +341,13 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
     return `<form id="customerActivityForm" class="grid md:grid-cols-2 gap-4">
       <div><label class="text-xs font-semibold">Date</label><input id="activityDate" type="date" required value="${esc(row?.activity_date||isoToday())}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
       <div><label class="text-xs font-semibold">Business</label><select id="activityBusiness" required class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="RK" ${business==='RK'?'selected':''}>LP Home · RK</option><option value="TK" ${business==='TK'?'selected':''}>L'Imperial Luxury · TK</option></select></div>
-      <div><label class="text-xs font-semibold">Customer Name</label><input id="activityCustomerName" required value="${esc(row?.customer_name||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Customer name"></div>
-      <div><label class="text-xs font-semibold">Phone Number <span class="text-gray-400 font-normal">· required to assign Sales</span></label><input id="activityPhone" value="${esc(row?.phone||'')}" onblur="matchActivityCustomerPhone()" oninput="clearActivityCustomerMatch();activitySalesAssignmentChanged()" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Example: 012 345 678"><div id="activityCustomerMatch" class="hidden mt-1.5 text-[10px] rounded-lg border px-2.5 py-2"></div></div>
+      <div class="relative">
+        <label class="text-xs font-semibold">Customer Name</label>
+        <input id="activityCustomerName" required autocomplete="off" value="${esc(row?.customer_name||'')}" oninput="activityCustomerNameChanged()" onfocus="activityCustomerNameChanged(true)" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Type name to search existing customers">
+        <div id="activityCustomerSuggestions" class="hidden absolute z-[110] left-0 right-0 mt-1 max-h-[300px] overflow-y-auto rounded-xl border bg-white shadow-xl"></div>
+        <div id="activityIdentityLock" class="hidden mt-1.5 text-[10px] rounded-lg border px-2.5 py-2"></div>
+      </div>
+      <div><label class="text-xs font-semibold">Phone Number <span class="text-gray-400 font-normal">· required to claim</span></label><input id="activityPhone" value="${esc(row?.phone||'')}" onblur="matchActivityCustomerPhone()" oninput="clearActivityCustomerMatch();activitySalesAssignmentChanged()" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Example: 012 345 678"><div id="activityCustomerMatch" class="hidden mt-1.5 text-[10px] rounded-lg border px-2.5 py-2"></div></div>
       <div><label class="text-xs font-semibold">Customer Category</label><select id="activityCustomerType" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${selectOptions(CUSTOMER_TYPES,row?.customer_type,'Select customer category')}</select></div>
       ${isOnline
         ?`<div><label class="text-xs font-semibold">Page</label><div class="mt-1 border rounded-xl px-3 py-2.5 bg-gray-50 text-sm text-gray-600">RK = Home Page · TK = Luxury Page</div></div>`
@@ -340,12 +358,14 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
       <div><label class="text-xs font-semibold">Follow-up Date</label><input id="activityFollowUp" type="date" value="${esc(row?.follow_up_date||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
       <div class="md:col-span-2"><label class="text-xs font-semibold">Remark</label><textarea id="activityRemark" rows="3" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Customer request / follow-up note...">${esc(row?.remark||'')}</textarea></div>
       <div class="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-700">${isOnline
-        ?'Online records the daily inquiry. If a phone number and Person In Charge are provided, the customer is linked/created in Customer Database and routed to that Sales Rep. Without a phone number it remains an Online entry only.'
-        :'Showroom Visit records the visit and follow-up. If a phone number and Person In Charge are provided, the customer is linked/created in Customer Database and routed to that Sales Rep. Without a phone number it remains a Showroom Visit entry only.'}</div>
+        ?'Type the customer name to search existing registered customers/CRM leads. Existing ownership is locked. An unassigned lead can be claimed only with a valid phone number that is not already owned by another Sales Rep.'
+        :'Type the customer name to search existing registered customers/CRM leads. Existing ownership is locked. An unassigned visitor can be claimed only with a valid phone number that is not already owned by another Sales Rep.'}</div>
       <button class="md:col-span-2 bg-[#211d18] text-white rounded-xl py-3 font-semibold">${row?'Save Changes':'Save '+esc(activityTypeLabel(activityState.type))}</button>
     </form>`;
   }
   window.openNewCustomerActivity=function(){
+    activitySelectedIdentity=null;
+    activityCustomerCandidates=[];
     openModal('New '+activityTypeLabel(activityState.type),activityFormBody(null));
     document.getElementById('customerActivityForm').onsubmit=e=>saveCustomerActivity(e,null);
     activitySalesAssignmentChanged();
@@ -356,29 +376,158 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
     box.className='hidden mt-1.5 text-[10px] rounded-lg border px-2.5 py-2';
     box.textContent='';
   };
+  function activityHideCustomerSuggestions(){
+    const box=document.getElementById('activityCustomerSuggestions');
+    if(box){box.classList.add('hidden');box.innerHTML=''}
+  }
+  function activityEnsureOwnerOption(ownerId,ownerName){
+    const sel=document.getElementById('activitySalesRep');
+    if(!sel||!ownerId)return;
+    let opt=[...sel.options].find(o=>String(o.value)===String(ownerId));
+    if(!opt){
+      opt=document.createElement('option');
+      opt.value=ownerId;
+      opt.textContent=(ownerName||'Assigned Sales')+' · Existing Owner';
+      opt.dataset.injectedOwner='1';
+      sel.appendChild(opt);
+    }
+    sel.value=ownerId;
+  }
+  function activityUnlockIdentity(clearFields=false){
+    activitySelectedIdentity=null;
+    const name=document.getElementById('activityCustomerName');
+    const phone=document.getElementById('activityPhone');
+    const lock=document.getElementById('activityIdentityLock');
+    const sel=document.getElementById('activitySalesRep');
+    if(name){name.readOnly=false;name.classList.remove('bg-gray-50');if(clearFields)name.value=''}
+    if(phone){phone.readOnly=false;phone.classList.remove('bg-gray-50');if(clearFields)phone.value=''}
+    if(lock){lock.className='hidden mt-1.5 text-[10px] rounded-lg border px-2.5 py-2';lock.innerHTML=''}
+    if(sel){
+      sel.disabled=false;
+      [...sel.options].filter(o=>o.dataset.injectedOwner==='1').forEach(o=>o.remove());
+      sel.value='';
+    }
+    clearActivityCustomerMatch();
+    activityHideCustomerSuggestions();
+    activitySalesAssignmentChanged();
+    if(clearFields)name?.focus();
+  }
+  window.changeActivityCustomerSelection=function(){activityUnlockIdentity(true)};
+
+  function applyActivityCustomerIdentity(data){
+    if(!data?.matched)return;
+    activitySelectedIdentity={
+      source:data.source||data.source_type||null,
+      customer_id:data.customer_id||null,
+      lead_id:data.lead_id||null,
+      customer_name:data.customer_name||'',
+      phone:data.phone||'',
+      assigned_sales_id:data.assigned_sales_id||null,
+      assigned_sales_name:data.assigned_sales_name||'',
+      is_buyer:!!data.is_buyer,
+      order_count:Number(data.order_count||0),
+      claimable:!!data.claimable
+    };
+    const name=document.getElementById('activityCustomerName');
+    const phone=document.getElementById('activityPhone');
+    const lock=document.getElementById('activityIdentityLock');
+    const sel=document.getElementById('activitySalesRep');
+    if(name&&data.customer_name){name.value=data.customer_name;name.readOnly=true;name.classList.add('bg-gray-50')}
+    if(phone&&data.phone){
+      phone.value=data.phone;
+      if((String(data.phone).match(/\d/g)||[]).length){phone.readOnly=true;phone.classList.add('bg-gray-50')}
+    }
+    activityHideCustomerSuggestions();
+
+    const registered=(data.source||data.source_type)==='customer_master';
+    const label=registered?(data.is_buyer?'Registered Buyer':'Registered Customer'):'Existing CRM Customer';
+    const owner=data.assigned_sales_name||'Unassigned';
+    if(lock){
+      lock.className='mt-1.5 text-[10px] rounded-lg border border-[#ead69b] bg-[#fffaf0] px-2.5 py-2 text-[#7a5a14]';
+      lock.innerHTML='<div class="flex items-start justify-between gap-2"><div><b>'+esc(label)+':</b> '+esc(data.customer_name||'Customer')
+        +(data.order_count?(' · '+Number(data.order_count)+' order'+(Number(data.order_count)===1?'':'s')):'')
+        +' · Owner: '+esc(owner)+'</div><button type="button" onclick="changeActivityCustomerSelection()" class="underline whitespace-nowrap">Change</button></div>';
+    }
+
+    if(sel&&data.assigned_sales_id){
+      activityEnsureOwnerOption(data.assigned_sales_id,data.assigned_sales_name);
+      sel.disabled=true;
+      sel.dataset.ownerLocked='1';
+    }else if(sel){
+      sel.disabled=false;
+      delete sel.dataset.ownerLocked;
+    }
+    activitySalesAssignmentChanged();
+  }
+  window.selectActivityCustomerCandidate=function(index){
+    const x=activityCustomerCandidates[Number(index)];
+    if(!x)return;
+    applyActivityCustomerIdentity({
+      matched:true,
+      source:x.source_type,
+      customer_id:x.customer_id,
+      lead_id:x.lead_id,
+      customer_name:x.customer_name,
+      phone:x.phone,
+      customer_code:x.customer_code,
+      assigned_sales_id:x.assigned_sales_id,
+      assigned_sales_name:x.assigned_sales_name,
+      is_buyer:x.is_buyer,
+      order_count:x.order_count,
+      claimable:x.claimable
+    });
+  };
+  function renderActivityCustomerSuggestions(rows){
+    const box=document.getElementById('activityCustomerSuggestions');
+    if(!box)return;
+    activityCustomerCandidates=rows||[];
+    if(!activityCustomerCandidates.length){activityHideCustomerSuggestions();return}
+    box.classList.remove('hidden');
+    box.innerHTML=activityCustomerCandidates.map((x,i)=>{
+      const type=x.source_type==='customer_master'?(x.is_buyer?'Registered Buyer':'Registered Customer'):'CRM Customer';
+      const owner=x.assigned_sales_name||'Unassigned';
+      return '<button type="button" onclick="selectActivityCustomerCandidate('+i+')" class="w-full text-left px-3 py-2.5 border-b last:border-b-0 hover:bg-[#fffaf0]">'
+        +'<div class="flex items-center justify-between gap-2"><b class="text-sm">'+esc(x.customer_name||'Customer')+'</b><span class="text-[9px] font-bold text-[#9a6b12]">'+esc(type)+'</span></div>'
+        +'<div class="text-[10px] text-gray-500 mt-1">'+esc(x.phone||'No phone')+' · '+esc(owner)+(x.order_count?' · '+Number(x.order_count)+' order'+(Number(x.order_count)===1?'':'s'):'')+'</div>'
+        +'</button>';
+    }).join('');
+  }
+  window.activityCustomerNameChanged=function(force=false){
+    if(activitySelectedIdentity)return;
+    const q=document.getElementById('activityCustomerName')?.value.trim()||'';
+    clearTimeout(activityCustomerSearchTimer);
+    if(q.length<2){activityHideCustomerSuggestions();return}
+    activityCustomerSearchTimer=setTimeout(async()=>{
+      const {data,error}=await db.rpc('search_activity_customer_candidates',{p_query:q});
+      if(error){console.warn('Customer suggestion search:',error.message);activityHideCustomerSuggestions();return}
+      renderActivityCustomerSuggestions(data||[]);
+    },force?0:180);
+  };
+
   window.matchActivityCustomerPhone=async function(){
     const phone=document.getElementById('activityPhone')?.value.trim()||'';
     const box=document.getElementById('activityCustomerMatch');
-    if(!box)return;
-    if(!phone){clearActivityCustomerMatch();return}
+    if(!box)return null;
+    if(!phone){clearActivityCustomerMatch();return null}
     box.className='mt-1.5 text-[10px] rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-2 text-gray-500';
     box.textContent='Checking existing customers...';
     const {data,error}=await db.rpc('find_customer_identity_by_phone',{p_phone:phone});
     if(error){
       box.className='mt-1.5 text-[10px] rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-red-600';
       box.textContent=error.message;
-      return;
+      return null;
     }
     if(!data||!data.matched){
       box.className='hidden mt-1.5 text-[10px] rounded-lg border px-2.5 py-2';
       box.textContent='';
-      return;
+      return null;
     }
-    const name=document.getElementById('activityCustomerName');
-    if(name&&data.customer_name)name.value=data.customer_name;
-    const owner=data.assigned_sales_name?(' · Sales Owner: '+data.assigned_sales_name):' · Sales Owner: Unassigned';
+    applyActivityCustomerIdentity(data);
+    const owner=data.assigned_sales_name?(' · Owner: '+data.assigned_sales_name):' · Owner: Unassigned';
     box.className='mt-1.5 text-[10px] rounded-lg border border-green-200 bg-green-50 px-2.5 py-2 text-green-700';
-    box.innerHTML='<b>Existing customer found:</b> '+esc(data.customer_name||'Customer')+esc(owner)+'<br>This entry will link to the existing customer automatically. If you choose a Person In Charge, the Customer Database record is routed to that Sales Rep; the linked Sales Customer owner is not silently changed.';
+    box.innerHTML='<b>Phone matched:</b> '+esc(data.customer_name||'Customer')+esc(owner)
+      +(data.is_buyer?'<br><b>Registered buyer:</b> identity and ownership are locked to the existing customer.':'');
+    return data;
   };
   window.openCustomerHistoryGroup=async function(id){
     const indexId=Number(String(id||'').replace('history-',''));
@@ -407,39 +556,62 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
     `;
   };
 
-  window.openEditCustomerActivity=function(id){
+  window.openEditCustomerActivity=async function(id){
     const row=activityState.rows.find(x=>x.id===id);
     if(!row)return showToast('Entry not found','err');
     if(row.is_history)return showToast('Google Sheet history is read-only in the app. Edit the History sheet and sync again.','err');
+    activitySelectedIdentity=null;
+    activityCustomerCandidates=[];
     openModal('Edit '+activityTypeLabel(activityState.type),activityFormBody(row));
     document.getElementById('customerActivityForm').onsubmit=e=>saveCustomerActivity(e,row);
     activitySalesAssignmentChanged();
+    if(row.linked_customer_id||row.lead_id||row.phone){
+      const {data,error}=await db.rpc('resolve_customer_activity_identity',{
+        p_phone:row.phone||null,
+        p_selected_customer_id:row.linked_customer_id||null,
+        p_selected_lead_id:row.lead_id||null
+      });
+      if(!error&&data?.matched)applyActivityCustomerIdentity(data);
+    }
   };
   function activityHasContactNumber(){
     return (document.getElementById('activityPhone')?.value||'').replace(/[^0-9]/g,'').length>0;
   }
   window.activitySalesAssignmentChanged=function(){
-    const salesId=document.getElementById('activitySalesRep')?.value||'';
+    const sel=document.getElementById('activitySalesRep');
+    const salesId=sel?.value||'';
     const hint=document.getElementById('activitySalesAssignmentHint');
     if(!hint)return;
-    if(salesId&&!activityHasContactNumber()){
+    if(sel?.dataset.ownerLocked==='1'){
+      hint.className='text-[9px] text-amber-700 mt-1 font-semibold';
+      hint.textContent='Existing ownership is locked. Showroom/Online cannot transfer this customer to another Sales Rep.';
+    }else if(salesId&&!activityHasContactNumber()){
       hint.className='text-[9px] text-red-600 mt-1 font-semibold';
-      hint.textContent='Enter a contact phone number before assigning this customer to Sales.';
+      hint.textContent='Enter a valid contact phone number before claiming this customer.';
     }else if(salesId){
       hint.className='text-[9px] text-green-700 mt-1';
-      hint.textContent="This customer will be routed to the selected Sales Rep's Customer Database.";
+      hint.textContent=(state.profile?.role||'')==='sales'
+        ?'If this phone is unassigned, saving will claim the CRM customer for you. A phone already owned by another Sales Rep will be blocked.'
+        :"If this phone is unassigned, saving will route the CRM customer to the selected Sales Rep. Existing ownership cannot be overridden here.";
     }else{
       hint.className='text-[9px] text-gray-400 mt-1';
-      hint.textContent='Unassigned is allowed. With a phone number, the customer can still be identified/linked in Customer Database.';
+      hint.textContent='Unassigned is allowed. A valid phone lets the system identify the customer and prevent duplicate ownership.';
     }
   };
   async function saveCustomerActivity(e,row){
     e.preventDefault();
-    const salesId=document.getElementById('activitySalesRep')?.value||null;
-    if(salesId&&!activityHasContactNumber()){
-      activitySalesAssignmentChanged();
-      return showToast('Enter a contact phone number before assigning this customer to Sales.','err');
+
+    // Exact phone identity is authoritative even if the user never left the phone field.
+    if(activityHasContactNumber()&&!activitySelectedIdentity){
+      await matchActivityCustomerPhone();
     }
+
+    const salesId=document.getElementById('activitySalesRep')?.value||null;
+    if(salesId&&!activityHasContactNumber()&&!activitySelectedIdentity?.customer_id){
+      activitySalesAssignmentChanged();
+      return showToast('Enter a valid contact phone number before claiming this customer.','err');
+    }
+
     const args={
       p_activity_date:document.getElementById('activityDate').value,
       p_business_code:document.getElementById('activityBusiness').value,
@@ -451,18 +623,24 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
       p_interest:document.getElementById('activityInterest').value.trim()||null,
       p_remark:document.getElementById('activityRemark').value.trim()||null,
       p_follow_up_date:document.getElementById('activityFollowUp').value||null,
-      p_assigned_sales_id:salesId
+      p_assigned_sales_id:salesId,
+      p_selected_customer_id:activitySelectedIdentity?.customer_id||null,
+      p_selected_lead_id:activitySelectedIdentity?.lead_id||null
     };
     const btn=e.target.querySelector('button');if(btn){btn.disabled=true;btn.textContent='Saving...'}
     let res;
-    if(row)res=await db.rpc('update_customer_activity',{p_id:row.id,...args});
-    else res=await db.rpc('create_customer_activity',{p_activity_type:activityState.type,...args});
-    if(res.error){if(btn){btn.disabled=false;btn.textContent=row?'Save Changes':'Save'}return showToast(res.error.message,'err')}
+    if(row)res=await db.rpc('update_customer_activity_v2',{p_id:row.id,...args});
+    else res=await db.rpc('create_customer_activity_v2',{p_activity_type:activityState.type,...args});
+    if(res.error){
+      if(btn){btn.disabled=false;btn.textContent=row?'Save Changes':'Save'}
+      return showToast(res.error.message,'err');
+    }
     const assignedUser=salesId?activityState.salesUsers.find(x=>String(x.user_id)===String(salesId)):null;
+    const lockedOwner=activitySelectedIdentity?.assigned_sales_name||'';
     closeModal();
     showToast(
       salesId
-        ?(row?'Updated ':'Saved ')+activityTypeLabel(activityState.type)+' · routed to '+(assignedUser?.display_name||assignedUser?.email||'selected Sales Rep')
+        ?(row?'Updated ':'Saved ')+activityTypeLabel(activityState.type)+' · '+(lockedOwner?'linked to '+lockedOwner:'assigned to '+(assignedUser?.display_name||assignedUser?.email||'selected Sales Rep'))
         :(row?'Updated ':'Saved ')+activityTypeLabel(activityState.type)
     );
     await renderCustomerActivity(activityState.type);
