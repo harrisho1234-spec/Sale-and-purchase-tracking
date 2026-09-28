@@ -97,6 +97,7 @@ window.openEditAppUser=function(id){
       <div><label class="text-xs font-semibold text-gray-600">Login Email</label><input id="editAppUserEmail" type="email" required value="${esc(u.email||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
       <div><label class="text-xs font-semibold text-gray-600">Role</label><select id="editAppUserRole" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">
         <option value="sales" ${u.role==='sales'?'selected':''}>Sales</option>
+        <option value="accountant" ${u.role==='accountant'?'selected':''}>Accountant</option>
         <option value="manager" ${u.role==='manager'?'selected':''}>Manager</option>
         <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option>
         <option value="super_admin" ${u.role==='super_admin'?'selected':''}>Super Admin</option>
