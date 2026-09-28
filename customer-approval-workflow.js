@@ -213,7 +213,7 @@
     var out=await baseNew.apply(this,arguments);
     if(!sales())return out;
     var form=document.getElementById('multiCustomerForm');if(!form)return out;
-    var banner=document.createElement('div');banner.className='md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800';banner.innerHTML='<b>Manager/Admin approval required.</b> Submitting this form creates a request only. <b>No Customer Master or Customer ID is created until the request is approved.</b> Sales can add working leads directly in Customer Database / CRM.';form.prepend(banner);
+    var banner=document.createElement('div');banner.className='md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800';banner.innerHTML='<b>Manager/Admin approval required.</b> Submitting creates a <b>provisional Pending Review customer</b> so you can create Sales Orders immediately. It is not official until Manager/Admin reviews and approves it. Sales can still add working leads directly in Customer Database / CRM.';form.prepend(banner);
     var note=document.createElement('div');note.className='md:col-span-2';note.innerHTML='<label class="text-xs font-semibold">Request Note</label><textarea id="customerCreateRequestNote" rows="2" class="mt-1 w-full border border-amber-200 bg-amber-50 rounded-xl px-3 py-2" placeholder="Optional context for Manager/Admin"></textarea>';form.insertBefore(note,form.lastElementChild);
     installCreateCustomerNameSuggestions(form);
     var btn=form.querySelector('button:not([type="button"])');if(btn)btn.textContent='Submit New Customer Request';
@@ -230,9 +230,9 @@
         }
       }
       var payload={name:name,address:clean(document.getElementById('mcAddress').value)||null,notes:clean(document.getElementById('mcNotes').value)||null,assigned_sales_id:state.user.id,active:true,customer_since:new Date().toISOString().slice(0,10)};
-      var x=await db.rpc('submit_sales_customer_master_create_request',{p_requested_customer:payload,p_requested_contacts:contacts,p_request_note:clean(document.getElementById('customerCreateRequestNote').value)||null});
+      var x=await db.rpc('submit_customer_change_request',{p_request_type:'create',p_customer_id:null,p_requested_customer:payload,p_requested_contacts:contacts,p_request_note:clean(document.getElementById('customerCreateRequestNote').value)||null});
       if(x.error)return showToast(x.error.message,'err');
-      closeModal();showToast('New customer request sent to Manager/Admin. The Customer Master will be created only after approval.');await go('customers');
+      closeModal();showToast('Customer request sent. Pending Review customer is available for Sales Orders until Manager/Admin finalizes it.');await go('customers');
     };
     return out;
   };
