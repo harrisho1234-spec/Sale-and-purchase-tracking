@@ -131,7 +131,7 @@
         const owner=r.handled_by_name||r.handled_by_email||'Unassigned';
         const score=Number(r._matchScore||0);
         const strong=score>=90;
-        return '<button type="button" onclick="selectHistoryCustomerTarget(\''+r.customer_id+'\')" class="w-full text-left rounded-xl border p-3 mb-2 '+(selected?'border-[#b3871e] bg-amber-50':'bg-white hover:bg-gray-50')+'">'
+        return '<button type="button" onclick="selectHistoryCustomerTarget(\''+r.customer_id+'\')" class="w-full text-left text-gray-900 rounded-xl border p-3 mb-2 '+(selected?'border-[#b3871e] bg-amber-50':'bg-white hover:bg-gray-50')+'">'
           +'<div class="flex items-start justify-between gap-3">'
             +'<div class="min-w-0">'
               +'<div class="flex flex-wrap items-center gap-2"><b>'+esc(r.customer_name||'Customer')+'</b>'
@@ -149,8 +149,8 @@
     }
 
     const newSelected=linkPicker.choiceMade&&linkPicker.targetId===null;
-    html+='<button type="button" onclick="selectHistoryCustomerTarget(\'\')" class="mt-2 w-full text-left rounded-xl border p-3 '+(newSelected?'border-[#b3871e] bg-amber-50':'bg-white hover:bg-gray-50')+'">'
-      +'<div class="font-semibold">Create as New Customer Master</div>'
+    html+='<button type="button" onclick="selectHistoryCustomerTarget(\'\')" class="mt-2 w-full text-left text-gray-900 rounded-xl border p-3 '+(newSelected?'border-[#b3871e] bg-amber-50':'bg-white hover:bg-gray-50')+'">'
+      +'<div class="font-semibold text-gray-900">Create as New Customer Master</div>'
       +'<div class="text-[10px] text-gray-500 mt-1">Use this only when none of the existing customers above is the same person/company.</div>'
     +'</button>';
 
@@ -169,21 +169,21 @@
       +'<form id="historyCustomerLinkPickerForm" class="space-y-4">'
         +'<div class="rounded-xl border bg-[#faf9f6] p-4">'
           +'<div class="text-[10px] uppercase font-bold text-gray-400">Historical Customer</div>'
-          +'<div class="font-bold text-lg mt-1">'+esc(ctx.customer_name||'Customer')+'</div>'
-          +'<div class="text-xs text-gray-500 mt-1">'+esc(ctx.phone||'No phone')+' · Current history owner: '+esc(ctx.assigned_sales_name||'Unassigned')+'</div>'
+          +'<div class="font-bold text-lg text-gray-900 mt-1">'+esc(ctx.customer_name||'Customer')+'</div>'
+          +'<div class="text-xs text-gray-600 mt-1">'+esc(ctx.phone||'No phone')+' · Current history owner: '+esc(ctx.assigned_sales_name||'Unassigned')+'</div>'
         +'</div>'
         +'<div class="rounded-xl border '+(isSuper()?'border-blue-200 bg-blue-50 text-blue-900':'border-amber-200 bg-amber-50 text-amber-900')+' p-3 text-xs">'+superText+'</div>'
         +'<div>'
-          +'<label class="text-xs font-semibold">Search Customer Master</label>'
-          +'<input id="historyLinkManualSearch" autocomplete="off" oninput="historyCustomerLinkSearchChanged(this.value)" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white" placeholder="Search name, phone, Customer ID or social username...">'
+          +'<label class="text-xs font-semibold text-gray-900">Search Customer Master</label>'
+          +'<input id="historyLinkManualSearch" autocomplete="off" oninput="historyCustomerLinkSearchChanged(this.value)" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white text-gray-900 placeholder:text-gray-400" placeholder="Search name, phone, Customer ID or social username...">'
           +'<div class="text-[10px] text-gray-400 mt-1">Suggestions are based on the historical name/phone. You can search manually if the correct customer is not suggested.</div>'
         +'</div>'
         +'<div id="historyLinkSuggestions"></div>'
         +(isSuper()
-          ?'<div><label class="text-xs font-semibold">Assign / Reassign To</label><select id="historyLinkAssignee" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">'+assignmentOptions()+'</select><div class="text-[10px] text-gray-400 mt-1">For an existing Customer Master, this can also change its current handler.</div></div>'
+          ?'<div><label class="text-xs font-semibold text-gray-900">Assign / Reassign To</label><select id="historyLinkAssignee" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white text-gray-900">'+assignmentOptions()+'</select><div class="text-[10px] text-gray-400 mt-1">For an existing Customer Master, this can also change its current handler.</div></div>'
           :'')
         +(!isSuper()
-          ?'<div><label class="text-xs font-semibold">Request Note <span class="text-gray-400 font-normal">· optional</span></label><textarea id="historyCustomerRequestNoteV2" rows="2" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Optional context for Manager/Admin"></textarea></div>'
+          ?'<div><label class="text-xs font-semibold text-gray-900">Request Note <span class="text-gray-400 font-normal">· optional</span></label><textarea id="historyCustomerRequestNoteV2" rows="2" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Optional context for Manager/Admin"></textarea></div>'
           :'')
         +'<button id="historyLinkSubmitBtn" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">'+(isSuper()?'Link / Convert Now':'Submit Link / Convert Request')+'</button>'
       +'</form>';
