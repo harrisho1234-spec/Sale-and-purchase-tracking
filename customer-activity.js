@@ -643,15 +643,37 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
     root.className='text-left text-sm text-gray-800';
     const sorted=rows.slice().sort((a,b)=>String(b.latest_activity_date||'').localeCompare(String(a.latest_activity_date||'')));
     const latest=sorted[0]||rows[0];
-    const oldest=rows.slice().sort((a,b)=>String(a.latest_activity_date||'').localeCompare(String(b.latest_activity_date||'')))[0]||rows[0];
-    const sum=code=>rows.filter(r=>!code||r.business_code===code).reduce((s,r)=>s+Number(r.entry_count||0),0);
-    const total=sum(),rk=sum('RK'),tk=sum('TK');
+    const events=rows.flatMap(r=>{
+      const exact=Array.isArray(r.activity_events)?r.activity_events.filter(e=>e&&e.date):[];
+      if(exact.length)return exact.map(e=>({
+        date:e.date,
+        business_code:e.business_code||r.business_code,
+        stage:e.stage||r.latest_stage||'-',
+        source:e.source||r.source_channel||'-',
+        interest:e.interest||r.latest_interest||'-',
+        sales:e.sales||r.assigned_sales_name||'Unassigned'
+      }));
+      return Array.from({length:Math.max(1,Number(r.entry_count||1))},()=>({
+        date:r.latest_activity_date,
+        business_code:r.business_code,
+        stage:r.latest_stage||'-',
+        source:r.source_channel||'-',
+        interest:r.latest_interest||'-',
+        sales:r.assigned_sales_name||'Unassigned'
+      }));
+    }).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+    const latestEvent=events[0]||null;
+    const oldestEvent=events[events.length-1]||null;
+    const total=events.length;
+    const rk=events.filter(e=>e.business_code==='RK').length;
+    const tk=events.filter(e=>e.business_code==='TK').length;
     const customerName=latest.customer_name||rows.find(r=>r.customer_name)?.customer_name||'Customer';
     const phone=latest.normalized_phone||rows.find(r=>r.normalized_phone)?.normalized_phone||'-';
     const customerType=latest.customer_type||rows.find(r=>r.customer_type)?.customer_type||'-';
-    const latestStage=latest.latest_stage||'-';
-    const latestSales=latest.assigned_sales_name||'Unassigned';
-    const latestSource=latest.source_channel||'-';
+    const latestStage=latestEvent?.stage||latest.latest_stage||'-';
+    const latestSales=latestEvent?.sales||latest.assigned_sales_name||'Unassigned';
+    const latestSource=latestEvent?.source||latest.source_channel||'-';
+    const latestInterest=latestEvent?.interest||latest.latest_interest||'-';
     document.getElementById('modalTitle').textContent=(activityState.type==='online'?'Customer Online History — ':'Customer Visit History — ')+customerName;
     root.innerHTML=`
       <div class="rounded-2xl border bg-[#fffaf0] p-4 mb-4">
@@ -664,13 +686,13 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
           <div class="grid grid-cols-2 md:grid-cols-4 gap-3 flex-1 lg:max-w-[620px]">
             <div><div class="text-[9px] uppercase font-bold text-gray-400">Latest Stage</div><div class="font-semibold mt-1">${esc(latestStage)}</div></div>
             <div><div class="text-[9px] uppercase font-bold text-gray-400">Assigned Sales</div><div class="font-semibold mt-1">${esc(latestSales)}</div></div>
-            <div><div class="text-[9px] uppercase font-bold text-gray-400">First Seen</div><div class="font-semibold mt-1">${esc(fmtActivityDate(oldest.latest_activity_date))}</div></div>
-            <div><div class="text-[9px] uppercase font-bold text-gray-400">Latest Seen</div><div class="font-semibold mt-1">${esc(fmtActivityDate(latest.latest_activity_date))}</div></div>
+            <div><div class="text-[9px] uppercase font-bold text-gray-400">First Seen</div><div class="font-semibold mt-1">${esc(fmtActivityDate(oldestEvent?.date||latest.latest_activity_date))}</div></div>
+            <div><div class="text-[9px] uppercase font-bold text-gray-400">Latest Seen</div><div class="font-semibold mt-1">${esc(fmtActivityDate(latestEvent?.date||latest.latest_activity_date))}</div></div>
           </div>
         </div>
         <div class="mt-3 pt-3 border-t border-[#ead69b] grid md:grid-cols-2 gap-3 text-xs">
           <div><span class="text-gray-400">Latest Source:</span> <b>${esc(latestSource)}</b></div>
-          <div><span class="text-gray-400">Latest Interest:</span> <b>${esc(latest.latest_interest||'-')}</b></div>
+          <div><span class="text-gray-400">Latest Interest:</span> <b>${esc(latestInterest)}</b></div>
         </div>
       </div>
 
@@ -680,10 +702,10 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
         <div class="rounded-xl border p-4"><div class="text-[9px] uppercase font-bold text-gray-400">L'Imperial Luxury · TK</div><div class="text-2xl font-bold mt-1">${tk}</div></div>
       </div>
       <div class="rounded-xl border overflow-hidden text-left">
-        <div class="px-4 py-3 border-b bg-[#faf9f6]"><b>Monthly History</b><div class="text-[10px] text-gray-400 mt-0.5">Shows how many times this customer appeared in each showroom/page and month.</div></div>
-        <div class="overflow-x-auto"><table class="w-full text-xs">
-          <thead class="bg-white text-gray-400 uppercase text-[9px]"><tr><th class="text-left px-3 py-2">Month</th><th class="text-left px-3 py-2">Showroom / Page</th><th class="text-right px-3 py-2">Count</th><th class="text-left px-3 py-2">Latest Stage</th><th class="text-left px-3 py-2">Latest Date</th><th class="text-left px-3 py-2">Sales</th><th class="text-left px-3 py-2">Latest Interest</th></tr></thead>
-          <tbody class="divide-y">${rows.map(r=>`<tr><td class="px-3 py-3 font-semibold">${esc(String(r.period_month||'').slice(0,7))}</td><td class="px-3 py-3">${esc(r.business_code==='RK'?'LP Home · RK':r.business_code==='TK'?"L'Imperial Luxury · TK":r.business_code||'-')}</td><td class="px-3 py-3 text-right font-bold">${Number(r.entry_count||0)}</td><td class="px-3 py-3">${esc(r.latest_stage||'-')}</td><td class="px-3 py-3">${esc(fmtActivityDate(r.latest_activity_date))}</td><td class="px-3 py-3">${esc(r.assigned_sales_name||'Unassigned')}</td><td class="px-3 py-3">${esc(r.latest_interest||'-')}</td></tr>`).join('')}</tbody>
+        <div class="px-4 py-3 border-b bg-[#faf9f6]"><b>${activityState.type==='online'?'Inquiry History':'Visit History'}</b><div class="text-[10px] text-gray-400 mt-0.5">Exact historical dates from the Google Sheet archive. Each row below is one visit/inquiry.</div></div>
+        <div class="overflow-x-auto max-h-[420px]"><table class="w-full text-xs">
+          <thead class="bg-white text-gray-400 uppercase text-[9px] sticky top-0"><tr><th class="text-left px-3 py-2">Date</th><th class="text-left px-3 py-2">Showroom / Page</th><th class="text-left px-3 py-2">Stage</th><th class="text-left px-3 py-2">Source</th><th class="text-left px-3 py-2">Sales</th><th class="text-left px-3 py-2">Interest</th></tr></thead>
+          <tbody class="divide-y">${events.map(e=>`<tr><td class="px-3 py-3 font-semibold whitespace-nowrap">${esc(fmtActivityDate(e.date))}</td><td class="px-3 py-3">${esc(e.business_code==='RK'?'LP Home · RK':e.business_code==='TK'?"L'Imperial Luxury · TK":e.business_code||'-')}</td><td class="px-3 py-3">${esc(e.stage||'-')}</td><td class="px-3 py-3">${esc(e.source||'-')}</td><td class="px-3 py-3">${esc(e.sales||'Unassigned')}</td><td class="px-3 py-3">${esc(e.interest||'-')}</td></tr>`).join('')}</tbody>
         </table></div>
       </div>
     `;
