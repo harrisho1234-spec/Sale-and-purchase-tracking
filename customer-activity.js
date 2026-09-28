@@ -547,9 +547,39 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
       return;
     }
     root.className='text-left text-sm text-gray-800';
+    const sorted=rows.slice().sort((a,b)=>String(b.latest_activity_date||'').localeCompare(String(a.latest_activity_date||'')));
+    const latest=sorted[0]||rows[0];
+    const oldest=rows.slice().sort((a,b)=>String(a.latest_activity_date||'').localeCompare(String(b.latest_activity_date||'')))[0]||rows[0];
     const sum=code=>rows.filter(r=>!code||r.business_code===code).reduce((s,r)=>s+Number(r.entry_count||0),0);
     const total=sum(),rk=sum('RK'),tk=sum('TK');
+    const customerName=latest.customer_name||rows.find(r=>r.customer_name)?.customer_name||'Customer';
+    const phone=latest.normalized_phone||rows.find(r=>r.normalized_phone)?.normalized_phone||'-';
+    const customerType=latest.customer_type||rows.find(r=>r.customer_type)?.customer_type||'-';
+    const latestStage=latest.latest_stage||'-';
+    const latestSales=latest.assigned_sales_name||'Unassigned';
+    const latestSource=latest.source_channel||'-';
+    document.getElementById('modalTitle').textContent=(activityState.type==='online'?'Customer Online History — ':'Customer Visit History — ')+customerName;
     root.innerHTML=`
+      <div class="rounded-2xl border bg-[#fffaf0] p-4 mb-4">
+        <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+          <div class="min-w-0">
+            <div class="text-[10px] uppercase tracking-wide font-bold text-[#9a6b12]">Customer</div>
+            <div class="text-xl font-bold mt-1">${esc(customerName)}</div>
+            <div class="text-xs text-gray-500 mt-1">${esc(phone)} · ${esc(customerType)}</div>
+          </div>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3 flex-1 lg:max-w-[620px]">
+            <div><div class="text-[9px] uppercase font-bold text-gray-400">Latest Stage</div><div class="font-semibold mt-1">${esc(latestStage)}</div></div>
+            <div><div class="text-[9px] uppercase font-bold text-gray-400">Assigned Sales</div><div class="font-semibold mt-1">${esc(latestSales)}</div></div>
+            <div><div class="text-[9px] uppercase font-bold text-gray-400">First Seen</div><div class="font-semibold mt-1">${esc(fmtActivityDate(oldest.latest_activity_date))}</div></div>
+            <div><div class="text-[9px] uppercase font-bold text-gray-400">Latest Seen</div><div class="font-semibold mt-1">${esc(fmtActivityDate(latest.latest_activity_date))}</div></div>
+          </div>
+        </div>
+        <div class="mt-3 pt-3 border-t border-[#ead69b] grid md:grid-cols-2 gap-3 text-xs">
+          <div><span class="text-gray-400">Latest Source:</span> <b>${esc(latestSource)}</b></div>
+          <div><span class="text-gray-400">Latest Interest:</span> <b>${esc(latest.latest_interest||'-')}</b></div>
+        </div>
+      </div>
+
       <div class="grid grid-cols-3 gap-3 mb-4 text-left">
         <div class="rounded-xl border bg-[#fffaf0] p-4"><div class="text-[9px] uppercase font-bold text-gray-400">Total ${activityState.type==='online'?'Inquiries':'Visits'}</div><div class="text-2xl font-bold mt-1">${total}</div></div>
         <div class="rounded-xl border p-4"><div class="text-[9px] uppercase font-bold text-gray-400">LP Home · RK</div><div class="text-2xl font-bold mt-1">${rk}</div></div>
