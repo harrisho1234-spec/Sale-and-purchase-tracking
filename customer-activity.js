@@ -191,7 +191,7 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
       const canEdit=!r.is_history&&(activityReviewerMode()||activityIsOwner(r));
       const canSeeStage=activityCanSeeStage(r);
       const historyBadge=r.is_history?`<span class="px-2 py-1 rounded-lg border border-[#ead69b] bg-[#fffaf0] text-[9px] font-bold text-[#8a6514]">Google History · ${entryWeight(r)} ${activityState.type==='online'?'inquir'+(entryWeight(r)===1?'y':'ies'):'visit'+(entryWeight(r)===1?'':'s')}</span>`:'';
-      return `<div class="card rounded-2xl p-4">
+      return `<div class="card rounded-2xl p-4 ${r.is_history?'cursor-pointer hover:border-[#d8c287] transition':''}" ${r.is_history?`onclick="openCustomerHistoryGroup('${r.id}')"`:''}>
         <div class="grid lg:grid-cols-[110px_1.3fr_.8fr_.85fr_.85fr_auto] gap-3 lg:gap-4 items-center">
           <div><div class="text-[10px] uppercase font-bold text-gray-400">${r.is_history?'Latest Date':'Date'}</div><div class="text-sm font-semibold mt-1">${esc(fmtActivityDate(r.activity_date))}</div>${r.is_history?`<div class="text-[9px] text-gray-400 mt-1">Monthly archive</div>`:''}</div>
           <div class="min-w-0">
@@ -202,7 +202,7 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
           <div><div class="text-[10px] uppercase font-bold text-gray-400">Stage</div>${canSeeStage?`<span class="inline-flex mt-1 px-2 py-1 rounded-lg border text-[10px] font-semibold ${statusTone(r.status)}">${esc(r.status||'-')}</span>`:'<div class="text-[11px] text-gray-400 mt-1">Private</div>'}</div>
           <div><div class="text-[10px] uppercase font-bold text-gray-400">Sales</div><div class="text-sm mt-1">${esc(r.sales_rep_name||'-')}</div></div>
           <div><div class="text-[10px] uppercase font-bold text-gray-400">Follow Up</div><div class="text-sm mt-1">${canSeeStage?esc(r.follow_up_date?fmtActivityDate(r.follow_up_date):'-'):'Private'}</div></div>
-          <div class="flex lg:justify-end">${canEdit?`<button onclick="openEditCustomerActivity('${r.id}')" class="px-3 py-2 border rounded-lg text-xs font-semibold bg-white">Edit</button>`:''}</div>
+          <div class="flex lg:justify-end">${canEdit?`<button onclick="event.stopPropagation();openEditCustomerActivity('${r.id}')" class="px-3 py-2 border rounded-lg text-xs font-semibold bg-white">Edit</button>`:r.is_history?'<span class="text-[10px] font-semibold text-[#9a6b12]">View history →</span>':''}</div>
         </div>
       </div>`;
     }).join('')+'</div>';
@@ -380,6 +380,33 @@ ${activityReviewerMode()?`          <select onchange="setActivityStatus(this.val
     box.className='mt-1.5 text-[10px] rounded-lg border border-green-200 bg-green-50 px-2.5 py-2 text-green-700';
     box.innerHTML='<b>Existing customer found:</b> '+esc(data.customer_name||'Customer')+esc(owner)+'<br>This entry will link to the existing customer automatically. If you choose a Person In Charge, the Customer Database record is routed to that Sales Rep; the linked Sales Customer owner is not silently changed.';
   };
+  window.openCustomerHistoryGroup=async function(id){
+    const indexId=Number(String(id||'').replace('history-',''));
+    if(!Number.isFinite(indexId)||indexId<=0)return showToast('History record not found','err');
+    openModal('Customer Visit History','<div id="customerHistoryGroupBody" class="py-10 text-center text-sm text-gray-400">Loading history...</div>');
+    const {data,error}=await db.rpc('get_customer_history_detail_by_index',{p_id:indexId});
+    const root=document.getElementById('customerHistoryGroupBody');if(!root)return;
+    if(error){root.innerHTML='<div class="rounded-xl border border-red-200 bg-red-50 p-4 text-red-600">'+esc(error.message)+'</div>';return}
+    const rows=data||[];
+    if(!rows.length){root.innerHTML='<div class="rounded-xl border border-dashed p-8 text-gray-400">No additional history found.</div>';return}
+    const sum=code=>rows.filter(r=>!code||r.business_code===code).reduce((s,r)=>s+Number(r.entry_count||0),0);
+    const total=sum(),rk=sum('RK'),tk=sum('TK');
+    root.innerHTML=`
+      <div class="grid grid-cols-3 gap-3 mb-4 text-left">
+        <div class="rounded-xl border bg-[#fffaf0] p-4"><div class="text-[9px] uppercase font-bold text-gray-400">Total ${activityState.type==='online'?'Inquiries':'Visits'}</div><div class="text-2xl font-bold mt-1">${total}</div></div>
+        <div class="rounded-xl border p-4"><div class="text-[9px] uppercase font-bold text-gray-400">LP Home · RK</div><div class="text-2xl font-bold mt-1">${rk}</div></div>
+        <div class="rounded-xl border p-4"><div class="text-[9px] uppercase font-bold text-gray-400">L'Imperial Luxury · TK</div><div class="text-2xl font-bold mt-1">${tk}</div></div>
+      </div>
+      <div class="rounded-xl border overflow-hidden text-left">
+        <div class="px-4 py-3 border-b bg-[#faf9f6]"><b>Monthly History</b><div class="text-[10px] text-gray-400 mt-0.5">Shows how many times this customer appeared in each showroom/page and month.</div></div>
+        <div class="overflow-x-auto"><table class="w-full text-xs">
+          <thead class="bg-white text-gray-400 uppercase text-[9px]"><tr><th class="text-left px-3 py-2">Month</th><th class="text-left px-3 py-2">Showroom / Page</th><th class="text-right px-3 py-2">Count</th><th class="text-left px-3 py-2">Latest Stage</th><th class="text-left px-3 py-2">Latest Date</th><th class="text-left px-3 py-2">Sales</th><th class="text-left px-3 py-2">Latest Interest</th></tr></thead>
+          <tbody class="divide-y">${rows.map(r=>`<tr><td class="px-3 py-3 font-semibold">${esc(String(r.period_month||'').slice(0,7))}</td><td class="px-3 py-3">${esc(r.business_code==='RK'?'LP Home · RK':r.business_code==='TK'?"L'Imperial Luxury · TK":r.business_code||'-')}</td><td class="px-3 py-3 text-right font-bold">${Number(r.entry_count||0)}</td><td class="px-3 py-3">${esc(r.latest_stage||'-')}</td><td class="px-3 py-3">${esc(fmtActivityDate(r.latest_activity_date))}</td><td class="px-3 py-3">${esc(r.assigned_sales_name||'Unassigned')}</td><td class="px-3 py-3">${esc(r.latest_interest||'-')}</td></tr>`).join('')}</tbody>
+        </table></div>
+      </div>
+    `;
+  };
+
   window.openEditCustomerActivity=function(id){
     const row=activityState.rows.find(x=>x.id===id);
     if(!row)return showToast('Entry not found','err');
