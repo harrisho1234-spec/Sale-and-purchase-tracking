@@ -17,7 +17,9 @@
     trackingTab: 'timeline',
     trackingSearch: '',
     trackingOrders: [],
-    trackingExpanded: new Set()
+    trackingExpanded: new Set(),
+    trackingPOItems: [],
+    trackingPOStatus: 'all'
   };
   window.trackingRedesign = ui;
 
@@ -869,9 +871,17 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
       )
     `).order('created_at',{ascending:false});
     if(repContextActive()) q=q.eq('sales_rep_id',repContextId());
-    const {data,error}=await q;
-    if(error) throw error;
-    ui.trackingOrders=(data||[]).map(o=>({...o,customer_name:o.customers?.name||'',items:o.sales_order_items||[]}));
+
+    const [orderRes,poRes]=await Promise.all([
+      q,
+      db.rpc('get_sales_po_ordered_items')
+    ]);
+
+    if(orderRes.error) throw orderRes.error;
+    if(poRes.error) throw poRes.error;
+
+    ui.trackingOrders=(orderRes.data||[]).map(o=>({...o,customer_name:o.customers?.name||'',items:o.sales_order_items||[]}));
+    ui.trackingPOItems=poRes.data||[];
   }
 
   function trackingMatches(order) {
@@ -957,9 +967,114 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
     </div>`;
   }
 
+  function poItemStage(v){
+    const s=cleanStatus(v||'placed');
+    if(['arrived','closed','completed','delivered'].includes(s))return 'completed';
+    if(s==='shipping')return 'shipping';
+    if(s==='production')return 'production';
+    return 'placed';
+  }
+
+  function poItemStatusLabel(v){
+    const s=poItemStage(v);
+    return s==='placed'?'Ordered':s==='production'?'In Production':s==='shipping'?'Shipping':'Arrived';
+  }
+
+  function filteredPOItems(){
+    const q=ui.trackingSearch.toLowerCase().trim();
+    return (ui.trackingPOItems||[]).filter(i=>{
+      const stage=poItemStage(i.item_status||i.po_status);
+      if(ui.trackingPOStatus!=='all'&&stage!==ui.trackingPOStatus)return false;
+      if(!q)return true;
+      const hay=[
+        i.po_number,i.po_pending_reference,i.vendor_name,i.product_code,i.item_name,
+        i.brand,i.product_class,i.item_status,i.po_status
+      ].filter(Boolean).join(' ').toLowerCase();
+      return hay.includes(q);
+    });
+  }
+
+  function poOrderedItemRow(i){
+    const stage=poItemStage(i.item_status||i.po_status),m=stageMeta(stage);
+    return `<div class="lr-track-item">
+      <div class="lr-thumb" style="width:70px;height:70px">${imageHtml(i.image_url)}</div>
+      <div class="min-w-0">
+        <div class="flex flex-wrap items-center gap-2">
+          <b>${Number(i.qty||0)}x</b>
+          <span class="lr-badge lr-badge-gray">${esc(i.product_code||'No Code')}</span>
+          <span class="lr-badge ${m.badge}">${esc(poItemStatusLabel(i.item_status||i.po_status))}</span>
+          ${i.estimated_arrival?`<span class="lr-badge lr-badge-blue">ETA ${esc(formatDate(i.estimated_arrival))}</span>`:''}
+        </div>
+        <div class="text-sm font-semibold mt-1">${esc(i.item_name||'Item')}</div>
+        <div class="text-[11px] text-gray-400 mt-1">${[i.brand,i.product_class].filter(Boolean).map(esc).join(' · ')||'Ordered item'}</div>
+      </div>
+    </div>`;
+  }
+
+  function poOrderedItemsBody(){
+    const rows=filteredPOItems();
+    const groups=new Map();
+
+    rows.forEach(i=>{
+      const key=i.po_id||i.po_number||i.po_pending_reference||'unknown';
+      if(!groups.has(key))groups.set(key,[]);
+      groups.get(key).push(i);
+    });
+
+    const totals={
+      all:(ui.trackingPOItems||[]).length,
+      placed:(ui.trackingPOItems||[]).filter(i=>poItemStage(i.item_status||i.po_status)==='placed').length,
+      production:(ui.trackingPOItems||[]).filter(i=>poItemStage(i.item_status||i.po_status)==='production').length,
+      shipping:(ui.trackingPOItems||[]).filter(i=>poItemStage(i.item_status||i.po_status)==='shipping').length,
+      completed:(ui.trackingPOItems||[]).filter(i=>poItemStage(i.item_status||i.po_status)==='completed').length
+    };
+
+    const chips=[['all','All',totals.all],['placed','Ordered',totals.placed],['production','Production',totals.production],['shipping','Shipping',totals.shipping],['completed','Arrived',totals.completed]]
+      .map(([v,l,n])=>`<button class="lr-chip ${ui.trackingPOStatus===v?'active':''}" onclick="setTrackingPOStatus('${v}')">${l} <b class="ml-1">${n}</b></button>`).join('');
+
+    const cards=[...groups.values()].map(items=>{
+      const p=items[0]||{};
+      const stage=poItemStage(p.po_status),m=stageMeta(stage);
+      const qty=items.reduce((a,x)=>a+Number(x.qty||0),0);
+      const poName=p.po_number||p.po_pending_reference||'PO Pending';
+      return `<div class="lr-track-order open">
+        <div class="lr-track-order-head">
+          <div class="min-w-0">
+            <div class="flex flex-wrap items-center gap-2">
+              <b class="text-[15px]">${esc(poName)}</b>
+              <span class="lr-badge ${m.badge}">${esc(poItemStatusLabel(p.po_status))}</span>
+              <span class="lr-badge lr-badge-gray">${items.length} item line${items.length===1?'':'s'}</span>
+              <span class="lr-badge lr-badge-gray">Total Qty: ${qty}</span>
+            </div>
+            <div class="text-[11px] mt-2"><span class="text-gray-400">Supplier:</span> <b>${esc(p.vendor_name||'-')}</b></div>
+            <div class="text-[10px] text-gray-400 mt-1">Ordered: ${esc(p.order_date?formatDate(p.order_date):'-')} · ETA: ${esc(p.estimated_arrival?formatDate(p.estimated_arrival):'TBD')}${p.actual_arrival?' · Arrived: '+esc(formatDate(p.actual_arrival)):''}</div>
+          </div>
+          <div class="text-right text-[10px] text-gray-400">Company PO inventory</div>
+        </div>
+        <div class="lr-detail grid gap-3">${items.map(poOrderedItemRow).join('')}</div>
+      </div>`;
+    }).join('');
+
+    return `<div class="lr-panel p-3 mb-4">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <div class="font-bold text-sm">All Supplier PO Ordered Items</div>
+          <div class="text-[10px] text-gray-400 mt-1">Shared operational view for Sales. Supplier cost, shipping cost and payment information are hidden.</div>
+        </div>
+        <div class="lr-chip-row">${chips}</div>
+      </div>
+    </div>
+    <div class="grid gap-3">${cards||'<div class="lr-panel lr-empty">No PO ordered items match the selected filter.</div>'}</div>`;
+  }
+
+  window.setTrackingPOStatus=function(v){
+    ui.trackingPOStatus=v;
+    renderOrderTrackingBody();
+  };
+
   function salesTrackingTimelineOnly(){return (state.profile?.role||'')==='sales'}
   window.setTrackingTab=function(tab){
-    if(salesTrackingTimelineOnly()&&tab!=='timeline')return;
+    if(salesTrackingTimelineOnly()&&!['timeline','po_items'].includes(tab))return;
     ui.trackingTab=tab;
     renderOrderTrackingBody();
   };
@@ -978,7 +1093,7 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
 
   window.renderOrderTrackingBody=function(){
     const root=document.getElementById('orderTrackingRoot');if(!root)return;
-    if(salesTrackingTimelineOnly()&&ui.trackingTab!=='timeline')ui.trackingTab='timeline';
+    if(salesTrackingTimelineOnly()&&!['timeline','po_items'].includes(ui.trackingTab))ui.trackingTab='timeline';
     const orders=ui.trackingOrders.filter(trackingMatches);
     const flat=orders.flatMap(o=>(o.items||[]).map(i=>({...i,_order:o})));
     const stages=['placed','production','shipping','completed'];
@@ -996,6 +1111,8 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
       body=keys.map(k=>`<div class="lr-eta-line"><div class="flex items-center gap-3 mb-3"><span class="lr-badge lr-badge-blue">${esc(k==='TBD'?'TBD':formatDate(k))}</span><span class="text-[10px] text-gray-400">${groups.get(k).length} order${groups.get(k).length===1?'':'s'}</span></div><div class="grid gap-3">${groups.get(k).map(trackingOrderCard).join('')}</div></div>`).join('')||'<div class="lr-panel lr-empty">No ETA records.</div>';
     } else if(ui.trackingTab==='orders'){
       body=`<div class="grid gap-3">${orders.map(o=>`<div id="track-order-${o.id}">${trackingOrderCard(o)}</div>`).join('')||'<div class="lr-panel lr-empty">No orders found.</div>'}</div>`;
+    } else if(ui.trackingTab==='po_items'){
+      body=poOrderedItemsBody();
     } else {
       body=`<div class="grid gap-3">${flat.map(trackingItemRow).join('')||'<div class="lr-panel lr-empty">No items found.</div>'}</div>`;
     }
@@ -1003,10 +1120,10 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
     root.innerHTML=`
       ${repContextBanner()}
       <div class="lr-tabs mb-4">
-        ${(salesTrackingTimelineOnly()?[['timeline','Status Timeline']]:[['timeline','Status Timeline'],['eta','ETA Schedule'],['orders','Orders'],['items','Items']]).map(([v,l])=>`<button class="lr-tab ${ui.trackingTab===v?'active':''}" onclick="setTrackingTab('${v}')">${l}</button>`).join('')}
+        ${(salesTrackingTimelineOnly()?[['timeline','Status Timeline'],['po_items','PO Ordered Items']]:[['timeline','Status Timeline'],['eta','ETA Schedule'],['orders','Orders'],['items','Items']]).map(([v,l])=>`<button class="lr-tab ${ui.trackingTab===v?'active':''}" onclick="setTrackingTab('${v}')">${l}</button>`).join('')}
       </div>
       <div class="relative mb-5">
-        <input class="lr-input pl-10" value="${esc(ui.trackingSearch)}" oninput="setTrackingSearch(this.value)" placeholder="Search Order, Client, Item, Brand, SKU...">
+        <input class="lr-input pl-10" value="${esc(ui.trackingSearch)}" oninput="setTrackingSearch(this.value)" placeholder="${ui.trackingTab==='po_items'?'Search PO, supplier, item, brand, SKU...':'Search Order, Client, Item, Brand, SKU...'}">
         <span class="absolute left-3 top-2.5 text-gray-400">⌕</span>
       </div>
       ${body}`;
