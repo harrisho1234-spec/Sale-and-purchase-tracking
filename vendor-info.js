@@ -165,7 +165,7 @@
       const btn=document.getElementById('viSaveBtn');btn.disabled=true;btn.textContent='Saving...';
       const {error}=await db.from('vendors').insert(row);
       if(error){btn.disabled=false;btn.textContent='Save Vendor';return showToast(error.message,'err')}
-      vm.loaded=false;closeModal();showToast('Vendor added.');await renderProcurementWorkspace();
+      vm.loaded=false;closeModal();showToast('Vendor added.');await renderVendorInfoPage();
     };
   };
 
@@ -182,7 +182,7 @@
       const btn=document.getElementById('viSaveBtn');btn.disabled=true;btn.textContent='Saving...';
       const {error}=await db.from('vendors').update(row).eq('id',id);
       if(error){btn.disabled=false;btn.textContent='Save Vendor';return showToast(error.message,'err')}
-      vm.loaded=false;closeModal();showToast('Vendor updated.');await renderProcurementWorkspace();
+      vm.loaded=false;closeModal();showToast('Vendor updated.');await renderVendorInfoPage();
     };
   };
 
@@ -190,7 +190,7 @@
     if(!roleAllowed())return;
     const {error}=await db.from('vendors').update({active,updated_by:state.user.id}).eq('id',id);
     if(error)return showToast(error.message,'err');
-    vm.loaded=false;showToast(active?'Vendor activated.':'Vendor made inactive.');await renderProcurementWorkspace();
+    vm.loaded=false;showToast(active?'Vendor activated.':'Vendor made inactive.');await renderVendorInfoPage();
   };
 
   window.renderVendorInfoBody=async function(search=''){
@@ -239,4 +239,87 @@
       </div>
     </div>`).join(''):'<div class="card rounded-xl p-8 text-center text-sm text-gray-400">No vendors match your search.</div>'}</div>`;
   };
+
+  function injectVendorInfoStyles(){
+    if(document.getElementById('vendor-info-page-css'))return;
+    const st=document.createElement('style');
+    st.id='vendor-info-page-css';
+    st.textContent=`
+      .vi-toolbar{display:flex;gap:10px;justify-content:space-between;align-items:center;margin-bottom:15px;flex-wrap:wrap}
+      .vi-search{min-width:260px;max-width:520px;flex:1;border:1px solid #e4e4e7;border-radius:11px;padding:10px 13px;font-size:12px;background:#fff}
+      .pw-stat{background:#fff;border:1px solid #eee8df;border-radius:14px;padding:14px}
+      .pw-stat-label{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#a1a1aa;font-weight:800}
+      .pw-stat-value{font-size:20px;font-weight:800;margin-top:5px}
+      .pw-grid{display:grid;gap:12px}
+      .pw-card{background:#fff;border:1px solid #ece8e0;border-radius:15px;padding:15px}
+      @media(max-width:700px){.vi-search{max-width:none;width:100%}.vi-toolbar>*{width:100%}}
+    `;
+    document.head.appendChild(st);
+  }
+
+  window.renderVendorInfoPage=async function(){
+    if(!roleAllowed())throw new Error('Vendor Info is available to Admin and Super Admin only.');
+    injectVendorInfoStyles();
+    document.getElementById('content').innerHTML=`
+      <div class="max-w-[1500px] mx-auto">
+        <div class="vi-toolbar">
+          <input id="vendorInfoSearch" class="vi-search" placeholder="Search vendor, contact, country, terms, formula..." oninput="refreshVendorInfoPage(this.value)">
+          <button onclick="openNewVendorInfo()" class="px-4 py-2 bg-[#211d18] text-white rounded-xl text-sm font-semibold">+ Vendor</button>
+        </div>
+        <div id="vendorInfoPageBody"><div class="py-16 text-center text-gray-400">Loading...</div></div>
+      </div>
+    `;
+    await refreshVendorInfoPage('');
+  };
+
+  window.refreshVendorInfoPage=async function(search){
+    const body=document.getElementById('vendorInfoPageBody');
+    if(!body)return;
+    try{
+      body.innerHTML=await renderVendorInfoBody(search||'');
+    }catch(err){
+      body.innerHTML=`<div class="card rounded-xl p-5 text-red-600">Error: ${esc(err.message)}</div>`;
+    }
+  };
+
+  // Vendor Info is a separate Products & Procurement page, not an internal Procurement tab.
+  const previousVendorNavItems=window.navItems;
+  if(typeof previousVendorNavItems==='function'){
+    window.navItems=function(){
+      const items=previousVendorNavItems.apply(this,arguments)||[];
+      if(!roleAllowed())return items.filter(x=>x[0]!=='vendor-info');
+      if(items.some(x=>x[0]==='vendor-info'))return items;
+      const out=[];
+      let inserted=false;
+      for(const item of items){
+        out.push(item);
+        if(item[0]==='procurement'){
+          out.push(['vendor-info','Vendor Info','⌂']);
+          inserted=true;
+        }
+      }
+      if(!inserted)out.push(['vendor-info','Vendor Info','⌂']);
+      return out;
+    };
+  }
+
+  const previousVendorGo=window.go;
+  if(typeof previousVendorGo==='function'){
+    window.go=async function(page){
+      if(page!=='vendor-info')return previousVendorGo.apply(this,arguments);
+      if(!roleAllowed()){
+        showToast('Vendor Info is available to Admin and Super Admin only.','err');
+        return;
+      }
+      state.page='vendor-info';
+      renderNav();
+      document.getElementById('pageTitle').textContent='Vendor Info';
+      document.getElementById('pageSubtitle').textContent='Vendor contacts, purchasing terms, pricing formulas and product/PO relationships';
+      document.getElementById('content').innerHTML='<div class="py-20 text-center text-gray-400">Loading...</div>';
+      try{await renderVendorInfoPage()}
+      catch(err){document.getElementById('content').innerHTML=`<div class="card rounded-xl p-5 text-red-600">Error: ${esc(err.message)}</div>`}
+    };
+  }
+
+  try{if(state?.profile)renderNav()}catch(_){}
 })();
