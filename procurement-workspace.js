@@ -71,7 +71,7 @@
     const list=await loadPOs();const q=pw.search.toLowerCase();
     const rows=list.filter(p=>!q||[poLabel(p),p.vendor_name,p.status,p.shipping_agent,p.notes].filter(Boolean).join(' ').toLowerCase().includes(q));
     const shippingTotal=rows.reduce((a,p)=>a+Number(p.shipping_total_usd||0),0);
-    return `<div class="grid sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-4"><div class="pw-stat"><div class="pw-stat-label">PO Goods Value</div><div class="pw-stat-value text-[16px]">${moneyByCurrency(rows,'po_total')}</div></div><div class="pw-stat"><div class="pw-stat-label">Supplier Paid</div><div class="pw-stat-value text-[16px] text-green-600">${moneyByCurrency(rows,'amount_paid')}</div></div><div class="pw-stat"><div class="pw-stat-label">Supplier Balance</div><div class="pw-stat-value text-[16px] text-red-500">${moneyByCurrency(rows,'balance_due')}</div></div><div class="pw-stat"><div class="pw-stat-label">Shipping Cost · USD</div><div class="pw-stat-value">${money(shippingTotal,'USD')}</div></div></div><div class="card rounded-2xl overflow-hidden"><div class="divide-y">${rows.length?rows.map(p=>`<div class="pw-row grid lg:grid-cols-[1.1fr_1.2fr_110px_165px_140px] gap-3 items-center"><div><b>${esc(poLabel(p))}</b><div class="pw-mini">${esc(p.order_date||'')}</div></div><div><div class="text-sm font-semibold">${esc(p.vendor_name||'-')}</div><div class="pw-mini">${esc(p.shipping_agent||'No shipping agent')}</div></div><span class="lr-badge ${statusBadge(p.status)}">${esc(titleCase(p.status||'placed'))}</span><div class="text-xs">ETA <b>${esc(fmtDate(p.estimated_arrival))}</b><div class="pw-mini">Goods balance ${money(p.balance_due,p.currency||'USD')}</div><div class="pw-mini">Shipping balance ${money(p.shipping_balance_usd||0,'USD')}</div></div><div class="flex gap-2 justify-end flex-wrap"><button onclick="openEditSupplierPO('${p.id}')" class="px-3 py-2 border rounded-lg text-[10px] font-semibold">Edit / Items</button>${p.po_document_path?`<button onclick="viewPODocument('${p.id}')" class="px-3 py-2 border border-blue-200 text-blue-600 rounded-lg text-[10px] font-semibold">Document</button>`:''}<button onclick="deleteSupplierPO('${p.id}','${esc(poLabel(p))}')" class="px-3 py-2 border border-red-200 bg-red-50 text-red-600 rounded-lg text-[10px] font-semibold">Delete</button></div></div>`).join(''):empty('No supplier POs yet.')}</div></div>`;
+    return `<div class="grid sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-4"><div class="pw-stat"><div class="pw-stat-label">PO Goods Value</div><div class="pw-stat-value text-[16px]">${moneyByCurrency(rows,'po_total')}</div></div><div class="pw-stat"><div class="pw-stat-label">Supplier Paid</div><div class="pw-stat-value text-[16px] text-green-600">${moneyByCurrency(rows,'amount_paid')}</div></div><div class="pw-stat"><div class="pw-stat-label">Supplier Balance</div><div class="pw-stat-value text-[16px] text-red-500">${moneyByCurrency(rows,'balance_due')}</div></div><div class="pw-stat"><div class="pw-stat-label">Shipping Cost · USD</div><div class="pw-stat-value">${money(shippingTotal,'USD')}</div></div></div><div class="card rounded-2xl overflow-hidden"><div class="divide-y">${rows.length?rows.map(p=>`<div class="pw-row grid lg:grid-cols-[1.1fr_1.2fr_110px_165px_140px] gap-3 items-center"><div><b>${esc(poLabel(p))}</b><div class="pw-mini">${esc(p.order_date||'')}</div></div><div><div class="text-sm font-semibold">${esc(p.vendor_name||'-')}</div><div class="pw-mini">${esc(p.shipping_agent||'No shipping agent')}</div></div><span class="lr-badge ${statusBadge(p.status)}">${esc(titleCase(p.status||'placed'))}</span><div class="text-xs">ETA <b>${esc(fmtDate(p.estimated_arrival))}</b><div class="pw-mini">Goods balance ${money(p.balance_due,p.currency||'USD')}</div><div class="pw-mini">Shipping balance ${money(p.shipping_balance_usd||0,'USD')}</div></div><div class="flex gap-2 justify-end flex-wrap"><button onclick="openManageSupplierPO('${p.id}')" class="px-3 py-2 bg-[#211d18] text-white rounded-lg text-[10px] font-semibold">Manage PO</button>${p.po_document_path?`<button onclick="viewPODocument('${p.id}')" class="px-3 py-2 border border-blue-200 text-blue-600 rounded-lg text-[10px] font-semibold">Document</button>`:''}<button onclick="deleteSupplierPO('${p.id}','${esc(poLabel(p))}')" class="px-3 py-2 border border-red-200 bg-red-50 text-red-600 rounded-lg text-[10px] font-semibold">Delete</button></div></div>`).join(''):empty('No supplier POs yet.')}</div></div>`;
   }
 
   async function renderPOItems(){
@@ -92,7 +92,7 @@
   async function renderShipping(){
     const r=await db.from('supplier_pos').select('*').order('estimated_arrival',{ascending:true,nullsFirst:false});if(r.error)throw r.error;
     const q=pw.search.toLowerCase();const rows=(r.data||[]).filter(p=>!q||[poLabel(p),p.vendor_name,p.status,p.shipping_agent].filter(Boolean).join(' ').toLowerCase().includes(q));
-    return `<div class="pw-grid">${rows.length?rows.map(p=>`<div class="pw-card grid lg:grid-cols-[1.2fr_1fr_160px_170px_100px] gap-3 items-center"><div><div class="font-bold">${esc(poLabel(p))}</div><div class="pw-mini">${esc(p.vendor_name||'')}</div></div><div><span class="lr-badge ${statusBadge(p.status)}">${esc(titleCase(p.status||'placed'))}</span><div class="pw-mini mt-1">${esc(p.shipping_agent||'No shipping agent')}</div></div><div><label class="pw-mini">ETA</label><input id="eta-${p.id}" type="date" value="${esc(p.estimated_arrival||'')}" class="mt-1 w-full border rounded-lg px-2 py-2 text-xs"></div><div><label class="pw-mini">Status</label><select id="status-${p.id}" class="mt-1 w-full border rounded-lg px-2 py-2 text-xs bg-white">${['placed','production','shipping','arrived'].map(s=>`<option value="${s}" ${p.status===s?'selected':''}>${titleCase(s)}</option>`).join('')}</select></div><button onclick="saveProcShipping('${p.id}')" class="px-3 py-2 bg-[#211d18] text-white rounded-lg text-xs font-semibold">Save</button></div>`).join(''):'<div class="card rounded-2xl">'+empty('No supplier POs to track yet.')+'</div>'}</div>`;
+    return `<div class="pw-grid">${rows.length?rows.map(p=>`<div class="pw-card grid lg:grid-cols-[1.2fr_1fr_160px_170px_100px] gap-3 items-center"><div><div class="font-bold">${esc(poLabel(p))}</div><div class="pw-mini">${esc(p.vendor_name||'')}</div></div><div><span class="lr-badge ${statusBadge(p.status)}">${esc(titleCase(p.status||'placed'))}</span><div class="pw-mini mt-1">${esc(p.shipping_agent||'No shipping agent')}</div></div><div><label class="pw-mini">ETA</label><input id="eta-${p.id}" type="date" value="${esc(p.estimated_arrival||'')}" class="mt-1 w-full border rounded-lg px-2 py-2 text-xs"></div><div><label class="pw-mini">Status</label><select id="status-${p.id}" class="mt-1 w-full border rounded-lg px-2 py-2 text-xs bg-white">${[['placed','Ordered'],['production','Production'],['shipping','Shipping'],['arrived','Arrived'],['delivered','Delivered']].map(([s,l])=>`<option value="${s}" ${p.status===s?'selected':''}>${l}</option>`).join('')}</select></div><button onclick="saveProcShipping('${p.id}')" class="px-3 py-2 bg-[#211d18] text-white rounded-lg text-xs font-semibold">Save</button></div>`).join(''):'<div class="card rounded-2xl">'+empty('No supplier POs to track yet.')+'</div>'}</div>`;
   }
 
   async function renderAllocations(){
@@ -111,15 +111,135 @@
     const hint=document.getElementById('spCurrencyHint');
     if(hint)hint.textContent=type==='shipping'?'Shipping payments are always USD.':`Uses the PO currency: ${cur}.`;
   };
-  window.openSupplierPayment=function(){
+  window.openSupplierPayment=function(preselectPOId=null,returnToManage=false){
     const pos=window._procurementPOOptions||[];
     if(!pos.length)return showToast('Create a Supplier PO first.','err');
-    openModal('Record Supplier Payment',`<form id="supplierPaymentForm" class="grid md:grid-cols-2 gap-4"><div class="md:col-span-2"><label class="text-xs font-semibold">Supplier PO</label><select id="spPO" onchange="syncSupplierPaymentCurrency()" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white">${pos.map(p=>`<option value="${p.id}">${esc(poLabel(p))} · ${esc(p.vendor_name||'')}</option>`).join('')}</select></div><div><label class="text-xs font-semibold">Payment Type</label><select id="spType" onchange="syncSupplierPaymentCurrency()" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"><option value="deposit">Deposit</option><option value="balance">Balance</option><option value="shipping">Shipping</option><option value="other">Other</option></select></div><div><label class="text-xs font-semibold">Payment Date</label><input id="spDate" type="date" value="${new Date().toISOString().slice(0,10)}" class="mt-1 w-full border rounded-xl px-3 py-2"></div><div><label class="text-xs font-semibold">Amount</label><input id="spAmount" type="number" min="0.01" step="0.01" required class="mt-1 w-full border rounded-xl px-3 py-2"></div><div><label class="text-xs font-semibold">Currency</label><input id="spCurrency" readonly class="mt-1 w-full border rounded-xl px-3 py-2 bg-gray-50 font-semibold"><div id="spCurrencyHint" class="text-[10px] text-gray-400 mt-1"></div></div><div><label class="text-xs font-semibold">Reference No.</label><input id="spRef" class="mt-1 w-full border rounded-xl px-3 py-2"></div><div><label class="text-xs font-semibold">Note</label><input id="spNote" class="mt-1 w-full border rounded-xl px-3 py-2"></div><button class="md:col-span-2 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Payment</button></form>`);
+    const requested=preselectPOId&&pos.some(p=>String(p.id)===String(preselectPOId))?String(preselectPOId):String(pos[0]?.id||'');
+    openModal('Record Supplier Payment',`<form id="supplierPaymentForm" class="grid md:grid-cols-2 gap-4"><div class="md:col-span-2"><label class="text-xs font-semibold">Supplier PO</label><select id="spPO" onchange="syncSupplierPaymentCurrency()" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white">${pos.map(p=>`<option value="${p.id}" ${String(p.id)===requested?'selected':''}>${esc(poLabel(p))} · ${esc(p.vendor_name||'')}</option>`).join('')}</select></div><div><label class="text-xs font-semibold">Payment Type</label><select id="spType" onchange="syncSupplierPaymentCurrency()" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"><option value="deposit">Deposit</option><option value="balance">Balance</option><option value="shipping">Shipping</option><option value="other">Other</option></select></div><div><label class="text-xs font-semibold">Payment Date</label><input id="spDate" type="date" value="${new Date().toISOString().slice(0,10)}" class="mt-1 w-full border rounded-xl px-3 py-2"></div><div><label class="text-xs font-semibold">Amount</label><input id="spAmount" type="number" min="0.01" step="0.01" required class="mt-1 w-full border rounded-xl px-3 py-2"></div><div><label class="text-xs font-semibold">Currency</label><input id="spCurrency" readonly class="mt-1 w-full border rounded-xl px-3 py-2 bg-gray-50 font-semibold"><div id="spCurrencyHint" class="text-[10px] text-gray-400 mt-1"></div></div><div><label class="text-xs font-semibold">Reference No.</label><input id="spRef" class="mt-1 w-full border rounded-xl px-3 py-2"></div><div><label class="text-xs font-semibold">Note</label><input id="spNote" class="mt-1 w-full border rounded-xl px-3 py-2"></div><button class="md:col-span-2 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Payment</button></form>`);
     syncSupplierPaymentCurrency();
-    document.getElementById('supplierPaymentForm').onsubmit=async e=>{e.preventDefault();const row={supplier_po_id:document.getElementById('spPO').value,payment_type:document.getElementById('spType').value,payment_date:document.getElementById('spDate').value,amount:Number(document.getElementById('spAmount').value||0),currency:document.getElementById('spCurrency').value,reference_no:document.getElementById('spRef').value.trim()||null,notes:document.getElementById('spNote').value.trim()||null,created_by:state.user.id};const x=await db.from('supplier_payments').insert(row);if(x.error)return showToast(x.error.message,'err');closeModal();showToast('Supplier payment recorded');pw.tab='payments';await renderProcurementWorkspace()};
+    document.getElementById('supplierPaymentForm').onsubmit=async e=>{
+      e.preventDefault();
+      const selectedPO=document.getElementById('spPO').value;
+      const row={supplier_po_id:selectedPO,payment_type:document.getElementById('spType').value,payment_date:document.getElementById('spDate').value,amount:Number(document.getElementById('spAmount').value||0),currency:document.getElementById('spCurrency').value,reference_no:document.getElementById('spRef').value.trim()||null,notes:document.getElementById('spNote').value.trim()||null,created_by:state.user.id};
+      const x=await db.from('supplier_payments').insert(row);
+      if(x.error)return showToast(x.error.message,'err');
+      closeModal();showToast('Supplier payment recorded');
+      if(returnToManage){await openManageSupplierPO(selectedPO);return}
+      pw.tab='payments';await renderProcurementWorkspace();
+    };
   };
 
-  window.saveProcShipping=async function(id){const status=document.getElementById('status-'+id)?.value,eta=document.getElementById('eta-'+id)?.value||null;const patch={status,estimated_arrival:eta};if(status==='arrived')patch.actual_arrival=new Date().toISOString().slice(0,10);const r=await db.from('supplier_pos').update(patch).eq('id',id);if(r.error)return showToast(r.error.message,'err');if(window.documentFlowState)window.documentFlowState.loaded=false;showToast('Shipping / ETA updated');await renderProcurementWorkspace()};
+  function poManageStatusLabel(v){
+    const s=String(v||'placed').toLowerCase();
+    return s==='placed'?'Ordered':titleCase(s);
+  }
+
+  window.saveManagePOStatus=async function(id){
+    const status=document.getElementById('managePOStatus')?.value||'placed';
+    const eta=document.getElementById('managePOEta')?.value||null;
+    const patch={status,estimated_arrival:eta,updated_at:new Date().toISOString()};
+    if(['arrived','delivered'].includes(status)){
+      const current=(window._procurementPOOptions||[]).find(x=>String(x.id)===String(id));
+      patch.actual_arrival=current?.actual_arrival||new Date().toISOString().slice(0,10);
+    }
+    const {error}=await db.from('supplier_pos').update(patch).eq('id',id);
+    if(error)return showToast(error.message,'err');
+    if(window.documentFlowState)window.documentFlowState.loaded=false;
+    showToast('PO status / ETA updated');
+    await load();
+    await renderProcurementWorkspace();
+    await openManageSupplierPO(id);
+  };
+
+  window.openManageSupplierPO=async function(id){
+    openModal('Manage Supplier PO','<div class="py-14 text-center text-sm text-gray-400">Loading PO...</div>');
+    try{
+      const [poRes,summaryRes,itemRes,payRes]=await Promise.all([
+        db.from('supplier_pos').select('*').eq('id',id).single(),
+        db.from('supplier_po_summary').select('*').eq('id',id).maybeSingle(),
+        db.from('supplier_po_items').select('id,product_code_snapshot,item_name_snapshot,qty,unit_cost,shipping_cost,shipping_currency,procurement_status,image_url_snapshot,sort_order,created_at').eq('supplier_po_id',id).order('sort_order',{ascending:true,nullsFirst:false}).order('created_at',{ascending:true}),
+        db.from('supplier_payments').select('id,payment_type,payment_date,amount,currency,reference_no,notes,created_at').eq('supplier_po_id',id).order('payment_date',{ascending:false}).order('created_at',{ascending:false})
+      ]);
+      if(poRes.error)throw poRes.error;
+      if(summaryRes.error)throw summaryRes.error;
+      if(itemRes.error)throw itemRes.error;
+      if(payRes.error)throw payRes.error;
+
+      const p=poRes.data;
+      const s=summaryRes.data||{};
+      const items=itemRes.data||[];
+      const payments=payRes.data||[];
+      const qty=items.reduce((a,x)=>a+Number(x.qty||0),0);
+      const label=poLabel(p);
+      const goodsBalance=Number(s.balance_due||0);
+      const shippingBalance=Number(s.shipping_balance_usd||0);
+
+      const paymentHtml=payments.length?payments.map(x=>`<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 py-2 border-b last:border-0">
+        <div><div class="text-xs font-semibold">${esc(fmtDate(x.payment_date))} · ${esc(titleCase(x.payment_type||'payment'))}</div><div class="text-[10px] text-gray-400">${esc(x.reference_no||x.notes||'No reference')}</div></div>
+        <b class="text-green-600 text-sm">${money(Number(x.amount||0),x.currency||p.currency||'USD')}</b>
+      </div>`).join(''):'<div class="py-4 text-center text-xs text-gray-400">No supplier payments recorded yet.</div>';
+
+      const itemHtml=items.length?items.slice(0,8).map(i=>`<div class="flex items-center gap-3 py-2 border-b last:border-0">
+        <div class="w-10 h-10 rounded-lg overflow-hidden bg-gray-100 shrink-0">${i.image_url_snapshot?`<img src="${esc(i.image_url_snapshot)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div>
+        <div class="min-w-0 flex-1"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(i.product_code_snapshot||'')}</div><div class="text-xs truncate">${esc(i.item_name_snapshot||'Item')}</div></div>
+        <div class="text-right"><b class="text-xs">${Number(i.qty||0).toLocaleString()}x</b><div class="text-[9px] text-gray-400">${esc(poManageStatusLabel(i.procurement_status||p.status))}</div></div>
+      </div>`).join(''):'<div class="py-4 text-center text-xs text-gray-400">No PO items yet.</div>';
+
+      const html=`<div class="space-y-5">
+        <div class="rounded-2xl border bg-[#faf9f6] p-4">
+          <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+            <div>
+              <div class="flex flex-wrap items-center gap-2"><b class="text-lg">${esc(label)}</b><span class="lr-badge ${statusBadge(p.status)}">${esc(poManageStatusLabel(p.status))}</span></div>
+              <div class="text-sm font-semibold mt-2">${esc(p.vendor_name||'-')}</div>
+              <div class="text-[10px] text-gray-400 mt-1">Ordered: ${esc(fmtDate(p.order_date))} · Currency: ${esc(p.currency||'USD')}${p.shipping_agent?' · Shipping: '+esc(p.shipping_agent):''}</div>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button onclick="openSupplierPayment('${p.id}',true)" class="px-3 py-2 rounded-lg bg-green-600 text-white text-xs font-semibold">+ Record Payment</button>
+              <button onclick="openEditSupplierPO('${p.id}')" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">Edit Items / PO</button>
+              ${p.po_document_path?`<button onclick="viewPODocument('${p.id}')" class="px-3 py-2 rounded-lg border border-blue-200 bg-white text-blue-600 text-xs font-semibold">PO Document</button>`:''}
+            </div>
+          </div>
+        </div>
+
+        <div class="grid sm:grid-cols-2 xl:grid-cols-4 gap-3">
+          <div class="rounded-xl border p-3 bg-white"><div class="text-[9px] uppercase font-bold text-gray-400">Goods Total</div><div class="text-lg font-bold mt-1">${money(Number(s.po_total||0),p.currency||'USD')}</div></div>
+          <div class="rounded-xl border p-3 bg-white"><div class="text-[9px] uppercase font-bold text-gray-400">Supplier Paid</div><div class="text-lg font-bold mt-1 text-green-600">${money(Number(s.amount_paid||0),p.currency||'USD')}</div></div>
+          <div class="rounded-xl border p-3 ${goodsBalance>0?'bg-red-50 border-red-100':'bg-green-50 border-green-100'}"><div class="text-[9px] uppercase font-bold text-gray-400">Goods Balance</div><div class="text-lg font-bold mt-1 ${goodsBalance>0?'text-red-600':'text-green-600'}">${money(goodsBalance,p.currency||'USD')}</div></div>
+          <div class="rounded-xl border p-3 ${shippingBalance>0?'bg-amber-50 border-amber-100':'bg-white'}"><div class="text-[9px] uppercase font-bold text-gray-400">Shipping Balance</div><div class="text-lg font-bold mt-1 ${shippingBalance>0?'text-amber-700':'text-green-600'}">${money(shippingBalance,'USD')}</div><div class="text-[9px] text-gray-400 mt-1">Shipping cost ${money(Number(s.shipping_total_usd||0),'USD')}</div></div>
+        </div>
+
+        <div class="grid lg:grid-cols-[1fr_1fr] gap-4">
+          <div class="rounded-2xl border bg-white p-4">
+            <div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">Status & ETA</h4><div class="text-[10px] text-gray-400">Quickly update the PO without opening the Shipping tab.</div></div></div>
+            <div class="grid sm:grid-cols-2 gap-3">
+              <div><label class="text-xs font-semibold">PO Status</label><select id="managePOStatus" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${[['placed','Ordered'],['production','Production'],['shipping','Shipping'],['arrived','Arrived'],['delivered','Delivered']].map(([v,l])=>`<option value="${v}" ${p.status===v?'selected':''}>${l}</option>`).join('')}</select></div>
+              <div><label class="text-xs font-semibold">ETA</label><input id="managePOEta" type="date" value="${esc(p.estimated_arrival||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+              <button onclick="saveManagePOStatus('${p.id}')" class="sm:col-span-2 bg-[#211d18] text-white rounded-xl py-2.5 text-xs font-semibold">Save Status / ETA</button>
+            </div>
+          </div>
+
+          <div class="rounded-2xl border bg-white p-4">
+            <div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">Ordered Quantity</h4><div class="text-[10px] text-gray-400">Current PO item summary.</div></div><button onclick="openEditSupplierPO('${p.id}')" class="text-[10px] font-semibold text-[#a77d1a]">Manage items →</button></div>
+            <div class="grid grid-cols-2 gap-3"><div class="rounded-xl bg-gray-50 p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Item Lines</div><div class="text-xl font-bold mt-1">${items.length}</div></div><div class="rounded-xl bg-gray-50 p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Total Qty</div><div class="text-xl font-bold mt-1">${qty.toLocaleString()}</div></div></div>
+            <div class="mt-3 max-h-[250px] overflow-auto">${itemHtml}${items.length>8?`<div class="text-center text-[10px] text-gray-400 pt-2">+${items.length-8} more item lines · use Edit Items / PO to view all</div>`:''}</div>
+          </div>
+        </div>
+
+        <div class="rounded-2xl border bg-white p-4">
+          <div class="flex items-center justify-between gap-3 mb-3"><div><h4 class="font-bold">Payment History</h4><div class="text-[10px] text-gray-400">Deposit, balance, shipping and other supplier payments.</div></div><button onclick="openSupplierPayment('${p.id}',true)" class="px-3 py-2 rounded-lg border border-green-200 bg-green-50 text-green-700 text-xs font-semibold">+ Payment</button></div>
+          <div>${paymentHtml}</div>
+        </div>
+      </div>`;
+
+      document.getElementById('modalBody').innerHTML=html;
+    }catch(err){
+      const body=document.getElementById('modalBody');
+      if(body)body.innerHTML=`<div class="rounded-xl border border-red-200 bg-red-50 p-4 text-red-600 text-sm">Error: ${esc(err.message)}</div>`;
+      else showToast(err.message,'err');
+    }
+  };
+
+  window.saveProcShipping=async function(id){const status=document.getElementById('status-'+id)?.value,eta=document.getElementById('eta-'+id)?.value||null;const patch={status,estimated_arrival:eta};if(['arrived','delivered'].includes(status))patch.actual_arrival=new Date().toISOString().slice(0,10);const r=await db.from('supplier_pos').update(patch).eq('id',id);if(r.error)return showToast(r.error.message,'err');if(window.documentFlowState)window.documentFlowState.loaded=false;showToast('Shipping / ETA updated');await load();await renderProcurementWorkspace()};
 
   window.renderProcurementWorkspace=async function(){
     inject();requireAdmin();
