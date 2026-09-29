@@ -11,6 +11,10 @@
     poRows:[],
     poExpanded:new Set(),
     deliveryRows:[],
+    agingRows:[],
+    agingMap:new Map(),
+    locationFilter:'',
+    ageFilter:'',
     limits:{balance:30,movements:30,receive:30,delivery:30,counts:30,reports:30,requests:30}
   };
 
@@ -55,13 +59,16 @@
   async function loadCore(force=false){
     if(!canView())throw new Error('Inventory access required.');
     if(inv.locations.length&&inv.balances.length&&!force)return;
-    const [locs,bals]=await Promise.all([
+    const [locs,bals,aging]=await Promise.all([
       db.from('stock_locations').select('*').order('sort_order').order('code'),
-      db.from('inventory_product_balance').select('*').order('item_name')
+      db.from('inventory_product_balance').select('*').order('item_name'),
+      db.rpc('get_inventory_stock_aging')
     ]);
-    if(locs.error)throw locs.error;if(bals.error)throw bals.error;
+    if(locs.error)throw locs.error;if(bals.error)throw bals.error;if(aging.error)throw aging.error;
     inv.locations=locs.data||[];
     inv.balances=bals.data||[];
+    inv.agingRows=aging.data||[];
+    inv.agingMap=new Map(inv.agingRows.map(x=>[x.product_id,x]));
     inv.balanceMap=new Map(inv.balances.map(x=>[x.product_id,x]));
     window.inventoryBalanceMap=inv.balanceMap;
   }
@@ -162,19 +169,58 @@
     </div>`;
   }
 
+  function ageLabel(a){
+    if(!a||a.age_bucket==='Unknown')return 'Unknown';
+    return `${a.age_bucket} days`;
+  }
+  function ageBadgeClass(bucket){
+    if(bucket==='0-30')return 'bg-green-50 text-green-700 border-green-200';
+    if(bucket==='31-90')return 'bg-blue-50 text-blue-700 border-blue-200';
+    if(bucket==='91-180')return 'bg-amber-50 text-amber-700 border-amber-200';
+    if(bucket==='181-365'||bucket==='365+')return 'bg-red-50 text-red-700 border-red-200';
+    return 'bg-gray-50 text-gray-500 border-gray-200';
+  }
+  function inventoryFilterControls(context){
+    const locOptions=inv.locations.filter(x=>x.active).map(x=>`<option value="${x.id}" ${String(inv.locationFilter)===String(x.id)?'selected':''}>${esc(x.code)} · ${esc(x.name)}</option>`).join('');
+    const ages=[['','All Aging'],['0-30','0–30 days'],['31-90','31–90 days'],['91-180','91–180 days'],['181-365','181–365 days'],['365+','365+ days'],['Unknown','Unknown / Pre-history']];
+    return `<div class="mb-4 flex flex-wrap gap-2 items-center">
+      <select onchange="setInventoryLocationFilter(this.value)" class="border rounded-xl px-3 py-2 bg-white text-xs"><option value="">All Locations</option>${locOptions}</select>
+      <select onchange="setInventoryAgeFilter(this.value)" class="border rounded-xl px-3 py-2 bg-white text-xs">${ages.map(([v,l])=>`<option value="${v}" ${inv.ageFilter===v?'selected':''}>${l}</option>`).join('')}</select>
+      ${inv.locationFilter||inv.ageFilter?`<button onclick="clearInventoryFilters()" class="px-3 py-2 border rounded-xl text-xs font-semibold bg-white">Clear Filters</button>`:''}
+      <div class="text-[10px] text-gray-400 ml-auto">Aging uses the oldest remaining recorded inbound layer (FIFO estimate). Stock older than imported history appears as Unknown.</div>
+    </div>`;
+  }
+  window.setInventoryLocationFilter=function(v){inv.locationFilter=v||'';resetInventoryLimit(inv.tab);renderStockInventoryBody()};
+  window.setInventoryAgeFilter=function(v){inv.ageFilter=v||'';resetInventoryLimit(inv.tab);renderStockInventoryBody()};
+  window.clearInventoryFilters=function(){inv.locationFilter='';inv.ageFilter='';resetInventoryLimit(inv.tab);renderStockInventoryBody()};
+  function productPassesInventoryFilters(p){
+    if(inv.locationFilter){
+      const ok=(p.locations||[]).some(l=>String(l.location_id)===String(inv.locationFilter)&&n(l.qty)!==0);
+      if(!ok)return false;
+    }
+    if(inv.ageFilter){
+      const a=inv.agingMap.get(p.product_id);
+      if((a?.age_bucket||'Unknown')!==inv.ageFilter)return false;
+    }
+    return true;
+  }
+
   function balanceFiltered(){
     const s=String(inv.search||'').trim().toLowerCase();
-    return inv.balances.filter(x=>!s||[
-      x.code,x.item_name,x.brand,x.class,
-      ...(Array.isArray(x.locations)?x.locations.map(l=>l.code):[])
-    ].filter(Boolean).join(' ').toLowerCase().includes(s));
+    return inv.balances.filter(x=>{
+      const searchOk=!s||[
+        x.code,x.item_name,x.brand,x.class,
+        ...(Array.isArray(x.locations)?x.locations.map(l=>l.code):[])
+      ].filter(Boolean).join(' ').toLowerCase().includes(s);
+      return searchOk&&productPassesInventoryFilters(x);
+    });
   }
 
   async function renderBalance(){
     await loadCore();
     const rows=balanceFiltered(),shown=rows.slice(0,inventoryLimit('balance'));
-    return `<div class="card rounded-2xl overflow-hidden">
-      <div class="divide-y">${shown.length?shown.map(p=>`<div class="p-4 grid xl:grid-cols-[1.7fr_85px_85px_85px_85px_1.5fr_165px] gap-3 items-center">
+    return `${inventoryFilterControls('balance')}<div class="card rounded-2xl overflow-hidden">
+      <div class="divide-y">${shown.length?shown.map(p=>{const a=inv.agingMap.get(p.product_id);return `<div class="p-4 grid xl:grid-cols-[1.55fr_80px_80px_80px_80px_105px_1.4fr_165px] gap-3 items-center">
         <div class="flex items-center gap-3 min-w-0">
           <div class="w-12 h-12 rounded-xl bg-gray-100 overflow-hidden shrink-0">${p.image_url?`<img src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div>
           <div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code)}</div><div class="font-semibold text-sm truncate">${esc(p.item_name)}</div><div class="text-[10px] text-gray-400">${esc(p.brand||'')}</div></div>
@@ -183,9 +229,10 @@
         <div class="text-xs"><div class="text-gray-400">Reserved</div><b class="text-sm text-amber-600">${q(p.reserved)}</b></div>
         <div class="text-xs"><div class="text-gray-400">Available</div><b class="text-sm ${n(p.available)<0?'text-red-600':'text-green-600'}">${q(p.available)}</b></div>
         <div class="text-xs"><div class="text-gray-400">Incoming</div><b class="text-sm text-blue-600">${q(p.incoming)}</b></div>
-        <div class="text-[10px] text-gray-500">${(p.locations||[]).filter(l=>n(l.qty)!==0).map(l=>`<span class="inline-flex mr-1 mb-1 px-2 py-1 rounded-lg border bg-gray-50"><b>${esc(l.code)}</b>&nbsp;${q(l.qty)}</span>`).join('')||'<span class="text-gray-400">No stock location</span>'}</div>
+        <div class="text-xs"><div class="text-gray-400">Aging</div><span class="inline-flex mt-1 px-2 py-1 rounded-lg border text-[9px] font-bold ${ageBadgeClass(a?.age_bucket||'Unknown')}">${esc(ageLabel(a))}</span>${a?.oldest_remaining_date?`<div class="text-[9px] text-gray-400 mt-1">Since ${esc(dateText(a.oldest_remaining_date))}</div>`:''}</div>
+        <div class="text-[10px] text-gray-500">${(p.locations||[]).filter(l=>n(l.qty)!==0).map(l=>`<span class="inline-flex mr-1 mb-1 px-2 py-1 rounded-lg border ${inv.locationFilter&&String(l.location_id)===String(inv.locationFilter)?'bg-blue-50 border-blue-200 text-blue-700':'bg-gray-50'}"><b>${esc(l.code)}</b>&nbsp;${q(l.qty)}</span>`).join('')||'<span class="text-gray-400">No stock location</span>'}</div>
         <div class="flex gap-1.5 justify-end">${canOperate()?`<button onclick="openStockTransfer('${p.product_id}')" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-semibold">Move</button>`:''}<button onclick="openProductStockHistory('${p.product_id}')" class="px-3 py-2 border rounded-lg text-[10px] font-semibold">History</button></div>
-      </div>`).join(''):'<div class="p-10 text-center text-sm text-gray-400">No products match your search.</div>'}</div>
+      </div>`}).join(''):'<div class="p-10 text-center text-sm text-gray-400">No products match your search / filters.</div>'}</div>
       ${inventoryListControls('balance',rows.length)}
     </div>`;
   }
@@ -231,6 +278,19 @@
       m.code,m.item_name,m.brand,m.movement_type,m.from_location,m.to_location,
       m.reference_no,m.counterparty,m.note,m.created_by_name
     ].filter(Boolean).join(' ').toLowerCase().includes(s));
+  }
+
+  function reportFilteredMovements(){
+    const base=filteredMovements();
+    const loc=inv.locations.find(x=>String(x.id)===String(inv.locationFilter));
+    return base.filter(m=>{
+      if(loc&&m.from_location!==loc.code&&m.to_location!==loc.code)return false;
+      if(inv.ageFilter){
+        const a=inv.agingMap.get(m.product_id);
+        if((a?.age_bucket||'Unknown')!==inv.ageFilter)return false;
+      }
+      return true;
+    });
   }
 
   async function renderMovements(){
@@ -309,20 +369,22 @@
   async function renderReports(){
     await loadCore();
     await loadMovements();
-    const rows=filteredMovements(),shown=rows.slice(0,inventoryLimit('reports'));
+    const rows=reportFilteredMovements(),shown=rows.slice(0,inventoryLimit('reports'));
     const ins=rows.filter(x=>['in','return','adjustment_in','po_receipt','opening'].includes(x.movement_type)).reduce((a,x)=>a+n(x.qty),0);
     const outs=rows.filter(x=>['out','broken','adjustment_out','sale_delivery'].includes(x.movement_type)).reduce((a,x)=>a+n(x.qty),0);
     const transfers=rows.filter(x=>x.movement_type==='transfer').reduce((a,x)=>a+n(x.qty),0);
     const broken=rows.filter(x=>x.movement_type==='broken').reduce((a,x)=>a+n(x.qty),0);
     const historical=rows.filter(x=>x.legacy).length;
     const live=rows.length-historical;
-    return `<div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800 mb-4"><b>Movement history:</b> ${historical.toLocaleString()} imported Stock Controller rows + ${live.toLocaleString()} live app movements shown by the current search.</div>
-    <div class="grid sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-4">
+    const agingQty=inv.balances.filter(productPassesInventoryFilters).reduce((a,x)=>a+n(x.on_hand),0);
+    return `${inventoryFilterControls('reports')}<div class="grid sm:grid-cols-2 xl:grid-cols-5 gap-3 mb-4">
+      <div class="inv-stat"><div class="inv-stat-label">Filtered Stock Qty</div><div class="inv-stat-value">${q(agingQty)}</div></div>
       <div class="inv-stat"><div class="inv-stat-label">Stock In Shown</div><div class="inv-stat-value text-green-600">${q(ins)}</div></div>
       <div class="inv-stat"><div class="inv-stat-label">Stock Out Shown</div><div class="inv-stat-value text-red-500">${q(outs)}</div></div>
       <div class="inv-stat"><div class="inv-stat-label">Transfers Shown</div><div class="inv-stat-value text-blue-600">${q(transfers)}</div></div>
       <div class="inv-stat"><div class="inv-stat-label">Broken Shown</div><div class="inv-stat-value text-amber-700">${q(broken)}</div></div>
     </div>
+    <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800 mb-4"><b>Movement history:</b> ${historical.toLocaleString()} imported Stock Controller rows + ${live.toLocaleString()} live app movements shown by the current search.</div>
     <div class="mb-3 flex justify-end"><button onclick="exportStockMovementCSV()" class="px-3 py-2 border rounded-xl text-xs font-semibold">Export Movement CSV</button></div>
     <div class="inv-card"><div class="divide-y">${shown.length?shown.map(m=>movementRow(m)).join(''):'<div class="py-10 text-center text-xs text-gray-400">No report rows found.</div>'}</div>${inventoryListControls('reports',rows.length)}</div>`;
   }
@@ -911,7 +973,7 @@
   };
 
   window.exportStockMovementCSV=function(){
-    const rows=filteredMovements();
+    const rows=reportFilteredMovements();
     const cols=['Date','Type','Code','Item','Qty','From','To','Reference','Counterparty','Remark','Created By'];
     const val=v=>`"${String(v??'').replaceAll('"','""')}"`;
     const csv=[cols.map(val).join(','),...rows.map(m=>[
