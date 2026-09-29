@@ -224,6 +224,70 @@
     vm.loaded=false;showToast(active?'Vendor activated.':'Vendor made inactive.');await renderVendorInfoPage();
   };
 
+  window.openMergeVendorInfo=async function(sourceId){
+    if(!roleAllowed())return showToast('Admin access required.','err');
+    await loadVendorMaster(true);
+    const source=vm.rows.find(v=>v.id===sourceId);
+    if(!source)return showToast('Vendor not found.','err');
+    const others=vm.rows.filter(v=>v.id!==sourceId);
+    const options=others.map(v=>`<option value="${esc(fmtVendor(v))}"></option><option value="${esc(v.name||'')}"></option>`).join('');
+
+    const [poRes,pvRes,costRes]=await Promise.all([
+      db.from('supplier_pos').select('id',{count:'exact',head:true}).eq('vendor_id',sourceId),
+      db.from('product_vendors').select('product_id',{count:'exact',head:true}).eq('vendor_id',sourceId),
+      db.from('product_costs').select('product_id',{count:'exact',head:true}).eq('vendor_id',sourceId)
+    ]);
+    const poCount=poRes.count||0,productCount=pvRes.count||0,costCount=costRes.count||0;
+
+    openModal('Merge Vendor — '+source.name,`<form id="mergeVendorForm" class="space-y-5">
+      <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <b>${esc(source.name)} (${esc(source.vendor_code)})</b> will be merged into another Vendor Master record and then removed.
+        Its linked POs, Product Costing and Product-Vendor relationships will move to the vendor you keep.
+      </div>
+      <div class="grid grid-cols-3 gap-3">
+        <div class="rounded-xl border bg-gray-50 p-3"><div class="text-[9px] uppercase font-bold text-gray-400">POs</div><div class="text-xl font-bold mt-1">${poCount}</div></div>
+        <div class="rounded-xl border bg-gray-50 p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Products</div><div class="text-xl font-bold mt-1">${productCount}</div></div>
+        <div class="rounded-xl border bg-gray-50 p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Costing Links</div><div class="text-xl font-bold mt-1">${costCount}</div></div>
+      </div>
+      <div>
+        <label class="text-xs font-semibold">Keep This Vendor *</label>
+        <input id="mergeVendorTarget" list="mergeVendorTargetList" required class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Type vendor name or vendor code...">
+        <datalist id="mergeVendorTargetList">${options}</datalist>
+        <div id="mergeVendorTargetInfo" class="text-[10px] text-gray-400 mt-1">The selected vendor will remain as the master record.</div>
+      </div>
+      <div class="rounded-xl border p-3 text-xs text-gray-600">
+        <b>Merge rule:</b> the kept vendor's existing information takes priority. Empty fields on the kept vendor can be filled from this duplicate. Product Types and Styles are combined.
+      </div>
+      <button id="mergeVendorBtn" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Merge Into Selected Vendor</button>
+    </form>`);
+
+    const input=document.getElementById('mergeVendorTarget');
+    input.onchange=input.oninput=()=>{
+      const target=findVendorMaster(input.value);
+      const info=document.getElementById('mergeVendorTargetInfo');
+      if(!target||target.id===sourceId){
+        info.textContent='Choose a different Vendor Info record to keep.';
+        info.className='text-[10px] text-red-600 mt-1';
+        return;
+      }
+      info.textContent=`Keep ${target.name} (${target.vendor_code}) · ${vendorSelectionInfo(target)||'No extra defaults saved'}`;
+      info.className='text-[10px] text-green-700 mt-1';
+    };
+
+    document.getElementById('mergeVendorForm').onsubmit=async e=>{
+      e.preventDefault();
+      const target=findVendorMaster(input.value);
+      if(!target||target.id===sourceId)return showToast('Select a different vendor to keep.','err');
+      if(!confirm(`Merge "${source.name}" into "${target.name}"? "${source.name}" will be removed after all links are moved.`))return;
+      const btn=document.getElementById('mergeVendorBtn');btn.disabled=true;btn.textContent='Merging...';
+      const {data,error}=await db.rpc('merge_vendor_records',{p_keep_vendor_id:target.id,p_merge_vendor_id:sourceId});
+      if(error){btn.disabled=false;btn.textContent='Merge Into Selected Vendor';return showToast(error.message,'err')}
+      vm.loaded=false;await loadVendorMaster(true);closeModal();
+      showToast(`Vendor merged into ${target.name}. ${Number(data?.po_links_moved||0)} PO link(s) moved.`);
+      await renderVendorInfoPage();
+    };
+  };
+
   window.toggleVendorPOHistory=function(id){
     const el=document.getElementById('vendor-po-items-'+id);
     const icon=document.getElementById('vendor-po-icon-'+id);
@@ -360,7 +424,7 @@
         </div>
         <div class="lg:w-[170px] shrink-0">
           <div class="grid grid-cols-2 lg:grid-cols-1 gap-2 text-xs mb-3"><button type="button" onclick="openVendorPOHistory('${v.id}')" class="rounded-lg border p-2 text-left hover:bg-amber-50 hover:border-amber-200 transition"><span class="text-gray-400">POs</span> <b class="float-right text-[#a77d1a]">${poCounts.get(v.id)||0}</b><div class="text-[9px] text-[#a77d1a] mt-1">View history →</div></button><div class="rounded-lg border p-2"><span class="text-gray-400">Products</span> <b class="float-right">${productCounts.get(v.id)||0}</b></div></div>
-          <div class="flex lg:flex-col gap-2"><button onclick="openEditVendorInfo('${v.id}')" class="flex-1 px-3 py-2 border rounded-lg text-xs font-semibold">Edit</button><button onclick="toggleVendorInfoActive('${v.id}',${v.active?'false':'true'})" class="flex-1 px-3 py-2 border rounded-lg text-xs font-semibold ${v.active?'text-gray-600':'text-green-700 bg-green-50'}">${v.active?'Make Inactive':'Activate'}</button></div>
+          <div class="flex lg:flex-col gap-2"><button onclick="openEditVendorInfo('${v.id}')" class="flex-1 px-3 py-2 border rounded-lg text-xs font-semibold">Edit</button><button onclick="openMergeVendorInfo('${v.id}')" class="flex-1 px-3 py-2 border border-purple-200 bg-purple-50 text-purple-700 rounded-lg text-xs font-semibold">Merge</button><button onclick="toggleVendorInfoActive('${v.id}',${v.active?'false':'true'})" class="flex-1 px-3 py-2 border rounded-lg text-xs font-semibold ${v.active?'text-gray-600':'text-green-700 bg-green-50'}">${v.active?'Make Inactive':'Activate'}</button></div>
         </div>
       </div>
     </div>`).join(''):'<div class="card rounded-xl p-8 text-center text-sm text-gray-400">No vendors match your search.</div>'}</div>`;
