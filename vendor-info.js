@@ -42,11 +42,14 @@
 
   window.vendorSelectionInfo=function(v){
     if(!v)return '';
+    const formula=clean(v.sales_price_formula);
     const bits=[
       v.default_currency?`Currency: ${v.default_currency}`:null,
       v.payment_terms?`Payment: ${v.payment_terms}`:null,
       v.shipping_terms?`Shipping: ${v.shipping_terms}`:null,
-      v.lead_time_days!=null?`Lead time: ${v.lead_time_days} days`:null
+      v.lead_time_days!=null?`Lead time: ${v.lead_time_days} days`:null,
+      v.default_markup_percent!=null?`Markup: ${Number(v.default_markup_percent).toFixed(2)}%`:null,
+      formula?`Formula: ${formula.length>120?formula.slice(0,117)+'...':formula}`:null
     ].filter(Boolean);
     return bits.join(' · ');
   };
@@ -193,7 +196,7 @@
   window.renderVendorInfoBody=async function(search=''){
     if(!roleAllowed())throw new Error('Admin access required');
     const [vendors,poRes,pvRes]=await Promise.all([
-      loadVendorMaster(true),
+      loadVendorMaster(),
       db.from('supplier_pos').select('vendor_id'),
       db.from('product_vendors').select('vendor_id,product_id')
     ]);
