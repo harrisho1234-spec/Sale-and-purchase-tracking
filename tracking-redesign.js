@@ -19,7 +19,8 @@
     trackingOrders: [],
     trackingExpanded: new Set(),
     trackingPOItems: [],
-    trackingPOStatus: 'all'
+    trackingPOStatus: 'all',
+    trackingPOExpanded: new Set()
   };
   window.trackingRedesign = ui;
 
@@ -1032,26 +1033,30 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
     const chips=[['all','All',totals.all],['placed','Ordered',totals.placed],['production','Production',totals.production],['shipping','Shipping',totals.shipping],['completed','Arrived',totals.completed]]
       .map(([v,l,n])=>`<button class="lr-chip ${ui.trackingPOStatus===v?'active':''}" onclick="setTrackingPOStatus('${v}')">${l} <b class="ml-1">${n}</b></button>`).join('');
 
-    const cards=[...groups.values()].map(items=>{
+    const cards=[...groups.entries()].map(([key,items])=>{
       const p=items[0]||{};
       const stage=poItemStage(p.po_status),m=stageMeta(stage);
       const qty=items.reduce((a,x)=>a+Number(x.qty||0),0);
       const poName=p.po_number||p.po_pending_reference||'PO Pending';
-      return `<div class="lr-track-order open">
-        <div class="lr-track-order-head">
-          <div class="min-w-0">
-            <div class="flex flex-wrap items-center gap-2">
-              <b class="text-[15px]">${esc(poName)}</b>
-              <span class="lr-badge ${m.badge}">${esc(poItemStatusLabel(p.po_status))}</span>
-              <span class="lr-badge lr-badge-gray">${items.length} item line${items.length===1?'':'s'}</span>
-              <span class="lr-badge lr-badge-gray">Total Qty: ${qty}</span>
+      const open=ui.trackingPOExpanded.has(String(key));
+      return `<div class="lr-track-order ${open?'open':''}">
+        <button type="button" class="lr-track-order-head w-full text-left" onclick="toggleTrackingPO('${esc(String(key))}')">
+          <div class="min-w-0 flex gap-3">
+            <span class="w-8 h-8 rounded-lg border bg-gray-50 shrink-0 flex items-center justify-center text-gray-500">${open?'⌃':'⌄'}</span>
+            <div class="min-w-0">
+              <div class="flex flex-wrap items-center gap-2">
+                <b class="text-[15px]">${esc(poName)}</b>
+                <span class="lr-badge ${m.badge}">${esc(poItemStatusLabel(p.po_status))}</span>
+                <span class="lr-badge lr-badge-gray">${items.length} item line${items.length===1?'':'s'}</span>
+                <span class="lr-badge lr-badge-gray">Total Qty: ${qty}</span>
+              </div>
+              <div class="text-[11px] mt-2"><span class="text-gray-400">Supplier:</span> <b>${esc(p.vendor_name||'-')}</b></div>
+              <div class="text-[10px] text-gray-400 mt-1">Ordered: ${esc(p.order_date?formatDate(p.order_date):'-')} · ETA: ${esc(p.estimated_arrival?formatDate(p.estimated_arrival):'TBD')}${p.actual_arrival?' · Arrived: '+esc(formatDate(p.actual_arrival)):''}</div>
             </div>
-            <div class="text-[11px] mt-2"><span class="text-gray-400">Supplier:</span> <b>${esc(p.vendor_name||'-')}</b></div>
-            <div class="text-[10px] text-gray-400 mt-1">Ordered: ${esc(p.order_date?formatDate(p.order_date):'-')} · ETA: ${esc(p.estimated_arrival?formatDate(p.estimated_arrival):'TBD')}${p.actual_arrival?' · Arrived: '+esc(formatDate(p.actual_arrival)):''}</div>
           </div>
-          <div class="text-right text-[10px] text-gray-400">Company PO inventory</div>
-        </div>
-        <div class="lr-detail grid gap-3">${items.map(poOrderedItemRow).join('')}</div>
+          <div class="text-right text-[10px] text-gray-400 whitespace-nowrap">${open?'Hide items':'View items'}</div>
+        </button>
+        ${open?`<div class="lr-detail grid gap-3">${items.map(poOrderedItemRow).join('')}</div>`:''}
       </div>`;
     }).join('');
 
@@ -1066,6 +1071,14 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
     </div>
     <div class="grid gap-3">${cards||'<div class="lr-panel lr-empty">No PO ordered items match the selected filter.</div>'}</div>`;
   }
+
+  window.toggleTrackingPO=function(key){
+    const id=String(key||'');
+    if(!id)return;
+    if(ui.trackingPOExpanded.has(id))ui.trackingPOExpanded.delete(id);
+    else ui.trackingPOExpanded.add(id);
+    renderOrderTrackingBody();
+  };
 
   window.setTrackingPOStatus=function(v){
     ui.trackingPOStatus=v;
