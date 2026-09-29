@@ -85,8 +85,7 @@
   window.setInventorySearch=function(v){inv.search=v;renderStockInventoryBody()};
 
   function tabs(){
-    const t=[['dashboard','Dashboard'],['balance','Stock Balance'],['movements','Movements']];
-    if(canOperate())t.push(['receive','Receive PO'],['delivery','Customer Delivery']);
+    const t=[['dashboard','Dashboard'],['balance','Stock Balance'],['movements','Movements'],['receive','Receive PO'],['delivery','Customer Delivery']];
     t.push(['counts','Stock Count'],['reports','Reports']);
     if(canAdmin()||isStockController())t.push(['requests',canAdmin()?'Edit Requests':'My Requests']);
     return t;
@@ -111,8 +110,8 @@
 
     const [mov,poQ,delQ]=await Promise.all([
       db.from('inventory_movement_history').select('*').neq('movement_type','opening').order('movement_date',{ascending:false}).order('created_at',{ascending:false}).limit(8),
-      canOperate()?db.rpc('get_inventory_po_receiving_queue',{p_search:null}):Promise.resolve({data:[],error:null}),
-      canOperate()?db.rpc('get_inventory_delivery_queue',{p_search:null}):Promise.resolve({data:[],error:null})
+      db.rpc('get_inventory_po_receiving_queue',{p_search:null}),
+      db.rpc('get_inventory_delivery_queue',{p_search:null})
     ]);
     if(mov.error)throw mov.error;if(poQ.error)throw poQ.error;if(delQ.error)throw delQ.error;
 
@@ -256,7 +255,7 @@
             <div class="flex gap-3 items-center min-w-0"><div class="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 shrink-0">${x.image_url?`<img src="${esc(x.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(x.product_code||'')}</div><div class="text-sm font-semibold truncate">${esc(x.item_name||'')}</div></div></div>
             <div class="text-xs"><span class="text-gray-400">Ordered</span><br><b>${q(x.ordered_qty)}</b></div>
             <div class="text-xs"><span class="text-gray-400">Remaining</span><br><b class="text-blue-600">${q(x.remaining_qty)}</b></div>
-            <button onclick="openReceivePOItem('${x.supplier_po_item_id}')" class="px-3 py-2.5 bg-[#211d18] text-white rounded-xl text-xs font-semibold">Receive Stock</button>
+            ${canOperate()?`<button onclick="openReceivePOItem('${x.supplier_po_item_id}')" class="px-3 py-2.5 bg-[#211d18] text-white rounded-xl text-xs font-semibold">Receive Stock</button>`:'<span class="text-right text-[10px] text-gray-400">View only</span>'}
           </div>`).join('')}
         </div>
       </div>`;
@@ -271,7 +270,7 @@
       <div class="flex gap-3 items-center min-w-0"><div class="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 shrink-0">${x.image_url?`<img src="${esc(x.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(x.product_code||'')}</div><div class="text-sm font-semibold truncate">${esc(x.item_name||'')}</div></div></div>
       <div class="text-xs"><div class="text-gray-400">Ordered</div><b>${q(x.ordered_qty)}</b></div>
       <div class="text-xs"><div class="text-gray-400">To Deliver</div><b class="text-amber-600">${q(x.remaining_qty)}</b></div>
-      <button onclick="openReleaseSalesStock('${x.sales_order_item_id}')" class="px-3 py-2.5 bg-[#211d18] text-white rounded-xl text-xs font-semibold">Release / OUT</button>
+      ${canOperate()?`<button onclick="openReleaseSalesStock('${x.sales_order_item_id}')" class="px-3 py-2.5 bg-[#211d18] text-white rounded-xl text-xs font-semibold">Release / OUT</button>`:'<span class="text-right text-[10px] text-gray-400">View only</span>'}
     </div>`).join(''):'<div class="inv-card py-12 text-center text-sm text-gray-400">No tracked stock orders are waiting for delivery.</div>'}</div>`;
   }
 
