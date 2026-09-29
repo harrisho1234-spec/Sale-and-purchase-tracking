@@ -5,6 +5,15 @@
   function reviewer(){return ['manager','admin','super_admin'].indexOf(role())>=0}
   function clean(v){return String(v==null?'':v).trim()}
   function n(v){var x=Number(v||0);return Number.isFinite(x)?x:0}
+  function paymentDateDisplay(v){
+    var s=clean(v);
+    if(!s)return '-';
+    var m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if(!m)return s;
+    var months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var month=months[Number(m[2])-1];
+    return month?m[3]+'-'+month+'-'+m[1]:s;
+  }
 
   async function submitRequest(orderId,amount,date,method,reference,notes){
     var r=await db.rpc('submit_sales_payment_request',{
@@ -126,7 +135,7 @@
         var box=document.createElement('div');
         box.className='mb-4 card rounded-2xl overflow-hidden';
         var rows=pending.length?pending.map(function(x){
-          return '<div class="p-4 grid md:grid-cols-[1fr_120px_120px_1fr] gap-3 items-center"><div><b>'+esc(x.document_no||'Order')+'</b><div class="text-[10px] text-gray-400">'+esc(x.customer_name||'')+'</div></div><div class="text-sm">'+esc(x.payment_date||'')+'</div><div class="font-bold text-amber-700">'+money(x.amount,x.currency||'USD')+'</div><div class="text-xs text-gray-500">'+esc(x.method||'-')+(x.reference_no?' · '+esc(x.reference_no):'')+'</div></div>';
+          return '<div class="p-4 grid md:grid-cols-[1fr_120px_120px_1fr] gap-3 items-center"><div><b>'+esc(x.document_no||'Order')+'</b><div class="text-[10px] text-gray-400">'+esc(x.customer_name||'')+'</div></div><div class="text-sm">'+esc(paymentDateDisplay(x.payment_date))+'</div><div class="font-bold text-amber-700">'+money(x.amount,x.currency||'USD')+'</div><div class="text-xs text-gray-500">'+esc(x.method||'-')+(x.reference_no?' · '+esc(x.reference_no):'')+'</div></div>';
         }).join(''):'<div class="p-5 text-center text-sm text-gray-400">No pending payment requests.</div>';
         box.innerHTML='<div class="p-4 border-b bg-amber-50 flex items-center justify-between gap-3"><div><h3 class="font-bold">My Pending Payment Requests</h3><p class="text-[10px] text-gray-500">These do not affect Received / AR until approved.</p></div><span class="px-2 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-bold">'+pending.length+'</span></div><div class="divide-y">'+rows+'</div>';
         root.insertBefore(box,root.firstChild);
@@ -145,7 +154,7 @@
     var html=''
       +'<form id="paymentRequestReviewForm" class="space-y-4">'
       +'<div class="rounded-xl border border-amber-200 bg-amber-50 p-4"><div class="text-[10px] uppercase font-bold text-amber-700">Pending Payment</div><div class="text-xl font-bold mt-1">'+esc(r.document_no||'Order')+'</div><div class="text-xs text-gray-500 mt-1">'+esc(r.customer_name||'Customer')+' · '+esc(r.sales_rep_name||'Sales Rep')+'</div><div class="text-[10px] text-gray-400 mt-1">Requested by '+esc(r.requested_by_name||'Sales')+' · '+esc(new Date(r.requested_at).toLocaleString())+'</div></div>'
-      +'<div class="rounded-xl border border-amber-200 bg-amber-50/40 overflow-hidden"><div class="px-4 py-3 border-b border-amber-100"><div class="font-bold text-sm">Sales Requested Payment</div><div class="text-[10px] text-gray-500">This is the payment/deposit exactly as Sales submitted it.</div></div><div class="grid md:grid-cols-2 gap-2 p-4"><div class="rounded-lg border bg-white p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Amount</div><div class="font-bold mt-1">'+money(r.amount,r.currency||'USD')+'</div></div><div class="rounded-lg border bg-white p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Payment Date</div><div class="font-semibold mt-1">'+esc(r.payment_date||'-')+'</div></div><div class="rounded-lg border bg-white p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Method</div><div class="font-semibold mt-1">'+esc(r.method||'-')+'</div></div><div class="rounded-lg border bg-white p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Reference</div><div class="font-semibold mt-1">'+esc(r.reference_no||'-')+'</div></div>'+(r.notes?'<div class="md:col-span-2 rounded-lg border bg-white p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Sales Note</div><div class="text-sm mt-1">'+esc(r.notes)+'</div></div>':'')+'</div></div>'
+      +'<div class="rounded-xl border border-amber-200 bg-amber-50/40 overflow-hidden"><div class="px-4 py-3 border-b border-amber-100"><div class="font-bold text-sm">Sales Requested Payment</div><div class="text-[10px] text-gray-500">This is the payment/deposit exactly as Sales submitted it.</div></div><div class="grid md:grid-cols-2 gap-2 p-4"><div class="rounded-lg border bg-white p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Amount</div><div class="font-bold mt-1">'+money(r.amount,r.currency||'USD')+'</div></div><div class="rounded-lg border bg-white p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Payment Date</div><div class="font-semibold mt-1">'+esc(paymentDateDisplay(r.payment_date))+'</div></div><div class="rounded-lg border bg-white p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Method</div><div class="font-semibold mt-1">'+esc(r.method||'-')+'</div></div><div class="rounded-lg border bg-white p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Reference</div><div class="font-semibold mt-1">'+esc(r.reference_no||'-')+'</div></div>'+(r.notes?'<div class="md:col-span-2 rounded-lg border bg-white p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Sales Note</div><div class="text-sm mt-1">'+esc(r.notes)+'</div></div>':'')+'</div></div>'
       +'<div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800"><b>Final review draft below.</b> You can adjust the payment before posting. Current live balance: '+money(r.current_balance,r.currency||'USD')+'.</div>'
       +'<div class="grid md:grid-cols-2 gap-3">'
       +'<div><label class="text-xs font-semibold">Payment Amount</label><input id="prAmount" type="number" min="0.01" max="'+n(r.current_balance)+'" step="0.01" value="'+n(r.amount)+'" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>'
