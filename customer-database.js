@@ -46,6 +46,11 @@
     const id=crmEditSalesId();
     return !!id&&String(r?.assigned_sales_id||'')===String(id);
   }
+  function crmCanLogFollowup(r){
+    const role=state.profile?.role||'';
+    if(['manager','admin','super_admin'].includes(role))return true;
+    return role==='sales'&&String(r?.assigned_sales_id||'')===String(state.user?.id||'');
+  }
   function todayIso(){
     const d=new Date(),off=d.getTimezoneOffset();
     return new Date(d.getTime()-off*60000).toISOString().slice(0,10);
@@ -214,7 +219,10 @@
         <div><div class="text-[9px] uppercase font-bold text-gray-400">Follow Up</div><div class="text-xs mt-1 ${followClass}">${esc(fmtDate(r.next_follow_up_date))}</div>${r.follow_up_overdue?'<div class="text-[9px] text-red-500">Overdue</div>':r.follow_up_today?'<div class="text-[9px] text-amber-600">Due today</div>':''}</div>
         <div><div class="text-[9px] uppercase font-bold text-gray-400">Sales</div><div class="text-xs mt-1 truncate">${esc(r.sales_rep_name||'-')}</div></div>
         <div><div class="text-[9px] uppercase font-bold text-gray-400">Activity</div><div class="text-xs font-semibold mt-1">${Number(r.activity_count||0)} logs</div><div class="text-[9px] text-gray-400 mt-0.5">${Number(r.showroom_visits||0)} showroom · ${Number(r.online_inquiries||0)} online</div></div>
-        <button type="button" data-stop-row onclick="openCustomerLead('${r.lead_id}')" class="text-[#b3871e] text-xs font-semibold whitespace-nowrap px-2 py-1.5 rounded-lg hover:bg-[#fffaf0]">View →</button>
+        <div class="flex flex-col items-end gap-1.5">
+          ${(r.follow_up_overdue||r.follow_up_today)&&crmCanLogFollowup(r)&&!['Buy','Reject'].includes(r.stage)?`<button type="button" data-stop-row onclick="openLeadFollowup('${r.lead_id}')" class="px-2.5 py-1.5 rounded-lg border ${r.follow_up_overdue?'border-red-200 bg-red-50 text-red-700':'border-amber-200 bg-amber-50 text-amber-700'} text-[10px] font-bold whitespace-nowrap">Update Follow-up</button>`:''}
+          <button type="button" data-stop-row onclick="openCustomerLead('${r.lead_id}')" class="text-[#b3871e] text-xs font-semibold whitespace-nowrap px-2 py-1.5 rounded-lg hover:bg-[#fffaf0]">View →</button>
+        </div>
       </div>
     </div>`;
   }
@@ -231,7 +239,7 @@
     const root=document.getElementById('customerLeadRoot');if(!root)return;
     const c=counts(),rows=filteredRows(),paged=pageRows(rows);
     const alerts=[];
-    if(c.overdue)alerts.push(`<button onclick="setLeadFollowup('overdue')" class="px-3 py-2 rounded-xl border border-red-200 bg-red-50 text-red-700 text-xs font-semibold">${c.overdue} overdue follow-up${c.overdue===1?'':'s'}</button>`);
+    if(c.overdue)alerts.push(`<button onclick="setLeadFollowup('overdue')" class="px-3 py-2 rounded-xl border border-red-200 bg-red-50 text-red-700 text-xs font-semibold">${c.overdue} overdue follow-up${c.overdue===1?'':'s'} · Review</button>`);
     if(c.today)alerts.push(`<button onclick="setLeadFollowup('today')" class="px-3 py-2 rounded-xl border border-amber-200 bg-amber-50 text-amber-700 text-xs font-semibold">${c.today} due today</button>`);
     root.innerHTML=`
       ${typeof managerRepActive==='function'&&managerRepActive()?managerRepBanner():''}
@@ -354,9 +362,12 @@
         :editable
           ?`<button onclick="convertLeadToCustomer('${r.lead_id}')" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs font-semibold">Convert / Link Customer</button>`
           :'<span class="px-3 py-2 rounded-lg border bg-white text-gray-500 text-xs font-semibold">Manager View</span>';
-    const activityActions=editable
-      ?`${!['Buy','Reject'].includes(r.stage)?`<button onclick="openLeadFollowup('${r.lead_id}')" class="px-3 py-2 rounded-lg bg-[#b3871e] text-white text-xs font-semibold">+ Log Follow-up</button>`:''}<button onclick="openLeadActivity('${r.lead_id}','showroom_visit')" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">+ Showroom Visit</button><button onclick="openLeadActivity('${r.lead_id}','online')" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">+ Online</button>`
+    const followupAction=crmCanLogFollowup(r)&&!['Buy','Reject'].includes(r.stage)
+      ?`<button onclick="openLeadFollowup('${r.lead_id}')" class="px-3 py-2 rounded-lg bg-[#b3871e] text-white text-xs font-semibold">+ Log Follow-up</button>`
       :'';
+    const activityActions=editable
+      ?`${followupAction}<button onclick="openLeadActivity('${r.lead_id}','showroom_visit')" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">+ Showroom Visit</button><button onclick="openLeadActivity('${r.lead_id}','online')" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">+ Online</button>`
+      :followupAction;
     const deleteAction=crmCanDeleteLead()
       ?`<button onclick="openDeleteCustomerLead('${r.lead_id}')" class="px-3 py-2 rounded-lg border border-red-200 bg-red-50 text-red-600 text-xs font-semibold">Delete CRM Record</button>`
       :'';
@@ -519,7 +530,7 @@
     const editable=crmCanEditLead(r);
     const saveArea=editable?`<div class="flex gap-2 mt-4"><button onclick="saveCustomerLead('${r.lead_id}')" class="flex-1 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Customer</button></div>`:`<div class="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-700">Manager can review this Sales Rep's stage, follow-up and activity history. The Sales Rep keeps ownership of editing this customer.</div>`;
     openModal('Customer Database — '+r.customer_name,`<div id="leadDetailBody">${leadHeader(r,editable)}${leadForm(r,editable)}${saveArea}
-      <div id="leadFollowupHistorySection" class="border-t mt-5 pt-5"><div class="flex items-center justify-between gap-3 mb-3"><div><h4 class="font-bold">Follow-up History</h4><div class="text-[10px] text-gray-400">Every Sales follow-up result and the next promised follow-up date.</div></div>${editable&&!['Buy','Reject'].includes(r.stage)?`<button type="button" onclick="openLeadFollowup('${r.lead_id}')" class="px-3 py-2 rounded-lg bg-[#b3871e] text-white text-xs font-semibold">+ Log Follow-up</button>`:''}</div><div class="py-6 text-center text-xs text-gray-400">Loading follow-up history...</div></div>
+      <div id="leadFollowupHistorySection" class="border-t mt-5 pt-5"><div class="flex items-center justify-between gap-3 mb-3"><div><h4 class="font-bold">Follow-up History</h4><div class="text-[10px] text-gray-400">Every Sales follow-up result and the next promised follow-up date.</div></div>${crmCanLogFollowup(r)&&!['Buy','Reject'].includes(r.stage)?`<button type="button" onclick="openLeadFollowup('${r.lead_id}')" class="px-3 py-2 rounded-lg bg-[#b3871e] text-white text-xs font-semibold">+ Log Follow-up</button>`:''}</div><div class="py-6 text-center text-xs text-gray-400">Loading follow-up history...</div></div>
       ${r.linked_customer_id||r.stage==='Buy'?'<div id="leadSalesHistorySection" class="border-t mt-5 pt-5"><div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">Purchase / Invoice History</h4><div class="text-[10px] text-gray-400">What this customer bought and the Sales Order / invoice linked to it.</div></div></div><div class="py-6 text-center text-xs text-gray-400">Loading purchase history...</div></div>':''}
       <div id="leadStageRequestSection" class="border-t mt-5 pt-5"><div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">Stage Correction Requests</h4><div class="text-[10px] text-gray-400">Pending, approved and rejected requests to correct an earlier stage.</div></div></div><div class="py-6 text-center text-xs text-gray-400">Loading correction requests...</div></div>
       <div id="leadStageHistorySection" class="border-t mt-5 pt-5"><div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">Stage History</h4><div class="text-[10px] text-gray-400">Approved and forward movement between CRM stages.</div></div></div><div class="py-6 text-center text-xs text-gray-400">Loading stage history...</div></div>
@@ -615,7 +626,7 @@
   };
   window.openLeadFollowup=function(id){
     const r=leadById(id);if(!r)return showToast('Customer not found','err');
-    if(!crmCanEditLead(r))return showToast('You do not have access to log this follow-up.','err');
+    if(!crmCanLogFollowup(r))return showToast('You do not have access to log this follow-up.','err');
     if(['Buy','Reject'].includes(r.stage))return showToast('Follow-up is closed for '+r.stage+' customers.','err');
     const today=todayIso();
     const existing=String(r.next_follow_up_date||'');
