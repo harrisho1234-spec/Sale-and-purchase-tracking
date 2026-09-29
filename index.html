@@ -5,10 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>L'Imperial Sales & Order Management</title>
   <!-- L'Imperial App Icon / PWA -->
-  <link rel="icon" type="image/png" href="favicon.png">
-  <link rel="apple-touch-icon" href="app-icon-192.png">
-  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="/Sale-and-purchase-tracking/favicon.png">
+  <link rel="apple-touch-icon" href="/Sale-and-purchase-tracking/app-icon-192.png">
+  <link rel="manifest" href="/Sale-and-purchase-tracking/manifest.webmanifest">
   <meta name="theme-color" content="#211d18">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="sales-card-compact.css?v=20260921-2140">
@@ -130,5 +133,16 @@
   <script src="accountant-access.js?v=20260928-1435"></script>
   <script src="customer-superadmin-delete.js?v=20260928-1930"></script>
   <script src="customer-history-link-picker.js?v=20260928-1905"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('/Sale-and-purchase-tracking/service-worker.js', {
+          scope: '/Sale-and-purchase-tracking/'
+        }).catch(function (err) {
+          console.warn('PWA service worker registration failed:', err);
+        });
+      });
+    }
+  </script>
 </body>
 </html>
