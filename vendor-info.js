@@ -1,9 +1,21 @@
 // Central Vendor Master for Procurement and Product Costing.
 (function(){
   const vm={rows:[],loaded:false};
+  const VENDOR_PRODUCT_TYPES=['Furniture','Lighting','Carpet','Accessories','Decor','Service'];
+  const VENDOR_STYLES=['Classic','Contemporary','Modern','Neo-Classic'];
 
   function roleAllowed(){return ['admin','super_admin'].includes(state.profile?.role||'')}
   function clean(v){return String(v==null?'':v).trim()}
+  function viDate(v){
+    const s=clean(v);if(!s)return '-';
+    const m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);if(!m)return s;
+    const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return m[3]+'-'+months[Number(m[2])-1]+'-'+m[1];
+  }
+  function checkGroup(name,values,selected){
+    const set=new Set(Array.isArray(selected)?selected:[]);
+    return values.map(x=>`<label class="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-xs cursor-pointer"><input type="checkbox" name="${name}" value="${esc(x)}" ${set.has(x)?'checked':''}><span>${esc(x)}</span></label>`).join('');
+  }
   function fmtVendor(v){return v?[`${v.name||''}`,v.vendor_code||''].filter(Boolean).join(' · '):''}
   function contactSummary(v){return [v.contact_person,v.phone,v.email].filter(Boolean).join(' · ')||'No contact information'}
   function termsSummary(v){return [v.payment_terms,v.shipping_terms,v.lead_time_days!=null?`${v.lead_time_days} day lead time`:null].filter(Boolean).join(' · ')||'No purchasing terms yet'}
@@ -48,6 +60,8 @@
       v.payment_terms?`Payment: ${v.payment_terms}`:null,
       v.shipping_terms?`Shipping: ${v.shipping_terms}`:null,
       v.lead_time_days!=null?`Lead time: ${v.lead_time_days} days`:null,
+      Array.isArray(v.product_types)&&v.product_types.length?`Type: ${v.product_types.join(', ')}`:null,
+      Array.isArray(v.styles)&&v.styles.length?`Style: ${v.styles.join(', ')}`:null,
       v.default_markup_percent!=null?`Markup: ${Number(v.default_markup_percent).toFixed(2)}%`:null,
       formula?`Formula: ${formula.length>120?formula.slice(0,117)+'...':formula}`:null
     ].filter(Boolean);
@@ -88,6 +102,21 @@
         <div><label class="text-xs font-semibold">Telegram</label><input id="viTelegram" value="${esc(v.telegram||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
         <div><label class="text-xs font-semibold">WeChat</label><input id="viWechat" value="${esc(v.wechat||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
         <div><label class="text-xs font-semibold">Website</label><input id="viWebsite" value="${esc(v.website||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+      </div>
+
+      <div class="border-t pt-5">
+        <h4 class="font-bold mb-1">Product Type & Style</h4>
+        <div class="text-[10px] text-gray-400 mb-3">Select all categories and design styles this vendor supplies.</div>
+        <div class="grid lg:grid-cols-2 gap-4">
+          <div>
+            <div class="text-xs font-semibold mb-2">Product Type</div>
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">${checkGroup('viProductType',VENDOR_PRODUCT_TYPES,v.product_types)}</div>
+          </div>
+          <div>
+            <div class="text-xs font-semibold mb-2">Style</div>
+            <div class="grid grid-cols-2 gap-2">${checkGroup('viStyle',VENDOR_STYLES,v.styles)}</div>
+          </div>
+        </div>
       </div>
 
       <div class="border-t pt-5">
@@ -135,6 +164,8 @@
       telegram:clean(document.getElementById('viTelegram')?.value)||null,
       wechat:clean(document.getElementById('viWechat')?.value)||null,
       website:clean(document.getElementById('viWebsite')?.value)||null,
+      product_types:Array.from(document.querySelectorAll('input[name="viProductType"]:checked')).map(x=>x.value),
+      styles:Array.from(document.querySelectorAll('input[name="viStyle"]:checked')).map(x=>x.value),
       country:clean(document.getElementById('viCountry')?.value)||null,
       city:clean(document.getElementById('viCity')?.value)||null,
       address:clean(document.getElementById('viAddress')?.value)||null,
@@ -193,6 +224,98 @@
     vm.loaded=false;showToast(active?'Vendor activated.':'Vendor made inactive.');await renderVendorInfoPage();
   };
 
+  window.toggleVendorPOHistory=function(id){
+    const el=document.getElementById('vendor-po-items-'+id);
+    const icon=document.getElementById('vendor-po-icon-'+id);
+    if(!el)return;
+    const opening=el.classList.contains('hidden');
+    el.classList.toggle('hidden',!opening);
+    if(icon)icon.textContent=opening?'⌃':'⌄';
+  };
+
+  window.openVendorPOHistory=async function(vendorId){
+    if(!roleAllowed())return;
+    await loadVendorMaster();
+    const vendor=vm.rows.find(v=>v.id===vendorId);
+    if(!vendor)return showToast('Vendor not found.','err');
+
+    openModal('PO History — '+vendor.name,'<div class="py-12 text-center text-sm text-gray-400">Loading PO history...</div>');
+    try{
+      const poRes=await db.from('supplier_pos').select('*').eq('vendor_id',vendorId).order('order_date',{ascending:false}).order('created_at',{ascending:false});
+      if(poRes.error)throw poRes.error;
+      const pos=poRes.data||[];
+      if(!pos.length){
+        const body=document.querySelector('#modalBody');
+        if(body)body.innerHTML='<div class="rounded-xl border border-dashed p-10 text-center text-sm text-gray-400">No POs recorded for this vendor yet.</div>';
+        return;
+      }
+
+      const ids=pos.map(p=>p.id);
+      const [summaryRes,itemRes,paymentRes]=await Promise.all([
+        db.from('supplier_po_summary').select('*').in('id',ids),
+        db.from('supplier_po_items').select('id,supplier_po_id,product_code_snapshot,item_name_snapshot,qty,unit_cost,shipping_cost,shipping_currency,procurement_status,image_url_snapshot,created_at').in('supplier_po_id',ids).order('sort_order',{ascending:true,nullsFirst:false}).order('created_at',{ascending:true}),
+        db.from('supplier_payments').select('id,supplier_po_id,payment_type,payment_date,amount,currency,reference_no,notes').in('supplier_po_id',ids).order('payment_date',{ascending:true})
+      ]);
+      if(summaryRes.error)throw summaryRes.error;
+      if(itemRes.error)throw itemRes.error;
+      if(paymentRes.error)throw paymentRes.error;
+
+      const summaries=new Map((summaryRes.data||[]).map(x=>[x.id,x]));
+      const itemsBy=new Map(),paymentsBy=new Map();
+      (itemRes.data||[]).forEach(x=>{if(!itemsBy.has(x.supplier_po_id))itemsBy.set(x.supplier_po_id,[]);itemsBy.get(x.supplier_po_id).push(x)});
+      (paymentRes.data||[]).forEach(x=>{if(!paymentsBy.has(x.supplier_po_id))paymentsBy.set(x.supplier_po_id,[]);paymentsBy.get(x.supplier_po_id).push(x)});
+
+      const totalQty=(itemRes.data||[]).reduce((a,x)=>a+Number(x.qty||0),0);
+      const totalItems=(itemRes.data||[]).length;
+      const cards=pos.map(p=>{
+        const s=summaries.get(p.id)||{};
+        const items=itemsBy.get(p.id)||[];
+        const pays=paymentsBy.get(p.id)||[];
+        const qty=items.reduce((a,x)=>a+Number(x.qty||0),0);
+        const label=p.po_number||p.po_pending_reference||'PO';
+        return `<div class="rounded-2xl border bg-white overflow-hidden">
+          <button type="button" onclick="toggleVendorPOHistory('${p.id}')" class="w-full p-4 text-left flex items-start justify-between gap-3 hover:bg-gray-50">
+            <div class="min-w-0">
+              <div class="flex flex-wrap items-center gap-2"><b>${esc(label)}</b><span class="lr-badge lr-badge-gray">${esc(titleCase(p.status||'placed'))}</span><span class="lr-badge lr-badge-gray">${items.length} item line${items.length===1?'':'s'}</span><span class="lr-badge lr-badge-blue">Qty ${qty.toLocaleString()}</span></div>
+              <div class="text-[10px] text-gray-400 mt-2">Ordered: ${esc(viDate(p.order_date))} · ETA: ${esc(viDate(p.estimated_arrival))}${p.actual_arrival?' · Arrived: '+esc(viDate(p.actual_arrival)):''}</div>
+              <div class="text-xs mt-1">Goods: <b>${money(Number(s.po_total||0),p.currency||'USD')}</b> · Paid: <b class="text-green-600">${money(Number(s.amount_paid||0),p.currency||'USD')}</b> · Balance: <b class="${Number(s.balance_due||0)>0?'text-red-500':'text-green-600'}">${money(Number(s.balance_due||0),p.currency||'USD')}</b></div>
+            </div>
+            <span id="vendor-po-icon-${p.id}" class="text-gray-500 text-lg">⌄</span>
+          </button>
+          <div id="vendor-po-items-${p.id}" class="hidden border-t bg-[#faf9f6] p-4 space-y-3">
+            <div>
+              <div class="text-[9px] uppercase font-bold text-gray-400 mb-2">Ordered Items</div>
+              ${items.length?items.map(i=>`<div class="flex items-center gap-3 py-2 border-b last:border-0"><div class="w-11 h-11 rounded-lg overflow-hidden bg-gray-100 shrink-0">${i.image_url_snapshot?`<img src="${esc(i.image_url_snapshot)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0 flex-1"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(i.product_code_snapshot||'')}</div><div class="text-xs">${esc(i.item_name_snapshot||'Item')}</div></div><div class="text-right text-xs"><b>${Number(i.qty||0).toLocaleString()}x</b><div class="text-[9px] text-gray-400">${esc(titleCase(i.procurement_status||p.status||'placed'))}</div></div></div>`).join(''):'<div class="text-xs text-gray-400">No PO items.</div>'}
+            </div>
+            ${pays.length?`<div class="border-t pt-3"><div class="text-[9px] uppercase font-bold text-gray-400 mb-2">Supplier Payments</div>${pays.map(x=>`<div class="flex justify-between gap-3 py-1.5 text-xs"><div>${esc(viDate(x.payment_date))} · ${esc(titleCase(x.payment_type||'payment'))}${x.reference_no?' · '+esc(x.reference_no):''}</div><b class="text-green-600">${money(Number(x.amount||0),x.currency||p.currency||'USD')}</b></div>`).join('')}</div>`:''}
+            ${p.notes?`<div class="border-t pt-3 text-xs text-gray-500"><b>PO Note:</b> ${esc(p.notes)}</div>`:''}
+          </div>
+        </div>`;
+      }).join('');
+
+      const html=`<div class="space-y-4">
+        <div class="grid sm:grid-cols-3 gap-3">
+          <div class="rounded-xl border bg-gray-50 p-3"><div class="text-[9px] uppercase font-bold text-gray-400">POs</div><div class="text-xl font-bold mt-1">${pos.length}</div></div>
+          <div class="rounded-xl border bg-gray-50 p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Item Lines</div><div class="text-xl font-bold mt-1">${totalItems}</div></div>
+          <div class="rounded-xl border bg-gray-50 p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Total Qty Ordered</div><div class="text-xl font-bold mt-1">${totalQty.toLocaleString()}</div></div>
+        </div>
+        <div class="text-[10px] text-gray-400">Click any PO to expand its ordered items and supplier payment history.</div>
+        <div class="grid gap-3">${cards}</div>
+      </div>`;
+
+      const modal=document.getElementById('modalBody');
+      if(modal)modal.innerHTML=html;
+      else{
+        const candidates=document.querySelectorAll('.modal-content, [data-modal-body]');
+        if(candidates.length)candidates[candidates.length-1].innerHTML=html;
+      }
+    }catch(err){
+      const modal=document.getElementById('modalBody');
+      if(modal)modal.innerHTML=`<div class="rounded-xl border border-red-200 bg-red-50 p-4 text-red-600 text-sm">Error: ${esc(err.message)}</div>`;
+      else showToast(err.message,'err');
+    }
+  };
+
   window.renderVendorInfoBody=async function(search=''){
     if(!roleAllowed())throw new Error('Admin access required');
     const [vendors,poRes,pvRes]=await Promise.all([
@@ -210,6 +333,8 @@
     const q=clean(search).toLowerCase();
     const rows=vendors.filter(v=>!q||[
       v.name,v.vendor_code,v.legal_name,v.contact_person,v.phone,v.email,v.country,v.city,
+      ...(Array.isArray(v.product_types)?v.product_types:[]),
+      ...(Array.isArray(v.styles)?v.styles:[]),
       v.default_currency,v.payment_terms,v.shipping_terms,v.sales_price_formula,v.notes
     ].filter(Boolean).join(' ').toLowerCase().includes(q));
 
@@ -225,6 +350,7 @@
       <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
         <div class="min-w-0 flex-1">
           <div class="flex flex-wrap items-center gap-2"><b class="text-base">${esc(v.name)}</b><span class="lr-badge lr-badge-gray">${esc(v.vendor_code)}</span><span class="lr-badge ${v.active?'lr-badge-green':'lr-badge-gray'}">${v.active?'Active':'Inactive'}</span><span class="lr-badge lr-badge-blue">${esc(v.default_currency||'USD')}</span></div>
+          ${(Array.isArray(v.product_types)&&v.product_types.length)||(Array.isArray(v.styles)&&v.styles.length)?`<div class="flex flex-wrap gap-1.5 mt-2">${(v.product_types||[]).map(x=>`<span class="px-2 py-1 rounded-lg bg-blue-50 border border-blue-100 text-blue-700 text-[9px] font-semibold">${esc(x)}</span>`).join('')}${(v.styles||[]).map(x=>`<span class="px-2 py-1 rounded-lg bg-purple-50 border border-purple-100 text-purple-700 text-[9px] font-semibold">${esc(x)}</span>`).join('')}</div>`:''}
           <div class="text-xs text-gray-500 mt-2">${esc(contactSummary(v))}</div>
           <div class="text-[10px] text-gray-400 mt-1">${esc([v.city,v.country].filter(Boolean).join(', ')||v.address||'No address')}</div>
           <div class="grid md:grid-cols-2 gap-3 mt-4">
@@ -233,7 +359,7 @@
           </div>
         </div>
         <div class="lg:w-[170px] shrink-0">
-          <div class="grid grid-cols-2 lg:grid-cols-1 gap-2 text-xs mb-3"><div class="rounded-lg border p-2"><span class="text-gray-400">POs</span> <b class="float-right">${poCounts.get(v.id)||0}</b></div><div class="rounded-lg border p-2"><span class="text-gray-400">Products</span> <b class="float-right">${productCounts.get(v.id)||0}</b></div></div>
+          <div class="grid grid-cols-2 lg:grid-cols-1 gap-2 text-xs mb-3"><button type="button" onclick="openVendorPOHistory('${v.id}')" class="rounded-lg border p-2 text-left hover:bg-amber-50 hover:border-amber-200 transition"><span class="text-gray-400">POs</span> <b class="float-right text-[#a77d1a]">${poCounts.get(v.id)||0}</b><div class="text-[9px] text-[#a77d1a] mt-1">View history →</div></button><div class="rounded-lg border p-2"><span class="text-gray-400">Products</span> <b class="float-right">${productCounts.get(v.id)||0}</b></div></div>
           <div class="flex lg:flex-col gap-2"><button onclick="openEditVendorInfo('${v.id}')" class="flex-1 px-3 py-2 border rounded-lg text-xs font-semibold">Edit</button><button onclick="toggleVendorInfoActive('${v.id}',${v.active?'false':'true'})" class="flex-1 px-3 py-2 border rounded-lg text-xs font-semibold ${v.active?'text-gray-600':'text-green-700 bg-green-50'}">${v.active?'Make Inactive':'Activate'}</button></div>
         </div>
       </div>
@@ -263,7 +389,7 @@
     document.getElementById('content').innerHTML=`
       <div class="max-w-[1500px] mx-auto">
         <div class="vi-toolbar">
-          <input id="vendorInfoSearch" class="vi-search" placeholder="Search vendor, contact, country, terms, formula..." oninput="refreshVendorInfoPage(this.value)">
+          <input id="vendorInfoSearch" class="vi-search" placeholder="Search vendor, product type, style, contact, country, terms..." oninput="refreshVendorInfoPage(this.value)">
           <button onclick="openNewVendorInfo()" class="px-4 py-2 bg-[#211d18] text-white rounded-xl text-sm font-semibold">+ Vendor</button>
         </div>
         <div id="vendorInfoPageBody"><div class="py-16 text-center text-gray-400">Loading...</div></div>
