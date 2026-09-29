@@ -226,9 +226,11 @@
       const prepared=[];
       for(const r of rows){const x=await ensureProduct(r,currency);if(!x.skip)prepared.push({row:r,...x});}
 
+      const selectedVendor=typeof findVendorMaster==='function'?findVendorMaster(document.getElementById('poVendor').value):null;
       const poRow={
         po_number:official,
-        vendor_name:document.getElementById('poVendor').value.trim(),
+        vendor_id:selectedVendor?.id||document.getElementById('poVendorId')?.value||null,
+        vendor_name:selectedVendor?.name||document.getElementById('poVendor').value.trim(),
         order_date:document.getElementById('poOrderDate').value,
         currency,
         status:'placed',
@@ -242,6 +244,7 @@
       const saved=await db.from('supplier_pos').insert(poRow).select('id').single();
       if(saved.error)throw saved.error;
       const poId=saved.data.id;
+      const poVendorId=poRow.vendor_id||null;
 
       if(file){
         status.textContent='Uploading PO document...';
@@ -270,6 +273,16 @@
         };
         const ir=await db.from('supplier_po_items').insert(item).select('id').single();
         if(ir.error)throw ir.error;
+        if(poVendorId&&product?.id&&typeof db.rpc==='function'){
+          const vl=await db.rpc('link_product_vendor',{
+            p_product_id:product.id,
+            p_vendor_id:poVendorId,
+            p_vendor_product_code:x.code||null,
+            p_purchase_currency:currency||null,
+            p_make_primary:false
+          });
+          if(vl.error)console.warn('Could not link product vendor:',vl.error.message);
+        }
         const photo=x.row.querySelector('.po-photo')?.files?.[0]||null;
         if(photo)photoJobs.push({id:ir.data.id,file:photo,update:!!x.row.querySelector('.po-update-photo')?.checked,code:x.code});
       }
@@ -293,14 +306,20 @@
 
   window.openNewSupplierPO=async function(){
     if(!isAdminRole())return showToast('Admin access required','err');
-    try{await loadProducts()}catch(err){return showToast(`Could not load products: ${err.message}`,'err')}
+    try{
+      await Promise.all([
+        loadProducts(),
+        typeof loadVendorMaster==='function'?loadVendorMaster(true):Promise.resolve([])
+      ]);
+    }catch(err){return showToast(`Could not load products/vendors: ${err.message}`,'err')}
     poItemSeq=0;
     const options=poProducts.map(p=>`<option value="${esc(productDisplay(p))}"></option>`).join('');
+    const vendorOptions=typeof vendorMasterOptionsHtml==='function'?vendorMasterOptionsHtml(true):'';
     openModal('Create / Upload Supplier PO',`
       <form id="newPOFlowForm" class="space-y-5">
         <div class="grid md:grid-cols-2 gap-4">
           <div><label class="text-xs font-semibold">Official PO Number</label><input id="poOfficialNo" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Leave blank if pending"></div>
-          <div><label class="text-xs font-semibold">Vendor / Supplier</label><input id="poVendor" required class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+          <div><label class="text-xs font-semibold">Vendor / Supplier</label><input id="poVendor" list="poVendorMasterList" required onchange="applyVendorMasterSelection(this,'poVendorId','poCurrency','poVendorInfo')" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Type vendor name or code..."><input id="poVendorId" type="hidden"><datalist id="poVendorMasterList">${vendorOptions}</datalist><div id="poVendorInfo" class="text-[10px] text-gray-400 mt-1">Select a Vendor Info suggestion to fill the default PO currency and terms.</div></div>
           <div><label class="text-xs font-semibold">Order Date</label><input id="poOrderDate" type="date" value="${new Date().toISOString().slice(0,10)}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
           <div><label class="text-xs font-semibold">PO / Unit Cost Currency</label><select id="poCurrency" onchange="poCreateRecalcAll()" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option>USD</option><option>EUR</option><option>CNY</option><option>GBP</option></select><div class="text-[10px] text-gray-400 mt-1">Applies to supplier unit cost only. Shipping is always USD.</div></div>
           <div><label class="text-xs font-semibold">Shipping Agent</label><input id="poAgent" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
