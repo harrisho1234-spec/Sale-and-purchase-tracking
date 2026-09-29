@@ -72,6 +72,7 @@ renderUsers=async function(){
           <select onchange="updateUserRoleSafe('${u.user_id}',this.value)" class="border rounded-lg px-3 py-2 text-sm bg-white">
             <option value="sales" ${u.role==='sales'?'selected':''}>Sales</option>
             <option value="accountant" ${u.role==='accountant'?'selected':''}>Accountant</option>
+            <option value="stock_controller" ${u.role==='stock_controller'?'selected':''}>Stock Controller</option>
             <option value="manager" ${u.role==='manager'?'selected':''}>Manager</option>
             <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option>
             <option value="super_admin" ${u.role==='super_admin'?'selected':''}>Super Admin</option>
@@ -98,6 +99,7 @@ window.openEditAppUser=function(id){
       <div><label class="text-xs font-semibold text-gray-600">Role</label><select id="editAppUserRole" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">
         <option value="sales" ${u.role==='sales'?'selected':''}>Sales</option>
         <option value="accountant" ${u.role==='accountant'?'selected':''}>Accountant</option>
+        <option value="stock_controller" ${u.role==='stock_controller'?'selected':''}>Stock Controller</option>
         <option value="manager" ${u.role==='manager'?'selected':''}>Manager</option>
         <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option>
         <option value="super_admin" ${u.role==='super_admin'?'selected':''}>Super Admin</option>
@@ -217,7 +219,7 @@ openCreateUser=function(){
       <div><label class="text-xs font-semibold text-gray-600">Name</label><input id="newUserName" required class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Staff name"></div>
       <div><label class="text-xs font-semibold text-gray-600">Email</label><input id="newUserEmail" type="email" required class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="staff@company.com"></div>
       <div><label class="text-xs font-semibold text-gray-600">Password</label><input id="newUserPassword" type="password" minlength="8" required class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Minimum 8 characters"></div>
-      <div><label class="text-xs font-semibold text-gray-600">Role</label><select id="newUserRole" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="sales">Sales</option><option value="accountant">Accountant</option><option value="manager">Manager</option><option value="admin">Admin</option><option value="super_admin">Super Admin</option></select></div>
+      <div><label class="text-xs font-semibold text-gray-600">Role</label><select id="newUserRole" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="sales">Sales</option><option value="accountant">Accountant</option><option value="stock_controller">Stock Controller</option><option value="manager">Manager</option><option value="admin">Admin</option><option value="super_admin">Super Admin</option></select></div>
     </div>
     <label class="flex items-center gap-2 text-sm"><input id="newUserActive" type="checkbox" checked class="w-4 h-4"><span>Active user</span></label>
     <div class="bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-amber-800">If the email already exists, the existing login is updated and the selected role is applied.</div>
