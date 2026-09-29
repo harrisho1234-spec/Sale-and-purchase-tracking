@@ -229,7 +229,8 @@
     await loadVendorMaster(true);
     const source=vm.rows.find(v=>v.id===sourceId);
     if(!source)return showToast('Vendor not found.','err');
-    const others=vm.rows.filter(v=>v.id!==sourceId);
+    if(source.merged_into_vendor_id)return showToast('This vendor has already been merged. Use Undo Merge if you need to restore it.','err');
+    const others=vm.rows.filter(v=>v.id!==sourceId&&!v.merged_into_vendor_id&&v.active!==false);
     const options=others.map(v=>`<option value="${esc(fmtVendor(v))}"></option><option value="${esc(v.name||'')}"></option>`).join('');
 
     const [poRes,pvRes,costRes]=await Promise.all([
@@ -241,8 +242,9 @@
 
     openModal('Merge Vendor — '+source.name,`<form id="mergeVendorForm" class="space-y-5">
       <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-        <b>${esc(source.name)} (${esc(source.vendor_code)})</b> will be merged into another Vendor Master record and then removed.
-        Its linked POs, Product Costing and Product-Vendor relationships will move to the vendor you keep.
+        <div class="text-[10px] uppercase font-bold mb-1">Archive this duplicate → Keep another master</div>
+        <b>${esc(source.name)} (${esc(source.vendor_code)})</b> will be archived as <b>Merged</b>, not permanently deleted.
+        Its linked POs, Product Costing and Product-Vendor relationships will move to the vendor you choose to keep.
       </div>
       <div class="grid grid-cols-3 gap-3">
         <div class="rounded-xl border bg-gray-50 p-3"><div class="text-[9px] uppercase font-bold text-gray-400">POs</div><div class="text-xl font-bold mt-1">${poCount}</div></div>
@@ -250,13 +252,13 @@
         <div class="rounded-xl border bg-gray-50 p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Costing Links</div><div class="text-xl font-bold mt-1">${costCount}</div></div>
       </div>
       <div>
-        <label class="text-xs font-semibold">Keep This Vendor *</label>
+        <label class="text-xs font-semibold">KEEP THIS MASTER VENDOR *</label>
         <input id="mergeVendorTarget" list="mergeVendorTargetList" required class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Type vendor name or vendor code...">
         <datalist id="mergeVendorTargetList">${options}</datalist>
         <div id="mergeVendorTargetInfo" class="text-[10px] text-gray-400 mt-1">The selected vendor will remain as the master record.</div>
       </div>
       <div class="rounded-xl border p-3 text-xs text-gray-600">
-        <b>Merge rule:</b> the kept vendor's existing information takes priority. Empty fields on the kept vendor can be filled from this duplicate. Product Types and Styles are combined.
+        <b>Merge rule:</b> the kept vendor's existing information takes priority. Empty fields can be filled from the duplicate, and Product Types/Styles are combined. The archived source remains visible and the merge can be undone later.
       </div>
       <button id="mergeVendorBtn" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Merge Into Selected Vendor</button>
     </form>`);
@@ -278,12 +280,12 @@
       e.preventDefault();
       const target=findVendorMaster(input.value);
       if(!target||target.id===sourceId)return showToast('Select a different vendor to keep.','err');
-      if(!confirm(`Merge "${source.name}" into "${target.name}"? "${source.name}" will be removed after all links are moved.`))return;
+      if(!confirm(`ARCHIVE duplicate "${source.name}" and KEEP "${target.name}" as the master vendor? All links will move to "${target.name}", and you can undo this later.`))return;
       const btn=document.getElementById('mergeVendorBtn');btn.disabled=true;btn.textContent='Merging...';
       const {data,error}=await db.rpc('merge_vendor_records',{p_keep_vendor_id:target.id,p_merge_vendor_id:sourceId});
       if(error){btn.disabled=false;btn.textContent='Merge Into Selected Vendor';return showToast(error.message,'err')}
       vm.loaded=false;await loadVendorMaster(true);closeModal();
-      showToast(`Vendor merged into ${target.name}. ${Number(data?.po_links_moved||0)} PO link(s) moved.`);
+      showToast(`Vendor merged into ${target.name}. The source was archived and can be restored with Undo Merge.`);
       await renderVendorInfoPage();
     };
   };
@@ -295,6 +297,16 @@
     const opening=el.classList.contains('hidden');
     el.classList.toggle('hidden',!opening);
     if(icon)icon.textContent=opening?'⌃':'⌄';
+  };
+
+  window.undoVendorInfoMerge=async function(historyId,sourceName,targetName){
+    if(!roleAllowed())return showToast('Admin access required.','err');
+    if(!confirm(`Undo the merge of "${sourceName}" into "${targetName}"? The original PO/product/vendor links will be restored.`))return;
+    const {data,error}=await db.rpc('undo_vendor_merge',{p_history_id:historyId});
+    if(error)return showToast(error.message,'err');
+    vm.loaded=false;await loadVendorMaster(true);
+    showToast(`Merge undone. ${sourceName} has been restored.`);
+    await renderVendorInfoPage();
   };
 
   window.openVendorPOHistory=async function(vendorId){
@@ -382,12 +394,15 @@
 
   window.renderVendorInfoBody=async function(search=''){
     if(!roleAllowed())throw new Error('Admin access required');
-    const [vendors,poRes,pvRes]=await Promise.all([
+    const [vendors,poRes,pvRes,mergeRes]=await Promise.all([
       loadVendorMaster(),
       db.from('supplier_pos').select('vendor_id'),
-      db.from('product_vendors').select('vendor_id,product_id')
+      db.from('product_vendors').select('vendor_id,product_id'),
+      db.from('vendor_merge_history').select('id,source_vendor_id,target_vendor_id,merged_at,undone_at').is('undone_at',null).order('merged_at',{ascending:false})
     ]);
-    if(poRes.error)throw poRes.error;if(pvRes.error)throw pvRes.error;
+    if(poRes.error)throw poRes.error;if(pvRes.error)throw pvRes.error;if(mergeRes.error)throw mergeRes.error;
+    const activeMergeBySource=new Map();
+    (mergeRes.data||[]).forEach(x=>{if(!activeMergeBySource.has(x.source_vendor_id))activeMergeBySource.set(x.source_vendor_id,x)});
 
     const poCounts=new Map();
     (poRes.data||[]).forEach(x=>x.vendor_id&&poCounts.set(x.vendor_id,(poCounts.get(x.vendor_id)||0)+1));
@@ -402,18 +417,20 @@
       v.default_currency,v.payment_terms,v.shipping_terms,v.sales_price_formula,v.notes
     ].filter(Boolean).join(' ').toLowerCase().includes(q));
 
-    const active=vendors.filter(v=>v.active).length;
-    const inactive=vendors.length-active;
+    const merged=vendors.filter(v=>v.merged_into_vendor_id).length;
+    const active=vendors.filter(v=>v.active&&!v.merged_into_vendor_id).length;
+    const inactive=vendors.length-active-merged;
 
-    return `<div class="grid sm:grid-cols-3 gap-3 mb-4">
+    return `<div class="grid sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-4">
       <div class="pw-stat"><div class="pw-stat-label">Vendors</div><div class="pw-stat-value">${vendors.length}</div></div>
       <div class="pw-stat"><div class="pw-stat-label">Active</div><div class="pw-stat-value text-green-600">${active}</div></div>
       <div class="pw-stat"><div class="pw-stat-label">Inactive</div><div class="pw-stat-value text-gray-400">${inactive}</div></div>
+      <div class="pw-stat"><div class="pw-stat-label">Merged</div><div class="pw-stat-value text-purple-600">${merged}</div></div>
     </div>
-    <div class="pw-grid">${rows.length?rows.map(v=>`<div class="pw-card">
+    <div class="pw-grid">${rows.length?rows.map(v=>{const mh=activeMergeBySource.get(v.id);const mergeTarget=v.merged_into_vendor_id?vendors.find(x=>x.id===v.merged_into_vendor_id):null;return `<div class="pw-card ${v.merged_into_vendor_id?'opacity-80':''}">
       <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
         <div class="min-w-0 flex-1">
-          <div class="flex flex-wrap items-center gap-2"><b class="text-base">${esc(v.name)}</b><span class="lr-badge lr-badge-gray">${esc(v.vendor_code)}</span><span class="lr-badge ${v.active?'lr-badge-green':'lr-badge-gray'}">${v.active?'Active':'Inactive'}</span><span class="lr-badge lr-badge-blue">${esc(v.default_currency||'USD')}</span></div>
+          <div class="flex flex-wrap items-center gap-2"><b class="text-base">${esc(v.name)}</b><span class="lr-badge lr-badge-gray">${esc(v.vendor_code)}</span>${v.merged_into_vendor_id?`<span class="px-2 py-1 rounded-lg border border-purple-200 bg-purple-50 text-purple-700 text-[9px] font-bold">MERGED → ${esc(mergeTarget?.name||'Master Vendor')}</span>`:`<span class="lr-badge ${v.active?'lr-badge-green':'lr-badge-gray'}">${v.active?'Active':'Inactive'}</span>`}<span class="lr-badge lr-badge-blue">${esc(v.default_currency||'USD')}</span></div>
           ${(Array.isArray(v.product_types)&&v.product_types.length)||(Array.isArray(v.styles)&&v.styles.length)?`<div class="flex flex-wrap gap-1.5 mt-2">${(v.product_types||[]).map(x=>`<span class="px-2 py-1 rounded-lg bg-blue-50 border border-blue-100 text-blue-700 text-[9px] font-semibold">${esc(x)}</span>`).join('')}${(v.styles||[]).map(x=>`<span class="px-2 py-1 rounded-lg bg-purple-50 border border-purple-100 text-purple-700 text-[9px] font-semibold">${esc(x)}</span>`).join('')}</div>`:''}
           <div class="text-xs text-gray-500 mt-2">${esc(contactSummary(v))}</div>
           <div class="text-[10px] text-gray-400 mt-1">${esc([v.city,v.country].filter(Boolean).join(', ')||v.address||'No address')}</div>
@@ -424,10 +441,13 @@
         </div>
         <div class="lg:w-[170px] shrink-0">
           <div class="grid grid-cols-2 lg:grid-cols-1 gap-2 text-xs mb-3"><button type="button" onclick="openVendorPOHistory('${v.id}')" class="rounded-lg border p-2 text-left hover:bg-amber-50 hover:border-amber-200 transition"><span class="text-gray-400">POs</span> <b class="float-right text-[#a77d1a]">${poCounts.get(v.id)||0}</b><div class="text-[9px] text-[#a77d1a] mt-1">View history →</div></button><div class="rounded-lg border p-2"><span class="text-gray-400">Products</span> <b class="float-right">${productCounts.get(v.id)||0}</b></div></div>
-          <div class="flex lg:flex-col gap-2"><button onclick="openEditVendorInfo('${v.id}')" class="flex-1 px-3 py-2 border rounded-lg text-xs font-semibold">Edit</button><button onclick="openMergeVendorInfo('${v.id}')" class="flex-1 px-3 py-2 border border-purple-200 bg-purple-50 text-purple-700 rounded-lg text-xs font-semibold">Merge</button><button onclick="toggleVendorInfoActive('${v.id}',${v.active?'false':'true'})" class="flex-1 px-3 py-2 border rounded-lg text-xs font-semibold ${v.active?'text-gray-600':'text-green-700 bg-green-50'}">${v.active?'Make Inactive':'Activate'}</button></div>
+          <div class="flex lg:flex-col gap-2">${v.merged_into_vendor_id
+            ?`<button onclick="openEditVendorInfo('${v.id}')" class="flex-1 px-3 py-2 border rounded-lg text-xs font-semibold">View / Edit</button>${mh?`<button onclick="undoVendorInfoMerge('${mh.id}','${esc(v.name)}','${esc(mergeTarget?.name||'Master Vendor')}')" class="flex-1 px-3 py-2 border border-purple-200 bg-purple-50 text-purple-700 rounded-lg text-xs font-semibold">Undo Merge</button>`:''}`
+            :`<button onclick="openEditVendorInfo('${v.id}')" class="flex-1 px-3 py-2 border rounded-lg text-xs font-semibold">Edit</button><button onclick="openMergeVendorInfo('${v.id}')" class="flex-1 px-3 py-2 border border-purple-200 bg-purple-50 text-purple-700 rounded-lg text-xs font-semibold">Merge</button><button onclick="toggleVendorInfoActive('${v.id}',${v.active?'false':'true'})" class="flex-1 px-3 py-2 border rounded-lg text-xs font-semibold ${v.active?'text-gray-600':'text-green-700 bg-green-50'}">${v.active?'Make Inactive':'Activate'}</button>`
+          }</div>
         </div>
       </div>
-    </div>`).join(''):'<div class="card rounded-xl p-8 text-center text-sm text-gray-400">No vendors match your search.</div>'}</div>`;
+    </div>`}).join(''):'<div class="card rounded-xl p-8 text-center text-sm text-gray-400">No vendors match your search.</div>'}</div>`;
   };
 
   function injectVendorInfoStyles(){
