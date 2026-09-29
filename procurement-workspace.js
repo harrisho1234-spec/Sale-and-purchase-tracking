@@ -195,6 +195,7 @@
             </div>
             <div class="flex flex-wrap gap-2">
               <button onclick="openSupplierPayment('${p.id}',true)" class="px-3 py-2 rounded-lg bg-green-600 text-white text-xs font-semibold">+ Record Payment</button>
+              ${typeof openReceivePOForPO==='function'? `<button onclick="openReceivePOForPO('${p.id}')" class="px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 text-xs font-semibold">Receive Stock</button>`:''}
               <button onclick="openEditSupplierPO('${p.id}')" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">Edit Items / PO</button>
               ${p.po_document_path?`<button onclick="viewPODocument('${p.id}')" class="px-3 py-2 rounded-lg border border-blue-200 bg-white text-blue-600 text-xs font-semibold">PO Document</button>`:''}
             </div>
