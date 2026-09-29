@@ -38,10 +38,12 @@
   window.openEditSupplierPO=async function(poId){
     try{
       const d=await loadPOEditData(poId),p=d.po;
+      if(typeof loadVendorMaster==='function')await loadVendorMaster(true);
+      const vendorOptions=typeof vendorMasterOptionsHtml==='function'?vendorMasterOptionsHtml(true):'';
       openModal('Edit Supplier PO',`<div class="space-y-6">
         <form id="editPOForm" class="grid md:grid-cols-2 gap-4">
           <div><label class="text-xs font-semibold">Official PO Number</label><input id="epoNo" value="${esc(p.po_number||'')}" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Leave blank while pending"></div>
-          <div><label class="text-xs font-semibold">Vendor</label><input id="epoVendor" value="${esc(p.vendor_name||'')}" required class="mt-1 w-full border rounded-xl px-3 py-2"></div>
+          <div><label class="text-xs font-semibold">Vendor</label><input id="epoVendor" list="epoVendorMasterList" value="${esc(p.vendor_name||'')}" required onchange="applyVendorMasterSelection(this,'epoVendorId','','epoVendorInfo')" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Type vendor name or code..."><input id="epoVendorId" type="hidden" value="${esc(p.vendor_id||'')}"><datalist id="epoVendorMasterList">${vendorOptions}</datalist><div id="epoVendorInfo" class="text-[10px] text-gray-400 mt-1">${p.vendor_id?'Linked to Vendor Info.':'Select a Vendor Info suggestion to link this PO.'}</div></div>
           <div><label class="text-xs font-semibold">Status</label><select id="epoStatus" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white">${['placed','production','shipping','arrived'].map(s=>`<option value="${s}" ${p.status===s?'selected':''}>${titleCase(s)}</option>`).join('')}</select></div>
           <div><label class="text-xs font-semibold">ETA</label><input id="epoEta" type="date" value="${esc(p.estimated_arrival||'')}" class="mt-1 w-full border rounded-xl px-3 py-2"></div>
           <div><label class="text-xs font-semibold">Shipping Agent</label><input id="epoAgent" value="${esc(p.shipping_agent||'')}" class="mt-1 w-full border rounded-xl px-3 py-2"></div>
@@ -91,7 +93,8 @@
       document.getElementById('editPOForm').onsubmit=async e=>{
         e.preventDefault();
         const file=document.getElementById('epoFile').files[0]||null;
-        const patch={po_number:document.getElementById('epoNo').value.trim()||null,vendor_name:document.getElementById('epoVendor').value.trim(),status:document.getElementById('epoStatus').value,estimated_arrival:document.getElementById('epoEta').value||null,shipping_agent:document.getElementById('epoAgent').value.trim()||null,order_date:document.getElementById('epoDate').value||p.order_date,notes:document.getElementById('epoNotes').value.trim()||null};
+        const selectedVendor=typeof findVendorMaster==='function'?findVendorMaster(document.getElementById('epoVendor').value):null;
+        const patch={po_number:document.getElementById('epoNo').value.trim()||null,vendor_id:selectedVendor?.id||document.getElementById('epoVendorId')?.value||null,vendor_name:selectedVendor?.name||document.getElementById('epoVendor').value.trim(),status:document.getElementById('epoStatus').value,estimated_arrival:document.getElementById('epoEta').value||null,shipping_agent:document.getElementById('epoAgent').value.trim()||null,order_date:document.getElementById('epoDate').value||p.order_date,notes:document.getElementById('epoNotes').value.trim()||null};
         const r=await db.from('supplier_pos').update(patch).eq('id',poId);if(r.error)return showToast(r.error.message,'err');
         if(file){const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,'_'),path=`${poId}/${Date.now()}-${safe}`;const up=await db.storage.from('po-documents').upload(path,file,{upsert:false});if(up.error)return showToast(`PO updated but file upload failed: ${up.error.message}`,'err');const u=await db.from('supplier_pos').update({po_document_path:path,po_document_name:file.name}).eq('id',poId);if(u.error)return showToast(u.error.message,'err')}
         showToast('Supplier PO updated');closeModal();if(window.documentFlowState)window.documentFlowState.loaded=false;await go('supplier-pos');
@@ -114,7 +117,12 @@
           productId=created.data?.product_id||null;
         }
         const row={supplier_po_id:poId,product_id:productId,product_code_snapshot:code,item_name_snapshot:name,qty:Number(document.getElementById('poiQty').value||0),unit_cost:Number(document.getElementById('poiCost').value||0),shipping_cost:Number(document.getElementById('poiShipping').value||0),shipping_currency:'USD'};
-        const r=await db.from('supplier_po_items').insert(row);if(r.error)return showToast(r.error.message,'err');showToast('PO item added');await openEditSupplierPO(poId);
+        const r=await db.from('supplier_po_items').insert(row);if(r.error)return showToast(r.error.message,'err');
+        if(productId&&p.vendor_id){
+          const vl=await db.rpc('link_product_vendor',{p_product_id:productId,p_vendor_id:p.vendor_id,p_vendor_product_code:code||null,p_purchase_currency:p.currency||null,p_make_primary:false});
+          if(vl.error)console.warn('Could not link product vendor:',vl.error.message);
+        }
+        showToast('PO item added');await openEditSupplierPO(poId);
       };
     }catch(err){showToast(err.message,'err')}
   };
