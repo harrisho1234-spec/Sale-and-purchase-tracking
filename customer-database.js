@@ -341,7 +341,7 @@
       <div><label class="text-xs font-semibold">Customer Category</label><select id="leadCategory"  ${dis} class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="">Select category</option>${CATEGORIES.map(x=>`<option value="${x}" ${r.customer_category===x?'selected':''}>${x}</option>`).join('')}</select></div>
       <div><label class="text-xs font-semibold">Business</label><select id="leadBusiness"  ${dis} class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="" ${!r.business_code?'selected':''}>Unassigned</option><option value="RK" ${r.business_code==='RK'?'selected':''}>LP Home · RK</option><option value="TK" ${r.business_code==='TK'?'selected':''}>L'Imperial Luxury · TK</option></select></div>
       <div><label class="text-xs font-semibold">Current Stage</label><input id="leadStage" type="hidden" value="${esc(r.stage)}"><div class="mt-1">${stageControl(r)}</div><div class="text-[9px] text-gray-400 mt-1">Stages move forward only. Corrections require approval.</div></div>
-      <div><label class="text-xs font-semibold">Next Follow-up</label><input id="leadFollowup" type="date" value="${esc(r.next_follow_up_date||'')}"  ${dis} class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+      <div><label class="text-xs font-semibold">Next Follow-up</label><input id="leadFollowup" type="date" value="${esc(r.next_follow_up_date||'')}" readonly class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-gray-50 text-gray-700"><div class="text-[9px] text-gray-400 mt-1">Updated through Log Follow-up or a stage change so the history is preserved.</div></div>
       <div class="md:col-span-2"><label class="text-xs font-semibold">Interest</label><input id="leadInterest" value="${esc(r.interest||'')}"  ${dis} class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Sofa, chandelier, bedroom set..."></div>
       <div class="md:col-span-2"><label class="text-xs font-semibold">Customer Note</label><textarea id="leadNotes" rows="3"  ${dis} class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Important customer information / next action...">${esc(r.notes||'')}</textarea></div>
     </div>`;
@@ -355,7 +355,7 @@
           ?`<button onclick="convertLeadToCustomer('${r.lead_id}')" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs font-semibold">Convert / Link Customer</button>`
           :'<span class="px-3 py-2 rounded-lg border bg-white text-gray-500 text-xs font-semibold">Manager View</span>';
     const activityActions=editable
-      ?`<button onclick="openLeadActivity('${r.lead_id}','showroom_visit')" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">+ Showroom Visit</button><button onclick="openLeadActivity('${r.lead_id}','online')" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">+ Online</button>`
+      ?`${!['Buy','Reject'].includes(r.stage)?`<button onclick="openLeadFollowup('${r.lead_id}')" class="px-3 py-2 rounded-lg bg-[#b3871e] text-white text-xs font-semibold">+ Log Follow-up</button>`:''}<button onclick="openLeadActivity('${r.lead_id}','showroom_visit')" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">+ Showroom Visit</button><button onclick="openLeadActivity('${r.lead_id}','online')" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">+ Online</button>`
       :'';
     const deleteAction=crmCanDeleteLead()
       ?`<button onclick="openDeleteCustomerLead('${r.lead_id}')" class="px-3 py-2 rounded-lg border border-red-200 bg-red-50 text-red-600 text-xs font-semibold">Delete CRM Record</button>`
@@ -372,8 +372,41 @@
     if(!rows.length)return '<div class="rounded-xl border border-dashed p-8 text-center text-sm text-gray-400">No activity logs yet.</div>';
     return '<div class="grid gap-2">'+rows.map(a=>`<div class="rounded-xl border p-3 bg-white"><div class="flex flex-wrap items-center justify-between gap-2"><div class="flex items-center gap-2"><b class="text-sm">${esc(activityLabel(a.activity_type))}</b><span class="px-2 py-0.5 rounded-md border text-[9px] font-bold ${businessTone(a.business_code)}">${esc(a.business_code)}</span>${a.status?`<span class="px-2 py-0.5 rounded-md border text-[9px] font-semibold ${stageTone(a.status==='Reject / Lost'?'Reject':a.status)}">${esc(a.status)}</span>`:''}</div><span class="text-[10px] text-gray-400">${esc(fmtDate(a.activity_date))}</span></div><div class="text-[11px] text-gray-500 mt-2">${[a.source_channel&&('Source: '+a.source_channel),a.interest&&('Interest: '+a.interest),a.remark].filter(Boolean).map(esc).join(' · ')||'No note'}</div>${a.follow_up_date?`<div class="text-[10px] text-blue-600 mt-1">Follow up: ${esc(fmtDate(a.follow_up_date))}</div>`:''}</div>`).join('')+'</div>';
   }
+  function followupHistoryHtml(rows){
+    if(!rows.length)return '<div class="rounded-xl border border-dashed p-6 text-center text-xs text-gray-400">No follow-up results logged yet.</div>';
+    return '<div class="grid gap-2">'+rows.map(f=>`<div class="rounded-xl border p-3 bg-white">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="flex flex-wrap items-center gap-2"><b class="text-sm">Follow-up</b><span class="px-2 py-0.5 rounded-md border text-[9px] font-semibold ${stageTone(f.stage_snapshot)}">${esc(f.stage_snapshot)}</span>${f.contact_method?`<span class="px-2 py-0.5 rounded-md border bg-gray-50 text-[9px] text-gray-600">${esc(f.contact_method)}</span>`:''}</div>
+        <span class="text-[10px] text-gray-400">${esc(fmtDate(f.follow_up_date))}</span>
+      </div>
+      <div class="text-xs text-gray-700 mt-2 whitespace-pre-wrap">${esc(f.result||'-')}</div>
+      <div class="flex flex-wrap gap-3 mt-2 text-[10px] text-gray-400"><span>By: ${esc(f.created_by_name||'User')}</span>${f.next_follow_up_date?`<span class="text-blue-600">Next follow-up: ${esc(fmtDate(f.next_follow_up_date))}</span>`:''}<span>${new Date(f.created_at).toLocaleString()}</span></div>
+    </div>`).join('')+'</div>';
+  }
+
+  function salesHistoryHtml(rows,r,editable){
+    if(!r.linked_customer_id){
+      return '<div class="rounded-xl border border-dashed p-6 text-center text-xs text-gray-400">Customer is not linked to Customer Master yet.</div>';
+    }
+    const action=editable?`<button type="button" onclick="openLeadSalesOrder('${r.linked_customer_id}')" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs font-semibold">+ Create Sales Order</button>`:'';
+    if(!rows.length)return `<div class="space-y-3"><div class="flex justify-end">${action}</div><div class="rounded-xl border border-dashed p-6 text-center text-xs text-gray-400">Linked to Customer Master, but no Sales Order / invoice has been created yet.</div></div>`;
+    return `<div class="space-y-3"><div class="flex justify-end">${action}</div>${rows.map(o=>{
+      const items=Array.isArray(o.items)?o.items:[];
+      return `<div class="rounded-xl border bg-white overflow-hidden">
+        <div class="p-3 flex flex-wrap items-start justify-between gap-3 bg-[#faf9f6]">
+          <div><div class="text-[9px] uppercase font-bold text-gray-400">Invoice / Order</div><div class="font-bold mt-1">${esc(o.document_no||'Order')}</div><div class="text-[10px] text-gray-500 mt-1">${esc(fmtDate(o.order_date))} · ${esc(o.order_status||'-')}${o.customer_review_status==='pending'?' · Customer Review Pending':''}</div></div>
+          <div class="grid grid-cols-3 gap-4 text-right text-xs"><div><div class="text-[9px] uppercase text-gray-400">Sales</div><b>${money(Number(o.order_total||0),o.currency||'USD')}</b></div><div><div class="text-[9px] uppercase text-gray-400">Received</div><b class="text-green-600">${money(Number(o.amount_paid||0),o.currency||'USD')}</b></div><div><div class="text-[9px] uppercase text-gray-400">Balance</div><b class="${Number(o.balance_due||0)>0?'text-red-500':'text-green-600'}">${money(Number(o.balance_due||0),o.currency||'USD')}</b></div></div>
+        </div>
+        <div class="p-3">
+          <div class="text-[9px] uppercase font-bold text-gray-400 mb-2">What they bought</div>
+          ${items.length?'<div class="grid gap-1">'+items.map(i=>`<div class="flex justify-between gap-3 text-xs border-b last:border-0 py-1.5"><div><b>${esc(i.code||'')}</b>${i.name?' · '+esc(i.name):''}</div><div class="whitespace-nowrap">× ${Number(i.qty||0)}</div></div>`).join('')+'</div>':'<div class="text-xs text-gray-400">No item details.</div>'}
+        </div>
+      </div>`;
+    }).join('')}</div>`;
+  }
   window.openLeadStageChange=function(id,newStage){
     const r=leadById(id);if(!r||!crmCanEditLead(r)||!newStage||newStage===r.stage)return;
+    if(newStage==='Buy'&&!r.linked_customer_id)return convertLeadToCustomer(id);
     if(pendingStageRequest(r))return showToast('Resolve the pending stage correction before moving this customer forward.','err');
     if(['Buy','Reject'].includes(r.stage)||stageRank(newStage)<=stageRank(r.stage))return openLeadStageCorrection(id);
     openModal('Move Customer Stage Forward',`<form id="leadStageChangeForm" class="space-y-4">
@@ -486,20 +519,34 @@
     const editable=crmCanEditLead(r);
     const saveArea=editable?`<div class="flex gap-2 mt-4"><button onclick="saveCustomerLead('${r.lead_id}')" class="flex-1 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Customer</button></div>`:`<div class="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-700">Manager can review this Sales Rep's stage, follow-up and activity history. The Sales Rep keeps ownership of editing this customer.</div>`;
     openModal('Customer Database — '+r.customer_name,`<div id="leadDetailBody">${leadHeader(r,editable)}${leadForm(r,editable)}${saveArea}
+      <div id="leadFollowupHistorySection" class="border-t mt-5 pt-5"><div class="flex items-center justify-between gap-3 mb-3"><div><h4 class="font-bold">Follow-up History</h4><div class="text-[10px] text-gray-400">Every Sales follow-up result and the next promised follow-up date.</div></div>${editable&&!['Buy','Reject'].includes(r.stage)?`<button type="button" onclick="openLeadFollowup('${r.lead_id}')" class="px-3 py-2 rounded-lg bg-[#b3871e] text-white text-xs font-semibold">+ Log Follow-up</button>`:''}</div><div class="py-6 text-center text-xs text-gray-400">Loading follow-up history...</div></div>
+      ${r.linked_customer_id||r.stage==='Buy'?'<div id="leadSalesHistorySection" class="border-t mt-5 pt-5"><div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">Purchase / Invoice History</h4><div class="text-[10px] text-gray-400">What this customer bought and the Sales Order / invoice linked to it.</div></div></div><div class="py-6 text-center text-xs text-gray-400">Loading purchase history...</div></div>':''}
       <div id="leadStageRequestSection" class="border-t mt-5 pt-5"><div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">Stage Correction Requests</h4><div class="text-[10px] text-gray-400">Pending, approved and rejected requests to correct an earlier stage.</div></div></div><div class="py-6 text-center text-xs text-gray-400">Loading correction requests...</div></div>
       <div id="leadStageHistorySection" class="border-t mt-5 pt-5"><div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">Stage History</h4><div class="text-[10px] text-gray-400">Approved and forward movement between CRM stages.</div></div></div><div class="py-6 text-center text-xs text-gray-400">Loading stage history...</div></div>
       <div id="leadActivityHistorySection" class="border-t mt-5 pt-5"><div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">Activity History</h4><div class="text-[10px] text-gray-400">Showroom Visit and Online logs for this customer.</div></div></div><div class="py-8 text-center text-xs text-gray-400">Loading activity history...</div></div>
     </div>`);
-    const [activityRes,stageRes,requestRes]=await Promise.all([
+    const [activityRes,stageRes,requestRes,followupRes,salesRes]=await Promise.all([
       db.rpc('get_customer_lead_activities',{p_lead_id:id}),
       db.rpc('get_customer_lead_stage_history',{p_lead_id:id}),
-      db.rpc('get_customer_lead_stage_request_history',{p_lead_id:id})
+      db.rpc('get_customer_lead_stage_request_history',{p_lead_id:id}),
+      db.rpc('get_customer_lead_followups',{p_lead_id:id}),
+      db.rpc('get_customer_lead_sales_history',{p_lead_id:id})
     ]);
     const body=document.getElementById('leadDetailBody');
     if(!body)return;
+    const followupHolder=document.getElementById('leadFollowupHistorySection');
+    const salesHolder=document.getElementById('leadSalesHistorySection');
     const requestHolder=document.getElementById('leadStageRequestSection');
     const stageHolder=document.getElementById('leadStageHistorySection');
     const activityHolder=document.getElementById('leadActivityHistorySection');
+    if(followupHolder){
+      const loading=followupHolder.lastElementChild;
+      if(loading)loading.outerHTML=followupRes.error?`<div class="text-red-500 text-xs">${esc(followupRes.error.message)}</div>`:followupHistoryHtml(followupRes.data||[]);
+    }
+    if(salesHolder){
+      const loading=salesHolder.lastElementChild;
+      if(loading)loading.outerHTML=salesRes.error?`<div class="text-red-500 text-xs">${esc(salesRes.error.message)}</div>`:salesHistoryHtml(salesRes.data||[],r,editable);
+    }
     if(requestHolder){
       const loading=requestHolder.lastElementChild;
       if(loading)loading.outerHTML=requestRes.error?`<div class="text-red-500 text-xs">${esc(requestRes.error.message)}</div>`:stageRequestHistoryHtml(requestRes.data||[]);
@@ -566,6 +613,51 @@
     if(error)return showToast(error.message,'err');
     closeModal();showToast('Customer updated');await renderCustomerDatabase();
   };
+  window.openLeadFollowup=function(id){
+    const r=leadById(id);if(!r)return showToast('Customer not found','err');
+    if(!crmCanEditLead(r))return showToast('You do not have access to log this follow-up.','err');
+    if(['Buy','Reject'].includes(r.stage))return showToast('Follow-up is closed for '+r.stage+' customers.','err');
+    const today=todayIso();
+    const existing=String(r.next_follow_up_date||'');
+    const nextDefault=existing&&existing>=today?existing:'';
+    openModal('Log Follow-up — '+r.customer_name,`<form id="leadFollowupLogForm" class="grid md:grid-cols-2 gap-4">
+      <div class="md:col-span-2 rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs text-amber-900"><b>Record every follow-up.</b> Enter what happened, then set the next follow-up date. Continue this until the customer buys or is rejected.</div>
+      <div><label class="text-xs font-semibold">Follow-up Date</label><input id="lfDate" type="date" value="${today}" required class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+      <div><label class="text-xs font-semibold">Contact Method</label><select id="lfMethod" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="Call">Call</option><option value="Telegram">Telegram</option><option value="WhatsApp">WhatsApp</option><option value="Facebook / Messenger">Facebook / Messenger</option><option value="In Person">In Person</option><option value="Email">Email</option><option value="Other">Other</option></select></div>
+      <div class="md:col-span-2"><label class="text-xs font-semibold">Follow-up Result</label><textarea id="lfResult" required rows="4" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Example: Customer likes the sofa but wants to discuss the color with family. Asked us to call again Friday."></textarea></div>
+      <div class="md:col-span-2"><label class="text-xs font-semibold">Next Follow-up Date</label><input id="lfNext" type="date" min="${today}" value="${esc(nextDefault)}" required class="mt-1 w-full border rounded-xl px-3 py-2.5"><div class="text-[9px] text-gray-400 mt-1">If the customer has bought, use the Buy stage / Convert-Link Customer flow instead of scheduling another follow-up.</div></div>
+      <button class="md:col-span-2 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Follow-up</button>
+    </form>`);
+    document.getElementById('leadFollowupLogForm').onsubmit=async e=>{
+      e.preventDefault();
+      const result=document.getElementById('lfResult').value.trim();
+      if(!result)return showToast('Enter the follow-up result.','err');
+      const {error}=await db.rpc('log_customer_lead_followup',{
+        p_lead_id:id,
+        p_follow_up_date:document.getElementById('lfDate').value,
+        p_contact_method:document.getElementById('lfMethod').value||null,
+        p_result:result,
+        p_next_follow_up_date:document.getElementById('lfNext').value||null
+      });
+      if(error)return showToast(error.message,'err');
+      closeModal();showToast('Follow-up recorded and next follow-up updated.');await renderCustomerDatabase();setTimeout(()=>openCustomerLead(id),60);
+    };
+  };
+
+  window.openLeadSalesOrder=async function(customerId){
+    closeModal();
+    try{
+      await openNewOrder();
+      const sel=document.getElementById('orderCustomer');
+      if(sel){
+        sel.value=customerId;
+        sel.dispatchEvent(new Event('change',{bubbles:true}));
+      }
+    }catch(err){
+      showToast(err.message||'Unable to open Sales Order.','err');
+    }
+  };
+
   window.openLeadActivity=function(id,type){
     const r=leadById(id);if(!r)return showToast('Customer not found','err');
     const typeName=activityLabel(type);
