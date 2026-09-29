@@ -28,6 +28,12 @@
   function canReconcile(){return canAdmin()}
   function isStockController(){return role()==='stock_controller'}
   function n(v){return Number(v||0)}
+  function stockLocationLabel(loc){
+    const code=String(loc?.code||'').trim();
+    const name=String(loc?.name||'').trim();
+    if(!name||name.toLowerCase()===code.toLowerCase())return code||name;
+    return code&&name?`${code} · ${name}`:(code||name);
+  }
   function stockWholeQtyInput(id,allowZero=false,label='Quantity'){
     const el=document.getElementById(id);
     const raw=String(el?.value??'').trim();
@@ -56,7 +62,7 @@
     return 'bg-gray-50 text-gray-600 border-gray-200';
   }
   function locationOptions(selected='',blankLabel='Select location'){
-    return `<option value="">${esc(blankLabel)}</option>${inv.locations.filter(x=>x.active).map(x=>`<option value="${x.id}" ${String(selected)===String(x.id)?'selected':''}>${esc(x.code)} · ${esc(x.name)}</option>`).join('')}`;
+    return `<option value="">${esc(blankLabel)}</option>${inv.locations.filter(x=>x.active).map(x=>`<option value="${x.id}" ${String(selected)===String(x.id)?'selected':''}>${esc(stockLocationLabel(x))}</option>`).join('')}`;
   }
   function productDisplay(p){return `${p.code||''} · ${p.item_name||''}`}
   function findProduct(value){
@@ -196,7 +202,7 @@
     return 'bg-gray-50 text-gray-500 border-gray-200';
   }
   function inventoryFilterControls(context){
-    const locOptions=inv.locations.filter(x=>x.active).map(x=>`<option value="${x.id}" ${String(inv.locationFilter)===String(x.id)?'selected':''}>${esc(x.code)} · ${esc(x.name)}</option>`).join('');
+    const locOptions=inv.locations.filter(x=>x.active).map(x=>`<option value="${x.id}" ${String(inv.locationFilter)===String(x.id)?'selected':''}>${esc(stockLocationLabel(x))}</option>`).join('');
     const ages=[['','All Aging'],['0-30','0–30 days'],['31-90','31–90 days'],['91-180','91–180 days'],['181-365','181–365 days'],['365+','365+ days'],['Unknown','Unknown / Pre-history']];
     return `<div class="mb-4 flex flex-wrap gap-2 items-center">
       <select onchange="setInventoryLocationFilter(this.value)" class="border rounded-xl px-3 py-2 bg-white text-xs"><option value="">All Locations</option>${locOptions}</select>
@@ -1231,7 +1237,7 @@
     wb.created=new Date();
 
     const loc=reportLocation();
-    const locText=loc?`${loc.code} · ${loc.name}`:'All Locations';
+    const locText=loc?`${stockLocationLabel(loc)}`:'All Locations';
     const periodTitle=`Stock Report from (${longReportDate(inv.reportFrom)}) to (${longReportDate(inv.reportTo)})`;
     const totals={
       in:rows.filter(x=>['in','adjustment_in','po_receipt'].includes(x.movement_type)).reduce((a,x)=>a+n(x.qty),0),
