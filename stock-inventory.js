@@ -292,7 +292,7 @@
     await renderStockInventoryBody();
   };
 
-  window.openStockMovement=async function(defaultType='in'){
+  window.openStockMovement=async function(defaultType='in',defaultProductId=null){
     if(!canOperate())return showToast('Stock Controller or Admin access required.','err');
     await loadCore(true);
     openModal('New Stock Movement',`<form id="stockMovementForm" class="space-y-4">
@@ -312,6 +312,10 @@
       </div>
       <button id="smSave" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Stock Movement</button>
     </form>`);
+    if(defaultProductId){
+      const selected=inv.balanceMap.get(defaultProductId);
+      if(selected)document.getElementById('smProduct').value=productDisplay(selected);
+    }
     stockMovementTypeChanged();
     document.getElementById('stockMovementForm').onsubmit=async e=>{
       e.preventDefault();
@@ -345,6 +349,12 @@
     if(!needTo&&document.getElementById('smTo'))document.getElementById('smTo').value='';
   };
   window.openStockTransfer=function(){return openStockMovement('transfer')};
+
+  // Replace the old direct Product stock editor. All adjustments now go through the audited ledger.
+  window.openAdjustStock=function(productId){
+    if(!canOperate())return showToast('Stock Controller or Admin access required.','err');
+    return openStockMovement('adjustment_in',productId);
+  };
 
   window.openProductStockHistory=async function(productId){
     await loadCore();
