@@ -26,7 +26,8 @@
   ];
 
   function activityAllowed(){
-    return ['sales','manager','admin','super_admin'].includes(state.profile?.role||'');
+    const r=state.profile?.role||'';
+    return !!r&&r!=='accountant';
   }
   function activityScopeSalesId(){
     if(typeof managerRepActive==='function'&&managerRepActive())return managerRepId();
@@ -46,7 +47,7 @@
       && !(typeof managerTestActive==='function'&&managerTestActive());
   }
   function activityCanSeeStage(r){
-    return activityReviewerMode()||activityIsOwner(r);
+    return activityAllowed();
   }
   function activityCanChooseSales(){
     return ['admin','super_admin'].includes(state.profile?.role||'')
@@ -54,8 +55,7 @@
       && !(typeof managerTestActive==='function'&&managerTestActive());
   }
   function activityCanFilterSales(){
-    if((state.profile?.role||'')==='manager')return true;
-    return activityCanChooseSales();
+    return activityAllowed();
   }
   function activityTypeLabel(type){return type==='showroom_visit'?'Showroom Visit':'Online'}
   function entryWeight(r){return Math.max(1,Number(r?.entry_count||1)||1)}
@@ -235,7 +235,7 @@
             <option value="month" ${activityState.dateRange==='month'?'selected':''}>This Month</option>
             <option value="all" ${activityState.dateRange==='all'?'selected':''}>All Dates</option>
           </select>
-${activityReviewerMode()?`          <select onchange="setActivityStatus(this.value)" class="border rounded-xl bg-white px-3 py-2.5 text-sm">
+${activityAllowed()?`          <select onchange="setActivityStatus(this.value)" class="border rounded-xl bg-white px-3 py-2.5 text-sm">
             <option value="all">All Stages</option>
             ${STATUSES.map(s=>`<option value="${esc(s)}" ${activityState.status===s?'selected':''}>${esc(s)}</option>`).join('')}
           </select>`:''}
