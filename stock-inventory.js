@@ -587,12 +587,117 @@
     await renderStockInventoryBody();
   };
 
+  function stockProductMatches(raw){
+    const qv=String(raw||'').trim().toLowerCase();
+    const rows=inv.balances||[];
+    const ranked=rows.filter(p=>!qv||[
+      p.code,p.item_name,p.brand,p.class
+    ].filter(Boolean).join(' ').toLowerCase().includes(qv));
+    ranked.sort((a,b)=>{
+      if(!qv)return String(a.item_name||'').localeCompare(String(b.item_name||''));
+      const ac=String(a.code||'').toLowerCase(),bc=String(b.code||'').toLowerCase();
+      const an=String(a.item_name||'').toLowerCase(),bn=String(b.item_name||'').toLowerCase();
+      const ar=ac===qv?0:ac.startsWith(qv)?1:an.startsWith(qv)?2:3;
+      const br=bc===qv?0:bc.startsWith(qv)?1:bn.startsWith(qv)?2:3;
+      return ar-br||an.localeCompare(bn);
+    });
+    return ranked.slice(0,15);
+  }
+
+  window.showStockProductSuggestions=function(input){
+    const box=document.getElementById('smProductSuggestions');if(!box)return;
+    const rows=stockProductMatches(input?.value||'');
+    if(!rows.length){
+      box.innerHTML='<div class="px-4 py-3 text-sm text-gray-400">No matching product</div>';
+      box.classList.remove('hidden');return;
+    }
+    box.innerHTML=rows.map(p=>{
+      const locs=(p.locations||[]).filter(l=>n(l.qty)>0).slice(0,4).map(l=>`${esc(l.code)} ${q(l.qty)}`).join(' · ');
+      return `<button type="button" data-stock-product-id="${esc(p.product_id)}" class="w-full text-left px-3 py-2.5 hover:bg-amber-50 border-b last:border-b-0 flex items-center gap-3">
+        <div class="w-11 h-11 rounded-lg bg-gray-100 overflow-hidden shrink-0">${p.image_url?`<img src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div>
+        <div class="min-w-0 flex-1">
+          <div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code||'No code')}</div>
+          <div class="text-sm font-semibold truncate">${esc(p.item_name||'')}</div>
+          <div class="text-[10px] text-gray-400 truncate">${esc(p.brand||'')}${p.class?' · '+esc(p.class):''}</div>
+          <div class="text-[10px] mt-0.5"><span class="text-gray-400">On Hand</span> <b>${q(p.on_hand)}</b> · <span class="text-gray-400">Available</span> <b class="${n(p.available)>0?'text-green-600':'text-red-500'}">${q(p.available)}</b>${locs?' · '+locs:''}</div>
+        </div>
+      </button>`;
+    }).join('');
+    box.querySelectorAll('[data-stock-product-id]').forEach(btn=>{
+      btn.addEventListener('mousedown',e=>{e.preventDefault();chooseStockProduct(btn.dataset.stockProductId)});
+    });
+    box.classList.remove('hidden');
+  };
+
+  window.stockProductInputChanged=function(input){
+    const hidden=document.getElementById('smProductId');if(hidden)hidden.value='';
+    const info=document.getElementById('smProductInfo');if(info)info.innerHTML='';
+    showStockProductSuggestions(input);
+  };
+
+  window.chooseStockProduct=function(productId){
+    const p=inv.balanceMap.get(productId)||inv.balances.find(x=>String(x.product_id)===String(productId));
+    if(!p)return;
+    const input=document.getElementById('smProduct'),hidden=document.getElementById('smProductId'),box=document.getElementById('smProductSuggestions'),info=document.getElementById('smProductInfo');
+    if(input)input.value=productDisplay(p);
+    if(hidden)hidden.value=p.product_id;
+    if(box)box.classList.add('hidden');
+    if(info){
+      const locs=(p.locations||[]).filter(l=>n(l.qty)>0).map(l=>`<span class="inline-flex px-2 py-1 rounded-lg border bg-gray-50"><b>${esc(l.code)}</b>&nbsp;${q(l.qty)}</span>`).join(' ');
+      info.innerHTML=`<div class="mt-2 flex flex-wrap gap-2 text-[10px]"><span>On Hand <b>${q(p.on_hand)}</b></span><span>Reserved <b class="text-amber-600">${q(p.reserved)}</b></span><span>Available <b class="text-green-600">${q(p.available)}</b></span>${locs?`<span class="w-full flex flex-wrap gap-1">${locs}</span>`:''}</div>`;
+    }
+  };
+
+  let stockRefTimer=null;
+  window.stockReferenceInputChanged=function(input){
+    const type=document.getElementById('smReferenceType'),id=document.getElementById('smReferenceId');
+    if(type)type.value='';if(id)id.value='';
+    clearTimeout(stockRefTimer);
+    stockRefTimer=setTimeout(()=>showStockReferenceSuggestions(input),220);
+  };
+
+  window.showStockReferenceSuggestions=async function(input){
+    const box=document.getElementById('smReferenceSuggestions');if(!box)return;
+    const seq=String(Date.now());box.dataset.seq=seq;
+    box.innerHTML='<div class="px-4 py-3 text-xs text-gray-400">Searching documents...</div>';box.classList.remove('hidden');
+    const {data,error}=await db.rpc('search_inventory_references',{p_search:String(input?.value||'').trim()||null});
+    if(box.dataset.seq!==seq)return;
+    if(error){box.innerHTML=`<div class="px-4 py-3 text-xs text-red-500">${esc(error.message)}</div>`;return}
+    let rows=data||[];
+    const movement=document.getElementById('smType')?.value||'';
+    const preferred=movement==='in'?'supplier_po':['out','return'].includes(movement)?'sales_order':'';
+    if(preferred)rows=[...rows].sort((a,b)=>(a.reference_type===preferred?0:1)-(b.reference_type===preferred?0:1));
+    if(!rows.length){box.innerHTML='<div class="px-4 py-3 text-sm text-gray-400">No matching PO / invoice / order</div>';return}
+    box.innerHTML=rows.map((r,i)=>`<button type="button" data-stock-ref-index="${i}" class="w-full text-left px-4 py-3 hover:bg-amber-50 border-b last:border-b-0">
+      <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0"><div class="text-[10px] uppercase font-bold ${r.reference_type==='supplier_po'?'text-blue-600':'text-[#a77d1a]'}">${r.reference_type==='supplier_po'?'Supplier PO':'Sales / Invoice'}</div><div class="text-sm font-bold truncate">${esc(r.reference_no||'')}</div></div>
+        <span class="text-[9px] px-2 py-1 rounded-lg border bg-gray-50 shrink-0">${esc(titleCase(r.status||''))}</span>
+      </div>
+      <div class="text-[11px] text-gray-500 mt-1 truncate">${esc(r.counterparty||'')}${r.reference_date?' · '+esc(dateText(r.reference_date)):''}</div>
+      ${r.secondary_text?`<div class="text-[10px] text-gray-400 mt-0.5 truncate">${esc(r.secondary_text)}</div>`:''}
+    </button>`).join('');
+    box.querySelectorAll('[data-stock-ref-index]').forEach(btn=>{
+      btn.addEventListener('mousedown',e=>{e.preventDefault();chooseStockReference(rows[Number(btn.dataset.stockRefIndex)])});
+    });
+  };
+
+  window.chooseStockReference=function(r){
+    if(!r)return;
+    const input=document.getElementById('smRef'),type=document.getElementById('smReferenceType'),id=document.getElementById('smReferenceId'),party=document.getElementById('smParty'),box=document.getElementById('smReferenceSuggestions'),info=document.getElementById('smReferenceInfo');
+    if(input)input.value=r.reference_no||'';
+    if(type)type.value=r.reference_type||'';
+    if(id)id.value=r.reference_id||'';
+    if(party&&r.counterparty)party.value=r.counterparty;
+    if(box)box.classList.add('hidden');
+    if(info)info.innerHTML=`<span class="${r.reference_type==='supplier_po'?'text-blue-600':'text-[#a77d1a]'} font-semibold">${r.reference_type==='supplier_po'?'Supplier PO':'Sales / Invoice'}</span> · ${esc(r.counterparty||'')}${r.reference_date?' · '+esc(dateText(r.reference_date)):''}`;
+  };
+
   window.openStockMovement=async function(defaultType='in',defaultProductId=null){
     if(!canOperate())return showToast('Stock Controller or Admin access required.','err');
     await loadCore(true);
     openModal('New Stock Movement',`<form id="stockMovementForm" class="space-y-4">
       <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">All stock changes are recorded in the inventory ledger. OUT/Broken/Transfer cannot reduce a location below zero.</div>
-      <div><label class="text-xs font-semibold">Product / SKU *</label><input id="smProduct" list="smProductList" required class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Type product code or item name"><datalist id="smProductList">${productOptions()}</datalist></div>
+      <div><label class="text-xs font-semibold">Product / SKU *</label><div class="relative"><input id="smProduct" autocomplete="off" required onfocus="showStockProductSuggestions(this)" oninput="stockProductInputChanged(this)" onblur="setTimeout(()=>document.getElementById('smProductSuggestions')?.classList.add('hidden'),150)" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white" placeholder="Type product code or item name..."><input id="smProductId" type="hidden"><div id="smProductSuggestions" class="hidden absolute z-[140] left-0 right-0 top-full mt-1 max-h-72 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-xl"></div></div><div id="smProductInfo"></div></div>
       <div class="grid md:grid-cols-2 gap-4">
         <div><label class="text-xs font-semibold">Movement Type</label><select id="smType" onchange="stockMovementTypeChanged()" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">
           ${[['in','Stock In'],['out','Stock Out'],['return','Customer Return'],['broken','Broken / Damaged'],['transfer','Transfer Location'],['adjustment_in','Adjustment +'],['adjustment_out','Adjustment −']].map(([v,l])=>`<option value="${v}" ${v===defaultType?'selected':''}>${l}</option>`).join('')}
@@ -601,7 +706,7 @@
         <div id="smFromWrap"><label class="text-xs font-semibold">Move From / Source Location</label><select id="smFrom" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${locationOptions()}</select></div>
         <div id="smToWrap"><label class="text-xs font-semibold">Move To / Destination Location</label><select id="smTo" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${locationOptions()}</select></div>
         <div><label class="text-xs font-semibold">Date</label><input id="smDate" type="date" value="${new Date().toISOString().slice(0,10)}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
-        <div><label class="text-xs font-semibold">Reference No.</label><input id="smRef" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="PO / Invoice / document no."></div>
+        <div><label class="text-xs font-semibold">Reference No.</label><div class="relative"><input id="smRef" autocomplete="off" onfocus="showStockReferenceSuggestions(this)" oninput="stockReferenceInputChanged(this)" onblur="setTimeout(()=>document.getElementById('smReferenceSuggestions')?.classList.add('hidden'),150)" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white" placeholder="Type PO, TK/RK invoice, SR, customer or vendor..."><input id="smReferenceType" type="hidden"><input id="smReferenceId" type="hidden"><div id="smReferenceSuggestions" class="hidden absolute z-[140] left-0 right-0 top-full mt-1 max-h-72 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-xl"></div></div><div id="smReferenceInfo" class="text-[10px] text-gray-400 mt-1">Optional. Choose a suggestion to fill the customer/vendor automatically.</div></div>
         <div class="md:col-span-2"><label class="text-xs font-semibold">Customer / Vendor / Counterparty</label><input id="smParty" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
         <div class="md:col-span-2"><label class="text-xs font-semibold">Remark</label><textarea id="smNote" rows="3" class="mt-1 w-full border rounded-xl px-3 py-2.5"></textarea></div>
       </div>
@@ -609,13 +714,14 @@
     </form>`);
     if(defaultProductId){
       const selected=inv.balanceMap.get(defaultProductId);
-      if(selected)document.getElementById('smProduct').value=productDisplay(selected);
+      if(selected)chooseStockProduct(selected.product_id);
     }
     stockMovementTypeChanged();
     document.getElementById('stockMovementForm').onsubmit=async e=>{
       e.preventDefault();
-      const p=findProduct(document.getElementById('smProduct').value);
-      if(!p)return showToast('Select an existing Product / SKU.','err');
+      const selectedProductId=document.getElementById('smProductId').value;
+      const p=(selectedProductId&&inv.balanceMap.get(selectedProductId))||findProduct(document.getElementById('smProduct').value);
+      if(!p)return showToast('Choose a Product / SKU from the suggestion list.','err');
       const btn=document.getElementById('smSave');btn.disabled=true;btn.textContent='Saving...';
       const args={
         p_product_id:p.product_id,p_movement_type:document.getElementById('smType').value,
@@ -623,7 +729,9 @@
         p_from_location_id:document.getElementById('smFrom').value||null,
         p_to_location_id:document.getElementById('smTo').value||null,
         p_movement_date:document.getElementById('smDate').value||null,
-        p_reference_type:'manual',p_reference_id:null,p_reference_item_id:null,
+        p_reference_type:document.getElementById('smReferenceType').value||'manual',
+        p_reference_id:document.getElementById('smReferenceId').value||null,
+        p_reference_item_id:null,
         p_reference_no:document.getElementById('smRef').value.trim()||null,
         p_counterparty:document.getElementById('smParty').value.trim()||null,
         p_note:document.getElementById('smNote').value.trim()||null
@@ -642,6 +750,8 @@
     document.getElementById('smToWrap')?.classList.toggle('hidden',!needTo);
     if(!needFrom&&document.getElementById('smFrom'))document.getElementById('smFrom').value='';
     if(!needTo&&document.getElementById('smTo'))document.getElementById('smTo').value='';
+    const ref=document.getElementById('smRef'),box=document.getElementById('smReferenceSuggestions');
+    if(ref&&box&&!box.classList.contains('hidden'))showStockReferenceSuggestions(ref);
   };
   window.openStockTransfer=function(productId=null){return openStockMovement('transfer',productId)};
 
