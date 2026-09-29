@@ -15,6 +15,9 @@
     agingMap:new Map(),
     locationFilter:'',
     ageFilter:'',
+    reportPeriod:'week',
+    reportFrom:'',
+    reportTo:'',
     limits:{balance:30,movements:30,receive:30,delivery:30,counts:30,reports:30,requests:30}
   };
 
@@ -239,16 +242,20 @@
 
   function movementRow(m){
     const path=m.from_location&&m.to_location?`${m.from_location} → ${m.to_location}`:m.to_location?`→ ${m.to_location}`:m.from_location?`${m.from_location} →`:'-';
+    const p=m.product_id?inv.balanceMap.get(m.product_id):null;
     const liveId=!m.legacy&&String(m.history_id||'').startsWith('live:')?String(m.history_id).slice(5):'';
+    const moveBtn=canOperate()&&m.product_id?`<button onclick="openStockTransfer('${m.product_id}')" class="px-2 py-1.5 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-[9px] font-semibold">Move</button>`:'';
     let actions='';
     if(canAdmin()){
-      actions=`<div class="flex gap-1.5 flex-wrap justify-end"><button onclick="openAdminStockMovementEdit('${esc(m.history_id||'')}')" class="px-2 py-1.5 border rounded-lg text-[9px] font-semibold">Edit</button><button onclick="deleteStockMovementAdmin('${esc(m.history_id||'')}')" class="px-2 py-1.5 border border-red-200 text-red-600 rounded-lg text-[9px] font-semibold">Delete</button></div>`;
+      actions=`<div class="flex gap-1.5 flex-wrap justify-end">${moveBtn}<button onclick="openAdminStockMovementEdit('${esc(m.history_id||'')}')" class="px-2 py-1.5 border rounded-lg text-[9px] font-semibold">Edit</button><button onclick="deleteStockMovementAdmin('${esc(m.history_id||'')}')" class="px-2 py-1.5 border border-red-200 text-red-600 rounded-lg text-[9px] font-semibold">Delete</button></div>`;
     }else if(isStockController()&&liveId){
-      actions=`<div class="flex gap-1.5 flex-wrap justify-end"><button onclick="openStockMovementEditRequest('${liveId}')" class="px-2 py-1.5 border border-amber-200 bg-amber-50 text-amber-700 rounded-lg text-[9px] font-semibold">Request Edit</button><button onclick="requestStockMovementDelete('${liveId}')" class="px-2 py-1.5 border border-red-200 text-red-600 rounded-lg text-[9px] font-semibold">Request Delete</button></div>`;
+      actions=`<div class="flex gap-1.5 flex-wrap justify-end">${moveBtn}<button onclick="openStockMovementEditRequest('${liveId}')" class="px-2 py-1.5 border border-amber-200 bg-amber-50 text-amber-700 rounded-lg text-[9px] font-semibold">Request Edit</button><button onclick="requestStockMovementDelete('${liveId}')" class="px-2 py-1.5 border border-red-200 text-red-600 rounded-lg text-[9px] font-semibold">Request Delete</button></div>`;
+    }else if(moveBtn){
+      actions=`<div class="flex gap-1.5 flex-wrap justify-end">${moveBtn}</div>`;
     }
-    return `<div class="py-3 grid md:grid-cols-[105px_1.45fr_110px_90px_1fr_150px] gap-3 items-center text-xs">
+    return `<div class="py-3 grid md:grid-cols-[105px_1.55fr_110px_90px_1fr_170px] gap-3 items-center text-xs">
       <div><b>${esc(dateText(m.movement_date))}</b><div class="text-[9px] text-gray-400">${esc(m.created_by_name||'System')}${m.legacy?' · Historical':''}</div></div>
-      <div><div class="text-[10px] font-bold text-[#a77d1a]">${esc(m.code||'')}</div><div class="font-semibold">${esc(m.item_name||'')}</div><div class="text-[9px] text-gray-400">${esc(m.reference_no||m.counterparty||'')}</div></div>
+      <div class="flex items-center gap-3 min-w-0"><div class="w-11 h-11 rounded-lg overflow-hidden bg-gray-100 shrink-0">${p?.image_url?`<img src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(m.code||'')}</div><div class="font-semibold truncate">${esc(m.item_name||'')}</div><div class="text-[9px] text-gray-400 truncate">${esc(m.reference_no||m.counterparty||'')}</div></div></div>
       <span class="px-2 py-1 rounded-lg border text-[9px] font-bold w-fit ${movementBadge(m.movement_type)}">${esc(movementLabel(m.movement_type))}</span>
       <div><b>${q(m.qty)}</b><div class="text-[9px] text-gray-400">${esc(path)}</div></div>
       <div class="text-[10px] text-gray-500">${esc(m.note||m.counterparty||'-')}</div>
@@ -280,10 +287,146 @@
     ].filter(Boolean).join(' ').toLowerCase().includes(s));
   }
 
+  function isoLocalDate(d){
+    const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${day}`;
+  }
+  function reportRange(type,base=new Date()){
+    const d=new Date(base.getFullYear(),base.getMonth(),base.getDate());
+    let from=new Date(d),to=new Date(d);
+    if(type==='week'){
+      const dow=(d.getDay()+6)%7;
+      from.setDate(d.getDate()-dow);
+      to=new Date(from);to.setDate(from.getDate()+6);
+    }else if(type==='month'){
+      from=new Date(d.getFullYear(),d.getMonth(),1);
+      to=new Date(d.getFullYear(),d.getMonth()+1,0);
+    }else if(type==='quarter'){
+      const qm=Math.floor(d.getMonth()/3)*3;
+      from=new Date(d.getFullYear(),qm,1);
+      to=new Date(d.getFullYear(),qm+3,0);
+    }
+    return {from:isoLocalDate(from),to:isoLocalDate(to)};
+  }
+  function ensureReportRange(){
+    if(inv.reportFrom&&inv.reportTo)return;
+    const r=reportRange(inv.reportPeriod||'week');
+    inv.reportFrom=r.from;inv.reportTo=r.to;
+  }
+  function longReportDate(v){
+    if(!v)return '-';
+    const d=new Date(v+'T00:00:00');
+    return d.toLocaleDateString('en-GB',{day:'2-digit',month:'long',year:'numeric'});
+  }
+  window.setStockReportPeriod=function(type){
+    inv.reportPeriod=type;
+    const r=reportRange(type);
+    inv.reportFrom=r.from;inv.reportTo=r.to;
+    resetInventoryLimit('reports');renderStockInventoryBody();
+  };
+  window.setStockReportDate=function(which,value){
+    inv.reportPeriod='custom';
+    if(which==='from')inv.reportFrom=value||'';
+    else inv.reportTo=value||'';
+    resetInventoryLimit('reports');renderStockInventoryBody();
+  };
+  function reportPeriodControls(){
+    ensureReportRange();
+    const btn=(v,l)=>`<button onclick="setStockReportPeriod('${v}')" class="px-3 py-2 rounded-xl border text-xs font-semibold ${inv.reportPeriod===v?'bg-[#211d18] text-white border-[#211d18]':'bg-white'}">${l}</button>`;
+    return `<div class="inv-card mb-4">
+      <div class="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
+        <div>
+          <div class="text-[9px] uppercase font-bold text-gray-400 mb-2">Report Period</div>
+          <div class="flex flex-wrap gap-2">${btn('week','Weekly')}${btn('month','Monthly')}${btn('quarter','Quarterly')}</div>
+        </div>
+        <div class="grid sm:grid-cols-2 gap-2">
+          <div><label class="text-[9px] uppercase font-bold text-gray-400">From Date</label><input type="date" value="${esc(inv.reportFrom)}" onchange="setStockReportDate('from',this.value)" class="mt-1 border rounded-xl px-3 py-2 text-xs"></div>
+          <div><label class="text-[9px] uppercase font-bold text-gray-400">To Date</label><input type="date" value="${esc(inv.reportTo)}" onchange="setStockReportDate('to',this.value)" class="mt-1 border rounded-xl px-3 py-2 text-xs"></div>
+        </div>
+      </div>
+    </div>`;
+  }
+  function movementOverallDelta(m){
+    const qty=n(m.qty);
+    if(['in','return','adjustment_in','po_receipt'].includes(m.movement_type))return qty;
+    if(['out','broken','adjustment_out','sale_delivery'].includes(m.movement_type))return -qty;
+    return 0;
+  }
+  function movementLocationDelta(m,locationCode){
+    if(!locationCode)return movementOverallDelta(m);
+    const qty=n(m.qty);
+    if(m.movement_type==='transfer'){
+      let d=0;if(m.to_location===locationCode)d+=qty;if(m.from_location===locationCode)d-=qty;return d;
+    }
+    if(['in','return','adjustment_in','po_receipt'].includes(m.movement_type))return m.to_location===locationCode?qty:0;
+    if(['out','broken','adjustment_out','sale_delivery'].includes(m.movement_type))return m.from_location===locationCode?-qty:0;
+    return 0;
+  }
+  function reportLocation(){
+    return inv.locations.find(x=>String(x.id)===String(inv.locationFilter))||null;
+  }
+  function balanceAsOfMap(endDate){
+    const loc=reportLocation(),locCode=loc?.code||'';
+    const deltaAfter=new Map();
+    for(const m of inv.movementRows){
+      if(!m.product_id||!m.movement_date||m.movement_date<=endDate)continue;
+      const d=movementLocationDelta(m,locCode);
+      deltaAfter.set(m.product_id,(deltaAfter.get(m.product_id)||0)+d);
+    }
+    const out=new Map();
+    for(const p of inv.balances){
+      let current=n(p.on_hand);
+      if(loc){
+        const l=(p.locations||[]).find(x=>String(x.location_id)===String(loc.id)||x.code===loc.code);
+        current=n(l?.qty);
+      }
+      out.set(p.product_id,current-(deltaAfter.get(p.product_id)||0));
+    }
+    return out;
+  }
+  function previousISODate(v){
+    const d=new Date(v+'T00:00:00');d.setDate(d.getDate()-1);return isoLocalDate(d);
+  }
+  function buildStockPeriodSummary(rows){
+    ensureReportRange();
+    const opening=balanceAsOfMap(previousISODate(inv.reportFrom));
+    const ending=balanceAsOfMap(inv.reportTo);
+    const loc=reportLocation(),locCode=loc?.code||'';
+    const agg=new Map();
+
+    for(const p of inv.balances){
+      const search=String(inv.search||'').trim().toLowerCase();
+      const searchOk=!search||[p.code,p.item_name,p.brand,p.class].filter(Boolean).join(' ').toLowerCase().includes(search);
+      if(!searchOk)continue;
+      if(inv.ageFilter&&(inv.agingMap.get(p.product_id)?.age_bucket||'Unknown')!==inv.ageFilter)continue;
+      agg.set(p.product_id,{product_id:p.product_id,code:p.code||'',item_name:p.item_name||'',brand:p.brand||'',opening:n(opening.get(p.product_id)),ending:n(ending.get(p.product_id)),in:0,out:0,return:0,broken:0,transfer_in:0,transfer_out:0});
+    }
+    for(const m of rows){
+      if(!m.product_id||!agg.has(m.product_id))continue;
+      const a=agg.get(m.product_id),qty=n(m.qty);
+      if(['in','adjustment_in','po_receipt'].includes(m.movement_type))a.in+=qty;
+      else if(['out','adjustment_out','sale_delivery'].includes(m.movement_type))a.out+=qty;
+      else if(m.movement_type==='return')a.return+=qty;
+      else if(m.movement_type==='broken')a.broken+=qty;
+      else if(m.movement_type==='transfer'){
+        if(locCode){
+          if(m.to_location===locCode)a.transfer_in+=qty;
+          if(m.from_location===locCode)a.transfer_out+=qty;
+        }else{
+          a.transfer_in+=qty;a.transfer_out+=qty;
+        }
+      }
+    }
+    return [...agg.values()].filter(a=>Math.abs(a.opening)>0.000001||Math.abs(a.ending)>0.000001||a.in||a.out||a.return||a.broken||a.transfer_in||a.transfer_out).sort((a,b)=>String(a.code).localeCompare(String(b.code)));
+  }
+
   function reportFilteredMovements(){
+    ensureReportRange();
     const base=filteredMovements();
-    const loc=inv.locations.find(x=>String(x.id)===String(inv.locationFilter));
+    const loc=reportLocation();
     return base.filter(m=>{
+      if(inv.reportFrom&&m.movement_date<inv.reportFrom)return false;
+      if(inv.reportTo&&m.movement_date>inv.reportTo)return false;
       if(loc&&m.from_location!==loc.code&&m.to_location!==loc.code)return false;
       if(inv.ageFilter){
         const a=inv.agingMap.get(m.product_id);
