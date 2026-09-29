@@ -140,10 +140,12 @@
     }
   }
 
-  window.openNewProduct=function(){
+  window.openNewProduct=async function(){
     if(!isAdmin())return;
     addStyles();
     selectedProductPhoto=null;
+    try{if(typeof loadVendorMaster==='function')await loadVendorMaster(true)}catch(err){return showToast('Could not load vendors: '+err.message,'err')}
+    const vendorOptions=typeof vendorMasterOptionsHtml==='function'?vendorMasterOptionsHtml(true):'';
 
     openModal('Add Product',`
       <form id="productForm" class="space-y-3">
@@ -194,6 +196,13 @@
               <div class="pa-field">
                 <label>Brand</label>
                 <input id="paBrand" placeholder="Brand">
+              </div>
+              <div class="pa-field">
+                <label>Vendor</label>
+                <input id="paVendor" list="paVendorMasterList" placeholder="Type vendor name or code..." onchange="applyVendorMasterSelection(this,'paVendorId','','paVendorInfo')">
+                <input id="paVendorId" type="hidden">
+                <datalist id="paVendorMasterList">${vendorOptions}</datalist>
+                <div id="paVendorInfo" style="font-size:9px;color:#8b8b95;margin-top:4px"></div>
               </div>
               <div class="pa-field">
                 <label>Stock Qty</label>
@@ -259,6 +268,9 @@
       const landed=unitCost+shipping;
       const location=document.getElementById('paLocation').value.trim()||null;
       const brand=document.getElementById('paBrand').value.trim()||null;
+      const selectedVendor=typeof findVendorMaster==='function'?findVendorMaster(document.getElementById('paVendor')?.value||''):null;
+      const vendorName=selectedVendor?.name||document.getElementById('paVendor')?.value.trim()||null;
+      const vendorId=selectedVendor?.id||document.getElementById('paVendorId')?.value||null;
 
       btn.disabled=true;btn.textContent=selectedProductPhoto?'Saving & uploading photo...':'Saving product...';
       form.classList.add('pa-uploading');
@@ -292,7 +304,8 @@
 
         const cost=await db.from('product_costs').upsert({
           product_id:productId,
-          vendor_name:brand,
+          vendor_id:vendorId,
+          vendor_name:vendorName,
           cost_currency:'USD',
           unit_cost:unitCost,
           shipping_cost:shipping,
@@ -301,6 +314,17 @@
           updated_at:new Date().toISOString()
         },{onConflict:'product_id'});
         if(cost.error)throw cost.error;
+
+        if(vendorId){
+          const vl=await db.rpc('link_product_vendor',{
+            p_product_id:productId,
+            p_vendor_id:vendorId,
+            p_vendor_product_code:code,
+            p_purchase_currency:selectedVendor?.default_currency||'USD',
+            p_make_primary:true
+          });
+          if(vl.error)throw vl.error;
+        }
 
         let photoWarning='';
         if(selectedProductPhoto){
