@@ -1,24 +1,29 @@
 {
-  "name": "L'Imperial Order Management",
+  "name": "L'Imperial Sales & Order Management",
   "short_name": "L'Imperial",
-  "id": "./",
-  "start_url": "./",
-  "scope": "./",
+  "description": "L'Imperial Sales & Order Management",
+  "id": "/Sale-and-purchase-tracking/",
+  "start_url": "/Sale-and-purchase-tracking/",
+  "scope": "/Sale-and-purchase-tracking/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#211d18",
+  "orientation": "any",
   "icons": [
     {
-      "src": "app-icon-192.png",
+      "src": "/Sale-and-purchase-tracking/app-icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "app-icon.svg",
+      "src": "/Sale-and-purchase-tracking/app-icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any"
+      "purpose": "any maskable"
     }
-  ]
+  ],
+  "launch_handler": {
+    "client_mode": "navigate-existing"
+  }
 }
