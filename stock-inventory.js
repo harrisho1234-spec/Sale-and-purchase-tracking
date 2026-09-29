@@ -28,6 +28,18 @@
   function canReconcile(){return canAdmin()}
   function isStockController(){return role()==='stock_controller'}
   function n(v){return Number(v||0)}
+  function stockWholeQtyInput(id,allowZero=false,label='Quantity'){
+    const el=document.getElementById(id);
+    const raw=String(el?.value??'').trim();
+    const x=Number(raw);
+    const ok=raw!==''&&Number.isInteger(x)&&(allowZero?x>=0:x>0);
+    if(!ok){
+      showToast(label+' must be a whole number '+(allowZero?'(0, 1, 2, 3...)':'(1, 2, 3...)')+'. Decimals are not allowed.','err');
+      el?.focus();
+      return null;
+    }
+    return x;
+  }
   function q(v){const x=n(v);return Number.isInteger(x)?x.toLocaleString():x.toLocaleString(undefined,{maximumFractionDigits:2})}
   function dateText(v){if(!v)return '-';const d=new Date(String(v).length<=10?v+'T00:00:00':v);return Number.isNaN(d.getTime())?String(v):d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}
   function movementLabel(v){
@@ -581,7 +593,7 @@
           <div><label class="text-xs font-semibold">Type</label><select id="aleType" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${[['in','Stock In'],['out','Stock Out'],['return','Return'],['broken','Broken'],['transfer','Transfer']].map(([v,l])=>`<option value="${v}" ${m.movement_type===v?'selected':''}>${l}</option>`).join('')}</select></div>
           <div><label class="text-xs font-semibold">Product Code</label><input id="aleCode" value="${esc(m.product_code_snapshot||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
           <div><label class="text-xs font-semibold">Item Name</label><input id="aleItem" value="${esc(m.item_name_snapshot||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
-          <div><label class="text-xs font-semibold">Qty</label><input id="aleQty" type="number" min="0.01" step="0.01" value="${n(m.qty)}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+          <div><label class="text-xs font-semibold">Qty</label><input id="aleQty" type="number" min="1" step="1" value="${n(m.qty)}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
           <div><label class="text-xs font-semibold">Location</label><input id="aleLocation" value="${esc(m.location_code||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
           <div><label class="text-xs font-semibold">Move From</label><input id="aleFrom" value="${esc(m.from_location_code||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
           <div><label class="text-xs font-semibold">Move To</label><input id="aleTo" value="${esc(m.to_location_code||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
@@ -593,6 +605,7 @@
       </form>`);
       document.getElementById('adminLegacyStockEdit').onsubmit=async e=>{
         e.preventDefault();
+        const qty=stockWholeQtyInput('aleQty',false,'Quantity');if(qty==null)return;
         const x=await db.rpc('admin_update_stock_legacy_history',{
           p_id:Number(legacyId),p_movement_date:document.getElementById('aleDate').value||null,
           p_reference_no:document.getElementById('aleRef').value.trim()||null,
@@ -600,7 +613,7 @@
           p_product_code:document.getElementById('aleCode').value.trim(),
           p_item_name:document.getElementById('aleItem').value.trim()||null,
           p_location_code:document.getElementById('aleLocation').value.trim()||null,
-          p_qty:n(document.getElementById('aleQty').value),
+          p_qty:qty,
           p_movement_type:document.getElementById('aleType').value,
           p_from_location_code:document.getElementById('aleFrom').value.trim()||null,
           p_to_location_code:document.getElementById('aleTo').value.trim()||null,
@@ -621,7 +634,7 @@
       <div class="grid md:grid-cols-2 gap-4">
         <div><label class="text-xs font-semibold">Date</label><input id="aseDate" type="date" value="${esc(m.movement_date||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
         <div><label class="text-xs font-semibold">Movement Type</label><select id="aseType" ${locked?'disabled':''} class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white disabled:bg-gray-50">${manualMovementOptions(m.movement_type,locked)}</select></div>
-        <div><label class="text-xs font-semibold">Quantity</label><input id="aseQty" type="number" min="0.01" step="0.01" value="${n(m.qty)}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+        <div><label class="text-xs font-semibold">Quantity</label><input id="aseQty" type="number" min="1" step="1" value="${n(m.qty)}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
         <div></div>
         <div><label class="text-xs font-semibold">From Location</label><select id="aseFrom" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${locationOptions(m.from_location_id,'None')}</select></div>
         <div><label class="text-xs font-semibold">To Location</label><select id="aseTo" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${locationOptions(m.to_location_id,'None')}</select></div>
@@ -633,10 +646,11 @@
     </form>`);
     document.getElementById('adminStockEditForm').onsubmit=async e=>{
       e.preventDefault();
+      const qty=stockWholeQtyInput('aseQty',false,'Quantity');if(qty==null)return;
       const x=await db.rpc('admin_update_stock_movement',{
         p_movement_id:id,p_movement_date:document.getElementById('aseDate').value||null,
         p_movement_type:locked?m.movement_type:document.getElementById('aseType').value,
-        p_qty:n(document.getElementById('aseQty').value),
+        p_qty:qty,
         p_from_location_id:document.getElementById('aseFrom').value||null,
         p_to_location_id:document.getElementById('aseTo').value||null,
         p_reference_no:document.getElementById('aseRef').value.trim()||null,
@@ -671,7 +685,7 @@
       <div class="grid md:grid-cols-2 gap-4">
         <div><label class="text-xs font-semibold">Date</label><input id="serDate" type="date" value="${esc(m.movement_date||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
         <div><label class="text-xs font-semibold">Movement Type</label><select id="serType" ${locked?'disabled':''} class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white disabled:bg-gray-50">${manualMovementOptions(m.movement_type,locked)}</select></div>
-        <div><label class="text-xs font-semibold">Quantity</label><input id="serQty" type="number" min="0.01" step="0.01" value="${n(m.qty)}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div><div></div>
+        <div><label class="text-xs font-semibold">Quantity</label><input id="serQty" type="number" min="1" step="1" value="${n(m.qty)}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div><div></div>
         <div><label class="text-xs font-semibold">From Location</label><select id="serFrom" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${locationOptions(m.from_location_id,'None')}</select></div>
         <div><label class="text-xs font-semibold">To Location</label><select id="serTo" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${locationOptions(m.to_location_id,'None')}</select></div>
         <div><label class="text-xs font-semibold">Reference</label><input id="serRef" value="${esc(m.reference_no||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
@@ -683,10 +697,11 @@
     </form>`);
     document.getElementById('stockEditRequestForm').onsubmit=async e=>{
       e.preventDefault();
+      const qty=stockWholeQtyInput('serQty',false,'Quantity');if(qty==null)return;
       const changes={
         movement_date:document.getElementById('serDate').value||m.movement_date,
         movement_type:locked?m.movement_type:document.getElementById('serType').value,
-        qty:n(document.getElementById('serQty').value),
+        qty:qty,
         from_location_id:document.getElementById('serFrom').value||'',
         to_location_id:document.getElementById('serTo').value||'',
         reference_no:document.getElementById('serRef').value.trim(),
@@ -929,7 +944,7 @@
         <div><label class="text-xs font-semibold">Movement Type</label><select id="smType" onchange="stockMovementTypeChanged()" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">
           ${[['in','Stock In'],['out','Stock Out'],['return','Customer Return'],['broken','Broken / Damaged'],['transfer','Transfer Location'],['adjustment_in','Adjustment +'],['adjustment_out','Adjustment −']].map(([v,l])=>`<option value="${v}" ${v===defaultType?'selected':''}>${l}</option>`).join('')}
         </select></div>
-        <div><label class="text-xs font-semibold">Quantity *</label><input id="smQty" type="number" min="0.01" step="0.01" value="1" required class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+        <div><label class="text-xs font-semibold">Quantity *</label><input id="smQty" type="number" min="1" step="1" value="1" required class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
         <div id="smFromWrap"><label class="text-xs font-semibold">Move From / Source Location</label><select id="smFrom" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${locationOptions()}</select></div>
         <div id="smToWrap"><label class="text-xs font-semibold">Move To / Destination Location</label><select id="smTo" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${locationOptions()}</select></div>
         <div><label class="text-xs font-semibold">Date</label><input id="smDate" type="date" value="${new Date().toISOString().slice(0,10)}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
@@ -949,10 +964,11 @@
       const selectedProductId=document.getElementById('smProductId').value;
       const p=(selectedProductId&&inv.balanceMap.get(selectedProductId))||findProduct(document.getElementById('smProduct').value);
       if(!p)return showToast('Choose a Product / SKU from the suggestion list.','err');
+      const qty=stockWholeQtyInput('smQty',false,'Quantity');if(qty==null)return;
       const btn=document.getElementById('smSave');btn.disabled=true;btn.textContent='Saving...';
       const args={
         p_product_id:p.product_id,p_movement_type:document.getElementById('smType').value,
-        p_qty:n(document.getElementById('smQty').value),
+        p_qty:qty,
         p_from_location_id:document.getElementById('smFrom').value||null,
         p_to_location_id:document.getElementById('smTo').value||null,
         p_movement_date:document.getElementById('smDate').value||null,
@@ -1021,7 +1037,7 @@
     openModal('Receive Stock — '+x.po_number,`<form id="receivePOForm" class="space-y-4">
       <div class="rounded-xl border bg-gray-50 p-4"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(x.product_code||'')}</div><div class="font-semibold">${esc(x.item_name||'')}</div><div class="text-xs text-gray-500 mt-2">Vendor: ${esc(x.vendor_name||'')} · Ordered ${q(x.ordered_qty)} · Received ${q(x.received_qty)} · <b>Remaining ${q(x.remaining_qty)}</b></div></div>
       <div class="grid md:grid-cols-2 gap-4">
-        <div><label class="text-xs font-semibold">Receive Qty *</label><input id="rpoQty" type="number" min="0.01" step="0.01" max="${n(x.remaining_qty)}" value="${n(x.remaining_qty)}" required class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+        <div><label class="text-xs font-semibold">Receive Qty *</label><input id="rpoQty" type="number" min="1" step="1" max="${n(x.remaining_qty)}" value="${n(x.remaining_qty)}" required class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
         <div><label class="text-xs font-semibold">Receive To Location *</label><select id="rpoLocation" required class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${locationOptions()}</select></div>
         <div><label class="text-xs font-semibold">Receipt Date</label><input id="rpoDate" type="date" value="${new Date().toISOString().slice(0,10)}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
         <div><label class="text-xs font-semibold">Remark</label><input id="rpoNote" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Optional"></div>
@@ -1029,8 +1045,10 @@
       <button id="rpoSave" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Confirm Receipt</button>
     </form>`);
     document.getElementById('receivePOForm').onsubmit=async e=>{
-      e.preventDefault();const btn=document.getElementById('rpoSave');btn.disabled=true;btn.textContent='Receiving...';
-      const r=await db.rpc('receive_po_stock',{p_supplier_po_item_id:itemId,p_qty:n(document.getElementById('rpoQty').value),p_location_id:document.getElementById('rpoLocation').value,p_receipt_date:document.getElementById('rpoDate').value||null,p_note:document.getElementById('rpoNote').value.trim()||null});
+      e.preventDefault();
+      const qty=stockWholeQtyInput('rpoQty',false,'Receive Qty');if(qty==null)return;
+      const btn=document.getElementById('rpoSave');btn.disabled=true;btn.textContent='Receiving...';
+      const r=await db.rpc('receive_po_stock',{p_supplier_po_item_id:itemId,p_qty:qty,p_location_id:document.getElementById('rpoLocation').value,p_receipt_date:document.getElementById('rpoDate').value||null,p_note:document.getElementById('rpoNote').value.trim()||null});
       if(r.error){btn.disabled=false;btn.textContent='Confirm Receipt';return showToast(r.error.message,'err')}
       closeModal();showToast('PO stock received.');inv.locations=[];inv.balances=[];await renderStockInventory();
     };
@@ -1058,7 +1076,7 @@
     openModal('Release Customer Stock — '+x.document_no,`<form id="releaseStockForm" class="space-y-4">
       <div class="rounded-xl border bg-gray-50 p-4"><div class="text-xs text-gray-500">${esc(x.customer_name||'')}</div><div class="text-[10px] font-bold text-[#a77d1a] mt-1">${esc(x.product_code||'')}</div><div class="font-semibold">${esc(x.item_name||'')}</div><div class="text-xs mt-2">Ordered ${q(x.ordered_qty)} · Released ${q(x.released_qty)} · <b>Remaining ${q(x.remaining_qty)}</b></div></div>
       <div class="grid md:grid-cols-2 gap-4">
-        <div><label class="text-xs font-semibold">Release Qty *</label><input id="rsQty" type="number" min="0.01" max="${n(x.remaining_qty)}" step="0.01" value="${n(x.remaining_qty)}" required class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+        <div><label class="text-xs font-semibold">Release Qty *</label><input id="rsQty" type="number" min="1" max="${n(x.remaining_qty)}" step="1" value="${n(x.remaining_qty)}" required class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
         <div><label class="text-xs font-semibold">From Location *</label><select id="rsLocation" required class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="">Select stock location</option>${locs.map(l=>`<option value="${l.location_id}">${esc(l.code)} · Available ${q(l.qty)}</option>`).join('')}</select></div>
         <div><label class="text-xs font-semibold">Delivery Date</label><input id="rsDate" type="date" value="${new Date().toISOString().slice(0,10)}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
         <div><label class="text-xs font-semibold">Remark</label><input id="rsNote" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
@@ -1066,8 +1084,10 @@
       <button id="rsSave" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Confirm Stock OUT</button>
     </form>`);
     document.getElementById('releaseStockForm').onsubmit=async e=>{
-      e.preventDefault();const btn=document.getElementById('rsSave');btn.disabled=true;btn.textContent='Releasing...';
-      const r=await db.rpc('release_sales_stock',{p_sales_order_item_id:itemId,p_qty:n(document.getElementById('rsQty').value),p_location_id:document.getElementById('rsLocation').value,p_delivery_date:document.getElementById('rsDate').value||null,p_note:document.getElementById('rsNote').value.trim()||null});
+      e.preventDefault();
+      const qty=stockWholeQtyInput('rsQty',false,'Release Qty');if(qty==null)return;
+      const btn=document.getElementById('rsSave');btn.disabled=true;btn.textContent='Releasing...';
+      const r=await db.rpc('release_sales_stock',{p_sales_order_item_id:itemId,p_qty:qty,p_location_id:document.getElementById('rsLocation').value,p_delivery_date:document.getElementById('rsDate').value||null,p_note:document.getElementById('rsNote').value.trim()||null});
       if(r.error){btn.disabled=false;btn.textContent='Confirm Stock OUT';return showToast(r.error.message,'err')}
       closeModal();showToast('Customer stock released.');inv.locations=[];inv.balances=[];await renderStockInventory();
     };
@@ -1092,10 +1112,12 @@
 
   window.saveStockCountRow=async function(itemId){
     const row=document.querySelector(`[data-count-item="${itemId}"]`);if(!row)return;
-    const physical=row.querySelector('.count-physical').value;
-    const qb=row.querySelector('.count-qb').value;
+    const physical=row.querySelector('.count-physical').value.trim();
+    const qb=row.querySelector('.count-qb').value.trim();
+    if(physical!==''&&(!Number.isInteger(Number(physical))||Number(physical)<0))return showToast('Physical Qty must be a whole number: 0, 1, 2, 3...','err');
+    if(qb!==''&&(!Number.isInteger(Number(qb))||Number(qb)<0))return showToast('QB Qty must be a whole number: 0, 1, 2, 3...','err');
     const note=row.querySelector('.count-note').value.trim()||null;
-    const r=await db.rpc('save_stock_count_item',{p_item_id:itemId,p_physical_qty:physical===''?null:n(physical),p_qb_qty:qb===''?null:n(qb),p_note:note});
+    const r=await db.rpc('save_stock_count_item',{p_item_id:itemId,p_physical_qty:physical===''?null:Number(physical),p_qb_qty:qb===''?null:Number(qb),p_note:note});
     if(r.error)return showToast(r.error.message,'err');
     const system=n(row.dataset.system),p=physical===''?null:n(physical),qv=qb===''?null:n(qb);
     row.querySelector('.count-var').textContent=p==null?'-':q(p-system);
@@ -1164,7 +1186,7 @@
           <div class="sticky top-0 z-10 bg-gray-50 p-2 grid gap-2 text-[9px] uppercase font-bold text-gray-400" style="grid-template-columns:280px 90px 140px 110px 80px 80px 220px 70px">
             <div>Product</div><div>System</div><div>Physical</div><div>QB Qty</div><div>Var</div><div>QB Var</div><div>Note</div><div></div>
           </div>
-          ${rows.map(i=>`<div data-count-item="${i.id}" data-system="${n(i.system_qty)}" class="p-2 grid gap-2 items-center text-xs" style="grid-template-columns:280px 90px 140px 110px 80px 80px 220px 70px"><div class="min-w-0"><div class="text-[9px] font-bold text-[#a77d1a] truncate">${esc(i.product_catalog?.code||'')}</div><div class="truncate">${esc(i.product_catalog?.item_name||'')}</div></div><b class="text-right pr-2">${q(i.system_qty)}</b><div class="flex items-center gap-1"><input class="count-physical min-w-0 w-full border rounded-lg px-2 py-1.5" type="number" min="0" step="0.01" value="${i.physical_qty==null?'':n(i.physical_qty)}" ${!canEditCount?'disabled':''}>${canEditCount?`<button type="button" onclick="setStockCountPhysicalZero('${i.id}')" class="shrink-0 w-7 h-7 rounded-lg border bg-gray-50 text-[9px] font-bold" title="Counted: zero physical stock">0</button>`:''}</div><input class="count-qb min-w-0 w-full border rounded-lg px-2 py-1.5" type="number" min="0" step="0.01" value="${i.qb_qty==null?'':n(i.qb_qty)}" ${!canEditCount?'disabled':''}><b class="count-var text-right pr-2 ${i.physical_qty!=null&&n(i.physical_qty)!==n(i.system_qty)?'text-red-600':''}">${i.physical_qty==null?'-':q(n(i.physical_qty)-n(i.system_qty))}</b><span class="count-qbvar text-right pr-2">${i.qb_qty==null?'-':q(n(i.qb_qty)-n(i.system_qty))}</span><input class="count-note min-w-0 w-full border rounded-lg px-2 py-1.5" value="${esc(i.note||'')}" ${!canEditCount?'disabled':''}><button onclick="saveStockCountRow('${i.id}')" class="px-2 py-1.5 border rounded-lg text-[9px] font-semibold ${!canEditCount?'hidden':''}">Save</button></div>`).join('')}
+          ${rows.map(i=>`<div data-count-item="${i.id}" data-system="${n(i.system_qty)}" class="p-2 grid gap-2 items-center text-xs" style="grid-template-columns:280px 90px 140px 110px 80px 80px 220px 70px"><div class="min-w-0"><div class="text-[9px] font-bold text-[#a77d1a] truncate">${esc(i.product_catalog?.code||'')}</div><div class="truncate">${esc(i.product_catalog?.item_name||'')}</div></div><b class="text-right pr-2">${q(i.system_qty)}</b><div class="flex items-center gap-1"><input class="count-physical min-w-0 w-full border rounded-lg px-2 py-1.5" type="number" min="0" step="1" value="${i.physical_qty==null?'':n(i.physical_qty)}" ${!canEditCount?'disabled':''}>${canEditCount?`<button type="button" onclick="setStockCountPhysicalZero('${i.id}')" class="shrink-0 w-7 h-7 rounded-lg border bg-gray-50 text-[9px] font-bold" title="Counted: zero physical stock">0</button>`:''}</div><input class="count-qb min-w-0 w-full border rounded-lg px-2 py-1.5" type="number" min="0" step="1" value="${i.qb_qty==null?'':n(i.qb_qty)}" ${!canEditCount?'disabled':''}><b class="count-var text-right pr-2 ${i.physical_qty!=null&&n(i.physical_qty)!==n(i.system_qty)?'text-red-600':''}">${i.physical_qty==null?'-':q(n(i.physical_qty)-n(i.system_qty))}</b><span class="count-qbvar text-right pr-2">${i.qb_qty==null?'-':q(n(i.qb_qty)-n(i.system_qty))}</span><input class="count-note min-w-0 w-full border rounded-lg px-2 py-1.5" value="${esc(i.note||'')}" ${!canEditCount?'disabled':''}><button onclick="saveStockCountRow('${i.id}')" class="px-2 py-1.5 border rounded-lg text-[9px] font-semibold ${!canEditCount?'hidden':''}">Save</button></div>`).join('')}
         </div>
       </div>
       <div class="flex flex-wrap gap-2 justify-end">
