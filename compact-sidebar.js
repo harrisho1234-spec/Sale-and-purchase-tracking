@@ -4,7 +4,7 @@
   var groupDefs=[
     {key:'sales',label:'Sales & Customers',icon:'▤',ids:['customers','sales-orders','tracking','rep-workspace']},
     {key:'finance',label:'Finance & Control',icon:'$',ids:['approvals','payments','returns']},
-    {key:'operations',label:'Products & Procurement',icon:'◇',ids:['products','procurement','supplier-pos']},
+    {key:'operations',label:'Products & Procurement',icon:'◇',ids:['products','procurement','vendor-info','supplier-pos']},
     {key:'management',label:'Management',icon:'▥',ids:['sales-access','users']},
     {key:'reports',label:'Report',icon:'▥',ids:['reports','customer-database','showroom-visit','online']}
   ];
