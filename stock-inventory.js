@@ -525,6 +525,47 @@
     a.href=URL.createObjectURL(blob);a.download='Stock_Movement_'+new Date().toISOString().slice(0,10)+'.csv';a.click();URL.revokeObjectURL(a.href);
   };
 
+  // Stock Controller gets a stock-safe Product catalog: product identity + live stock, without costing/payment controls.
+  const previousRenderProducts=window.renderProducts;
+  if(typeof previousRenderProducts==='function'){
+    window.renderProducts=async function(){
+      if(role()!=='stock_controller')return previousRenderProducts.apply(this,arguments);
+      await loadCore(true);
+      state.productQuery=state.productQuery||'';
+      const s=String(state.productQuery||'').toLowerCase();
+      const rows=inv.balances.filter(p=>!s||[p.code,p.item_name,p.brand,p.class].filter(Boolean).join(' ').toLowerCase().includes(s));
+      document.getElementById('content').innerHTML=`
+        <div class="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between mb-4">
+          <input id="stockControllerProductSearch" value="${esc(state.productQuery||'')}" oninput="stockControllerProductSearch(this.value)" class="border rounded-xl px-4 py-2 w-full max-w-md" placeholder="Search code, item, brand...">
+          <button onclick="go('stock-inventory')" class="px-4 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-xl text-sm font-semibold">Open Stock & Inventory</button>
+        </div>
+        <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800 mb-4"><b>Stock Controller view:</b> product identity and inventory quantities only. Confidential costing and commercial pricing controls are not shown here.</div>
+        <div class="text-xs text-gray-400 mb-3">${rows.length.toLocaleString()} products</div>
+        <div class="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          ${rows.slice(0,900).map(p=>`<button onclick="openProductStockHistory('${p.product_id}')" class="card rounded-2xl p-4 flex gap-4 text-left hover:shadow-md transition w-full">
+            <div class="w-20 h-20 rounded-xl bg-gray-100 overflow-hidden shrink-0">${p.image_url?`<img src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[9px] text-gray-400">No image</div>'}</div>
+            <div class="min-w-0 flex-1">
+              <div class="text-[10px] gold font-bold truncate">${esc(p.code||'')}</div>
+              <div class="font-semibold truncate">${esc(p.item_name||'')}</div>
+              <div class="text-xs text-gray-400 truncate">${esc(p.brand||'')}</div>
+              <div class="mt-3 grid grid-cols-3 gap-2 text-[10px]">
+                <div><span class="text-gray-400">On Hand</span><div class="font-bold text-sm">${q(p.on_hand)}</div></div>
+                <div><span class="text-gray-400">Reserved</span><div class="font-bold text-sm text-amber-600">${q(p.reserved)}</div></div>
+                <div><span class="text-gray-400">Available</span><div class="font-bold text-sm text-green-600">${q(p.available)}</div></div>
+              </div>
+            </div>
+          </button>`).join('')||'<div class="col-span-full py-12 text-center text-sm text-gray-400">No products found.</div>'}
+        </div>
+        ${rows.length>900?'<div class="mt-4 text-center text-xs text-gray-400">Showing first 900 results. Use search to narrow the list.</div>':''}
+      `;
+    };
+  }
+
+  window.stockControllerProductSearch=function(v){
+    state.productQuery=v||'';
+    return window.renderProducts();
+  };
+
   // Navigation / permissions.
   const previousNavItems=window.navItems;
   if(typeof previousNavItems==='function'){
