@@ -10,7 +10,8 @@
     movementRows:[],
     poRows:[],
     poExpanded:new Set(),
-    deliveryRows:[]
+    deliveryRows:[],
+    limits:{balance:30,movements:30,receive:30,delivery:30,counts:30,reports:30,requests:30}
   };
 
   function role(){return state.profile?.role||''}
@@ -81,8 +82,22 @@
     `;document.head.appendChild(st);
   }
 
-  window.setInventoryTab=function(tab){inv.tab=tab;renderStockInventory()};
-  window.setInventorySearch=function(v){inv.search=v;renderStockInventoryBody()};
+  function inventoryLimit(tab){return Number(inv.limits?.[tab]||30)}
+  function resetInventoryLimit(tab){if(inv.limits&&tab)inv.limits[tab]=30}
+  function inventoryListControls(tab,total){
+    const shown=Math.min(total,inventoryLimit(tab));
+    if(total<=30)return total?'<div class="mt-3 text-center text-[10px] text-gray-400">Showing '+shown+' of '+total+'</div>':'';
+    const more=shown<total;
+    return `<div class="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs">
+      <span class="text-gray-400">Showing ${shown.toLocaleString()} of ${total.toLocaleString()}</span>
+      ${more?`<button onclick="expandInventoryList('${tab}',false)" class="px-3 py-2 border rounded-xl font-semibold bg-white">Show 30 More</button><button onclick="expandInventoryList('${tab}',true)" class="px-3 py-2 border rounded-xl font-semibold bg-white">Show All</button>`:''}
+      ${shown>30?`<button onclick="collapseInventoryList('${tab}')" class="px-3 py-2 border rounded-xl font-semibold bg-white">Show First 30</button>`:''}
+    </div>`;
+  }
+  window.expandInventoryList=function(tab,all=false){inv.limits[tab]=all?999999:inventoryLimit(tab)+30;renderStockInventoryBody()};
+  window.collapseInventoryList=function(tab){inv.limits[tab]=30;renderStockInventoryBody()};
+  window.setInventoryTab=function(tab){inv.tab=tab;resetInventoryLimit(tab);renderStockInventory()};
+  window.setInventorySearch=function(v){inv.search=v;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
 
   function tabs(){
     const t=[['dashboard','Dashboard'],['balance','Stock Balance'],['movements','Movements'],['receive','Receive PO'],['delivery','Customer Delivery']];
@@ -157,9 +172,9 @@
 
   async function renderBalance(){
     await loadCore();
-    const rows=balanceFiltered();
+    const rows=balanceFiltered(),shown=rows.slice(0,inventoryLimit('balance'));
     return `<div class="card rounded-2xl overflow-hidden">
-      <div class="divide-y">${rows.length?rows.slice(0,500).map(p=>`<div class="p-4 grid xl:grid-cols-[1.7fr_85px_85px_85px_85px_1.5fr_105px] gap-3 items-center">
+      <div class="divide-y">${shown.length?shown.map(p=>`<div class="p-4 grid xl:grid-cols-[1.7fr_85px_85px_85px_85px_1.5fr_165px] gap-3 items-center">
         <div class="flex items-center gap-3 min-w-0">
           <div class="w-12 h-12 rounded-xl bg-gray-100 overflow-hidden shrink-0">${p.image_url?`<img src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div>
           <div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code)}</div><div class="font-semibold text-sm truncate">${esc(p.item_name)}</div><div class="text-[10px] text-gray-400">${esc(p.brand||'')}</div></div>
@@ -169,9 +184,9 @@
         <div class="text-xs"><div class="text-gray-400">Available</div><b class="text-sm ${n(p.available)<0?'text-red-600':'text-green-600'}">${q(p.available)}</b></div>
         <div class="text-xs"><div class="text-gray-400">Incoming</div><b class="text-sm text-blue-600">${q(p.incoming)}</b></div>
         <div class="text-[10px] text-gray-500">${(p.locations||[]).filter(l=>n(l.qty)!==0).map(l=>`<span class="inline-flex mr-1 mb-1 px-2 py-1 rounded-lg border bg-gray-50"><b>${esc(l.code)}</b>&nbsp;${q(l.qty)}</span>`).join('')||'<span class="text-gray-400">No stock location</span>'}</div>
-        <button onclick="openProductStockHistory('${p.product_id}')" class="px-3 py-2 border rounded-lg text-[10px] font-semibold">History</button>
+        <div class="flex gap-1.5 justify-end">${canOperate()?`<button onclick="openStockTransfer('${p.product_id}')" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-semibold">Move</button>`:''}<button onclick="openProductStockHistory('${p.product_id}')" class="px-3 py-2 border rounded-lg text-[10px] font-semibold">History</button></div>
       </div>`).join(''):'<div class="p-10 text-center text-sm text-gray-400">No products match your search.</div>'}</div>
-      ${rows.length>500?'<div class="p-3 text-center text-xs text-gray-400 border-t">Showing first 500 results. Search by code/item to narrow the list.</div>':''}
+      ${inventoryListControls('balance',rows.length)}
     </div>`;
   }
 
@@ -220,8 +235,8 @@
 
   async function renderMovements(){
     await loadMovements();
-    const rows=filteredMovements();
-    return `<div class="inv-card"><div class="divide-y">${rows.length?rows.map(m=>movementRow(m)).join(''):'<div class="py-10 text-center text-xs text-gray-400">No movements found.</div>'}</div></div>`;
+    const rows=filteredMovements(),shown=rows.slice(0,inventoryLimit('movements'));
+    return `<div class="inv-card"><div class="divide-y">${shown.length?shown.map(m=>movementRow(m)).join(''):'<div class="py-10 text-center text-xs text-gray-400">No movements found.</div>'}</div>${inventoryListControls('movements',rows.length)}</div>`;
   }
 
   window.toggleInventoryPOGroup=function(poId){
@@ -238,8 +253,8 @@
       if(!grouped.has(key))grouped.set(key,{id:key,po_number:x.po_number||'PO',vendor_name:x.vendor_name||'',eta:x.eta,items:[]});
       grouped.get(key).items.push(x);
     }
-    const groups=[...grouped.values()];
-    return `<div class="grid gap-3">${groups.length?groups.map(g=>{
+    const groups=[...grouped.values()],shownGroups=groups.slice(0,inventoryLimit('receive'));
+    return `<div class="grid gap-3">${shownGroups.length?shownGroups.map(g=>{
       const ordered=g.items.reduce((a,x)=>a+n(x.ordered_qty),0);
       const remaining=g.items.reduce((a,x)=>a+n(x.remaining_qty),0);
       const expanded=inv.poExpanded.has(g.id);
@@ -259,19 +274,20 @@
           </div>`).join('')}
         </div>
       </div>`;
-    }).join(''):'<div class="inv-card py-12 text-center text-sm text-gray-400">No POs are waiting to be received.</div>'}</div>`;
+    }).join(''):'<div class="inv-card py-12 text-center text-sm text-gray-400">No POs are waiting to be received.</div>'}${inventoryListControls('receive',groups.length)}</div>`;
   }
 
   async function renderDelivery(){
     const r=await db.rpc('get_inventory_delivery_queue',{p_search:inv.search||null});
     if(r.error)throw r.error;inv.deliveryRows=r.data||[];
-    return `<div class="grid gap-3">${inv.deliveryRows.length?inv.deliveryRows.map(x=>`<div class="inv-card grid lg:grid-cols-[1.2fr_1.6fr_100px_110px_120px] gap-3 items-center">
+    const shown=inv.deliveryRows.slice(0,inventoryLimit('delivery'));
+    return `<div class="grid gap-3">${shown.length?shown.map(x=>`<div class="inv-card grid lg:grid-cols-[1.2fr_1.6fr_100px_110px_120px] gap-3 items-center">
       <div><b>${esc(x.document_no||'Sales Order')}</b><div class="text-xs text-gray-500">${esc(x.customer_name||'')}</div><div class="text-[9px] text-gray-400">${esc(dateText(x.order_date))}</div></div>
       <div class="flex gap-3 items-center min-w-0"><div class="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 shrink-0">${x.image_url?`<img src="${esc(x.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(x.product_code||'')}</div><div class="text-sm font-semibold truncate">${esc(x.item_name||'')}</div></div></div>
       <div class="text-xs"><div class="text-gray-400">Ordered</div><b>${q(x.ordered_qty)}</b></div>
       <div class="text-xs"><div class="text-gray-400">To Deliver</div><b class="text-amber-600">${q(x.remaining_qty)}</b></div>
       ${canOperate()?`<button onclick="openReleaseSalesStock('${x.sales_order_item_id}')" class="px-3 py-2.5 bg-[#211d18] text-white rounded-xl text-xs font-semibold">Release / OUT</button>`:'<span class="text-right text-[10px] text-gray-400">View only</span>'}
-    </div>`).join(''):'<div class="inv-card py-12 text-center text-sm text-gray-400">No tracked stock orders are waiting for delivery.</div>'}</div>`;
+    </div>`).join(''):'<div class="inv-card py-12 text-center text-sm text-gray-400">No tracked stock orders are waiting for delivery.</div>'}${inventoryListControls('delivery',inv.deliveryRows.length)}</div>`;
   }
 
   async function renderCounts(){
@@ -280,19 +296,20 @@
     const rows=(r.data||[]).filter(x=>!inv.search||[
       x.status,x.stock_locations?.code,x.stock_locations?.name,String(x.period_month||'')
     ].filter(Boolean).join(' ').toLowerCase().includes(inv.search.toLowerCase()));
+    const shown=rows.slice(0,inventoryLimit('counts'));
     return `<div class="mb-4 flex justify-end">${(canOperate()||canReconcile())?'<button onclick="openStartStockCount()" class="px-4 py-2 bg-[#211d18] text-white rounded-xl text-xs font-semibold">+ Start Stock Count</button>':''}</div>
-      <div class="grid gap-3">${rows.length?rows.map(c=>`<button onclick="openStockCount('${c.id}')" class="inv-card text-left grid md:grid-cols-[130px_1fr_110px_120px] gap-3 items-center hover:shadow-sm">
+      <div class="grid gap-3">${shown.length?shown.map(c=>`<button onclick="openStockCount('${c.id}')" class="inv-card text-left grid md:grid-cols-[130px_1fr_110px_120px] gap-3 items-center hover:shadow-sm">
         <div><div class="text-[9px] uppercase font-bold text-gray-400">Period</div><b>${esc(String(c.period_month||'').slice(0,7))}</b></div>
         <div><div class="text-[9px] uppercase font-bold text-gray-400">Location</div><b>${esc(c.stock_locations?.code||'All Locations')}</b><div class="text-[10px] text-gray-400">${esc(c.note||'')}</div></div>
         <span class="px-2 py-1 rounded-lg border bg-gray-50 text-[10px] font-bold w-fit">${esc(titleCase(c.status))}</span>
         <div class="text-right text-xs text-[#a77d1a] font-semibold">Open Count →</div>
-      </button>`).join(''):'<div class="inv-card py-12 text-center text-sm text-gray-400">No stock counts yet.</div>'}</div>`;
+      </button>`).join(''):'<div class="inv-card py-12 text-center text-sm text-gray-400">No stock counts yet.</div>'}${inventoryListControls('counts',rows.length)}</div>`;
   }
 
   async function renderReports(){
     await loadCore();
     await loadMovements();
-    const rows=filteredMovements();
+    const rows=filteredMovements(),shown=rows.slice(0,inventoryLimit('reports'));
     const ins=rows.filter(x=>['in','return','adjustment_in','po_receipt','opening'].includes(x.movement_type)).reduce((a,x)=>a+n(x.qty),0);
     const outs=rows.filter(x=>['out','broken','adjustment_out','sale_delivery'].includes(x.movement_type)).reduce((a,x)=>a+n(x.qty),0);
     const transfers=rows.filter(x=>x.movement_type==='transfer').reduce((a,x)=>a+n(x.qty),0);
@@ -307,7 +324,7 @@
       <div class="inv-stat"><div class="inv-stat-label">Broken Shown</div><div class="inv-stat-value text-amber-700">${q(broken)}</div></div>
     </div>
     <div class="mb-3 flex justify-end"><button onclick="exportStockMovementCSV()" class="px-3 py-2 border rounded-xl text-xs font-semibold">Export Movement CSV</button></div>
-    <div class="inv-card"><div class="divide-y">${rows.length?rows.map(m=>movementRow(m)).join(''):'<div class="py-10 text-center text-xs text-gray-400">No report rows found.</div>'}</div></div>`;
+    <div class="inv-card"><div class="divide-y">${shown.length?shown.map(m=>movementRow(m)).join(''):'<div class="py-10 text-center text-xs text-gray-400">No report rows found.</div>'}</div>${inventoryListControls('reports',rows.length)}</div>`;
   }
 
   function manualMovementOptions(selected,locked=false){
@@ -471,6 +488,7 @@
     let qy=db.from('stock_change_requests').select('*').order('requested_at',{ascending:false}).limit(300);
     const rr=await qy;if(rr.error)throw rr.error;
     const reqs=rr.data||[];
+    const shownReqs=reqs.slice(0,inventoryLimit('requests'));
     const ids=[...new Set(reqs.map(x=>x.movement_id).filter(Boolean))];
     const userIds=[...new Set(reqs.map(x=>x.requested_by).filter(Boolean))];
     const [mr,ur]=await Promise.all([
@@ -486,7 +504,7 @@
     const products=new Map((pr.data||[]).map(x=>[x.id,x]));
     if(!reqs.length)return '<div class="inv-card py-12 text-center text-sm text-gray-400">No stock edit requests.</div>';
 
-    return `<div class="grid gap-3">${reqs.map(r=>{
+    return `<div class="grid gap-3">${shownReqs.map(r=>{
       const m=moves.get(r.movement_id)||{},p=products.get(m.product_id)||{},u=users.get(r.requested_by)||{};
       const proposed=r.proposed_changes||{};
       const changes=r.request_type==='delete'
@@ -506,7 +524,7 @@
           ${canAdmin()&&r.status==='pending'?`<div class="flex gap-2 shrink-0"><button onclick="reviewStockMovementRequest('${r.id}',true)" class="px-3 py-2 rounded-lg bg-green-600 text-white text-xs font-semibold">Approve</button><button onclick="reviewStockMovementRequest('${r.id}',false)" class="px-3 py-2 rounded-lg border border-red-200 text-red-600 text-xs font-semibold">Reject</button></div>`:''}
         </div>
       </div>`;
-    }).join('')}</div>`;
+    }).join('')}${inventoryListControls('requests',reqs.length)}</div>`;
   }
 
   window.reviewStockMovementRequest=async function(id,approve){
@@ -625,7 +643,7 @@
     if(!needFrom&&document.getElementById('smFrom'))document.getElementById('smFrom').value='';
     if(!needTo&&document.getElementById('smTo'))document.getElementById('smTo').value='';
   };
-  window.openStockTransfer=function(){return openStockMovement('transfer')};
+  window.openStockTransfer=function(productId=null){return openStockMovement('transfer',productId)};
 
   // Replace the old direct Product stock editor. All adjustments now go through the audited ledger.
   window.openAdjustStock=function(productId){
