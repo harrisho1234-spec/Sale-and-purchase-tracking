@@ -311,6 +311,232 @@
     <div class="inv-card"><div class="divide-y">${rows.length?rows.map(m=>movementRow(m)).join(''):'<div class="py-10 text-center text-xs text-gray-400">No report rows found.</div>'}</div></div>`;
   }
 
+  function manualMovementOptions(selected,locked=false){
+    const opts=[['in','Stock In'],['out','Stock Out'],['return','Customer Return'],['broken','Broken / Damaged'],['transfer','Transfer'],['adjustment_in','Adjustment +'],['adjustment_out','Adjustment −'],['po_receipt','PO Receipt'],['sale_delivery','Customer Delivery'],['opening','Opening']];
+    return opts.map(([v,l])=>`<option value="${v}" ${selected===v?'selected':''} ${locked&&selected!==v?'disabled':''}>${l}</option>`).join('');
+  }
+
+  function liveHistoryId(historyId){
+    const s=String(historyId||'');return s.startsWith('live:')?s.slice(5):'';
+  }
+  function legacyHistoryId(historyId){
+    const s=String(historyId||'');return s.startsWith('legacy:')?s.slice(7):'';
+  }
+
+  window.openAdminStockMovementEdit=async function(historyId){
+    if(!canAdmin())return showToast('Admin or Super Admin access required.','err');
+    await loadCore();
+    const legacyId=legacyHistoryId(historyId);
+    if(legacyId){
+      const r=await db.from('stock_legacy_history').select('*').eq('id',legacyId).single();
+      if(r.error)return showToast(r.error.message,'err');
+      const m=r.data;
+      openModal('Edit Historical Stock Movement',`<form id="adminLegacyStockEdit" class="space-y-4">
+        <div class="rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs text-amber-800"><b>Historical row.</b> Editing this changes the imported history only; it does not alter today's live stock balance.</div>
+        <div class="grid md:grid-cols-2 gap-4">
+          <div><label class="text-xs font-semibold">Date</label><input id="aleDate" type="date" value="${esc(m.movement_date||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+          <div><label class="text-xs font-semibold">Type</label><select id="aleType" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${[['in','Stock In'],['out','Stock Out'],['return','Return'],['broken','Broken'],['transfer','Transfer']].map(([v,l])=>`<option value="${v}" ${m.movement_type===v?'selected':''}>${l}</option>`).join('')}</select></div>
+          <div><label class="text-xs font-semibold">Product Code</label><input id="aleCode" value="${esc(m.product_code_snapshot||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+          <div><label class="text-xs font-semibold">Item Name</label><input id="aleItem" value="${esc(m.item_name_snapshot||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+          <div><label class="text-xs font-semibold">Qty</label><input id="aleQty" type="number" min="0.01" step="0.01" value="${n(m.qty)}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+          <div><label class="text-xs font-semibold">Location</label><input id="aleLocation" value="${esc(m.location_code||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+          <div><label class="text-xs font-semibold">Move From</label><input id="aleFrom" value="${esc(m.from_location_code||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+          <div><label class="text-xs font-semibold">Move To</label><input id="aleTo" value="${esc(m.to_location_code||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+          <div><label class="text-xs font-semibold">Reference</label><input id="aleRef" value="${esc(m.reference_no||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+          <div><label class="text-xs font-semibold">Customer / Vendor</label><input id="aleParty" value="${esc(m.counterparty||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+          <div class="md:col-span-2"><label class="text-xs font-semibold">Remark</label><textarea id="aleNote" rows="3" class="mt-1 w-full border rounded-xl px-3 py-2.5">${esc(m.note||'')}</textarea></div>
+        </div>
+        <button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Historical Row</button>
+      </form>`);
+      document.getElementById('adminLegacyStockEdit').onsubmit=async e=>{
+        e.preventDefault();
+        const x=await db.rpc('admin_update_stock_legacy_history',{
+          p_id:Number(legacyId),p_movement_date:document.getElementById('aleDate').value||null,
+          p_reference_no:document.getElementById('aleRef').value.trim()||null,
+          p_counterparty:document.getElementById('aleParty').value.trim()||null,
+          p_product_code:document.getElementById('aleCode').value.trim(),
+          p_item_name:document.getElementById('aleItem').value.trim()||null,
+          p_location_code:document.getElementById('aleLocation').value.trim()||null,
+          p_qty:n(document.getElementById('aleQty').value),
+          p_movement_type:document.getElementById('aleType').value,
+          p_from_location_code:document.getElementById('aleFrom').value.trim()||null,
+          p_to_location_code:document.getElementById('aleTo').value.trim()||null,
+          p_note:document.getElementById('aleNote').value.trim()||null
+        });
+        if(x.error)return showToast(x.error.message,'err');
+        closeModal();showToast('Historical stock row updated.');await renderStockInventoryBody();
+      };
+      return;
+    }
+
+    const id=liveHistoryId(historyId);if(!id)return showToast('Movement not found.','err');
+    const r=await db.from('stock_movements').select('*').eq('id',id).single();
+    if(r.error)return showToast(r.error.message,'err');
+    const m=r.data,locked=['supplier_po_item','sales_order_item','stock_count'].includes(m.reference_type)||['opening','po_receipt','sale_delivery'].includes(m.movement_type);
+    openModal('Edit Stock Movement',`<form id="adminStockEditForm" class="space-y-4">
+      <div class="rounded-xl border border-red-100 bg-red-50 p-3 text-xs text-red-800"><b>Admin direct edit.</b> The live stock balance will be recalculated after saving. Linked PO/Delivery movement types are protected so their relationship is not broken.</div>
+      <div class="grid md:grid-cols-2 gap-4">
+        <div><label class="text-xs font-semibold">Date</label><input id="aseDate" type="date" value="${esc(m.movement_date||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+        <div><label class="text-xs font-semibold">Movement Type</label><select id="aseType" ${locked?'disabled':''} class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white disabled:bg-gray-50">${manualMovementOptions(m.movement_type,locked)}</select></div>
+        <div><label class="text-xs font-semibold">Quantity</label><input id="aseQty" type="number" min="0.01" step="0.01" value="${n(m.qty)}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+        <div></div>
+        <div><label class="text-xs font-semibold">From Location</label><select id="aseFrom" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${locationOptions(m.from_location_id,'None')}</select></div>
+        <div><label class="text-xs font-semibold">To Location</label><select id="aseTo" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${locationOptions(m.to_location_id,'None')}</select></div>
+        <div><label class="text-xs font-semibold">Reference</label><input id="aseRef" value="${esc(m.reference_no||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+        <div><label class="text-xs font-semibold">Customer / Vendor</label><input id="aseParty" value="${esc(m.counterparty||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+        <div class="md:col-span-2"><label class="text-xs font-semibold">Remark</label><textarea id="aseNote" rows="3" class="mt-1 w-full border rounded-xl px-3 py-2.5">${esc(m.note||'')}</textarea></div>
+      </div>
+      <button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Stock Movement</button>
+    </form>`);
+    document.getElementById('adminStockEditForm').onsubmit=async e=>{
+      e.preventDefault();
+      const x=await db.rpc('admin_update_stock_movement',{
+        p_movement_id:id,p_movement_date:document.getElementById('aseDate').value||null,
+        p_movement_type:locked?m.movement_type:document.getElementById('aseType').value,
+        p_qty:n(document.getElementById('aseQty').value),
+        p_from_location_id:document.getElementById('aseFrom').value||null,
+        p_to_location_id:document.getElementById('aseTo').value||null,
+        p_reference_no:document.getElementById('aseRef').value.trim()||null,
+        p_counterparty:document.getElementById('aseParty').value.trim()||null,
+        p_note:document.getElementById('aseNote').value.trim()||null
+      });
+      if(x.error)return showToast(x.error.message,'err');
+      closeModal();showToast('Stock movement updated.');inv.locations=[];inv.balances=[];await renderStockInventory();
+    };
+  };
+
+  window.deleteStockMovementAdmin=async function(historyId){
+    if(!canAdmin())return;
+    if(!confirm('Delete this stock movement? Admin/Super Admin can delete it, but the stock balance and any linked PO/delivery status will be recalculated.'))return;
+    const legacyId=legacyHistoryId(historyId);
+    const r=legacyId
+      ?await db.rpc('admin_delete_stock_legacy_history',{p_id:Number(legacyId)})
+      :await db.rpc('admin_delete_stock_movement',{p_movement_id:liveHistoryId(historyId)});
+    if(r.error)return showToast(r.error.message,'err');
+    showToast(legacyId?'Historical stock row deleted.':'Stock movement deleted.');
+    inv.locations=[];inv.balances=[];await renderStockInventory();
+  };
+
+  window.openStockMovementEditRequest=async function(id){
+    if(!isStockController())return showToast('Stock Controller access required.','err');
+    await loadCore();
+    const r=await db.from('stock_movements').select('*').eq('id',id).single();
+    if(r.error)return showToast(r.error.message,'err');
+    const m=r.data,locked=['supplier_po_item','sales_order_item','stock_count'].includes(m.reference_type)||['opening','po_receipt','sale_delivery'].includes(m.movement_type);
+    openModal('Request Stock Movement Edit',`<form id="stockEditRequestForm" class="space-y-4">
+      <div class="rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs text-amber-800">Your change will <b>not</b> alter stock immediately. Admin/Super Admin must approve it first.</div>
+      <div class="grid md:grid-cols-2 gap-4">
+        <div><label class="text-xs font-semibold">Date</label><input id="serDate" type="date" value="${esc(m.movement_date||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+        <div><label class="text-xs font-semibold">Movement Type</label><select id="serType" ${locked?'disabled':''} class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white disabled:bg-gray-50">${manualMovementOptions(m.movement_type,locked)}</select></div>
+        <div><label class="text-xs font-semibold">Quantity</label><input id="serQty" type="number" min="0.01" step="0.01" value="${n(m.qty)}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div><div></div>
+        <div><label class="text-xs font-semibold">From Location</label><select id="serFrom" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${locationOptions(m.from_location_id,'None')}</select></div>
+        <div><label class="text-xs font-semibold">To Location</label><select id="serTo" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${locationOptions(m.to_location_id,'None')}</select></div>
+        <div><label class="text-xs font-semibold">Reference</label><input id="serRef" value="${esc(m.reference_no||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+        <div><label class="text-xs font-semibold">Customer / Vendor</label><input id="serParty" value="${esc(m.counterparty||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+        <div class="md:col-span-2"><label class="text-xs font-semibold">Remark</label><textarea id="serNote" rows="2" class="mt-1 w-full border rounded-xl px-3 py-2.5">${esc(m.note||'')}</textarea></div>
+        <div class="md:col-span-2"><label class="text-xs font-semibold">Reason for Edit Request</label><textarea id="serReason" required rows="2" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Explain what needs correction and why."></textarea></div>
+      </div>
+      <button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Submit Edit Request</button>
+    </form>`);
+    document.getElementById('stockEditRequestForm').onsubmit=async e=>{
+      e.preventDefault();
+      const changes={
+        movement_date:document.getElementById('serDate').value||m.movement_date,
+        movement_type:locked?m.movement_type:document.getElementById('serType').value,
+        qty:n(document.getElementById('serQty').value),
+        from_location_id:document.getElementById('serFrom').value||'',
+        to_location_id:document.getElementById('serTo').value||'',
+        reference_no:document.getElementById('serRef').value.trim(),
+        counterparty:document.getElementById('serParty').value.trim(),
+        note:document.getElementById('serNote').value.trim()
+      };
+      const x=await db.rpc('request_stock_movement_change',{p_movement_id:id,p_request_type:'edit',p_proposed_changes:changes,p_reason:document.getElementById('serReason').value.trim()});
+      if(x.error)return showToast(x.error.message,'err');
+      closeModal();showToast('Edit request sent to Admin/Super Admin.');inv.tab='requests';await renderStockInventory();
+    };
+  };
+
+  window.requestStockMovementDelete=async function(id){
+    if(!isStockController())return;
+    openModal('Request Stock Movement Delete',`<form id="stockDeleteRequestForm" class="space-y-4"><div class="rounded-xl border border-red-100 bg-red-50 p-3 text-xs text-red-800">The movement will stay active until Admin/Super Admin approves this request.</div><div><label class="text-xs font-semibold">Reason for Delete Request</label><textarea id="sdrReason" required rows="3" class="mt-1 w-full border rounded-xl px-3 py-2.5"></textarea></div><button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Submit Delete Request</button></form>`);
+    document.getElementById('stockDeleteRequestForm').onsubmit=async e=>{
+      e.preventDefault();
+      const x=await db.rpc('request_stock_movement_change',{p_movement_id:id,p_request_type:'delete',p_proposed_changes:{},p_reason:document.getElementById('sdrReason').value.trim()});
+      if(x.error)return showToast(x.error.message,'err');
+      closeModal();showToast('Delete request sent to Admin/Super Admin.');inv.tab='requests';await renderStockInventory();
+    };
+  };
+
+  async function renderStockRequests(){
+    if(!canAdmin()&&!isStockController())return '<div class="inv-card py-10 text-center text-sm text-gray-400">No request access.</div>';
+    let qy=db.from('stock_change_requests').select('*').order('requested_at',{ascending:false}).limit(300);
+    const rr=await qy;if(rr.error)throw rr.error;
+    const reqs=rr.data||[];
+    const ids=[...new Set(reqs.map(x=>x.movement_id).filter(Boolean))];
+    const userIds=[...new Set(reqs.map(x=>x.requested_by).filter(Boolean))];
+    const [mr,ur]=await Promise.all([
+      ids.length?db.from('stock_movements').select('id,movement_date,movement_type,qty,reference_no,counterparty,note,product_id').in('id',ids):Promise.resolve({data:[],error:null}),
+      userIds.length?db.from('app_users').select('user_id,display_name,email').in('user_id',userIds):Promise.resolve({data:[],error:null})
+    ]);
+    if(mr.error)throw mr.error;
+    const moves=new Map((mr.data||[]).map(x=>[x.id,x]));
+    const users=new Map((ur.data||[]).map(x=>[x.user_id,x]));
+    const productIds=[...new Set((mr.data||[]).map(x=>x.product_id).filter(Boolean))];
+    const pr=productIds.length?await db.from('product_catalog').select('id,code,item_name').in('id',productIds):{data:[],error:null};
+    if(pr.error)throw pr.error;
+    const products=new Map((pr.data||[]).map(x=>[x.id,x]));
+    if(!reqs.length)return '<div class="inv-card py-12 text-center text-sm text-gray-400">No stock edit requests.</div>';
+
+    return `<div class="grid gap-3">${reqs.map(r=>{
+      const m=moves.get(r.movement_id)||{},p=products.get(m.product_id)||{},u=users.get(r.requested_by)||{};
+      const proposed=r.proposed_changes||{};
+      const changes=r.request_type==='delete'
+        ?'<span class="text-red-600 font-semibold">Delete this movement</span>'
+        :Object.entries(proposed).map(([k,v])=>`<span class="inline-flex px-2 py-1 rounded-lg border bg-white"><b>${esc(k.replaceAll('_',' '))}:</b>&nbsp;${esc(v==null||v===''?'None':String(v))}</span>`).join(' ');
+      const statusCls=r.status==='approved'?'text-green-600':r.status==='rejected'?'text-red-600':r.status==='pending'?'text-amber-700':'text-gray-500';
+      return `<div class="inv-card">
+        <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+          <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2"><b>${esc(p.code||'Stock Movement')} · ${esc(p.item_name||'')}</b><span class="px-2 py-1 rounded-lg border text-[9px] font-bold ${r.request_type==='delete'?'bg-red-50 text-red-600':'bg-amber-50 text-amber-700'}">${esc(titleCase(r.request_type))}</span><span class="text-[10px] font-bold ${statusCls}">${esc(titleCase(r.status))}</span></div>
+            <div class="text-xs text-gray-500 mt-2">Current: ${esc(dateText(m.movement_date))} · ${esc(movementLabel(m.movement_type))} · Qty ${q(m.qty)}${m.reference_no?' · '+esc(m.reference_no):''}</div>
+            <div class="text-[10px] text-gray-400 mt-1">Requested by ${esc(u.display_name||u.email||'Stock Controller')} · ${esc(new Date(r.requested_at).toLocaleString())}</div>
+            ${r.reason?`<div class="mt-3 rounded-xl bg-gray-50 border p-3 text-xs"><b>Reason:</b> ${esc(r.reason)}</div>`:''}
+            <div class="mt-3 flex flex-wrap gap-1.5 text-[10px]">${changes}</div>
+            ${r.reviewer_note?`<div class="mt-2 text-[10px] text-gray-500"><b>Reviewer:</b> ${esc(r.reviewer_note)}</div>`:''}
+          </div>
+          ${canAdmin()&&r.status==='pending'?`<div class="flex gap-2 shrink-0"><button onclick="reviewStockMovementRequest('${r.id}',true)" class="px-3 py-2 rounded-lg bg-green-600 text-white text-xs font-semibold">Approve</button><button onclick="reviewStockMovementRequest('${r.id}',false)" class="px-3 py-2 rounded-lg border border-red-200 text-red-600 text-xs font-semibold">Reject</button></div>`:''}
+        </div>
+      </div>`;
+    }).join('')}</div>`;
+  }
+
+  window.reviewStockMovementRequest=async function(id,approve){
+    if(!canAdmin())return;
+    let note='';
+    if(!approve)note=prompt('Optional rejection note:')||'';
+    else note=prompt('Optional approval note:')||'';
+    const r=await db.rpc('review_stock_movement_change',{p_request_id:id,p_approve:!!approve,p_reviewer_note:note||null});
+    if(r.error)return showToast(r.error.message,'err');
+    showToast(approve?'Stock change approved and applied.':'Stock change request rejected.');
+    inv.locations=[];inv.balances=[];await renderStockInventory();
+  };
+
+  window.deleteStockCountAdmin=async function(id){
+    if(!canAdmin())return;
+    if(!confirm('Delete this stock count? If it was closed, its count adjustment movements will also be removed and live stock recalculated.'))return;
+    const r=await db.rpc('admin_delete_stock_count',{p_count_id:id});
+    if(r.error)return showToast(r.error.message,'err');
+    closeModal();showToast('Stock count deleted.');inv.locations=[];inv.balances=[];await renderStockInventory();
+  };
+
+  window.reopenStockCountAdmin=async function(id){
+    if(!canAdmin())return;
+    if(!confirm('Reopen this count? Any stock adjustments created when it was closed will be removed so you can correct the count and close it again.'))return;
+    const r=await db.rpc('admin_reopen_stock_count',{p_count_id:id});
+    if(r.error)return showToast(r.error.message,'err');
+    showToast('Stock count reopened.');inv.locations=[];inv.balances=[];await openStockCount(id);
+  };
+
   window.renderStockInventoryBody=async function(){
     const body=document.getElementById('inventoryBody');if(!body)return;
     body.innerHTML='<div class="py-16 text-center text-gray-400">Loading...</div>';
