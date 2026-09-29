@@ -142,7 +142,51 @@ async function openEditProduct(id){const p=productById(id);if(!p||!isAdmin())ret
 
 async function openAdjustStock(id){const p=productById(id);if(!p||!isAdmin())return;openModal('Adjust Stock',`<form id="stockForm" class="space-y-4"><div class="grid grid-cols-2 gap-3"><div class="bg-gray-50 rounded-xl p-4"><div class="text-xs text-gray-400">Current Stock</div><div class="text-2xl font-bold">${Number(p.stock_qty||0)}</div></div><div><label class="text-xs font-semibold">New Stock Quantity</label><input id="stockNewQty" type="number" step="0.01" min="0" value="${Number(p.stock_qty||0)}" required class="mt-1 w-full border rounded-xl px-3 py-3"></div></div><div><label class="text-xs font-semibold">Reason</label><select id="stockReason" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"><option>Stock Count</option><option>Received Stock</option><option>Damaged / Broken</option><option>Customer Return</option><option>Correction</option><option>Other</option></select></div><div><label class="text-xs font-semibold">Note</label><textarea id="stockNote" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Optional note"></textarea></div><button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Update Stock</button></form>`);document.getElementById('stockForm').onsubmit=async e=>{e.preventDefault();const qty=Number(document.getElementById('stockNewQty').value);const {error}=await db.rpc('adjust_product_stock',{p_product_id:id,p_new_qty:qty,p_reason:document.getElementById('stockReason').value,p_note:document.getElementById('stockNote').value||null});if(error)return showToast(error.message,'err');closeModal();showToast(isAppProduct(p)?'Stock updated · queued for App Products sync':'Stock updated as app override');await loadAllProducts();await openProductDetail(id)}}
 
-async function openEditCosting(id){if(!isAdmin())return;const p=productById(id);const {data:cost,error}=await db.from('product_costs').select('*').eq('product_id',id).maybeSingle();if(error)return showToast(error.message,'err');const c=cost||{};openModal('Edit Confidential Costing',`<form id="costForm" class="grid md:grid-cols-2 gap-4"><div><label class="text-xs font-semibold">Vendor</label><input id="costVendor" value="${esc(c.vendor_name||'')}" class="mt-1 w-full border rounded-xl px-3 py-2"></div><div><label class="text-xs font-semibold">Vendor Code</label><input id="costVendorCode" value="${esc(c.vendor_code||'')}" class="mt-1 w-full border rounded-xl px-3 py-2"></div><div><label class="text-xs font-semibold">Cost Currency</label><select id="costCurrency" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white">${['USD','EUR','CNY','GBP'].map(x=>`<option ${x===(c.cost_currency||'USD')?'selected':''}>${x}</option>`).join('')}</select></div><div><label class="text-xs font-semibold">Unit Cost</label><input id="costUnit" type="number" step="0.01" min="0" value="${Number(c.unit_cost||0)}" class="mt-1 w-full border rounded-xl px-3 py-2"></div><div><label class="text-xs font-semibold">Shipping Cost / Unit</label><input id="costShipping" type="number" step="0.01" min="0" value="${Number(c.shipping_cost||0)}" class="mt-1 w-full border rounded-xl px-3 py-2"></div><div><label class="text-xs font-semibold">Landed Cost</label><input id="costLanded" type="number" step="0.01" min="0" value="${Number(c.landed_cost||0)}" class="mt-1 w-full border rounded-xl px-3 py-2"></div><div class="md:col-span-2"><label class="text-xs font-semibold">Costing Note</label><textarea id="costNotes" class="mt-1 w-full border rounded-xl px-3 py-2">${esc(c.notes||'')}</textarea></div><div class="md:col-span-2 bg-gray-50 rounded-xl p-3 text-sm">Sales price: <b>${money(p?.sales_price||0,p?.currency||'USD')}</b></div><button class="md:col-span-2 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Confidential Costing</button></form>`);document.getElementById('costForm').onsubmit=async e=>{e.preventDefault();const unit=Number(document.getElementById('costUnit').value||0),shipping=Number(document.getElementById('costShipping').value||0),entered=Number(document.getElementById('costLanded').value||0);const row={product_id:id,vendor_name:document.getElementById('costVendor').value.trim()||null,vendor_code:document.getElementById('costVendorCode').value.trim()||null,cost_currency:document.getElementById('costCurrency').value,unit_cost:unit,shipping_cost:shipping,landed_cost:entered>0?entered:unit+shipping,notes:document.getElementById('costNotes').value.trim()||null,updated_at:new Date().toISOString()};const {error:e1}=await db.from('product_costs').upsert(row,{onConflict:'product_id'});if(e1)return showToast(e1.message,'err');const {error:e2}=await db.from('product_catalog').update({manual_override:true}).eq('id',id);if(e2)return showToast(e2.message,'err');closeModal();showToast(isAppProduct(p)?'Costing updated · queued for App Products sync':'Costing updated as app override');await loadAllProducts();await openProductDetail(id)}}
+async function openEditCosting(id){
+  if(!isAdmin())return;
+  const p=productById(id);
+  const [{data:cost,error},vendorRows]=await Promise.all([
+    db.from('product_costs').select('*').eq('product_id',id).maybeSingle(),
+    typeof loadVendorMaster==='function'?loadVendorMaster(true):Promise.resolve([])
+  ]);
+  if(error)return showToast(error.message,'err');
+  const c=cost||{};
+  const vendorOptions=typeof vendorMasterOptionsHtml==='function'?vendorMasterOptionsHtml(true):'';
+  openModal('Edit Confidential Costing',`<form id="costForm" class="grid md:grid-cols-2 gap-4">
+    <div>
+      <label class="text-xs font-semibold">Vendor</label>
+      <input id="costVendor" list="costVendorMasterList" value="${esc(c.vendor_name||'')}" onchange="applyVendorMasterSelection(this,'costVendorId','costCurrency','costVendorInfo')" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Type vendor name or code...">
+      <input id="costVendorId" type="hidden" value="${esc(c.vendor_id||'')}">
+      <datalist id="costVendorMasterList">${vendorOptions}</datalist>
+      <div id="costVendorInfo" class="text-[10px] text-gray-400 mt-1">${c.vendor_id?'Linked to Vendor Info.':'Select a Vendor Info suggestion to link this product.'}</div>
+    </div>
+    <div><label class="text-xs font-semibold">Vendor Product Code</label><input id="costVendorCode" value="${esc(c.vendor_code||'')}" class="mt-1 w-full border rounded-xl px-3 py-2"></div>
+    <div><label class="text-xs font-semibold">Cost Currency</label><select id="costCurrency" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white">${['USD','EUR','CNY','GBP'].map(x=>`<option ${x===(c.cost_currency||'USD')?'selected':''}>${x}</option>`).join('')}</select></div>
+    <div><label class="text-xs font-semibold">Unit Cost</label><input id="costUnit" type="number" step="0.01" min="0" value="${Number(c.unit_cost||0)}" class="mt-1 w-full border rounded-xl px-3 py-2"></div>
+    <div><label class="text-xs font-semibold">Shipping Cost / Unit</label><input id="costShipping" type="number" step="0.01" min="0" value="${Number(c.shipping_cost||0)}" class="mt-1 w-full border rounded-xl px-3 py-2"></div>
+    <div><label class="text-xs font-semibold">Landed Cost</label><input id="costLanded" type="number" step="0.01" min="0" value="${Number(c.landed_cost||0)}" class="mt-1 w-full border rounded-xl px-3 py-2"></div>
+    <div class="md:col-span-2"><label class="text-xs font-semibold">Costing Note</label><textarea id="costNotes" class="mt-1 w-full border rounded-xl px-3 py-2">${esc(c.notes||'')}</textarea></div>
+    <div class="md:col-span-2 bg-gray-50 rounded-xl p-3 text-sm">Sales price: <b>${money(p?.sales_price||0,p?.currency||'USD')}</b></div>
+    <button class="md:col-span-2 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Confidential Costing</button>
+  </form>`);
+  document.getElementById('costForm').onsubmit=async e=>{
+    e.preventDefault();
+    const unit=Number(document.getElementById('costUnit').value||0),shipping=Number(document.getElementById('costShipping').value||0),entered=Number(document.getElementById('costLanded').value||0);
+    const selectedVendor=typeof findVendorMaster==='function'?findVendorMaster(document.getElementById('costVendor').value):null;
+    const vendorId=selectedVendor?.id||document.getElementById('costVendorId')?.value||null;
+    const vendorName=selectedVendor?.name||document.getElementById('costVendor').value.trim()||null;
+    const currency=document.getElementById('costCurrency').value;
+    const vendorProductCode=document.getElementById('costVendorCode').value.trim()||null;
+    const row={product_id:id,vendor_id:vendorId,vendor_name:vendorName,vendor_code:vendorProductCode,cost_currency:currency,unit_cost:unit,shipping_cost:shipping,landed_cost:entered>0?entered:unit+shipping,notes:document.getElementById('costNotes').value.trim()||null,updated_at:new Date().toISOString()};
+    const {error:e1}=await db.from('product_costs').upsert(row,{onConflict:'product_id'});if(e1)return showToast(e1.message,'err');
+    if(vendorId){
+      const link=await db.rpc('set_primary_product_vendor',{p_product_id:id,p_vendor_id:vendorId,p_vendor_product_code:vendorProductCode,p_purchase_currency:currency});
+      if(link.error)return showToast(link.error.message,'err');
+    }
+    const {error:e2}=await db.from('product_catalog').update({manual_override:true}).eq('id',id);if(e2)return showToast(e2.message,'err');
+    closeModal();showToast(isAppProduct(p)?'Costing updated · queued for App Products sync':'Costing updated as app override');await loadAllProducts();await openProductDetail(id);
+  };
+}
 
 async function resumeProductSheetSync(id){if(!isAdmin())return;const p=productById(id);if(isAppProduct(p))return showToast('App-created products are managed through the App Products sheet and cannot resume a brand-sheet sync.','err');const {error}=await db.from('product_catalog').update({manual_override:false}).eq('id',id);if(error)return showToast(error.message,'err');showToast('Google Sheet sync resumed. Sheet values will apply on the next product sync.');closeModal();await renderProducts()}
 
