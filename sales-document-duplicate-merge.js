@@ -87,23 +87,32 @@
       const sameCustomer=!!cid&&row.customer_id===cid;
       const selected=mergeTarget?.order_id===row.order_id;
       const canMerge=!!row.can_merge&&sameCustomer;
+      const salesRestricted=(state.profile?.role||'')==='sales'&&!canMerge;
       const cls=selected?'border-green-200 bg-green-50 text-green-900':canMerge?'border-amber-200 bg-amber-50 text-amber-950':'border-red-200 bg-red-50 text-red-900';
       const icon=selected?'✓':'⚠';
       let action='';
+
       if(selected){
         action=`<div class="mt-2 text-[11px] font-semibold">New items and any new deposit will be added to this existing document. Existing items and payments stay unchanged.</div>`;
       }else if(canMerge){
         action=`<div class="mt-3 flex flex-wrap gap-2"><button type="button" data-use-merge class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs font-semibold">Merge With Existing</button><button type="button" data-change-number class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">Use Different Number</button></div>`;
+      }else if(salesRestricted){
+        action=`<div class="mt-2 text-[11px]">${esc(row.merge_reason||'This invoice/order number is already in use.')}</div><div class="mt-3"><button type="button" data-change-number class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">Use Different Number</button></div>`;
       }else if(!cid){
-        action=`<div class="mt-2 text-[11px]">Select <b>${esc(row.customer_name||'the existing customer')}</b> first to enable merge.</div>`;
+        action=`<div class="mt-2 text-[11px]">Select the customer first to check whether this document can be merged.</div>`;
       }else{
         action=`<div class="mt-2 text-[11px]">${esc(row.merge_reason||'This document cannot be merged with the selected customer.')}</div>`;
       }
+
+      const detail=salesRestricted
+        ?`<div class="text-[11px] mt-1 opacity-80">This document number is already registered in the system.</div>`
+        :`<div class="text-[11px] mt-1 opacity-80">Customer: <b>${esc(row.customer_name||'-')}</b>${row.sales_rep_name?` · Sales Rep: <b>${esc(row.sales_rep_name)}</b>`:''}</div>
+          <div class="text-[11px] mt-1 opacity-80">${Number(row.item_count||0)} item line${Number(row.item_count||0)===1?'':'s'} · Total ${money(row.order_total||0)} · Paid ${money(row.amount_paid||0)} · Balance ${money(row.balance_due||0)}</div>`;
+
       alertBox.innerHTML=`<div class="rounded-xl border p-3 ${cls}">
         <div class="flex gap-2 items-start"><div class="font-bold">${icon}</div><div class="min-w-0 flex-1">
           <div class="text-xs font-bold">${esc(row.document_no||currentDoc())} already exists</div>
-          <div class="text-[11px] mt-1 opacity-80">Customer: <b>${esc(row.customer_name||'-')}</b>${row.sales_rep_name?` · Sales Rep: <b>${esc(row.sales_rep_name)}</b>`:''}</div>
-          <div class="text-[11px] mt-1 opacity-80">${Number(row.item_count||0)} item line${Number(row.item_count||0)===1?'':'s'} · Total ${money(row.order_total||0)} · Paid ${money(row.amount_paid||0)} · Balance ${money(row.balance_due||0)}</div>
+          ${detail}
           ${action}
         </div></div>
       </div>`;
