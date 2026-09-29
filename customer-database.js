@@ -39,10 +39,13 @@
   }
   function crmCanFilterSales(){return !crmScopeSalesId()&&['manager','admin','super_admin'].includes(state.profile?.role||'')}
   function crmCanDeleteLead(){return (state.profile?.role||'')==='super_admin'}
-  function crmCanEditLead(r){
+  function crmManagerFullEdit(){
     const role=state.profile?.role||'';
     const delegated=(typeof managerRepActive==='function'&&managerRepActive())||(typeof managerTestActive==='function'&&managerTestActive());
-    if(['admin','super_admin'].includes(role)&&!delegated)return true;
+    return ['manager','admin','super_admin'].includes(role)&&!delegated;
+  }
+  function crmCanEditLead(r){
+    if(crmManagerFullEdit())return true;
     const id=crmEditSalesId();
     return !!id&&String(r?.assigned_sales_id||'')===String(id);
   }
@@ -187,17 +190,29 @@
     if(!crmCanEditLead(r)){
       return `<div class="mt-1 flex flex-wrap items-center gap-1.5"><span class="inline-flex px-2 py-1 rounded-lg border text-[10px] font-semibold ${stageTone(r.stage)}">${esc(r.stage)}</span>${pending?'<span class="px-2 py-1 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 text-[9px] font-bold">CORRECTION PENDING</span>':''}</div>`;
     }
-    if(pending){
+
+    const managerDirect=crmManagerFullEdit();
+    if(pending&&!managerDirect){
       return `<div class="mt-1 flex flex-wrap items-center gap-1.5"><span class="inline-flex px-2 py-1 rounded-lg border text-[10px] font-semibold ${stageTone(r.stage)}">${esc(r.stage)}</span><button type="button" data-stop-row onclick="openLeadStageCorrection('${r.lead_id}')" class="px-2 py-1 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 text-[9px] font-bold">CORRECTION PENDING</button></div>`;
     }
-    const forward=STAGES.filter(s=>stageRank(s)>stageRank(r.stage));
-    const direct=forward.length
-      ?`<select data-stop-row onchange="openLeadStageChange('${r.lead_id}',this.value);this.value='${esc(r.stage)}'" class="w-full min-w-[145px] border rounded-lg px-2 py-1.5 bg-white text-[11px] font-semibold"><option value="${esc(r.stage)}" selected>${esc(r.stage)}</option>${forward.map(s=>`<option value="${s}">${s}</option>`).join('')}</select>`
+
+    const choices=managerDirect
+      ?STAGES.filter(s=>s!==r.stage)
+      :STAGES.filter(s=>stageRank(s)>stageRank(r.stage));
+
+    const direct=choices.length
+      ?`<select data-stop-row onchange="openLeadStageChange('${r.lead_id}',this.value);this.value='${esc(r.stage)}'" class="w-full min-w-[145px] border rounded-lg px-2 py-1.5 bg-white text-[11px] font-semibold"><option value="${esc(r.stage)}" selected>${esc(r.stage)}</option>${choices.map(s=>`<option value="${s}">${s}</option>`).join('')}</select>`
       :`<span class="inline-flex px-2 py-1 rounded-lg border text-[10px] font-semibold ${stageTone(r.stage)}">${esc(r.stage)}</span>`;
-    const correction=stageRank(r.stage)>1
+
+    const correction=!managerDirect&&stageRank(r.stage)>1
       ?`<button type="button" data-stop-row onclick="openLeadStageCorrection('${r.lead_id}')" class="text-[9px] font-semibold text-amber-700 hover:underline whitespace-nowrap">Request correction</button>`
       :'';
-    return `<div class="mt-1 flex flex-col items-start gap-1.5">${direct}${correction}</div>`;
+
+    const pendingBadge=managerDirect&&pending
+      ?'<span class="px-2 py-1 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 text-[9px] font-bold">PENDING CORRECTION · MANAGER CAN OVERRIDE</span>'
+      :'';
+
+    return `<div class="mt-1 flex flex-col items-start gap-1.5">${direct}${pendingBadge}${correction}</div>`;
   }
 
   function rowHtml(r){
@@ -343,14 +358,21 @@
   function leadById(id){return (leadState.rows||[]).find(x=>x.lead_id===id)}
   function leadForm(r,editable=true){
     const dis=editable?'':'disabled';
+    const managerFull=crmManagerFullEdit();
+    const users=leadState.salesUsers.filter(x=>['sales','manager'].includes(x.role));
+    const handlerField=managerFull
+      ?`<div><label class="text-xs font-semibold">Handled By / Assigned Sales</label><select id="leadAssignedSales" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="">Unassigned</option>${users.map(u=>`<option value="${u.user_id}" ${String(r.assigned_sales_id||'')===String(u.user_id)?'selected':''}>${esc(u.display_name||u.email)} · ${esc(titleCase(u.role||''))}</option>`).join('')}</select><div class="text-[9px] text-gray-400 mt-1">Manager can reassign this CRM customer to another Sales Rep or Manager.</div></div>`
+      :'';
+
     return `<div class="grid md:grid-cols-2 gap-4">
       <div><label class="text-xs font-semibold">Customer Name</label><input id="leadName" value="${esc(r.customer_name||'')}"  ${dis} class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
       <div><label class="text-xs font-semibold">Phone</label><input id="leadPhone" value="${esc(r.phone||'')}"  ${dis} class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
       <div><label class="text-xs font-semibold">Customer Category</label><select id="leadCategory"  ${dis} class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="">Select category</option>${CATEGORIES.map(x=>`<option value="${x}" ${r.customer_category===x?'selected':''}>${x}</option>`).join('')}</select></div>
       <div><label class="text-xs font-semibold">Business</label><select id="leadBusiness"  ${dis} class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="" ${!r.business_code?'selected':''}>Unassigned</option><option value="RK" ${r.business_code==='RK'?'selected':''}>LP Home · RK</option><option value="TK" ${r.business_code==='TK'?'selected':''}>L'Imperial Luxury · TK</option></select></div>
-      <div><label class="text-xs font-semibold">Current Stage</label><input id="leadStage" type="hidden" value="${esc(r.stage)}"><div class="mt-1">${stageControl(r)}</div><div class="text-[9px] text-gray-400 mt-1">Stages move forward only. Corrections require approval.</div></div>
+      <div><label class="text-xs font-semibold">Current Stage</label><input id="leadStage" type="hidden" value="${esc(r.stage)}"><div class="mt-1">${stageControl(r)}</div><div class="text-[9px] text-gray-400 mt-1">${managerFull?'Manager can directly correct the stage. All changes are recorded in Stage History.':'Stages move forward only. Corrections require approval.'}</div></div>
       <div><label class="text-xs font-semibold">Next Follow-up</label><input id="leadFollowup" type="date" value="${esc(r.next_follow_up_date||'')}" readonly class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-gray-50 text-gray-700"><div class="text-[9px] text-gray-400 mt-1">Updated through Log Follow-up or a stage change so the history is preserved.</div></div>
-      <div class="md:col-span-2"><label class="text-xs font-semibold">Interest</label><input id="leadInterest" value="${esc(r.interest||'')}"  ${dis} class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Sofa, chandelier, bedroom set..."></div>
+      ${handlerField}
+      <div class="${managerFull?'':'md:col-span-2'}"><label class="text-xs font-semibold">Interest</label><input id="leadInterest" value="${esc(r.interest||'')}"  ${dis} class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Sofa, chandelier, bedroom set..."></div>
       <div class="md:col-span-2"><label class="text-xs font-semibold">Customer Note</label><textarea id="leadNotes" rows="3"  ${dis} class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Important customer information / next action...">${esc(r.notes||'')}</textarea></div>
     </div>`;
   }
@@ -417,10 +439,12 @@
   }
   window.openLeadStageChange=function(id,newStage){
     const r=leadById(id);if(!r||!crmCanEditLead(r)||!newStage||newStage===r.stage)return;
+    const managerDirect=crmManagerFullEdit();
     if(newStage==='Buy'&&!r.linked_customer_id)return convertLeadToCustomer(id);
-    if(pendingStageRequest(r))return showToast('Resolve the pending stage correction before moving this customer forward.','err');
-    if(['Buy','Reject'].includes(r.stage)||stageRank(newStage)<=stageRank(r.stage))return openLeadStageCorrection(id);
-    openModal('Move Customer Stage Forward',`<form id="leadStageChangeForm" class="space-y-4">
+    if(pendingStageRequest(r)&&!managerDirect)return showToast('Resolve the pending stage correction before moving this customer forward.','err');
+    if(!managerDirect&&(['Buy','Reject'].includes(r.stage)||stageRank(newStage)<=stageRank(r.stage)))return openLeadStageCorrection(id);
+
+    openModal(managerDirect?'Edit CRM Stage':'Move Customer Stage Forward',`<form id="leadStageChangeForm" class="space-y-4">
       <div class="rounded-xl border bg-gray-50 p-4">
         <div class="text-xs text-gray-500">${esc(r.customer_name)}</div>
         <div class="flex items-center gap-2 mt-2">
@@ -429,26 +453,30 @@
           <span class="px-2 py-1 rounded-lg border text-xs font-semibold ${stageTone(newStage)}">${esc(newStage)}</span>
         </div>
       </div>
-      <div class="rounded-xl border border-green-100 bg-green-50 p-3 text-xs text-green-800"><b>Forward move.</b> This can be saved immediately. Once moved, returning to an earlier stage requires Manager/Admin approval.</div>
-      <div><label class="text-xs font-semibold">Stage Change Note</label><textarea id="leadStageNote" required rows="3" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Why is this customer moving to ${esc(newStage)}?"></textarea></div>
+      ${managerDirect
+        ?`<div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800"><b>Manager direct edit.</b> You can correct the stage immediately. The change is written to Stage History.${pendingStageRequest(r)?' The existing pending correction request will be closed as superseded.':''}</div>`
+        :'<div class="rounded-xl border border-green-100 bg-green-50 p-3 text-xs text-green-800"><b>Forward move.</b> This can be saved immediately. Returning to an earlier stage requires Manager/Admin approval.</div>'}
+      <div><label class="text-xs font-semibold">Stage Change Note</label><textarea id="leadStageNote" ${(state.profile?.role||'')==='super_admin'?'':'required'} rows="3" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Why is this customer changing to ${esc(newStage)}?"></textarea></div>
       <div><label class="text-xs font-semibold">Next Follow-up</label><input id="leadStageFollowup" type="date" value="${esc((newStage==='Buy'||newStage==='Reject')?'':(r.next_follow_up_date||''))}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
-      <button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Forward Stage Change</button>
+      <button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">${managerDirect?'Save Stage Change':'Save Forward Stage Change'}</button>
     </form>`);
+
     document.getElementById('leadStageChangeForm').onsubmit=async e=>{
       e.preventDefault();
       const note=document.getElementById('leadStageNote').value.trim();
-      if(!note)return showToast('Please enter a note for the stage change.','err');
+      if(!note&&(state.profile?.role||'')!=='super_admin')return showToast('Please enter a note for the stage change.','err');
       const btn=e.target.querySelector('button');if(btn){btn.disabled=true;btn.textContent='Saving...'}
       const {error}=await db.rpc('change_customer_lead_stage',{
         p_lead_id:id,
         p_new_stage:newStage,
-        p_note:note,
+        p_note:note||null,
         p_next_follow_up_date:document.getElementById('leadStageFollowup').value||null
       });
-      if(error){if(btn){btn.disabled=false;btn.textContent='Save Forward Stage Change'}return showToast(error.message,'err')}
+      if(error){if(btn){btn.disabled=false;btn.textContent=managerDirect?'Save Stage Change':'Save Forward Stage Change'}return showToast(error.message,'err')}
       closeModal();
-      showToast('Customer moved forward to '+newStage);
+      showToast(managerDirect?'CRM stage updated to '+newStage:'Customer moved forward to '+newStage);
       await renderCustomerDatabase();
+      if(typeof refreshApprovalNotifications==='function')setTimeout(refreshApprovalNotifications,50);
     };
   };
 
@@ -528,7 +556,7 @@
   window.openCustomerLead=async function(id){
     const r=leadById(id);if(!r)return showToast('Customer not found','err');
     const editable=crmCanEditLead(r);
-    const saveArea=editable?`<div class="flex gap-2 mt-4"><button onclick="saveCustomerLead('${r.lead_id}')" class="flex-1 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Customer</button></div>`:`<div class="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-700">Manager can review this Sales Rep's stage, follow-up and activity history. The Sales Rep keeps ownership of editing this customer.</div>`;
+    const saveArea=editable?`<div class="flex gap-2 mt-4"><button onclick="saveCustomerLead('${r.lead_id}')" class="flex-1 bg-[#211d18] text-white rounded-xl py-3 font-semibold">${crmManagerFullEdit()?'Save Manager Changes':'Save Customer'}</button></div>`:`<div class="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-700">This customer is view-only in the current access context.</div>`;
     openModal('Customer Database — '+r.customer_name,`<div id="leadDetailBody">${leadHeader(r,editable)}${leadForm(r,editable)}${saveArea}
       <div id="leadFollowupHistorySection" class="border-t mt-5 pt-5"><div class="flex items-center justify-between gap-3 mb-3"><div><h4 class="font-bold">Follow-up History</h4><div class="text-[10px] text-gray-400">Every Sales follow-up result and the next promised follow-up date.</div></div>${crmCanLogFollowup(r)&&!['Buy','Reject'].includes(r.stage)?`<button type="button" onclick="openLeadFollowup('${r.lead_id}')" class="px-3 py-2 rounded-lg bg-[#b3871e] text-white text-xs font-semibold">+ Log Follow-up</button>`:''}</div><div class="py-6 text-center text-xs text-gray-400">Loading follow-up history...</div></div>
       ${r.linked_customer_id||r.stage==='Buy'?'<div id="leadSalesHistorySection" class="border-t mt-5 pt-5"><div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">Purchase / Invoice History</h4><div class="text-[10px] text-gray-400">What this customer bought and the Sales Order / invoice linked to it.</div></div></div><div class="py-6 text-center text-xs text-gray-400">Loading purchase history...</div></div>':''}
@@ -620,9 +648,21 @@
       p_next_follow_up_date:document.getElementById('leadFollowup').value||null,
       p_notes:document.getElementById('leadNotes').value.trim()||null
     };
-    const {error}=await db.rpc('update_customer_lead',args);
-    if(error)return showToast(error.message,'err');
-    closeModal();showToast('Customer updated');await renderCustomerDatabase();
+
+    let res;
+    if(crmManagerFullEdit()){
+      res=await db.rpc('manager_update_customer_lead_full',{
+        ...args,
+        p_assigned_sales_id:document.getElementById('leadAssignedSales')?.value||null
+      });
+    }else{
+      res=await db.rpc('update_customer_lead',args);
+    }
+
+    if(res.error)return showToast(res.error.message,'err');
+    closeModal();
+    showToast(crmManagerFullEdit()?'Manager changes saved.':'Customer updated');
+    await renderCustomerDatabase();
   };
   window.openLeadFollowup=function(id){
     const r=leadById(id);if(!r)return showToast('Customer not found','err');
