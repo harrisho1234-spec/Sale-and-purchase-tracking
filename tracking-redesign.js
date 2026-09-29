@@ -981,15 +981,23 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
     return s==='placed'?'Ordered':s==='production'?'In Production':s==='shipping'?'Shipping':'Arrived';
   }
 
+  function poQty(v){
+    const n=Number(v||0);
+    return n.toLocaleString(undefined,{maximumFractionDigits:2});
+  }
+
   function filteredPOItems(){
     const q=ui.trackingSearch.toLowerCase().trim();
     return (ui.trackingPOItems||[]).filter(i=>{
       const stage=poItemStage(i.item_status||i.po_status);
       if(ui.trackingPOStatus!=='all'&&stage!==ui.trackingPOStatus)return false;
       if(!q)return true;
+      const allocationSearch=(Array.isArray(i.allocations)?i.allocations:[]).flatMap(a=>[
+        a.customer_name,a.customer_code,a.order_ref,a.sales_rep_name
+      ]);
       const hay=[
         i.po_number,i.po_pending_reference,i.vendor_name,i.product_code,i.item_name,
-        i.brand,i.product_class,i.item_status,i.po_status
+        i.brand,i.product_class,i.item_status,i.po_status,...allocationSearch
       ].filter(Boolean).join(' ').toLowerCase();
       return hay.includes(q);
     });
@@ -997,17 +1005,40 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
 
   function poOrderedItemRow(i){
     const stage=poItemStage(i.item_status||i.po_status),m=stageMeta(stage);
-    return `<div class="lr-track-item">
-      <div class="lr-thumb" style="width:70px;height:70px">${imageHtml(i.image_url)}</div>
+    const qty=Number(i.qty||0);
+    const allocated=Number(i.allocated_qty||0);
+    const unallocated=Number(i.unallocated_qty||0);
+    const allocations=Array.isArray(i.allocations)?i.allocations:[];
+    const allocationRows=allocations.map(a=>`<div class="flex items-start justify-between gap-3 py-1.5 border-b last:border-0">
       <div class="min-w-0">
+        <div class="text-[11px] font-semibold text-gray-800">${esc(a.customer_name||'Customer')}${a.customer_code?` <span class="text-[9px] text-[#b3871e]">${esc(a.customer_code)}</span>`:''}</div>
+        <div class="text-[9px] text-gray-400 mt-0.5">${esc(a.order_ref||'Sales Order')}${a.sales_rep_name?' · '+esc(a.sales_rep_name):''}</div>
+      </div>
+      <div class="text-[11px] font-bold whitespace-nowrap">${poQty(a.qty_allocated)} pcs</div>
+    </div>`).join('');
+
+    return `<div class="lr-track-item items-start">
+      <div class="lr-thumb" style="width:70px;height:70px">${imageHtml(i.image_url)}</div>
+      <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-2">
-          <b>${Number(i.qty||0)}x</b>
+          <b>${poQty(qty)}x</b>
           <span class="lr-badge lr-badge-gray">${esc(i.product_code||'No Code')}</span>
           <span class="lr-badge ${m.badge}">${esc(poItemStatusLabel(i.item_status||i.po_status))}</span>
+          ${allocated>0?`<span class="lr-badge lr-badge-blue">Allocated ${poQty(allocated)} / ${poQty(qty)}</span>`:''}
+          ${unallocated>0?`<span class="lr-badge lr-badge-gray">Stock ${poQty(unallocated)}</span>`:''}
           ${i.estimated_arrival?`<span class="lr-badge lr-badge-blue">ETA ${esc(formatDate(i.estimated_arrival))}</span>`:''}
         </div>
         <div class="text-sm font-semibold mt-1">${esc(i.item_name||'Item')}</div>
         <div class="text-[11px] text-gray-400 mt-1">${[i.brand,i.product_class].filter(Boolean).map(esc).join(' · ')||'Ordered item'}</div>
+
+        <div class="mt-3 rounded-xl border bg-[#faf9f6] px-3 py-2.5">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+            <div class="text-[10px] uppercase tracking-wide font-bold text-gray-500">Customer Allocation</div>
+            <div class="text-[10px] text-gray-500">${poQty(allocated)} allocated · ${poQty(unallocated)} stock/unallocated</div>
+          </div>
+          ${allocationRows||'<div class="text-[10px] text-gray-400 py-1">No customer allocation yet. Entire quantity is available as stock / unallocated.</div>'}
+          ${unallocated>0?`<div class="flex items-center justify-between gap-3 pt-1.5 mt-1 border-t border-dashed"><div class="text-[11px] font-semibold text-gray-600">Unallocated / Stock</div><div class="text-[11px] font-bold text-gray-700">${poQty(unallocated)} pcs</div></div>`:''}
+        </div>
       </div>
     </div>`;
   }
@@ -1037,6 +1068,8 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
       const p=items[0]||{};
       const stage=poItemStage(p.po_status),m=stageMeta(stage);
       const qty=items.reduce((a,x)=>a+Number(x.qty||0),0);
+      const allocatedQty=items.reduce((a,x)=>a+Number(x.allocated_qty||0),0);
+      const unallocatedQty=items.reduce((a,x)=>a+Number(x.unallocated_qty||0),0);
       const poName=p.po_number||p.po_pending_reference||'PO Pending';
       const open=ui.trackingPOExpanded.has(String(key));
       return `<div class="lr-track-order ${open?'open':''}">
@@ -1048,7 +1081,9 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
                 <b class="text-[15px]">${esc(poName)}</b>
                 <span class="lr-badge ${m.badge}">${esc(poItemStatusLabel(p.po_status))}</span>
                 <span class="lr-badge lr-badge-gray">${items.length} item line${items.length===1?'':'s'}</span>
-                <span class="lr-badge lr-badge-gray">Total Qty: ${qty}</span>
+                <span class="lr-badge lr-badge-gray">Total Qty: ${poQty(qty)}</span>
+                ${allocatedQty>0?`<span class="lr-badge lr-badge-blue">Allocated: ${poQty(allocatedQty)}</span>`:''}
+                ${unallocatedQty>0?`<span class="lr-badge lr-badge-gray">Stock: ${poQty(unallocatedQty)}</span>`:''}
               </div>
               <div class="text-[11px] mt-2"><span class="text-gray-400">Supplier:</span> <b>${esc(p.vendor_name||'-')}</b></div>
               <div class="text-[10px] text-gray-400 mt-1">Ordered: ${esc(p.order_date?formatDate(p.order_date):'-')} · ETA: ${esc(p.estimated_arrival?formatDate(p.estimated_arrival):'TBD')}${p.actual_arrival?' · Arrived: '+esc(formatDate(p.actual_arrival)):''}</div>
@@ -1064,7 +1099,7 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
       <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <div class="font-bold text-sm">All Supplier PO Ordered Items</div>
-          <div class="text-[10px] text-gray-400 mt-1">Shared operational view for Sales. Supplier cost, shipping cost and payment information are hidden.</div>
+          <div class="text-[10px] text-gray-400 mt-1">Shared operational view for Sales. Customer allocation is shown by quantity; supplier cost, shipping cost and payment information remain hidden.</div>
         </div>
         <div class="lr-chip-row">${chips}</div>
       </div>
@@ -1136,7 +1171,7 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
         ${(salesTrackingTimelineOnly()?[['timeline','Status Timeline'],['po_items','PO Ordered Items']]:[['timeline','Status Timeline'],['eta','ETA Schedule'],['orders','Orders'],['items','Items']]).map(([v,l])=>`<button class="lr-tab ${ui.trackingTab===v?'active':''}" onclick="setTrackingTab('${v}')">${l}</button>`).join('')}
       </div>
       <div class="relative mb-5">
-        <input class="lr-input pl-10" value="${esc(ui.trackingSearch)}" oninput="setTrackingSearch(this.value)" placeholder="${ui.trackingTab==='po_items'?'Search PO, supplier, item, brand, SKU...':'Search Order, Client, Item, Brand, SKU...'}">
+        <input class="lr-input pl-10" value="${esc(ui.trackingSearch)}" oninput="setTrackingSearch(this.value)" placeholder="${ui.trackingTab==='po_items'?'Search PO, customer, supplier, item, brand, SKU...':'Search Order, Client, Item, Brand, SKU...'}">
         <span class="absolute left-3 top-2.5 text-gray-400">⌕</span>
       </div>
       ${body}`;
