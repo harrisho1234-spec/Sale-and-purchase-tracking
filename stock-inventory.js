@@ -512,24 +512,46 @@
   async function renderReports(){
     await loadCore();
     await loadMovements();
+    ensureReportRange();
     const rows=reportFilteredMovements(),shown=rows.slice(0,inventoryLimit('reports'));
-    const ins=rows.filter(x=>['in','return','adjustment_in','po_receipt','opening'].includes(x.movement_type)).reduce((a,x)=>a+n(x.qty),0);
-    const outs=rows.filter(x=>['out','broken','adjustment_out','sale_delivery'].includes(x.movement_type)).reduce((a,x)=>a+n(x.qty),0);
+    const summary=buildStockPeriodSummary(rows),summaryShown=summary.slice(0,inventoryLimit('reports'));
+    const ins=rows.filter(x=>['in','adjustment_in','po_receipt'].includes(x.movement_type)).reduce((a,x)=>a+n(x.qty),0);
+    const outs=rows.filter(x=>['out','adjustment_out','sale_delivery'].includes(x.movement_type)).reduce((a,x)=>a+n(x.qty),0);
+    const returns=rows.filter(x=>x.movement_type==='return').reduce((a,x)=>a+n(x.qty),0);
     const transfers=rows.filter(x=>x.movement_type==='transfer').reduce((a,x)=>a+n(x.qty),0);
     const broken=rows.filter(x=>x.movement_type==='broken').reduce((a,x)=>a+n(x.qty),0);
     const historical=rows.filter(x=>x.legacy).length;
     const live=rows.length-historical;
-    const agingQty=inv.balances.filter(productPassesInventoryFilters).reduce((a,x)=>a+n(x.on_hand),0);
-    return `${inventoryFilterControls('reports')}<div class="grid sm:grid-cols-2 xl:grid-cols-5 gap-3 mb-4">
-      <div class="inv-stat"><div class="inv-stat-label">Filtered Stock Qty</div><div class="inv-stat-value">${q(agingQty)}</div></div>
-      <div class="inv-stat"><div class="inv-stat-label">Stock In Shown</div><div class="inv-stat-value text-green-600">${q(ins)}</div></div>
-      <div class="inv-stat"><div class="inv-stat-label">Stock Out Shown</div><div class="inv-stat-value text-red-500">${q(outs)}</div></div>
-      <div class="inv-stat"><div class="inv-stat-label">Transfers Shown</div><div class="inv-stat-value text-blue-600">${q(transfers)}</div></div>
-      <div class="inv-stat"><div class="inv-stat-label">Broken Shown</div><div class="inv-stat-value text-amber-700">${q(broken)}</div></div>
+    const endingQty=summary.reduce((a,x)=>a+n(x.ending),0);
+    const loc=reportLocation();
+    return `${reportPeriodControls()}${inventoryFilterControls('reports')}
+    <div class="rounded-2xl border border-amber-200 bg-[#fffaf0] p-4 mb-4">
+      <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+        <div><div class="text-[10px] uppercase font-bold text-[#a77d1a]">${inv.reportPeriod==='custom'?'Custom':titleCase(inv.reportPeriod)} Stock Report</div><h3 class="text-lg font-bold mt-1">Stock Report from (${esc(longReportDate(inv.reportFrom))}) to (${esc(longReportDate(inv.reportTo))})</h3><div class="text-[10px] text-gray-500 mt-1">${loc?'Location: '+esc(loc.code+' · '+loc.name):'All Locations'}${inv.ageFilter?' · Aging: '+esc(inv.ageFilter)+' days':''}</div></div>
+        <button onclick="exportStockReportExcel()" class="px-4 py-2.5 bg-[#211d18] text-white rounded-xl text-xs font-semibold">Export Styled Excel Report</button>
+      </div>
     </div>
-    <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800 mb-4"><b>Movement history:</b> ${historical.toLocaleString()} imported Stock Controller rows + ${live.toLocaleString()} live app movements shown by the current search.</div>
-    <div class="mb-3 flex justify-end"><button onclick="exportStockMovementCSV()" class="px-3 py-2 border rounded-xl text-xs font-semibold">Export Movement CSV</button></div>
-    <div class="inv-card"><div class="divide-y">${shown.length?shown.map(m=>movementRow(m)).join(''):'<div class="py-10 text-center text-xs text-gray-400">No report rows found.</div>'}</div>${inventoryListControls('reports',rows.length)}</div>`;
+    <div class="grid sm:grid-cols-2 xl:grid-cols-6 gap-3 mb-4">
+      <div class="inv-stat"><div class="inv-stat-label">Ending Balance</div><div class="inv-stat-value">${q(endingQty)}</div></div>
+      <div class="inv-stat"><div class="inv-stat-label">In</div><div class="inv-stat-value text-green-600">${q(ins)}</div></div>
+      <div class="inv-stat"><div class="inv-stat-label">Out</div><div class="inv-stat-value text-red-500">${q(outs)}</div></div>
+      <div class="inv-stat"><div class="inv-stat-label">Return</div><div class="inv-stat-value text-blue-600">${q(returns)}</div></div>
+      <div class="inv-stat"><div class="inv-stat-label">Broken</div><div class="inv-stat-value text-amber-700">${q(broken)}</div></div>
+      <div class="inv-stat"><div class="inv-stat-label">Transfer</div><div class="inv-stat-value text-purple-600">${q(transfers)}</div></div>
+    </div>
+    <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800 mb-4"><b>Movement history:</b> ${historical.toLocaleString()} imported rows + ${live.toLocaleString()} live app movements in this report period.</div>
+
+    <div class="mb-2 flex items-center justify-between"><div><h4 class="font-bold">Movement Detail</h4><div class="text-[10px] text-gray-400">Matches the movement section of your stock report template.</div></div></div>
+    <div class="inv-card mb-5"><div class="divide-y">${shown.length?shown.map(m=>movementRow(m)).join(''):'<div class="py-10 text-center text-xs text-gray-400">No movement rows found for this period.</div>'}</div>${inventoryListControls('reports',rows.length)}</div>
+
+    <div class="mb-2"><h4 class="font-bold">Ending Balance by Item Code</h4><div class="text-[10px] text-gray-400">Opening + In + Return − Out − Broken ± Transfers = Ending Balance for the selected period.</div></div>
+    <div class="card rounded-2xl overflow-hidden">
+      <div class="grid grid-cols-[1.1fr_2fr_85px_70px_70px_70px_70px_85px_85px_95px] gap-2 px-4 py-2.5 bg-gray-50 border-b text-[9px] uppercase font-bold text-gray-400">
+        <div>Code</div><div>Item Name</div><div>Opening</div><div>In</div><div>Out</div><div>Return</div><div>Broken</div><div>Transfer In</div><div>Transfer Out</div><div>Ending</div>
+      </div>
+      <div class="divide-y">${summaryShown.length?summaryShown.map(x=>`<div class="grid grid-cols-[1.1fr_2fr_85px_70px_70px_70px_70px_85px_85px_95px] gap-2 px-4 py-3 items-center text-xs"><div class="font-bold text-[#a77d1a] truncate">${esc(x.code)}</div><div class="truncate">${esc(x.item_name)}</div><div>${q(x.opening)}</div><div class="text-green-600">${q(x.in)}</div><div class="text-red-500">${q(x.out)}</div><div class="text-blue-600">${q(x.return)}</div><div class="text-amber-700">${q(x.broken)}</div><div>${q(x.transfer_in)}</div><div>${q(x.transfer_out)}</div><div class="font-bold">${q(x.ending)}</div></div>`).join(''):'<div class="p-10 text-center text-sm text-gray-400">No ending-balance rows for this period/filter.</div>'}</div>
+      ${summary.length>summaryShown.length?`<div class="p-3 text-center text-[10px] text-gray-400 border-t">Showing ${summaryShown.length.toLocaleString()} of ${summary.length.toLocaleString()} item codes on screen. Excel export includes all item codes.</div>`:''}
+    </div>`;
   }
 
   function manualMovementOptions(selected,locked=false){
@@ -1115,17 +1137,97 @@
     showToast('Stock count closed and variances applied.');inv.locations=[];inv.balances=[];await openStockCount(id);
   };
 
-  window.exportStockMovementCSV=function(){
-    const rows=reportFilteredMovements();
-    const cols=['Date','Type','Code','Item','Qty','From','To','Reference','Counterparty','Remark','Created By'];
-    const val=v=>`"${String(v??'').replaceAll('"','""')}"`;
-    const csv=[cols.map(val).join(','),...rows.map(m=>[
-      m.movement_date,movementLabel(m.movement_type),m.code,m.item_name,m.qty,m.from_location,m.to_location,
-      m.reference_no,m.counterparty,m.note,m.created_by_name
-    ].map(val).join(','))].join('\n');
-    const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}),a=document.createElement('a');
-    a.href=URL.createObjectURL(blob);a.download='Stock_Movement_'+new Date().toISOString().slice(0,10)+'.csv';a.click();URL.revokeObjectURL(a.href);
+  function stockReportType(m){
+    if(['in','adjustment_in','po_receipt'].includes(m.movement_type))return 'In';
+    if(['out','adjustment_out','sale_delivery'].includes(m.movement_type))return 'Out';
+    if(m.movement_type==='return')return 'Return';
+    if(m.movement_type==='broken')return 'Broken';
+    if(m.movement_type==='transfer')return 'Transfer';
+    return movementLabel(m.movement_type);
+  }
+  function stockReportRemark(m){
+    const path=m.from_location&&m.to_location?`${m.from_location} → ${m.to_location}`:m.to_location?`To ${m.to_location}`:m.from_location?`From ${m.from_location}`:'';
+    return [path,m.note].filter(Boolean).join(' · ');
+  }
+  window.exportStockReportExcel=async function(){
+    ensureReportRange();
+    if(typeof ExcelJS==='undefined')return showToast('Excel report library is still loading. Refresh once and try again.','err');
+    await loadCore();await loadMovements();
+    const rows=reportFilteredMovements().slice().sort((a,b)=>String(a.movement_date).localeCompare(String(b.movement_date))||String(a.created_at||'').localeCompare(String(b.created_at||'')));
+    const summary=buildStockPeriodSummary(rows);
+    const wb=new ExcelJS.Workbook();
+    wb.creator='L’Imperial Stock & Inventory';
+    wb.created=new Date();
+
+    const loc=reportLocation();
+    const locText=loc?`${loc.code} · ${loc.name}`:'All Locations';
+    const periodTitle=`Stock Report from (${longReportDate(inv.reportFrom)}) to (${longReportDate(inv.reportTo)})`;
+    const totals={
+      in:rows.filter(x=>['in','adjustment_in','po_receipt'].includes(x.movement_type)).reduce((a,x)=>a+n(x.qty),0),
+      out:rows.filter(x=>['out','adjustment_out','sale_delivery'].includes(x.movement_type)).reduce((a,x)=>a+n(x.qty),0),
+      return:rows.filter(x=>x.movement_type==='return').reduce((a,x)=>a+n(x.qty),0),
+      broken:rows.filter(x=>x.movement_type==='broken').reduce((a,x)=>a+n(x.qty),0)
+    };
+
+    const ws=wb.addWorksheet('Movement Report',{views:[{state:'frozen',ySplit:4}]});
+    ws.mergeCells('A1:H1');
+    ws.getCell('A1').value=periodTitle;
+    ws.getCell('A1').font={bold:true,size:14,color:{argb:'FF7A5200'}};
+    ws.getCell('A1').alignment={horizontal:'center',vertical:'middle'};
+    ws.getCell('A1').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFF2CC'}};
+    ws.getRow(1).height=26;
+
+    ws.getCell('A2').value='From Date';ws.getCell('B2').value=longReportDate(inv.reportFrom);
+    ws.getCell('C2').value='To Date';ws.getCell('D2').value=longReportDate(inv.reportTo);
+    ws.getCell('E2').value='Location';ws.getCell('F2').value=locText;
+    ws.getCell('G2').value='Aging';ws.getCell('H2').value=inv.ageFilter||'All';
+    ['A2','C2','E2','G2'].forEach(a=>{ws.getCell(a).font={bold:true,color:{argb:'FF7A5200'}};ws.getCell(a).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFF2CC'}}});
+
+    ws.mergeCells('A3:D3');ws.getCell('A3').value=`SEARCH: ${inv.search||'All'}`;
+    ws.mergeCells('E3:H3');ws.getCell('E3').value=`Total: In: ${q(totals.in)}  |  Out: ${q(totals.out)}  |  Return: ${q(totals.return)}  |  Broken: ${q(totals.broken)}`;
+    ws.getCell('E3').font={bold:true,color:{argb:'FF9C0006'}};ws.getCell('E3').alignment={horizontal:'right'};
+
+    const movementHeader=['Date','PO/INV','Customer & Vendor','Items Code','Items Name','Unit','Type','Remark'];
+    const hr=ws.addRow(movementHeader);
+    hr.height=22;
+    hr.eachCell(cell=>{cell.font={bold:true,color:{argb:'FF000000'}};cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFE2F0D9'}};cell.border={top:{style:'thin',color:{argb:'FF000000'}},left:{style:'thin',color:{argb:'FF000000'}},bottom:{style:'thin',color:{argb:'FF000000'}},right:{style:'thin',color:{argb:'FF000000'}}};cell.alignment={vertical:'middle'};});
+
+    for(const m of rows){
+      const row=ws.addRow([dateText(m.movement_date),m.reference_no||'',m.counterparty||'',m.code||'',m.item_name||'',n(m.qty),stockReportType(m),stockReportRemark(m)]);
+      row.eachCell(cell=>{cell.border={bottom:{style:'hair',color:{argb:'FFD9D9D9'}}};cell.alignment={vertical:'top',wrapText:true};});
+    }
+    ws.autoFilter={from:'A4',to:'H4'};
+    ws.columns=[{width:16},{width:18},{width:24},{width:24},{width:58},{width:10},{width:12},{width:42}];
+
+    const es=wb.addWorksheet('Ending Balance',{views:[{state:'frozen',ySplit:4}]});
+    es.mergeCells('A1:J1');es.getCell('A1').value=`Ending Balance — ${periodTitle}`;
+    es.getCell('A1').font={bold:true,size:14,color:{argb:'FF7A5200'}};es.getCell('A1').alignment={horizontal:'center'};es.getCell('A1').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFF2CC'}};
+    es.mergeCells('A2:J2');es.getCell('A2').value=`Location: ${locText} · Aging: ${inv.ageFilter||'All'} · Search: ${inv.search||'All'}`;
+    es.getCell('A2').font={italic:true,color:{argb:'FF666666'}};
+    es.mergeCells('A3:J3');es.getCell('A3').value='Opening + In + Return − Out − Broken + Transfer In − Transfer Out = Ending Balance';
+    es.getCell('A3').font={bold:true,color:{argb:'FF3F6600'}};
+
+    const balanceHeader=['Items Code','Items Name','Brand','Opening Balance','In','Out','Return','Broken','Transfer In','Transfer Out','Ending Balance'];
+    const bhr=es.addRow(balanceHeader);
+    bhr.eachCell(cell=>{cell.font={bold:true};cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFE2F0D9'}};cell.border={top:{style:'thin'},left:{style:'thin'},bottom:{style:'thin'},right:{style:'thin'}};});
+    for(const x of summary){
+      const row=es.addRow([x.code,x.item_name,x.brand,n(x.opening),n(x.in),n(x.out),n(x.return),n(x.broken),n(x.transfer_in),n(x.transfer_out),n(x.ending)]);
+      for(let col=4;col<=11;col++)row.getCell(col).numFmt='#,##0.00';
+      row.eachCell(cell=>{cell.border={bottom:{style:'hair',color:{argb:'FFD9D9D9'}}};cell.alignment={vertical:'top',wrapText:true};});
+    }
+    es.autoFilter={from:'A4',to:'K4'};
+    es.columns=[{width:25},{width:55},{width:20},{width:16},{width:11},{width:11},{width:11},{width:11},{width:14},{width:14},{width:16}];
+
+    const buffer=await wb.xlsx.writeBuffer();
+    const blob=new Blob([buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    const period=(inv.reportPeriod||'custom').replaceAll(' ','_');
+    a.download=`Stock_Report_${period}_${inv.reportFrom}_to_${inv.reportTo}.xlsx`;
+    document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+    showToast('Stock report exported with Movement Report and Ending Balance sheets.');
   };
+  window.exportStockMovementCSV=window.exportStockReportExcel;
 
   // Stock Controller gets a stock-safe Product catalog: product identity + live stock, without costing/payment controls.
   const previousRenderProducts=window.renderProducts;
