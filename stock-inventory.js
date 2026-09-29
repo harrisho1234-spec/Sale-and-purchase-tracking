@@ -106,7 +106,7 @@
     const noAvail=inv.balances.filter(x=>n(x.on_hand)>0&&n(x.available)<=0).length;
 
     const [mov,poQ,delQ]=await Promise.all([
-      db.from('stock_movement_detail').select('*').order('movement_date',{ascending:false}).order('created_at',{ascending:false}).limit(8),
+      db.from('inventory_movement_history').select('*').neq('movement_type','opening').order('movement_date',{ascending:false}).order('created_at',{ascending:false}).limit(8),
       canOperate()?db.rpc('get_inventory_po_receiving_queue',{p_search:null}):Promise.resolve({data:[],error:null}),
       canOperate()?db.rpc('get_inventory_delivery_queue',{p_search:null}):Promise.resolve({data:[],error:null})
     ]);
@@ -175,7 +175,7 @@
   function movementRow(m){
     const path=m.from_location&&m.to_location?`${m.from_location} → ${m.to_location}`:m.to_location?`→ ${m.to_location}`:m.from_location?`${m.from_location} →`:'-';
     return `<div class="py-3 grid md:grid-cols-[105px_1.6fr_110px_90px_1fr] gap-3 items-center text-xs">
-      <div><b>${esc(dateText(m.movement_date))}</b><div class="text-[9px] text-gray-400">${esc(m.created_by_name||'System')}</div></div>
+      <div><b>${esc(dateText(m.movement_date))}</b><div class="text-[9px] text-gray-400">${esc(m.created_by_name||'System')}${m.legacy?' · Historical':''}</div></div>
       <div><div class="text-[10px] font-bold text-[#a77d1a]">${esc(m.code||'')}</div><div class="font-semibold">${esc(m.item_name||'')}</div><div class="text-[9px] text-gray-400">${esc(m.reference_no||m.counterparty||'')}</div></div>
       <span class="px-2 py-1 rounded-lg border text-[9px] font-bold w-fit ${movementBadge(m.movement_type)}">${esc(movementLabel(m.movement_type))}</span>
       <div><b>${q(m.qty)}</b><div class="text-[9px] text-gray-400">${esc(path)}</div></div>
@@ -184,8 +184,19 @@
   }
 
   async function loadMovements(){
-    const r=await db.from('stock_movement_detail').select('*').order('movement_date',{ascending:false}).order('created_at',{ascending:false}).limit(1000);
-    if(r.error)throw r.error;inv.movementRows=r.data||[];
+    const all=[];
+    for(let from=0;from<10000;from+=1000){
+      const r=await db.from('inventory_movement_history')
+        .select('*')
+        .neq('movement_type','opening')
+        .order('movement_date',{ascending:false})
+        .order('created_at',{ascending:false})
+        .range(from,from+999);
+      if(r.error)throw r.error;
+      all.push(...(r.data||[]));
+      if(!r.data||r.data.length<1000)break;
+    }
+    inv.movementRows=all;
   }
 
   function filteredMovements(){
@@ -250,7 +261,10 @@
     const outs=rows.filter(x=>['out','broken','adjustment_out','sale_delivery'].includes(x.movement_type)).reduce((a,x)=>a+n(x.qty),0);
     const transfers=rows.filter(x=>x.movement_type==='transfer').reduce((a,x)=>a+n(x.qty),0);
     const broken=rows.filter(x=>x.movement_type==='broken').reduce((a,x)=>a+n(x.qty),0);
-    return `<div class="grid sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-4">
+    const historical=rows.filter(x=>x.legacy).length;
+    const live=rows.length-historical;
+    return `<div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800 mb-4"><b>Movement history:</b> ${historical.toLocaleString()} imported Stock Controller rows + ${live.toLocaleString()} live app movements shown by the current search.</div>
+    <div class="grid sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-4">
       <div class="inv-stat"><div class="inv-stat-label">Stock In Shown</div><div class="inv-stat-value text-green-600">${q(ins)}</div></div>
       <div class="inv-stat"><div class="inv-stat-label">Stock Out Shown</div><div class="inv-stat-value text-red-500">${q(outs)}</div></div>
       <div class="inv-stat"><div class="inv-stat-label">Transfers Shown</div><div class="inv-stat-value text-blue-600">${q(transfers)}</div></div>
@@ -360,7 +374,7 @@
     await loadCore();
     const p=inv.balanceMap.get(productId);
     openModal('Stock History — '+(p?.code||'Product'),'<div class="py-12 text-center text-sm text-gray-400">Loading history...</div>');
-    const r=await db.from('stock_movement_detail').select('*').eq('product_id',productId).order('movement_date',{ascending:false}).order('created_at',{ascending:false}).limit(500);
+    const r=await db.from('inventory_movement_history').select('*').eq('product_id',productId).order('movement_date',{ascending:false}).order('created_at',{ascending:false}).limit(500);
     if(r.error){document.getElementById('modalBody').innerHTML=`<div class="text-red-600">${esc(r.error.message)}</div>`;return}
     const locs=(p?.locations||[]).filter(x=>n(x.qty)!==0);
     document.getElementById('modalBody').innerHTML=`<div class="space-y-4">
