@@ -9,13 +9,16 @@
     balanceMap:new Map(),
     movementRows:[],
     poRows:[],
+    poExpanded:new Set(),
     deliveryRows:[]
   };
 
   function role(){return state.profile?.role||''}
   function canView(){return ['stock_controller','accountant','manager','admin','super_admin'].includes(role())}
   function canOperate(){return ['stock_controller','admin','super_admin'].includes(role())}
-  function canReconcile(){return ['accountant','manager','admin','super_admin'].includes(role())}
+  function canAdmin(){return ['admin','super_admin'].includes(role())}
+  function canReconcile(){return canAdmin()}
+  function isStockController(){return role()==='stock_controller'}
   function n(v){return Number(v||0)}
   function q(v){const x=n(v);return Number.isInteger(x)?x.toLocaleString():x.toLocaleString(undefined,{maximumFractionDigits:2})}
   function dateText(v){if(!v)return '-';const d=new Date(String(v).length<=10?v+'T00:00:00':v);return Number.isNaN(d.getTime())?String(v):d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}
@@ -85,6 +88,7 @@
     const t=[['dashboard','Dashboard'],['balance','Stock Balance'],['movements','Movements']];
     if(canOperate())t.push(['receive','Receive PO'],['delivery','Customer Delivery']);
     t.push(['counts','Stock Count'],['reports','Reports']);
+    if(canAdmin()||isStockController())t.push(['requests',canAdmin()?'Edit Requests':'My Requests']);
     return t;
   }
 
@@ -174,12 +178,20 @@
 
   function movementRow(m){
     const path=m.from_location&&m.to_location?`${m.from_location} → ${m.to_location}`:m.to_location?`→ ${m.to_location}`:m.from_location?`${m.from_location} →`:'-';
-    return `<div class="py-3 grid md:grid-cols-[105px_1.6fr_110px_90px_1fr] gap-3 items-center text-xs">
+    const liveId=!m.legacy&&String(m.history_id||'').startsWith('live:')?String(m.history_id).slice(5):'';
+    let actions='';
+    if(canAdmin()){
+      actions=`<div class="flex gap-1.5 flex-wrap justify-end"><button onclick="openAdminStockMovementEdit('${esc(m.history_id||'')}')" class="px-2 py-1.5 border rounded-lg text-[9px] font-semibold">Edit</button><button onclick="deleteStockMovementAdmin('${esc(m.history_id||'')}')" class="px-2 py-1.5 border border-red-200 text-red-600 rounded-lg text-[9px] font-semibold">Delete</button></div>`;
+    }else if(isStockController()&&liveId){
+      actions=`<div class="flex gap-1.5 flex-wrap justify-end"><button onclick="openStockMovementEditRequest('${liveId}')" class="px-2 py-1.5 border border-amber-200 bg-amber-50 text-amber-700 rounded-lg text-[9px] font-semibold">Request Edit</button><button onclick="requestStockMovementDelete('${liveId}')" class="px-2 py-1.5 border border-red-200 text-red-600 rounded-lg text-[9px] font-semibold">Request Delete</button></div>`;
+    }
+    return `<div class="py-3 grid md:grid-cols-[105px_1.45fr_110px_90px_1fr_150px] gap-3 items-center text-xs">
       <div><b>${esc(dateText(m.movement_date))}</b><div class="text-[9px] text-gray-400">${esc(m.created_by_name||'System')}${m.legacy?' · Historical':''}</div></div>
       <div><div class="text-[10px] font-bold text-[#a77d1a]">${esc(m.code||'')}</div><div class="font-semibold">${esc(m.item_name||'')}</div><div class="text-[9px] text-gray-400">${esc(m.reference_no||m.counterparty||'')}</div></div>
       <span class="px-2 py-1 rounded-lg border text-[9px] font-bold w-fit ${movementBadge(m.movement_type)}">${esc(movementLabel(m.movement_type))}</span>
       <div><b>${q(m.qty)}</b><div class="text-[9px] text-gray-400">${esc(path)}</div></div>
       <div class="text-[10px] text-gray-500">${esc(m.note||m.counterparty||'-')}</div>
+      <div>${actions}</div>
     </div>`;
   }
 
@@ -213,17 +225,42 @@
     return `<div class="inv-card"><div class="divide-y">${rows.length?rows.map(m=>movementRow(m)).join(''):'<div class="py-10 text-center text-xs text-gray-400">No movements found.</div>'}</div></div>`;
   }
 
+  window.toggleInventoryPOGroup=function(poId){
+    if(inv.poExpanded.has(poId))inv.poExpanded.delete(poId);else inv.poExpanded.add(poId);
+    renderStockInventoryBody();
+  };
+
   async function renderReceive(){
     const r=await db.rpc('get_inventory_po_receiving_queue',{p_search:inv.search||null});
     if(r.error)throw r.error;inv.poRows=r.data||[];
-    const rows=inv.poRows;
-    return `<div class="grid gap-3">${rows.length?rows.map(x=>`<div class="inv-card grid lg:grid-cols-[1.3fr_1.6fr_100px_110px_120px] gap-3 items-center">
-      <div><b>${esc(x.po_number||'PO')}</b><div class="text-xs text-gray-500">${esc(x.vendor_name||'')}</div><div class="text-[9px] text-gray-400">ETA ${esc(dateText(x.eta))}</div></div>
-      <div class="flex gap-3 items-center min-w-0"><div class="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 shrink-0">${x.image_url?`<img src="${esc(x.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(x.product_code||'')}</div><div class="text-sm font-semibold truncate">${esc(x.item_name||'')}</div></div></div>
-      <div class="text-xs"><div class="text-gray-400">Ordered</div><b>${q(x.ordered_qty)}</b></div>
-      <div class="text-xs"><div class="text-gray-400">Remaining</div><b class="text-blue-600">${q(x.remaining_qty)}</b></div>
-      <button onclick="openReceivePOItem('${x.supplier_po_item_id}')" class="px-3 py-2.5 bg-[#211d18] text-white rounded-xl text-xs font-semibold">Receive Stock</button>
-    </div>`).join(''):'<div class="inv-card py-12 text-center text-sm text-gray-400">No PO items are waiting to be received.</div>'}</div>`;
+    const grouped=new Map();
+    for(const x of inv.poRows){
+      const key=String(x.supplier_po_id||x.po_number||'');
+      if(!grouped.has(key))grouped.set(key,{id:key,po_number:x.po_number||'PO',vendor_name:x.vendor_name||'',eta:x.eta,items:[]});
+      grouped.get(key).items.push(x);
+    }
+    const groups=[...grouped.values()];
+    return `<div class="grid gap-3">${groups.length?groups.map(g=>{
+      const ordered=g.items.reduce((a,x)=>a+n(x.ordered_qty),0);
+      const remaining=g.items.reduce((a,x)=>a+n(x.remaining_qty),0);
+      const expanded=inv.poExpanded.has(g.id);
+      return `<div class="inv-card p-0 overflow-hidden">
+        <button type="button" onclick="toggleInventoryPOGroup('${esc(g.id)}')" class="w-full p-4 text-left grid lg:grid-cols-[1.4fr_130px_130px_150px] gap-4 items-center hover:bg-gray-50">
+          <div><div class="flex flex-wrap items-center gap-2"><b class="text-base">${esc(g.po_number)}</b><span class="px-2 py-1 rounded-lg border bg-gray-50 text-[9px] font-semibold">${g.items.length} item line${g.items.length===1?'':'s'}</span></div><div class="text-xs text-gray-500 mt-1">${esc(g.vendor_name)}</div><div class="text-[9px] text-gray-400 mt-1">ETA ${esc(dateText(g.eta))}</div></div>
+          <div class="text-xs"><div class="text-gray-400">Ordered Qty</div><b class="text-sm">${q(ordered)}</b></div>
+          <div class="text-xs"><div class="text-gray-400">Remaining Qty</div><b class="text-sm text-blue-600">${q(remaining)}</b></div>
+          <div class="text-right text-xs font-semibold text-[#a77d1a]">${expanded?'Hide Items ↑':'View / Receive Items ↓'}</div>
+        </button>
+        <div class="${expanded?'':'hidden'} border-t bg-[#faf9f6]">
+          ${g.items.map(x=>`<div class="p-4 grid lg:grid-cols-[1.8fr_90px_100px_120px] gap-3 items-center border-b last:border-0">
+            <div class="flex gap-3 items-center min-w-0"><div class="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 shrink-0">${x.image_url?`<img src="${esc(x.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(x.product_code||'')}</div><div class="text-sm font-semibold truncate">${esc(x.item_name||'')}</div></div></div>
+            <div class="text-xs"><span class="text-gray-400">Ordered</span><br><b>${q(x.ordered_qty)}</b></div>
+            <div class="text-xs"><span class="text-gray-400">Remaining</span><br><b class="text-blue-600">${q(x.remaining_qty)}</b></div>
+            <button onclick="openReceivePOItem('${x.supplier_po_item_id}')" class="px-3 py-2.5 bg-[#211d18] text-white rounded-xl text-xs font-semibold">Receive Stock</button>
+          </div>`).join('')}
+        </div>
+      </div>`;
+    }).join(''):'<div class="inv-card py-12 text-center text-sm text-gray-400">No POs are waiting to be received.</div>'}</div>`;
   }
 
   async function renderDelivery(){
@@ -285,6 +322,7 @@
       else if(inv.tab==='receive')html=await renderReceive();
       else if(inv.tab==='delivery')html=await renderDelivery();
       else if(inv.tab==='counts')html=await renderCounts();
+      else if(inv.tab==='requests')html=await renderStockRequests();
       else html=await renderReports();
       body.innerHTML=html;
     }catch(err){body.innerHTML=`<div class="inv-card text-red-600">Error: ${esc(err.message)}</div>`}
@@ -507,7 +545,7 @@
     const r=await db.rpc('submit_stock_count',{p_count_id:id});if(r.error)return showToast(r.error.message,'err');showToast('Stock count submitted.');await openStockCount(id);
   };
   window.closeStockCountNow=async function(id){
-    if(!canReconcile())return showToast('Accountant, Manager or Admin access required.','err');
+    if(!canReconcile())return showToast('Admin or Super Admin access required.','err');
     if(!confirm('Close this stock count and apply physical-count variances to live stock? This creates audited adjustment movements.'))return;
     const r=await db.rpc('close_stock_count',{p_count_id:id});if(r.error)return showToast(r.error.message,'err');
     showToast('Stock count closed and variances applied.');inv.locations=[];inv.balances=[];await openStockCount(id);
