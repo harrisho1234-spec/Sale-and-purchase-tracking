@@ -1103,6 +1103,47 @@
     showToast('Count row saved.');
   };
 
+  window.setStockCountPhysicalZero=async function(itemId){
+    const row=document.querySelector('[data-count-item="'+itemId+'"]');
+    if(!row)return;
+    const input=row.querySelector('.count-physical');
+    if(!input||input.disabled)return;
+    input.value='0';
+    await saveStockCountRow(itemId);
+  };
+
+  window.fillStockCountBlanksZero=async function(countId){
+    if(!confirm('Mark every remaining blank Physical Qty as 0? Use this only after the location has been physically checked. Blank means NOT COUNTED; 0 means COUNTED and none found.'))return;
+    const r=await db.rpc('fill_stock_count_blank_physical_zero',{p_count_id:countId});
+    if(r.error)return showToast(r.error.message,'err');
+    showToast((r.data||0)+' blank item(s) marked as 0.');
+    await openStockCount(countId);
+  };
+
+  window.openAddStockCountItem=async function(countId){
+    await loadCore();
+    openModal('Add Item to Stock Count',`<div class="space-y-4">
+      <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800"><b>Use this when the product is physically found at this location but was not already listed.</b> This includes products where the system quantity is currently 0.</div>
+      <div><label class="text-xs font-semibold">Product / SKU</label><div class="relative"><input id="scAddProductSearch" autocomplete="off" oninput="showStockCountAddSuggestions(this,'${countId}')" onfocus="showStockCountAddSuggestions(this,'${countId}')" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Type product code or item name..."><div id="scAddProductSuggestions" class="absolute z-[150] left-0 right-0 top-full mt-1 max-h-80 overflow-y-auto bg-white border rounded-xl shadow-xl"></div></div></div>
+      <div class="text-[10px] text-gray-400">After adding it, enter the Physical Qty and save it like the other count rows.</div>
+    </div>`);
+    setTimeout(()=>document.getElementById('scAddProductSearch')?.focus(),50);
+  };
+
+  window.showStockCountAddSuggestions=function(input,countId){
+    const box=document.getElementById('scAddProductSuggestions');if(!box)return;
+    const rows=stockProductMatches(input?.value||'');
+    if(!rows.length){box.innerHTML='<div class="px-4 py-3 text-sm text-gray-400">No matching product</div>';return}
+    box.innerHTML=rows.map(p=>`<button type="button" onclick="addStockCountProduct('${countId}','${p.product_id}')" class="w-full text-left px-3 py-2.5 hover:bg-amber-50 border-b last:border-0 flex gap-3 items-center"><div class="w-11 h-11 rounded-lg overflow-hidden bg-gray-100 shrink-0">${p.image_url?`<img src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code||'')}</div><div class="text-sm font-semibold truncate">${esc(p.item_name||'')}</div><div class="text-[10px] text-gray-400">${esc(p.brand||'')} · Current total on hand ${q(p.on_hand)}</div></div></button>`).join('');
+  };
+
+  window.addStockCountProduct=async function(countId,productId){
+    const r=await db.rpc('add_stock_count_item',{p_count_id:countId,p_product_id:productId});
+    if(r.error)return showToast(r.error.message,'err');
+    showToast('Item added to this Stock Count.');
+    await openStockCount(countId);
+  };
+
   window.openStockCount=async function(countId){
     openModal('Stock Count','<div class="py-12 text-center text-sm text-gray-400">Loading stock count...</div>');
     const [c,items]=await Promise.all([
@@ -1114,12 +1155,16 @@
     const canEditCount=canAdmin()||(isStockController()&&count.status==='draft');
     document.getElementById('modalBody').innerHTML=`<div class="space-y-4">
       <div class="rounded-xl border bg-gray-50 p-4 flex flex-wrap gap-4 justify-between"><div><div class="text-[9px] uppercase font-bold text-gray-400">Period</div><b>${esc(String(count.period_month).slice(0,7))}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Location</div><b>${esc(count.stock_locations?.code||'All')}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Status</div><b>${esc(titleCase(count.status))}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Items</div><b>${rows.length}</b></div></div>
+      <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2">
+        <div class="text-[10px] text-gray-500"><b>Physical Qty:</b> blank = not counted yet · <b>0</b> = counted and none physically found.</div>
+        ${canEditCount&&count.status==='draft'?`<div class="flex flex-wrap gap-2"><button onclick="openAddStockCountItem('${count.id}')" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-xl text-xs font-semibold">+ Add Item</button><button onclick="fillStockCountBlanksZero('${count.id}')" class="px-3 py-2 border border-gray-200 bg-white rounded-xl text-xs font-semibold">Mark Remaining Blanks = 0</button></div>`:''}
+      </div>
       <div class="max-h-[58vh] overflow-auto border rounded-xl">
-        <div class="divide-y" style="min-width:1096px">
-          <div class="sticky top-0 z-10 bg-gray-50 p-2 grid gap-2 text-[9px] uppercase font-bold text-gray-400" style="grid-template-columns:280px 90px 110px 110px 80px 80px 220px 70px">
+        <div class="divide-y" style="min-width:1126px">
+          <div class="sticky top-0 z-10 bg-gray-50 p-2 grid gap-2 text-[9px] uppercase font-bold text-gray-400" style="grid-template-columns:280px 90px 140px 110px 80px 80px 220px 70px">
             <div>Product</div><div>System</div><div>Physical</div><div>QB Qty</div><div>Var</div><div>QB Var</div><div>Note</div><div></div>
           </div>
-          ${rows.map(i=>`<div data-count-item="${i.id}" data-system="${n(i.system_qty)}" class="p-2 grid gap-2 items-center text-xs" style="grid-template-columns:280px 90px 110px 110px 80px 80px 220px 70px"><div class="min-w-0"><div class="text-[9px] font-bold text-[#a77d1a] truncate">${esc(i.product_catalog?.code||'')}</div><div class="truncate">${esc(i.product_catalog?.item_name||'')}</div></div><b class="text-right pr-2">${q(i.system_qty)}</b><input class="count-physical min-w-0 w-full border rounded-lg px-2 py-1.5" type="number" min="0" step="0.01" value="${i.physical_qty==null?'':n(i.physical_qty)}" ${!canEditCount?'disabled':''}><input class="count-qb min-w-0 w-full border rounded-lg px-2 py-1.5" type="number" min="0" step="0.01" value="${i.qb_qty==null?'':n(i.qb_qty)}" ${!canEditCount?'disabled':''}><b class="count-var text-right pr-2 ${i.physical_qty!=null&&n(i.physical_qty)!==n(i.system_qty)?'text-red-600':''}">${i.physical_qty==null?'-':q(n(i.physical_qty)-n(i.system_qty))}</b><span class="count-qbvar text-right pr-2">${i.qb_qty==null?'-':q(n(i.qb_qty)-n(i.system_qty))}</span><input class="count-note min-w-0 w-full border rounded-lg px-2 py-1.5" value="${esc(i.note||'')}" ${!canEditCount?'disabled':''}><button onclick="saveStockCountRow('${i.id}')" class="px-2 py-1.5 border rounded-lg text-[9px] font-semibold ${!canEditCount?'hidden':''}">Save</button></div>`).join('')}
+          ${rows.map(i=>`<div data-count-item="${i.id}" data-system="${n(i.system_qty)}" class="p-2 grid gap-2 items-center text-xs" style="grid-template-columns:280px 90px 140px 110px 80px 80px 220px 70px"><div class="min-w-0"><div class="text-[9px] font-bold text-[#a77d1a] truncate">${esc(i.product_catalog?.code||'')}</div><div class="truncate">${esc(i.product_catalog?.item_name||'')}</div></div><b class="text-right pr-2">${q(i.system_qty)}</b><div class="flex items-center gap-1"><input class="count-physical min-w-0 w-full border rounded-lg px-2 py-1.5" type="number" min="0" step="0.01" value="${i.physical_qty==null?'':n(i.physical_qty)}" ${!canEditCount?'disabled':''}>${canEditCount?`<button type="button" onclick="setStockCountPhysicalZero('${i.id}')" class="shrink-0 w-7 h-7 rounded-lg border bg-gray-50 text-[9px] font-bold" title="Counted: zero physical stock">0</button>`:''}</div><input class="count-qb min-w-0 w-full border rounded-lg px-2 py-1.5" type="number" min="0" step="0.01" value="${i.qb_qty==null?'':n(i.qb_qty)}" ${!canEditCount?'disabled':''}><b class="count-var text-right pr-2 ${i.physical_qty!=null&&n(i.physical_qty)!==n(i.system_qty)?'text-red-600':''}">${i.physical_qty==null?'-':q(n(i.physical_qty)-n(i.system_qty))}</b><span class="count-qbvar text-right pr-2">${i.qb_qty==null?'-':q(n(i.qb_qty)-n(i.system_qty))}</span><input class="count-note min-w-0 w-full border rounded-lg px-2 py-1.5" value="${esc(i.note||'')}" ${!canEditCount?'disabled':''}><button onclick="saveStockCountRow('${i.id}')" class="px-2 py-1.5 border rounded-lg text-[9px] font-semibold ${!canEditCount?'hidden':''}">Save</button></div>`).join('')}
         </div>
       </div>
       <div class="flex flex-wrap gap-2 justify-end">
