@@ -1,6 +1,6 @@
 // Stock Count UX improvements: in-place Add Item, reversible Set 0, clearer variance labels.
 (function(){
-  const UX={products:[]};
+  const UX={products:[],existingByCount:new Map()};
 
   function num(v){return Number(v||0)}
   function html(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
@@ -114,7 +114,12 @@
   window.openAddStockCountItem=async function(countId){
     if(!canEdit())return;
     const body=modalBody();if(!body)return;
-    try{await ensureProducts()}catch(err){return showToast(err.message||'Could not load products.','err')}
+    try{
+      await ensureProducts();
+      const er=await db.from('stock_count_items').select('product_id').eq('stock_count_id',countId).limit(5000);
+      if(er.error)throw er.error;
+      UX.existingByCount.set(String(countId),new Set((er.data||[]).map(x=>String(x.product_id))));
+    }catch(err){return showToast(err.message||'Could not load products.','err')}
     document.getElementById('stockCountAddOverlay')?.remove();
     body.insertAdjacentHTML('beforeend',`<div id="stockCountAddOverlay" class="fixed inset-0 z-[220] bg-black/25 flex items-center justify-center p-4" onclick="if(event.target===this)closeStockCountAddPanel()">
       <div class="bg-white rounded-2xl shadow-2xl border w-full max-w-xl max-h-[78vh] overflow-visible p-5">
@@ -129,7 +134,7 @@
   window.showStockCountAddSuggestionsInline=function(input,countId){
     const box=document.getElementById('scAddProductSuggestionsInline');if(!box)return;
     const query=String(input?.value||'').trim().toLowerCase();
-    const existing=new Set([...document.querySelectorAll('#modalBody .stock-count-row')].map(r=>r.dataset.productId).filter(Boolean));
+    const existing=UX.existingByCount.get(String(countId))||new Set();
     let rows=UX.products.filter(p=>!query||[p.code,p.item_name,p.brand].filter(Boolean).join(' ').toLowerCase().includes(query));
     rows=rows.filter(p=>!existing.has(String(p.product_id))).slice(0,30);
     box.innerHTML=rows.length?rows.map(p=>`<button type="button" onclick="addStockCountProductInline('${html(countId)}','${html(p.product_id)}')" class="w-full text-left px-3 py-2.5 hover:bg-amber-50 border-b last:border-0 flex gap-3 items-center"><div class="w-11 h-11 rounded-lg overflow-hidden bg-gray-100 shrink-0">${p.image_url?`<img src="${html(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${html(p.code||'')}</div><div class="text-sm font-semibold truncate">${html(p.item_name||'')}</div><div class="text-[10px] text-gray-400">${html(p.brand||'')} · Current on hand ${qty(p.on_hand)}</div></div></button>`).join(''):'<div class="p-4 text-sm text-gray-400">No matching product.</div>';
@@ -148,6 +153,8 @@
     container.insertAdjacentHTML('beforeend',rowHtml(fr.data));
     const row=container.querySelector('[data-count-item="'+String(itemId)+'"]');
     if(row){row.dataset.productId=String(productId);decorateRow(row)}
+    if(!UX.existingByCount.has(String(countId)))UX.existingByCount.set(String(countId),new Set());
+    UX.existingByCount.get(String(countId)).add(String(productId));
     closeStockCountAddPanel();
     updateTopItemCount();
     if(typeof window.updateStockCountProgress==='function')window.updateStockCountProgress();
