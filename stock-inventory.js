@@ -18,6 +18,9 @@
     reportPeriod:'week',
     reportFrom:'',
     reportTo:'',
+    taskBadges:{},
+    taskData:{},
+    taskLoadedAt:0,
     limits:{balance:30,movements:30,receive:30,delivery:30,counts:30,reports:30,requests:30}
   };
 
@@ -100,6 +103,12 @@
       .inv-tabs{display:flex;gap:4px;overflow:auto;border-bottom:1px solid #e9e5de;margin-bottom:18px}
       .inv-tab{white-space:nowrap;padding:11px 13px;font-size:12px;font-weight:700;color:#8b8b95;border-bottom:2px solid transparent}
       .inv-tab.active{color:#171717;border-bottom-color:#b38b2e}
+      .inv-tab-badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;margin-left:5px;border-radius:999px;background:#f3f4f6;color:#6b7280;font-size:9px;font-weight:800}
+      .inv-tab.active .inv-tab-badge{background:#fff4d6;color:#8a5a00}
+      .inv-task-card{background:#fff;border:1px solid #ece8e0;border-radius:15px;padding:14px;text-align:left;transition:.15s ease}
+      .inv-task-card:hover{box-shadow:0 5px 16px rgba(0,0,0,.05);transform:translateY(-1px)}
+      .inv-progress-track{height:7px;border-radius:999px;background:#f1f1f1;overflow:hidden}
+      .inv-progress-fill{height:100%;border-radius:999px;background:#b38b2e;transition:width .15s ease}
       .inv-toolbar{display:flex;gap:10px;justify-content:space-between;align-items:center;margin-bottom:15px;flex-wrap:wrap}
       .inv-search{min-width:260px;max-width:520px;flex:1;border:1px solid #e4e4e7;border-radius:11px;padding:10px 13px;font-size:12px;background:#fff}
       .inv-stat{background:#fff;border:1px solid #eee8df;border-radius:14px;padding:14px}
@@ -127,20 +136,143 @@
   window.setInventoryTab=function(tab){inv.tab=tab;resetInventoryLimit(tab);renderStockInventory()};
   window.setInventorySearch=function(v){inv.search=v;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
 
+  function invalidateInventoryTasks(){inv.taskLoadedAt=0}
+
+  async function loadInventoryTasks(force=false){
+    const now=Date.now();
+    if(!force&&inv.taskLoadedAt&&now-inv.taskLoadedAt<30000)return inv.taskData;
+    const [poQ,delQ,countQ,reqQ]=await Promise.all([
+      db.rpc('get_inventory_po_receiving_queue',{p_search:null}),
+      db.rpc('get_inventory_delivery_queue',{p_search:null}),
+      db.from('stock_counts').select('id,status,period_month,location_id,created_at,stock_locations(code,name)').order('period_month',{ascending:false}).limit(500),
+      (canAdmin()||isStockController())
+        ?db.from('stock_change_requests').select('id,status,requested_by,requested_at').order('requested_at',{ascending:false}).limit(500)
+        :Promise.resolve({data:[],error:null})
+    ]);
+    if(poQ.error)throw poQ.error;
+    if(delQ.error)throw delQ.error;
+    if(countQ.error)throw countQ.error;
+    if(reqQ.error)throw reqQ.error;
+
+    const today=new Date().toISOString().slice(0,10);
+    const plus7=new Date();plus7.setDate(plus7.getDate()+7);
+    const plus7Iso=plus7.toISOString().slice(0,10);
+    const poRows=poQ.data||[],delRows=delQ.data||[],countRows=countQ.data||[],reqRows=reqQ.data||[];
+    const openCounts=countRows.filter(x=>String(x.status||'').toLowerCase()!=='closed');
+    const pendingRequests=reqRows.filter(x=>String(x.status||'').toLowerCase()==='pending');
+    const duePO=poRows.filter(x=>x.eta&&String(x.eta).slice(0,10)<=plus7Iso);
+    const overduePO=poRows.filter(x=>x.eta&&String(x.eta).slice(0,10)<today);
+    const aged365=inv.agingRows.filter(x=>x.age_bucket==='365+').length;
+    const unassigned=inv.balances.filter(p=>(p.locations||[]).some(l=>String(l.code||'').toUpperCase()==='UNASSIGNED'&&n(l.qty)>0)).length;
+
+    inv.taskBadges={
+      receive:poRows.length,
+      delivery:delRows.length,
+      counts:openCounts.length,
+      requests:pendingRequests.length
+    };
+    inv.taskData={poRows,delRows,countRows,reqRows,openCounts,pendingRequests,duePO,overduePO,aged365,unassigned};
+    inv.taskLoadedAt=now;
+    return inv.taskData;
+  }
+
+  function savedInventoryViewsKey(){
+    return 'limperial_inventory_views_'+String(state.user?.id||state.profile?.email||role()||'user');
+  }
+  function savedInventoryViews(){
+    try{
+      const x=JSON.parse(localStorage.getItem(savedInventoryViewsKey())||'[]');
+      return Array.isArray(x)?x:[];
+    }catch{return []}
+  }
+  function writeSavedInventoryViews(rows){
+    localStorage.setItem(savedInventoryViewsKey(),JSON.stringify(rows||[]));
+  }
+  window.saveCurrentInventoryView=function(){
+    const name=prompt('Name this Stock view:');
+    if(!name||!name.trim())return;
+    const rows=savedInventoryViews();
+    const clean=name.trim();
+    const view={name:clean,tab:inv.tab,search:inv.search||'',locationFilter:inv.locationFilter||'',ageFilter:inv.ageFilter||''};
+    const idx=rows.findIndex(x=>String(x.name||'').toLowerCase()===clean.toLowerCase());
+    if(idx>=0)rows[idx]=view;else rows.push(view);
+    writeSavedInventoryViews(rows.slice(-20));
+    showToast('Stock view saved.');
+    renderStockInventoryBody();
+  };
+  window.applySavedInventoryView=function(index){
+    if(index==='')return;
+    const row=savedInventoryViews()[Number(index)];
+    if(!row)return;
+    inv.tab=row.tab||'balance';
+    inv.search=row.search||'';
+    inv.locationFilter=row.locationFilter||'';
+    inv.ageFilter=row.ageFilter||'';
+    resetInventoryLimit(inv.tab);
+    renderStockInventory();
+  };
+  window.openSavedInventoryViews=function(){
+    const rows=savedInventoryViews();
+    openModal('Saved Stock Views',`<div class="space-y-3">
+      ${rows.length?rows.map((x,i)=>`<div class="rounded-xl border p-3 flex items-center justify-between gap-3"><button onclick="applySavedInventoryView('${i}');closeModal()" class="text-left min-w-0"><b class="text-sm">${esc(x.name||'Saved View')}</b><div class="text-[10px] text-gray-400 mt-1">${esc(titleCase(x.tab||'balance'))}${x.locationFilter?' · Location filter':''}${x.ageFilter?' · Aging '+esc(x.ageFilter):''}${x.search?' · Search: '+esc(x.search):''}</div></button><button onclick="deleteSavedInventoryView(${i})" class="px-2 py-1.5 border border-red-200 text-red-600 rounded-lg text-[10px] font-semibold">Delete</button></div>`).join(''):'<div class="py-10 text-center text-sm text-gray-400">No saved Stock views yet.</div>'}
+    </div>`);
+  };
+  window.deleteSavedInventoryView=function(index){
+    const rows=savedInventoryViews();rows.splice(Number(index),1);writeSavedInventoryViews(rows);openSavedInventoryViews();
+  };
+
   function tabs(){
-    const t=[['dashboard','Dashboard'],['movements','Movements'],['balance','Stock Balance'],['receive','Receive PO'],['delivery','Customer Delivery']];
-    t.push(['counts','Stock Count'],['reports','Reports']);
-    if(canAdmin()||isStockController())t.push(['requests',canAdmin()?'Edit Requests':'My Requests']);
+    const t=[
+      ['dashboard','Dashboard',0],
+      ['movements','Movements',0],
+      ['balance','Stock Balance',0],
+      ['receive','Receive PO',inv.taskBadges.receive||0],
+      ['delivery','Customer Delivery',inv.taskBadges.delivery||0]
+    ];
+    t.push(['counts','Stock Count',inv.taskBadges.counts||0],['reports','Reports',0]);
+    if(canAdmin()||isStockController())t.push(['requests',canAdmin()?'Edit Requests':'My Requests',inv.taskBadges.requests||0]);
     return t;
   }
 
   function topActions(){
     if(!canOperate())return '';
     return `<div class="flex gap-2 flex-wrap justify-end">
-      <button onclick="openStockMovement()" class="px-3 py-2 border rounded-xl text-xs font-semibold">+ Movement</button>
+      <button onclick="openQuickStockAction()" class="px-3 py-2 bg-[#211d18] text-white rounded-xl text-xs font-semibold">＋ Quick Stock Action</button>
       <button onclick="openStockTransfer()" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-xl text-xs font-semibold">⇄ Transfer</button>
     </div>`;
   }
+
+  window.quickInventoryGo=function(tab,startCount=false){
+    closeModal();inv.tab=tab;inv.search='';resetInventoryLimit(tab);renderStockInventory();
+    if(startCount)setTimeout(()=>openStartStockCount(),250);
+  };
+  window.openQuickStockAction=function(){
+    if(!canOperate())return;
+    const btn=(title,sub,action,tone='')=>`<button onclick="${action}" class="text-left rounded-xl border p-3 hover:shadow-sm ${tone}"><div class="font-bold text-sm">${title}</div><div class="text-[10px] text-gray-500 mt-1">${sub}</div></button>`;
+    openModal('Quick Stock Action',`<div class="grid sm:grid-cols-2 gap-3">
+      ${btn('Receive PO','Receive incoming supplier items into a location',"quickInventoryGo('receive')",'bg-blue-50/40 border-blue-100')}
+      ${btn('Transfer Location','Move existing stock from one location to another',"openStockTransfer()",'bg-blue-50/40 border-blue-100')}
+      ${btn('Stock OUT','Manual stock release / OUT',"openStockMovement('out')",'bg-red-50/40 border-red-100')}
+      ${btn('Customer Return','Return stock back into a location',"openStockMovement('return')",'bg-green-50/40 border-green-100')}
+      ${btn('Broken / Damaged','Record damaged stock and reduce a location',"openStockMovement('broken')",'bg-amber-50/40 border-amber-100')}
+      ${btn('Stock IN','Manual stock addition into a location',"openStockMovement('in')",'bg-green-50/40 border-green-100')}
+      ${btn('Customer Delivery','Release tracked customer stock orders',"quickInventoryGo('delivery')")}
+      ${btn('Start Stock Count','Start a monthly physical count for a location',"quickInventoryGo('counts',true)")}
+      ${btn('Find Product','Search a product and open its Stock Card',"openInventoryProductFinder()")}
+    </div>`);
+  };
+
+  window.openInventoryProductFinder=async function(){
+    await loadCore();
+    openModal('Find Product',`<div><label class="text-xs font-semibold">SKU / Product / Brand</label><div class="relative"><input id="invFindProduct" autocomplete="off" onfocus="showInventoryFinderSuggestions(this)" oninput="showInventoryFinderSuggestions(this)" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Type SKU, item name or brand..."><div id="invFindSuggestions" class="absolute z-[150] left-0 right-0 mt-1 max-h-80 overflow-y-auto bg-white border rounded-xl shadow-xl"></div></div></div>`);
+    setTimeout(()=>document.getElementById('invFindProduct')?.focus(),50);
+  };
+  window.showInventoryFinderSuggestions=function(input){
+    const box=document.getElementById('invFindSuggestions');if(!box)return;
+    const rows=stockProductMatches(input?.value||'').slice(0,30);
+    box.innerHTML=rows.length?rows.map(p=>`<button onclick="openProductStockCard('${p.product_id}')" class="w-full text-left px-3 py-2.5 hover:bg-amber-50 border-b last:border-0 flex gap-3 items-center"><div class="w-11 h-11 rounded-lg overflow-hidden bg-gray-100 shrink-0">${p.image_url?`<img src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code||'')}</div><div class="font-semibold text-sm truncate">${esc(p.item_name||'')}</div><div class="text-[10px] text-gray-400">On hand ${q(p.on_hand)} · Available ${q(p.available)} · Incoming ${q(p.incoming)}</div></div></button>`).join(''):'<div class="p-4 text-sm text-gray-400">No matching product.</div>';
+  };
+
 
   async function renderDashboard(){
     await loadCore(true);
