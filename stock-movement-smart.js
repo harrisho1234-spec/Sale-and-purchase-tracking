@@ -74,7 +74,10 @@
       btn.classList.toggle('cursor-not-allowed',!ok);
     }
     const help=document.getElementById('smQtySmartHelp');
-    if(help&&message)help.textContent=message;
+    if(help){
+      help.textContent=message||'';
+      help.className='mt-1 text-[10px] text-gray-400';
+    }
   }
   function fillSourceOptions(){
     const sel=document.getElementById('smFrom');if(!sel)return;
