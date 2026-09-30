@@ -4,7 +4,7 @@
   const F={rows:[],limit:60,loadedAt:0};
 
   function n(v){return Number(v||0)}
-  function role(){return String(window.state?.profile?.role||'')}
+  function role(){return String((typeof state!=='undefined'&&state?.profile?.role)||'')}
   function canOperate(){return ['stock_controller','admin','super_admin'].includes(role())}
   function activeDeliveryTab(){
     const btn=[...document.querySelectorAll('.inv-tab')].find(b=>String(b.getAttribute('onclick')||'').includes("setInventoryTab('delivery')"));
@@ -235,16 +235,6 @@
   if(typeof baseBody==='function'){
     window.renderStockInventoryBody=async function(){
       const r=await baseBody.apply(this,arguments);
-      if(activeDeliveryTab())await renderFulfillment();
-      else patchDashboardFulfillmentCard();
-      return r;
-    };
-  }
-
-  const baseStock=window.renderStockInventory;
-  if(typeof baseStock==='function'){
-    window.renderStockInventory=async function(){
-      const r=await baseStock.apply(this,arguments);
       if(activeDeliveryTab())await renderFulfillment();
       else patchDashboardFulfillmentCard();
       return r;
