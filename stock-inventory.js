@@ -128,7 +128,7 @@
   window.setInventorySearch=function(v){inv.search=v;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
 
   function tabs(){
-    const t=[['dashboard','Dashboard'],['balance','Stock Balance'],['movements','Movements'],['receive','Receive PO'],['delivery','Customer Delivery']];
+    const t=[['dashboard','Dashboard'],['movements','Movements'],['balance','Stock Balance'],['receive','Receive PO'],['delivery','Customer Delivery']];
     t.push(['counts','Stock Count'],['reports','Reports']);
     if(canAdmin()||isStockController())t.push(['requests',canAdmin()?'Edit Requests':'My Requests']);
     return t;
