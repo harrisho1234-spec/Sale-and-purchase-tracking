@@ -239,6 +239,42 @@
     showSalesProductSuggestions(input);
   };
 
+  window.salesDoRequestChanged=function(cb){
+    const row=cb?.closest('.order-item-row');if(!row)return;
+    const qInput=row.querySelector('.qty');
+    const doQty=row.querySelector('.do-request-qty');
+    const checked=!!cb.checked;
+    if(doQty){
+      doQty.disabled=!checked;
+      doQty.classList.toggle('bg-gray-100',!checked);
+      if(checked){
+        const sold=Math.max(Number(qInput?.value||0),0);
+        const current=Number(doQty.value||0);
+        doQty.max=String(sold||0);
+        doQty.value=String(current>0&&current<=sold?current:(sold||1));
+      }
+    }
+    updateSalesDoPanel();
+  };
+
+  window.salesDoQtySync=function(qInput){
+    const row=qInput?.closest('.order-item-row');if(!row)return;
+    const doQty=row.querySelector('.do-request-qty');
+    if(!doQty)return;
+    const sold=Math.max(Number(qInput.value||0),0);
+    doQty.max=String(sold||0);
+    if(row.querySelector('.do-request-checkbox')?.checked){
+      const current=Number(doQty.value||0);
+      if(current<=0||current>sold)doQty.value=String(sold||1);
+    }
+  };
+
+  window.updateSalesDoPanel=function(){
+    const panel=document.getElementById('salesDoDetails');if(!panel)return;
+    const any=[...document.querySelectorAll('#orderItems .do-request-checkbox')].some(x=>x.checked);
+    panel.classList.toggle('hidden',!any);
+  };
+
   window.addOrderItemRow=function(){
     const wrap=document.getElementById('orderItems');
     if(!wrap || !state.products.length) return;
@@ -259,13 +295,24 @@
               <span class="px-2 py-1 rounded-full bg-white border text-gray-500">Type: <b class="product-type-label text-gray-700">Unclassified</b></span>
               <span class="px-2 py-1 rounded-full bg-white border text-gray-500">Class: <b class="product-class-label text-gray-700">Unclassified</b></span>
             </div>
+            <div class="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-blue-100 bg-blue-50/40 px-2.5 py-2">
+              <label class="flex items-center gap-1.5 text-[10px] font-semibold text-blue-800 cursor-pointer">
+                <input type="checkbox" class="do-request-checkbox w-3.5 h-3.5" onchange="salesDoRequestChanged(this)">
+                <span>Request DO</span>
+              </label>
+              <div class="flex items-center gap-1.5">
+                <span class="text-[9px] text-gray-500">DO Qty</span>
+                <input type="number" min="0.01" step="0.01" value="1" disabled class="do-request-qty w-20 border rounded-md px-2 py-1 text-[10px] bg-gray-100">
+              </div>
+              <span class="text-[9px] text-gray-400">Use when this product should be included in the first delivery request.</span>
+            </div>
           </div>
         </div>
       </div>
-      <div class="md:col-span-1"><label class="text-[10px] font-semibold text-gray-500">Qty</label><input class="qty mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0.01" step="0.01" value="1" oninput="salesLineValueChanged(this)"></div>
+      <div class="md:col-span-1"><label class="text-[10px] font-semibold text-gray-500">Qty</label><input class="qty mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0.01" step="0.01" value="1" oninput="salesLineValueChanged(this);salesDoQtySync(this)"></div>
       <div class="md:col-span-2"><label class="text-[10px] font-semibold text-gray-500">Unit Price</label><input class="unit-price mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" step="0.01" value="0" oninput="salesLineValueChanged(this)"></div>
       <div class="md:col-span-3"><div class="grid grid-cols-2 gap-1"><div><label class="text-[10px] font-semibold text-gray-500">Dis %</label><input aria-label="Discount Percent" title="Dis %" class="line-discount-percent mt-1 w-full border rounded-lg px-2 py-2" type="text" inputmode="decimal" value="0" oninput="salesLineDiscountPercentChanged(this)" onblur="salesLineDiscountBlur(this)"></div><div><label class="text-[10px] font-semibold text-gray-500">Dis Amt</label><input aria-label="Discount Amount" title="Dis Amt" class="line-discount mt-1 w-full border rounded-lg px-2 py-2" type="text" inputmode="decimal" value="0" oninput="salesLineDiscountAmountChanged(this)" onblur="salesLineDiscountBlur(this)"></div></div></div>
-      <div class="md:col-span-1 flex items-end"><button type="button" onclick="this.closest('.order-item-row').remove();salesEntryRecalc()" class="w-full h-[42px] border rounded-lg text-red-500 font-bold">×</button></div>
+      <div class="md:col-span-1 flex items-end"><button type="button" onclick="this.closest('.order-item-row').remove();salesEntryRecalc();updateSalesDoPanel()" class="w-full h-[42px] border rounded-lg text-red-500 font-bold">×</button></div>
       <select class="source-type hidden"><option value="stock" ${flow==='stock_sale'?'selected':''}>Stock</option><option value="pre_order" ${flow==='pre_order'?'selected':''}>Pre-order</option></select>`;
     wrap.appendChild(d);
     salesEntryRecalc();
@@ -349,6 +396,15 @@
           <div id="orderItems" class="space-y-3"></div>
         </div>
 
+        <div id="salesDoDetails" class="hidden rounded-2xl border border-blue-100 bg-blue-50/30 p-4">
+          <div class="mb-3"><h4 class="font-bold text-sm">Delivery Order Request</h4><div class="text-[10px] text-gray-500 mt-1">Only checked product lines will be sent to Stock as a DO request. The official DO number will be assigned later by Stock.</div></div>
+          <div class="grid md:grid-cols-2 gap-3">
+            <div><label class="text-xs font-semibold">Requested Delivery Date</label><input id="doRequestedDate" type="date" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"></div>
+            <div><label class="text-xs font-semibold">Delivery Address</label><input id="doDeliveryAddress" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white" placeholder="Optional delivery address"></div>
+            <div class="md:col-span-2"><label class="text-xs font-semibold">Delivery Note / Remark</label><textarea id="doRequestNote" rows="2" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white" placeholder="Access instructions, preferred time, delivery note..."></textarea></div>
+          </div>
+        </div>
+
         <div class="grid md:grid-cols-2 gap-4 border-t pt-4">
           <div><label class="text-xs font-semibold">Order Discount Amount</label><input id="orderDiscount" type="number" min="0" step="0.01" value="0" oninput="salesEntryRecalc()" class="mt-1 w-full border rounded-xl px-3 py-2"><div class="text-[10px] text-gray-400 mt-1">Optional discount applied to the whole order.</div></div>
           <div><label class="text-xs font-semibold">Deposit Entry</label><select id="depositMode" onchange="salesEntryRecalc()" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"><option value="amount">By Amount</option><option value="percent">By Percentage (%)</option></select></div>
@@ -397,6 +453,20 @@
     if(calc.depositMode==='percent' && calc.depositValue>100) return showToast('Deposit percentage cannot be more than 100%.','err');
     if(calc.depositAmount>calc.total+0.001) return showToast('Deposit amount cannot be greater than the order total.','err');
 
+    const doSelections=rows.map((r,idx)=>{
+      const lineKind=r.querySelector('.line-kind')?.value||'product';
+      const checked=lineKind!=='service'&&!!r.querySelector('.do-request-checkbox')?.checked;
+      if(!checked)return null;
+      const soldQty=Number(r.querySelector('.qty')?.value||0);
+      const doQty=Number(r.querySelector('.do-request-qty')?.value||0);
+      return {line_position:idx+1,qty:doQty,sold_qty:soldQty,row:r};
+    }).filter(Boolean);
+    const badDo=doSelections.find(x=>x.qty<=0||x.qty>x.sold_qty);
+    if(badDo){
+      badDo.row.querySelector('.do-request-qty')?.focus();
+      return showToast('DO Qty must be greater than 0 and cannot exceed the sold quantity.','err');
+    }
+
     const repId=effectiveSalesRepId();
     const repName=effectiveSalesRepName();
     const orderDate=document.getElementById('orderDate').value;
@@ -408,12 +478,32 @@
     const {data:so,error}=await db.from('sales_orders').insert(order).select().single();
     if(error){const msg=String(error.message||'');return showToast(msg.toLowerCase().includes('duplicate')?'That SR/TK/RK number already exists.':msg,'err');}
 
-    const items=rows.map(r=>{const lineKind=r.querySelector('.line-kind')?.value||'product';return {sales_order_id:so.id,line_kind:lineKind,product_id:lineKind==='service'?null:(r.querySelector('.product-id').value||null),product_code_snapshot:r.querySelector('.product-code').value,item_name_snapshot:r.querySelector('.product-name').value,image_url_snapshot:lineKind==='service'?null:(r.querySelector('.product-image').value||null),product_class_snapshot:r.querySelector('.product-class')?.value||null,product_type_snapshot:r.querySelector('.product-type')?.value||null,qty:Number(r.querySelector('.qty').value),unit_price:Number(r.querySelector('.unit-price').value),discount_amount:Number(r.querySelector('.line-discount').value||0),source_type:flow==='pre_order'?'pre_order':'stock',fulfillment_status:lineKind==='service'?'arrived':(flow==='pre_order'?'ordered':'arrived')}});
+    const items=rows.map((r,idx)=>{const lineKind=r.querySelector('.line-kind')?.value||'product';return {sales_order_id:so.id,line_position:idx+1,line_kind:lineKind,product_id:lineKind==='service'?null:(r.querySelector('.product-id').value||null),product_code_snapshot:r.querySelector('.product-code').value,item_name_snapshot:r.querySelector('.product-name').value,image_url_snapshot:lineKind==='service'?null:(r.querySelector('.product-image').value||null),product_class_snapshot:r.querySelector('.product-class')?.value||null,product_type_snapshot:r.querySelector('.product-type')?.value||null,qty:Number(r.querySelector('.qty').value),unit_price:Number(r.querySelector('.unit-price').value),discount_amount:Number(r.querySelector('.line-discount').value||0),source_type:flow==='pre_order'?'pre_order':'stock',fulfillment_status:lineKind==='service'?'arrived':(flow==='pre_order'?'ordered':'arrived')}});
     const invalid=items.some(i=>(i.line_kind!=='service'&&!i.product_id)||!i.product_code_snapshot||!i.item_name_snapshot||i.qty<=0||i.unit_price<0||i.discount_amount<0);
     if(invalid){await db.from('sales_orders').delete().eq('id',so.id);return showToast('Please check item quantity, price and discount.','err');}
 
-    const {error:itemErr}=await db.from('sales_order_items').insert(items);
+    const {data:insertedItems,error:itemErr}=await db.from('sales_order_items').insert(items).select('id,line_position');
     if(itemErr){await db.from('sales_orders').delete().eq('id',so.id);return showToast(itemErr.message,'err');}
+
+    if(doSelections.length){
+      const idByPosition=new Map((insertedItems||[]).map(x=>[Number(x.line_position),x.id]));
+      const requestItems=doSelections.map(x=>({sales_order_item_id:idByPosition.get(Number(x.line_position)),qty:x.qty}));
+      if(requestItems.some(x=>!x.sales_order_item_id)){
+        await db.from('sales_orders').delete().eq('id',so.id);
+        return showToast('Could not link the selected DO items to the new Sales Order.','err');
+      }
+      const doReq=await db.rpc('submit_sales_delivery_request',{
+        p_sales_order_id:so.id,
+        p_requested_delivery_date:document.getElementById('doRequestedDate')?.value||null,
+        p_delivery_address:document.getElementById('doDeliveryAddress')?.value.trim()||null,
+        p_request_note:document.getElementById('doRequestNote')?.value.trim()||null,
+        p_items:requestItems
+      });
+      if(doReq.error){
+        await db.from('sales_orders').delete().eq('id',so.id);
+        return showToast(doReq.error.message,'err');
+      }
+    }
 
     if(calc.depositAmount>0){
       const note=calc.depositMode==='percent' ? `Initial deposit ${calc.depositValue}%` : 'Initial deposit amount';
@@ -440,7 +530,8 @@
     closeModal();
     showToast((flow==='pre_order'?`Pre-order ${docNo} created`:`${invoiceType} invoice ${docNo} created`)
       +(customerReviewPending?' · Customer review pending':'')
-      +(state.profile?.role==='sales'&&calc.depositAmount>0?' · Deposit pending approval':''));
+      +(state.profile?.role==='sales'&&calc.depositAmount>0?' · Deposit pending approval':'')
+      +(doSelections.length?' · DO requested for '+doSelections.length+' item'+(doSelections.length===1?'':'s'):''));
     await go('sales-orders');
   };
 
