@@ -52,7 +52,7 @@
     if(!isAdminRole())throw new Error('Admin access required.');
     const all=await loadPOItems();
     const q=norm(pw.search);
-    const rows=all.filter(i=>!q||[
+    const rows=all.filter(taxProcurementMatches).filter(i=>!q||[
       i.product_code_snapshot,i.item_name_snapshot,poLabel(i.supplier_pos),i.supplier_pos?.vendor_name,i.procurement_status
     ].some(v=>norm(v).includes(q)));
     const production=rows.filter(x=>norm(x.procurement_status)==='production').length;
@@ -81,7 +81,7 @@
         return `<div class="p-4 grid xl:grid-cols-[64px_1.05fr_1.5fr_90px_230px_120px] gap-3 items-center">
           ${photoHtml(photo,56)}
           <div><b>${esc(poLabel(p))}</b><div class="text-[10px] text-gray-400">${esc(p.vendor_name||'')}</div><div class="text-[10px] text-gray-400 mt-1">ETA ${esc(p.estimated_arrival||'TBD')}</div></div>
-          <div class="min-w-0"><div class="text-xs font-extrabold text-[#a77d1a] truncate">${esc(i.product_code_snapshot||'No Code')}</div><div class="text-sm font-semibold truncate">${esc(i.item_name_snapshot||'')}</div><div class="text-[10px] text-gray-400 mt-1">Cost ${money(i.unit_cost||0,p.currency||'USD')} + Shipping ${money(i.shipping_cost||0,'USD')}</div></div>
+          <div class="min-w-0"><div class="text-xs font-extrabold text-[#a77d1a] truncate">${esc(i.product_code_snapshot||'No Code')}${taxBadge(i)}</div><div class="text-sm font-semibold truncate">${esc(i.item_name_snapshot||'')}</div><div class="text-[10px] text-gray-400 mt-1">Cost ${money(i.unit_cost||0,p.currency||'USD')} + Shipping ${money(i.shipping_cost||0,'USD')}</div></div>
           <div class="text-sm">Qty <b>${Number(i.qty||0)}</b></div>
           <div><label class="text-[9px] uppercase font-bold text-gray-400">Item Status</label><select onchange="saveSupplierPOItemStatus('${i.id}',this.value,this)" class="mt-1 w-full border rounded-xl px-3 py-2 text-xs bg-white ${statusClass(i.procurement_status)}">${options(i.procurement_status)}</select></div>
           <div class="text-right"><button onclick="openEditSupplierPO('${i.supplier_po_id}')" class="px-3 py-2 border rounded-lg text-[10px] font-semibold">Open PO</button></div>
@@ -113,16 +113,16 @@
     const section=document.querySelector('#modalBody .border-t.pt-5');
     if(!section)return;
     document.getElementById('poItemProgressManager')?.remove();
-    let r=await db.from('supplier_po_items').select('id,product_code_snapshot,item_name_snapshot,image_url_snapshot,qty,procurement_status,product_catalog(image_url)').eq('supplier_po_id',poId).order('created_at');
+    let r=await db.from('supplier_po_items').select('id,product_id,product_code_snapshot,item_name_snapshot,image_url_snapshot,qty,procurement_status,product_catalog(image_url)').eq('supplier_po_id',poId).order('created_at');
     if(r.error){
-      r=await db.from('supplier_po_items').select('id,product_code_snapshot,item_name_snapshot,image_url_snapshot,qty,procurement_status').eq('supplier_po_id',poId).order('created_at');
+      r=await db.from('supplier_po_items').select('id,product_id,product_code_snapshot,item_name_snapshot,image_url_snapshot,qty,procurement_status').eq('supplier_po_id',poId).order('created_at');
     }
     if(r.error||!(r.data||[]).length)return;
     const items=r.data||[];
     const box=document.createElement('div');box.id='poItemProgressManager';box.className='mb-4 rounded-2xl border border-[#e9e3d8] overflow-hidden bg-white';
     box.innerHTML=`<div class="px-4 py-3 bg-[#fffaf0] border-b flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><div class="font-bold text-sm">Item Progress Status</div><div class="text-[10px] text-gray-500 mt-1">Update products separately when some are in Production, Shipping or Arrived.</div></div><div class="flex gap-2"><select id="poAllItemStatus" class="border rounded-lg px-2 py-2 text-xs bg-white">${options('placed')}</select><button type="button" onclick="setAllPOItemStatuses('${poId}')" class="px-3 py-2 bg-[#211d18] text-white rounded-lg text-xs font-semibold">Apply to All</button></div></div><div class="divide-y">${items.map(i=>{
       const photo=i.image_url_snapshot||i.product_catalog?.image_url||'';
-      return `<div class="p-3 grid md:grid-cols-[58px_1fr_90px_230px] gap-3 items-center">${photoHtml(photo,52)}<div class="min-w-0"><div class="text-xs font-bold text-[#a77d1a] truncate">${esc(i.product_code_snapshot||'No Code')}</div><div class="text-sm truncate">${esc(i.item_name_snapshot||'')}</div></div><div class="text-xs">Qty <b>${Number(i.qty||0)}</b></div><select onchange="saveSupplierPOItemStatus('${i.id}',this.value,this)" class="w-full border rounded-xl px-3 py-2 text-xs bg-white ${statusClass(i.procurement_status)}">${options(i.procurement_status)}</select></div>`;
+      return `<div class="p-3 grid md:grid-cols-[58px_1fr_90px_230px] gap-3 items-center">${photoHtml(photo,52)}<div class="min-w-0"><div class="text-xs font-bold text-[#a77d1a] truncate">${esc(i.product_code_snapshot||'No Code')}${taxBadge(i)}</div><div class="text-sm truncate">${esc(i.item_name_snapshot||'')}</div></div><div class="text-xs">Qty <b>${Number(i.qty||0)}</b></div><select onchange="saveSupplierPOItemStatus('${i.id}',this.value,this)" class="w-full border rounded-xl px-3 py-2 text-xs bg-white ${statusClass(i.procurement_status)}">${options(i.procurement_status)}</select></div>`;
     }).join('')}</div>`;
     const firstList=section.querySelector('.divide-y.border.rounded-xl.mb-4');
     if(firstList)section.insertBefore(box,firstList);else section.prepend(box);

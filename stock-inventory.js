@@ -3,6 +3,7 @@
 (function(){
   const inv={
     tab:'dashboard',
+    taxOnly:false,
     search:'',
     locations:[],
     balances:[],
@@ -85,12 +86,12 @@
     if(inv.locations.length&&inv.balances.length&&!force)return;
     const [locs,bals,aging]=await Promise.all([
       db.from('stock_locations').select('*').order('sort_order').order('code'),
-      db.from('inventory_product_balance').select('*').order('item_name'),
-      db.rpc('get_inventory_stock_aging')
+      taxFetchAll('inventory_product_tax_balance','*','product_id').then(data=>({data})),
+      taxFetchAll('get_inventory_stock_aging','*','product_id',true).then(data=>({data}))
     ]);
     if(locs.error)throw locs.error;if(bals.error)throw bals.error;if(aging.error)throw aging.error;
     inv.locations=locs.data||[];
-    inv.balances=bals.data||[];
+    inv.balances=(bals.data||[]).sort((a,b)=>String(a.item_name||'').localeCompare(String(b.item_name||'')));
     inv.agingRows=aging.data||[];
     inv.agingMap=new Map(inv.agingRows.map(x=>[x.product_id,x]));
     inv.balanceMap=new Map(inv.balances.map(x=>[x.product_id,x]));
@@ -133,7 +134,7 @@
   }
   window.expandInventoryList=function(tab,all=false){inv.limits[tab]=all?999999:inventoryLimit(tab)+30;renderStockInventoryBody()};
   window.collapseInventoryList=function(tab){inv.limits[tab]=30;renderStockInventoryBody()};
-  window.setInventoryTab=function(tab){inv.tab=tab;window.inventoryReservedOnly=false;resetInventoryLimit(tab);renderStockInventory()};
+  window.setInventoryTab=function(tab){if(tab==='tax')window.invalidateInventoryCache();inv.tab=tab;window.inventoryReservedOnly=false;resetInventoryLimit(tab);renderStockInventory()};
   window.setInventorySearch=function(v){inv.search=v;window.inventoryReservedOnly=false;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
 
   function invalidateInventoryTasks(){inv.taskLoadedAt=0}
@@ -194,7 +195,7 @@
     if(!name||!name.trim())return;
     const rows=savedInventoryViews();
     const clean=name.trim();
-    const view={name:clean,tab:inv.tab,search:inv.search||'',locationFilter:inv.locationFilter||'',ageFilter:inv.ageFilter||''};
+    const view={name:clean,tab:inv.tab,search:inv.search||'',locationFilter:inv.locationFilter||'',ageFilter:inv.ageFilter||'',taxOnly:inv.taxOnly};
     const idx=rows.findIndex(x=>String(x.name||'').toLowerCase()===clean.toLowerCase());
     if(idx>=0)rows[idx]=view;else rows.push(view);
     writeSavedInventoryViews(rows.slice(-20));
@@ -209,7 +210,7 @@
     window.inventoryReservedOnly=false;
     inv.search=row.search||'';
     inv.locationFilter=row.locationFilter||'';
-    inv.ageFilter=row.ageFilter||'';
+    inv.ageFilter=row.ageFilter||'';inv.taxOnly=!!row.taxOnly;
     resetInventoryLimit(inv.tab);
     renderStockInventory();
   };
@@ -228,6 +229,7 @@
       ['dashboard','Dashboard',0],
       ['movements','Movements',0],
       ['balance','Stock Balance',0],
+      ['tax','Tax Inventory',0],
       ['receive','Receive PO',inv.taskBadges.receive||0],
       ['delivery','Customer Delivery',inv.taskBadges.delivery||0]
     ];
@@ -272,7 +274,7 @@
   window.showInventoryFinderSuggestions=function(input){
     const box=document.getElementById('invFindSuggestions');if(!box)return;
     const rows=stockProductMatches(input?.value||'').slice(0,30);
-    box.innerHTML=rows.length?rows.map(p=>`<button onclick="openProductStockCard('${p.product_id}')" class="w-full text-left px-3 py-2.5 hover:bg-amber-50 border-b last:border-0 flex gap-3 items-center"><div class="w-11 h-11 rounded-lg overflow-hidden bg-gray-100 shrink-0">${p.image_url?`<img src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code||'')}</div><div class="font-semibold text-sm truncate">${esc(p.item_name||'')}</div><div class="text-[10px] text-gray-400">On hand ${q(p.on_hand)} · Available ${q(p.available)} · Incoming ${q(p.incoming)}</div></div></button>`).join(''):'<div class="p-4 text-sm text-gray-400">No matching product.</div>';
+    box.innerHTML=rows.length?rows.map(p=>`<button onclick="openProductStockCard('${p.product_id}')" class="w-full text-left px-3 py-2.5 hover:bg-amber-50 border-b last:border-0 flex gap-3 items-center"><div class="w-11 h-11 rounded-lg overflow-hidden bg-gray-100 shrink-0">${p.image_url?`<img src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code||'')}${taxBadge(p)}</div><div class="font-semibold text-sm truncate">${esc(p.item_name||'')}</div><div class="text-[10px] text-gray-400">On hand ${q(p.on_hand)} · Available ${q(p.available)} · Incoming ${q(p.incoming)}</div></div></button>`).join(''):'<div class="p-4 text-sm text-gray-400">No matching product.</div>';
   };
 
 
@@ -299,7 +301,7 @@
       <div class="inv-stat"><div class="inv-stat-label">Fully Reserved</div><div class="inv-stat-value ${noAvail?'text-red-500':''}">${noAvail.toLocaleString()}</div></div>
     </div>
 
-    ${inv.search?`<div class="inv-card mb-5"><div class="flex items-center justify-between gap-3 mb-3"><div><h3 class="font-bold">Product Search</h3><div class="text-[10px] text-gray-400">Quick stock results for "${esc(inv.search)}".</div></div><button onclick="setInventorySearch('')" class="text-xs text-gray-500">Clear</button></div><div class="grid sm:grid-cols-2 xl:grid-cols-4 gap-2">${dashMatches.length?dashMatches.map(p=>`<button onclick="openProductStockCard('${p.product_id}')" class="rounded-xl border p-3 text-left hover:bg-amber-50/30 flex gap-3 items-center"><div class="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 shrink-0">${p.image_url?`<img src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code||'')}</div><div class="text-sm font-semibold truncate">${esc(p.item_name||'')}</div><div class="text-[10px] text-gray-400">On hand ${q(p.on_hand)} · Available ${q(p.available)}</div></div></button>`).join(''):'<div class="col-span-full py-6 text-center text-sm text-gray-400">No matching product.</div>'}</div></div>`:''}
+    ${inv.search?`<div class="inv-card mb-5"><div class="flex items-center justify-between gap-3 mb-3"><div><h3 class="font-bold">Product Search</h3><div class="text-[10px] text-gray-400">Quick stock results for "${esc(inv.search)}".</div></div><button onclick="setInventorySearch('')" class="text-xs text-gray-500">Clear</button></div><div class="grid sm:grid-cols-2 xl:grid-cols-4 gap-2">${dashMatches.length?dashMatches.map(p=>`<button onclick="openProductStockCard('${p.product_id}')" class="rounded-xl border p-3 text-left hover:bg-amber-50/30 flex gap-3 items-center"><div class="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 shrink-0">${p.image_url?`<img src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code||'')}${taxBadge(p)}</div><div class="text-sm font-semibold truncate">${esc(p.item_name||'')}</div><div class="text-[10px] text-gray-400">On hand ${q(p.on_hand)} · Available ${q(p.available)}</div></div></button>`).join(''):'<div class="col-span-full py-6 text-center text-sm text-gray-400">No matching product.</div>'}</div></div>`:''}
 
     <div class="flex items-end justify-between gap-3 mb-3">
       <div><h3 class="font-bold text-lg">Today's Work</h3><div class="text-[10px] text-gray-400">Open the task that needs attention instead of searching through every tab.</div></div>
@@ -361,7 +363,7 @@
           ${rows.length?rows.map(p=>`<button onclick="openReservedStockDetails('${p.product_id}')" class="w-full py-3 flex items-center justify-between gap-4 text-left hover:bg-gray-50">
             <div class="min-w-0 flex items-center gap-3">
               <div class="w-11 h-11 rounded-lg overflow-hidden bg-gray-100 shrink-0">${p.image_url?`<img src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div>
-              <div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code||'')}</div><div class="text-sm font-semibold truncate">${esc(p.item_name||'')}</div><div class="text-[10px] text-gray-400">On Hand ${q(p.on_hand)} · Available ${q(p.available)}</div></div>
+              <div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code||'')}${taxBadge(p)}</div><div class="text-sm font-semibold truncate">${esc(p.item_name||'')}</div><div class="text-[10px] text-gray-400">On Hand ${q(p.on_hand)} · Available ${q(p.available)}</div></div>
             </div>
             <div class="text-right shrink-0"><div class="text-[9px] uppercase font-bold text-gray-400">Reserved</div><div class="text-lg font-black text-amber-600">${q(p.reserved)}</div></div>
           </button>`).join(''):'<div class="py-10 text-center text-sm text-gray-400">No stock is currently reserved.</div>'}
@@ -388,7 +390,7 @@
         <div class="rounded-2xl border bg-[#fcfbf8] p-4">
           <div class="flex flex-col sm:flex-row sm:items-center gap-4">
             <div class="w-20 h-20 rounded-xl overflow-hidden border bg-white shrink-0">${p.image_url?`<img src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div>
-            <div class="min-w-0 flex-1"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code||'')}</div><div class="font-bold text-lg">${esc(p.item_name||'')}</div><div class="text-xs text-gray-400 mt-1">${esc(p.brand||'')}</div></div>
+            <div class="min-w-0 flex-1"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code||'')}${taxBadge(p)}</div><div class="font-bold text-lg">${esc(p.item_name||'')}</div><div class="text-xs text-gray-400 mt-1">${esc(p.brand||'')}</div></div>
             <div class="grid grid-cols-3 gap-2 text-center shrink-0">
               <div class="rounded-xl border bg-white px-3 py-2"><div class="text-[9px] uppercase font-bold text-gray-400">On Hand</div><b>${q(p.on_hand)}</b></div>
               <div class="rounded-xl border bg-amber-50/40 border-amber-100 px-3 py-2"><div class="text-[9px] uppercase font-bold text-gray-400">Reserved</div><b class="text-amber-700">${q(p.reserved)}</b></div>
@@ -438,19 +440,23 @@
     const ages=[['','All Aging'],['0-30','0–30 days'],['31-90','31–90 days'],['91-180','91–180 days'],['181-365','181–365 days'],['365+','365+ days'],['Unknown','Unknown / Pre-history']];
     const saved=savedInventoryViews();
     return `<div class="mb-4 flex flex-wrap gap-2 items-center">
+      ${context==='balance'?`<label class="text-xs flex gap-2 items-center"><input type="checkbox" ${inv.tab==='tax'||inv.taxOnly?'checked':''} ${inv.tab==='tax'?'disabled':''} onchange="setInventoryTaxOnly(this.checked)">Tax Items Only</label><button onclick="refreshTaxInventory()" class="px-3 py-2 border rounded-xl text-xs">Refresh Balances</button>${role()==='super_admin'?'<button onclick="openBulkTaxTagging()" class="px-3 py-2 border rounded-xl text-xs">Bulk Tax Tagging</button>':''}`:''}
       <select onchange="setInventoryLocationFilter(this.value)" class="border rounded-xl px-3 py-2 bg-white text-xs"><option value="">All Locations</option>${locOptions}</select>
       <select onchange="setInventoryAgeFilter(this.value)" class="border rounded-xl px-3 py-2 bg-white text-xs">${ages.map(([v,l])=>`<option value="${v}" ${inv.ageFilter===v?'selected':''}>${l}</option>`).join('')}</select>
       <select onchange="applySavedInventoryView(this.value);this.value=''" class="border rounded-xl px-3 py-2 bg-white text-xs"><option value="">Saved Views</option>${saved.map((x,i)=>`<option value="${i}">${esc(x.name||'Saved View')}</option>`).join('')}</select>
       <button onclick="saveCurrentInventoryView()" class="px-3 py-2 border rounded-xl text-xs font-semibold bg-white">Save View</button>
       ${saved.length?`<button onclick="openSavedInventoryViews()" class="px-3 py-2 border rounded-xl text-xs bg-white text-gray-500">Manage</button>`:''}
-      ${inv.locationFilter||inv.ageFilter?`<button onclick="clearInventoryFilters()" class="px-3 py-2 border rounded-xl text-xs font-semibold bg-white">Clear Filters</button>`:''}
+      ${inv.locationFilter||inv.ageFilter||inv.taxOnly?`<button onclick="clearInventoryFilters()" class="px-3 py-2 border rounded-xl text-xs font-semibold bg-white">Clear Filters</button>`:''}
       <div class="text-[10px] text-gray-400 ml-auto">Aging uses the oldest remaining recorded inbound layer (FIFO estimate). Stock older than imported history appears as Unknown.</div>
     </div>`;
   }
   window.setInventoryLocationFilter=function(v){inv.locationFilter=v||'';window.inventoryReservedOnly=false;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
   window.setInventoryAgeFilter=function(v){inv.ageFilter=v||'';window.inventoryReservedOnly=false;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
-  window.clearInventoryFilters=function(){inv.locationFilter='';inv.ageFilter='';window.inventoryReservedOnly=false;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
+  window.setInventoryTaxOnly=function(v){inv.taxOnly=!!v;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
+  window.refreshTaxInventory=async function(){try{await loadCore(true);await renderStockInventoryBody()}catch(err){showToast(err.message,'err')}};
+  window.clearInventoryFilters=function(){inv.taxOnly=false;inv.locationFilter='';inv.ageFilter='';window.inventoryReservedOnly=false;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
   function productPassesInventoryFilters(p){
+    if((inv.tab==='tax'||inv.taxOnly)&&!p.tax_item)return false;
     if(inv.locationFilter){
       const ok=(p.locations||[]).some(l=>String(l.location_id)===String(inv.locationFilter)&&n(l.qty)!==0);
       if(!ok)return false;
@@ -466,7 +472,7 @@
     const s=String(inv.search||'').trim().toLowerCase();
     return inv.balances.filter(x=>{
       const searchOk=!s||[
-        x.code,x.item_name,x.brand,x.class,
+        x.code,x.item_name,x.brand,x.class,x.tax_group_or_set,x.tax_note,
         ...(Array.isArray(x.locations)?x.locations.map(l=>l.code):[])
       ].filter(Boolean).join(' ').toLowerCase().includes(s);
       const reservedOk=!window.inventoryReservedOnly||(n(x.on_hand)>0&&n(x.available)<=0);
@@ -476,12 +482,12 @@
 
   async function renderBalance(){
     await loadCore();
-    const rows=balanceFiltered(),shown=rows.slice(0,inventoryLimit('balance'));
-    return `${inventoryFilterControls('balance')}<div class="card rounded-2xl overflow-hidden">
+    const rows=balanceFiltered(),shown=rows.slice(0,inventoryLimit(inv.tab));
+    return `${inv.tab==='tax'?'<div class="tax-panel text-sm"><b>Tax Inventory</b><p class="mt-1 text-xs">Live mirror of tax-tagged products in the shared stock ledger. Open Stock Card for movement history. Quantities follow the existing stock workflow.</p></div>':''}${inventoryFilterControls('balance')}<div class="card rounded-2xl overflow-hidden">
       <div class="divide-y">${shown.length?shown.map(p=>{const a=inv.agingMap.get(p.product_id);return `<div class="p-4 grid xl:grid-cols-[1.55fr_80px_80px_80px_80px_105px_1.4fr_165px] gap-3 items-center ${n(p.on_hand)>0&&n(p.available)<=0?'bg-red-50/30 border-l-4 border-red-300':a?.age_bucket==='365+'?'bg-amber-50/25 border-l-4 border-amber-300':''}">
         <button onclick="openProductStockCard('${p.product_id}')" class="flex items-center gap-3 min-w-0 text-left hover:opacity-80">
           <div class="w-12 h-12 rounded-xl bg-gray-100 overflow-hidden shrink-0">${p.image_url?`<img src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div>
-          <div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code)}</div><div class="font-semibold text-sm truncate">${esc(p.item_name)}</div><div class="text-[10px] text-gray-400">${esc(p.brand||'')} · Open Stock Card</div></div>
+          <div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code)}${taxBadge(p)}</div><div class="font-semibold text-sm truncate">${esc(p.item_name)}</div><div class="text-[10px] text-gray-400">${esc(p.brand||'')} · Open Stock Card</div>${p.tax_group_or_set?`<div class="text-xs">${esc(p.tax_group_or_set)}</div>`:''}${p.tax_note?`<div class="text-[10px] text-gray-500 whitespace-pre-wrap">${esc(p.tax_note)}</div>`:''}</div>
         </button>
         <div class="text-xs"><div class="text-gray-400">On Hand</div><b class="text-sm">${q(p.on_hand)}</b></div>
         <div class="text-xs"><div class="text-gray-400">Reserved</div>${n(p.reserved)>0?`<button onclick="openReservedStockDetails('${p.product_id}')" class="text-sm font-bold text-amber-600 hover:underline" title="View Sales Orders reserving this stock">${q(p.reserved)}</button>`:`<b class="text-sm text-amber-600">${q(p.reserved)}</b>`}</div>
@@ -491,7 +497,7 @@
         <div class="text-[10px] text-gray-500">${(p.locations||[]).filter(l=>n(l.qty)!==0).map(l=>`<span class="inline-flex mr-1 mb-1 px-2 py-1 rounded-lg border ${inv.locationFilter&&String(l.location_id)===String(inv.locationFilter)?'bg-blue-50 border-blue-200 text-blue-700':'bg-gray-50'}"><b>${esc(l.code)}</b>&nbsp;${q(l.qty)}</span>`).join('')||'<span class="text-gray-400">No stock location</span>'}</div>
         <div class="flex gap-1.5 justify-end">${canOperate()?`<button onclick="openStockTransfer('${p.product_id}')" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-semibold">Move</button>`:''}<button onclick="openProductStockCard('${p.product_id}')" class="px-3 py-2 border rounded-lg text-[10px] font-semibold">Stock Card</button></div>
       </div>`}).join(''):'<div class="p-10 text-center text-sm text-gray-400">No products match your search / filters.</div>'}</div>
-      ${inventoryListControls('balance',rows.length)}
+      ${inventoryListControls(inv.tab,rows.length)}
     </div>`;
   }
 
@@ -510,7 +516,7 @@
     }
     return `<div class="py-3 grid md:grid-cols-[105px_1.55fr_110px_90px_1fr_170px] gap-3 items-center text-xs">
       <div><b>${esc(dateText(m.movement_date))}</b><div class="text-[9px] text-gray-400">${esc(m.created_by_name||'System')}${m.legacy?' · Historical':''}</div></div>
-      <${m.product_id?'button':'div'} ${m.product_id?`onclick="openProductStockCard('${m.product_id}')"`:''} class="flex items-center gap-3 min-w-0 text-left ${m.product_id?'hover:opacity-80':''}"><div class="w-11 h-11 rounded-lg overflow-hidden bg-gray-100 shrink-0">${p?.image_url?`<img src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(m.code||'')}</div><div class="font-semibold truncate">${esc(m.item_name||'')}</div><div class="text-[9px] text-gray-400 truncate">${esc(m.reference_no||m.counterparty||'')}</div></div></${m.product_id?'button':'div'}>
+      <${m.product_id?'button':'div'} ${m.product_id?`onclick="openProductStockCard('${m.product_id}')"`:''} class="flex items-center gap-3 min-w-0 text-left ${m.product_id?'hover:opacity-80':''}"><div class="w-11 h-11 rounded-lg overflow-hidden bg-gray-100 shrink-0">${p?.image_url?`<img src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(m.code||'')}${taxBadge(p)}</div><div class="font-semibold truncate">${esc(m.item_name||'')}</div><div class="text-[9px] text-gray-400 truncate">${esc(m.reference_no||m.counterparty||'')}</div></div></${m.product_id?'button':'div'}>
       <span class="px-2 py-1 rounded-lg border text-[9px] font-bold w-fit ${movementBadge(m.movement_type)}">${esc(movementLabel(m.movement_type))}</span>
       <div><b>${q(m.qty)}</b><div class="text-[9px] text-gray-400">${esc(path)}</div></div>
       <div class="text-[10px] text-gray-500">${esc(m.note||m.counterparty||'-')}</div>
@@ -1057,7 +1063,7 @@
     try{
       let html='';
       if(inv.tab==='dashboard')html=await renderDashboard();
-      else if(inv.tab==='balance')html=await renderBalance();
+      else if(inv.tab==='balance'||inv.tab==='tax')html=await renderBalance();
       else if(inv.tab==='movements')html=await renderMovements();
       else if(inv.tab==='receive')html=await renderReceive();
       else if(inv.tab==='delivery')html=await renderDelivery();
@@ -1287,7 +1293,7 @@
     document.getElementById('modalBody').innerHTML=`<div class="space-y-4">
       <div class="rounded-2xl border bg-[#fcfbf8] p-4 flex flex-col md:flex-row md:items-center gap-4">
         <div class="w-24 h-24 rounded-2xl overflow-hidden border bg-white shrink-0">${p.image_url?`<img src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-xs text-gray-400">No Photo</div>'}</div>
-        <div class="min-w-0 flex-1"><div class="text-xs font-bold text-[#a77d1a]">${esc(p.code||'')}</div><h3 class="text-xl font-bold mt-1">${esc(p.item_name||'')}</h3><div class="text-xs text-gray-500 mt-1">${[p.brand,p.class].filter(Boolean).map(esc).join(' · ')}</div><div class="mt-3 flex flex-wrap gap-2">${locs.map(l=>`<span class="px-2.5 py-1.5 rounded-lg border bg-white text-xs"><b>${esc(l.code)}</b> ${q(l.qty)}</span>`).join('')||'<span class="text-xs text-gray-400">No live stock location.</span>'}</div></div>
+        <div class="min-w-0 flex-1"><div class="text-xs font-bold text-[#a77d1a]">${esc(p.code||'')}${taxBadge(p)}</div><h3 class="text-xl font-bold mt-1">${esc(p.item_name||'')}</h3><div class="text-xs text-gray-500 mt-1">${[p.brand,p.class].filter(Boolean).map(esc).join(' · ')}</div><div class="mt-3 flex flex-wrap gap-2">${locs.map(l=>`<span class="px-2.5 py-1.5 rounded-lg border bg-white text-xs"><b>${esc(l.code)}</b> ${q(l.qty)}</span>`).join('')||'<span class="text-xs text-gray-400">No live stock location.</span>'}</div></div>
         ${canOperate()?`<div class="flex md:flex-col gap-2"><button onclick="openStockTransfer('${productId}')" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-xl text-xs font-semibold">Move</button><button onclick="openStockMovement('out','${productId}')" class="px-3 py-2 border border-red-200 bg-red-50 text-red-700 rounded-xl text-xs font-semibold">Stock OUT</button><button onclick="openStockMovement('return','${productId}')" class="px-3 py-2 border border-green-200 bg-green-50 text-green-700 rounded-xl text-xs font-semibold">Return</button></div>`:''}
       </div>
 
@@ -1522,7 +1528,7 @@
     const box=document.getElementById('scAddProductSuggestions');if(!box)return;
     const rows=stockProductMatches(input?.value||'');
     if(!rows.length){box.innerHTML='<div class="px-4 py-3 text-sm text-gray-400">No matching product</div>';return}
-    box.innerHTML=rows.map(p=>`<button type="button" onclick="addStockCountProduct('${countId}','${p.product_id}')" class="w-full text-left px-3 py-2.5 hover:bg-amber-50 border-b last:border-0 flex gap-3 items-center"><div class="w-11 h-11 rounded-lg overflow-hidden bg-gray-100 shrink-0">${p.image_url?`<img src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code||'')}</div><div class="text-sm font-semibold truncate">${esc(p.item_name||'')}</div><div class="text-[10px] text-gray-400">${esc(p.brand||'')} · Current total on hand ${q(p.on_hand)}</div></div></button>`).join('');
+    box.innerHTML=rows.map(p=>`<button type="button" onclick="addStockCountProduct('${countId}','${p.product_id}')" class="w-full text-left px-3 py-2.5 hover:bg-amber-50 border-b last:border-0 flex gap-3 items-center"><div class="w-11 h-11 rounded-lg overflow-hidden bg-gray-100 shrink-0">${p.image_url?`<img src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code||'')}${taxBadge(p)}</div><div class="text-sm font-semibold truncate">${esc(p.item_name||'')}</div><div class="text-[10px] text-gray-400">${esc(p.brand||'')} · Current total on hand ${q(p.on_hand)}</div></div></button>`).join('');
   };
 
   window.addStockCountProduct=async function(countId,productId){
@@ -1686,7 +1692,7 @@
       await loadCore(true);
       state.productQuery=state.productQuery||'';
       const s=String(state.productQuery||'').toLowerCase();
-      const rows=inv.balances.filter(p=>!s||[p.code,p.item_name,p.brand,p.class].filter(Boolean).join(' ').toLowerCase().includes(s));
+      const rows=inv.balances.filter(taxProductMatches).filter(p=>!s||[p.code,p.item_name,p.brand,p.class].filter(Boolean).join(' ').toLowerCase().includes(s));
       document.getElementById('content').innerHTML=`
         <div class="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between mb-4">
           <input id="stockControllerProductSearch" value="${esc(state.productQuery||'')}" oninput="stockControllerProductSearch(this.value)" class="border rounded-xl px-4 py-2 w-full max-w-md" placeholder="Search code, item, brand...">
@@ -1698,7 +1704,7 @@
           ${rows.slice(0,900).map(p=>`<button onclick="openProductStockHistory('${p.product_id}')" class="card rounded-2xl p-4 flex gap-4 text-left hover:shadow-md transition w-full">
             <div class="w-20 h-20 rounded-xl bg-gray-100 overflow-hidden shrink-0">${p.image_url?`<img src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[9px] text-gray-400">No image</div>'}</div>
             <div class="min-w-0 flex-1">
-              <div class="text-[10px] gold font-bold truncate">${esc(p.code||'')}</div>
+              <div class="text-[10px] gold font-bold truncate">${esc(p.code||'')}${taxBadge(p)}</div>
               <div class="font-semibold truncate">${esc(p.item_name||'')}</div>
               <div class="text-xs text-gray-400 truncate">${esc(p.brand||'')}</div>
               <div class="mt-3 grid grid-cols-3 gap-2 text-[10px]">
@@ -1719,6 +1725,12 @@
     return window.renderProducts();
   };
 
+  let taxRefreshing=false;
+  setInterval(async()=>{
+    if(taxRefreshing||state.page!=='stock-inventory'||inv.tab!=='tax'||document.hidden||!document.getElementById('modal')?.classList.contains('hidden'))return;
+    taxRefreshing=true;
+    try{await loadCore(true);await renderStockInventoryBody()}catch(err){showToast('Tax Inventory refresh failed: '+err.message,'err')}finally{taxRefreshing=false}
+  },30000);
   // Navigation / permissions.
   const previousNavItems=window.navItems;
   if(typeof previousNavItems==='function'){

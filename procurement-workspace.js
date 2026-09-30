@@ -276,7 +276,7 @@
     if(r.error)throw r.error;
     const all=r.data||[];
     const q=norm(pw.search);
-    const rows=all.filter(i=>{
+    const rows=all.filter(taxProcurementMatches).filter(i=>{
       const stage=orderedStage(i.item_status||i.po_status);
       if(pw.orderedStatus!=='all'&&stage!==pw.orderedStatus)return false;
       if(!q)return true;
@@ -319,7 +319,7 @@
         const allocationRows=allocations.map(a=>'<div class="flex items-center justify-between gap-3 py-1 border-b last:border-0"><div class="min-w-0"><div class="text-[11px] font-semibold truncate">'+esc(a.customer_name||'Customer')+'</div><div class="pw-mini truncate">'+esc(a.order_ref||'Sales Order')+(a.sales_rep_name?' · '+esc(a.sales_rep_name):'')+'</div></div><b class="text-[11px] whitespace-nowrap">'+orderedQty(a.qty_allocated)+' pcs</b></div>').join('');
         return '<div class="pw-card grid md:grid-cols-[64px_1.5fr_100px_1.2fr] gap-3 items-start">'+
           '<div class="w-16 h-16 rounded-xl overflow-hidden border bg-gray-100">'+orderedImage(i.image_url)+'</div>'+
-          '<div><div class="text-[10px] font-bold text-[#a77d1a]">'+esc(i.product_code||'No Code')+'</div><div class="font-semibold text-sm mt-0.5">'+esc(i.item_name||'Item')+'</div><div class="pw-mini mt-1">'+[i.brand,i.product_class].filter(Boolean).map(esc).join(' · ')+'</div></div>'+
+          '<div><div class="text-[10px] font-bold text-[#a77d1a]">'+esc(i.product_code||'No Code')+taxBadge(i)+'</div><div class="font-semibold text-sm mt-0.5">'+esc(i.item_name||'Item')+'</div><div class="pw-mini mt-1">'+[i.brand,i.product_class].filter(Boolean).map(esc).join(' · ')+'</div></div>'+
           '<div class="text-xs"><div>Qty <b>'+orderedQty(i.qty)+'</b></div><div class="pw-mini mt-1">'+esc(orderedStageLabel(i.item_status||i.po_status))+'</div><div class="pw-mini">'+(i.estimated_arrival?'ETA '+esc(fmtDate(i.estimated_arrival)):'ETA TBD')+'</div></div>'+
           '<div class="rounded-xl border bg-[#faf9f6] px-3 py-2"><div class="text-[9px] uppercase font-bold text-gray-500 mb-1">Customer Allocation</div>'+
             (allocationRows||'<div class="text-[10px] text-gray-400">No customer allocation. Stock / unallocated: '+orderedQty(i.unallocated_qty)+'</div>')+

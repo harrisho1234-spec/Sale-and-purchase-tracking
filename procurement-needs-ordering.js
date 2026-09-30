@@ -65,8 +65,8 @@
 
   function filteredNeeds(){
     const q=norm(pw.search);
-    if(!q)return needsCache;
-    return needsCache.filter(x=>[x.sr_no,x.customer_name,x.product_code_snapshot,x.item_name_snapshot,x.sales_rep_name].some(v=>norm(v).includes(q)));
+    if(!q)return needsCache.filter(taxProcurementMatches);
+    return needsCache.filter(taxProcurementMatches).filter(x=>[x.sr_no,x.customer_name,x.product_code_snapshot,x.item_name_snapshot,x.sales_rep_name].some(v=>norm(v).includes(q)));
   }
 
   function paymentText(x){
@@ -80,7 +80,7 @@
       <div class="p-4 grid xl:grid-cols-[72px_1.35fr_1.1fr_240px_220px] gap-4 items-center">
         ${imageHtml(x.image_url,62)}
         <div class="min-w-0">
-          <div class="text-xs font-extrabold text-[#a77d1a] truncate">${esc(x.product_code_snapshot||'No Code')}</div>
+          <div class="text-xs font-extrabold text-[#a77d1a] truncate">${esc(x.product_code_snapshot||'No Code')}${taxBadge(x)}</div>
           <div class="font-semibold truncate">${esc(x.item_name_snapshot||'Item')}</div>
           <div class="text-[10px] text-gray-400 mt-1">Sales: ${esc(x.sales_rep_name||'-')}</div>
         </div>
@@ -114,7 +114,7 @@
     return `<div class="grid gap-3">${groups.map(g=>`<div class="card rounded-2xl p-4">
       <div class="flex flex-col lg:flex-row lg:items-center gap-4">
         ${imageHtml(g.image,64)}
-        <div class="min-w-0 flex-1"><div class="text-xs font-extrabold text-[#a77d1a]">${esc(g.code||'No Code')}</div><div class="font-bold">${esc(g.name||'Item')}</div><div class="text-xs text-gray-400 mt-1">Needed for ${g.rows.length} SR item${g.rows.length===1?'':'s'}</div></div>
+        <div class="min-w-0 flex-1"><div class="text-xs font-extrabold text-[#a77d1a]">${esc(g.code||'No Code')}${taxBadge(g.rows[0])}</div><div class="font-bold">${esc(g.name||'Item')}</div><div class="text-xs text-gray-400 mt-1">Needed for ${g.rows.length} SR item${g.rows.length===1?'':'s'}</div></div>
         <div class="rounded-xl bg-amber-50 border border-amber-100 px-5 py-3 text-center"><div class="text-[9px] uppercase font-bold text-amber-600">Total Need to Order</div><div class="text-2xl font-extrabold text-amber-700">${fmtQty(g.total)}</div></div>
       </div>
       <div class="mt-4 border rounded-xl overflow-hidden divide-y">${g.rows.map(x=>`<div class="p-3 grid md:grid-cols-[1fr_1fr_80px_150px] gap-3 items-center text-xs"><div><b>${esc(x.sr_no)}</b><div class="text-gray-400">${esc(x.customer_name||'-')}</div></div><div>${paymentText(x)}</div><div>Need <b class="text-amber-700">${fmtQty(x.need_qty)}</b></div><button onclick="needsAddExistingPO('${x.id}')" class="px-3 py-2 border rounded-lg font-semibold">Add to PO</button></div>`).join('')}</div>
