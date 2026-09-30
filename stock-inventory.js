@@ -461,8 +461,20 @@
   }
 
   window.toggleInventoryPOGroup=function(poId){
-    if(inv.poExpanded.has(poId))inv.poExpanded.delete(poId);else inv.poExpanded.add(poId);
-    renderStockInventoryBody();
+    const id=String(poId||'');
+    if(!id)return;
+    const expanded=!inv.poExpanded.has(id);
+    if(expanded)inv.poExpanded.add(id);else inv.poExpanded.delete(id);
+
+    // Expand/collapse in place so the Receive PO list keeps its current scroll position.
+    const domKey=encodeURIComponent(id);
+    const detail=document.getElementById('inv-po-detail-'+domKey);
+    const label=document.getElementById('inv-po-label-'+domKey);
+    const icon=document.getElementById('inv-po-icon-'+domKey);
+
+    if(detail)detail.classList.toggle('hidden',!expanded);
+    if(label)label.textContent=expanded?'Hide Items':'View / Receive Items';
+    if(icon)icon.textContent=expanded?'↑':'↓';
   };
 
   async function renderReceive(){
@@ -484,9 +496,9 @@
           <div><div class="flex flex-wrap items-center gap-2"><b class="text-base">${esc(g.po_number)}</b><span class="px-2 py-1 rounded-lg border bg-gray-50 text-[9px] font-semibold">${g.items.length} item line${g.items.length===1?'':'s'}</span></div><div class="text-xs text-gray-500 mt-1">${esc(g.vendor_name)}</div><div class="text-[9px] text-gray-400 mt-1">ETA ${esc(dateText(g.eta))}</div></div>
           <div class="text-xs"><div class="text-gray-400">Ordered Qty</div><b class="text-sm">${q(ordered)}</b></div>
           <div class="text-xs"><div class="text-gray-400">Remaining Qty</div><b class="text-sm text-blue-600">${q(remaining)}</b></div>
-          <div class="text-right text-xs font-semibold text-[#a77d1a]">${expanded?'Hide Items ↑':'View / Receive Items ↓'}</div>
+          <div class="text-right text-xs font-semibold text-[#a77d1a]"><span id="inv-po-label-${encodeURIComponent(g.id)}">${expanded?'Hide Items':'View / Receive Items'}</span> <span id="inv-po-icon-${encodeURIComponent(g.id)}">${expanded?'↑':'↓'}</span></div>
         </button>
-        <div class="${expanded?'':'hidden'} border-t bg-[#faf9f6]">
+        <div id="inv-po-detail-${encodeURIComponent(g.id)}" class="${expanded?'':'hidden'} border-t bg-[#faf9f6]">
           ${g.items.map(x=>`<div class="p-4 grid lg:grid-cols-[1.8fr_90px_100px_120px] gap-3 items-center border-b last:border-0">
             <div class="flex gap-3 items-center min-w-0"><div class="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 shrink-0">${x.image_url?`<img src="${esc(x.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(x.product_code||'')}</div><div class="text-sm font-semibold truncate">${esc(x.item_name||'')}</div></div></div>
             <div class="text-xs"><span class="text-gray-400">Ordered</span><br><b>${q(x.ordered_qty)}</b></div>
