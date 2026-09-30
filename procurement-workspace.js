@@ -2,7 +2,7 @@
 // Loaded after document-flow.js, po-edit.js, and flow-refresh-fix.js.
 
 (function(){
-  const pw={tab:'pos',search:''};
+  const pw={tab:'pos',search:'',orderedStatus:'all',orderedExpanded:new Set()};
   window.procurementWorkspace=pw;
 
   function norm(v=''){return String(v||'').trim().toLowerCase()}
@@ -240,11 +240,114 @@
     }
   };
 
+
+  function orderedStage(v){
+    const s=norm(v||'placed');
+    if(['arrived','closed','completed','delivered'].includes(s))return 'completed';
+    if(s==='shipping')return 'shipping';
+    if(s==='production')return 'production';
+    return 'placed';
+  }
+  function orderedStageLabel(v){
+    const s=orderedStage(v);
+    return s==='placed'?'Ordered':s==='production'?'In Production':s==='shipping'?'Shipping':'Arrived';
+  }
+  function orderedQty(v){
+    const x=Number(v||0);
+    return x.toLocaleString(undefined,{maximumFractionDigits:0});
+  }
+  function orderedImage(url){
+    if(!url)return '<div class="w-full h-full bg-gray-100 flex items-center justify-center text-[8px] text-gray-400">No Photo</div>';
+    return '<img src="'+esc(url)+'" loading="lazy" class="w-full h-full object-cover" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'"><div style="display:none" class="w-full h-full bg-gray-100 items-center justify-center text-[8px] text-gray-400">No Photo</div>';
+  }
+  function procOrderedStatusBadge(s){
+    s=orderedStage(s);
+    return s==='completed'?'lr-badge-green':s==='shipping'?'lr-badge-blue':s==='production'?'lr-badge-amber':'lr-badge-gray';
+  }
+  window.setProcOrderedStatus=function(v){pw.orderedStatus=v;renderProcurementWorkspace()};
+  window.toggleProcOrderedPO=function(id){
+    id=String(id||'');
+    if(pw.orderedExpanded.has(id))pw.orderedExpanded.delete(id);else pw.orderedExpanded.add(id);
+    renderProcurementWorkspace();
+  };
+
+  async function renderPOOrderedItems(){
+    const r=await db.rpc('get_sales_po_ordered_items');
+    if(r.error)throw r.error;
+    const all=r.data||[];
+    const q=norm(pw.search);
+    const rows=all.filter(i=>{
+      const stage=orderedStage(i.item_status||i.po_status);
+      if(pw.orderedStatus!=='all'&&stage!==pw.orderedStatus)return false;
+      if(!q)return true;
+      const allocations=Array.isArray(i.allocations)?i.allocations:[];
+      const hay=[
+        i.po_number,i.po_pending_reference,i.vendor_name,i.product_code,i.item_name,i.brand,i.product_class,
+        ...allocations.flatMap(a=>[a.customer_name,a.customer_code,a.order_ref,a.sales_rep_name])
+      ].filter(Boolean).join(' ').toLowerCase();
+      return hay.includes(q);
+    });
+
+    const totals={
+      all:all.length,
+      placed:all.filter(i=>orderedStage(i.item_status||i.po_status)==='placed').length,
+      production:all.filter(i=>orderedStage(i.item_status||i.po_status)==='production').length,
+      shipping:all.filter(i=>orderedStage(i.item_status||i.po_status)==='shipping').length,
+      completed:all.filter(i=>orderedStage(i.item_status||i.po_status)==='completed').length
+    };
+    const chips=[
+      ['all','All',totals.all],['placed','Ordered',totals.placed],['production','Production',totals.production],
+      ['shipping','Shipping',totals.shipping],['completed','Arrived',totals.completed]
+    ].map(([v,l,n])=>'<button onclick="setProcOrderedStatus(\''+v+'\')" class="px-3 py-2 rounded-xl border text-xs font-semibold '+(pw.orderedStatus===v?'bg-amber-50 border-amber-200 text-[#8a5a00]':'bg-white')+'">'+l+' <b>'+n+'</b></button>').join('');
+
+    const groups=new Map();
+    rows.forEach(i=>{
+      const key=String(i.po_id||i.po_number||i.po_pending_reference||'unknown');
+      if(!groups.has(key))groups.set(key,[]);
+      groups.get(key).push(i);
+    });
+
+    const cards=[...groups.entries()].map(([key,items])=>{
+      const p=items[0]||{};
+      const open=pw.orderedExpanded.has(key);
+      const qty=items.reduce((a,x)=>a+Number(x.qty||0),0);
+      const allocated=items.reduce((a,x)=>a+Number(x.allocated_qty||0),0);
+      const stock=items.reduce((a,x)=>a+Number(x.unallocated_qty||0),0);
+      const po=poLabel(p);
+      const details=items.map(i=>{
+        const allocations=Array.isArray(i.allocations)?i.allocations:[];
+        const allocationRows=allocations.map(a=>'<div class="flex items-center justify-between gap-3 py-1 border-b last:border-0"><div class="min-w-0"><div class="text-[11px] font-semibold truncate">'+esc(a.customer_name||'Customer')+'</div><div class="pw-mini truncate">'+esc(a.order_ref||'Sales Order')+(a.sales_rep_name?' · '+esc(a.sales_rep_name):'')+'</div></div><b class="text-[11px] whitespace-nowrap">'+orderedQty(a.qty_allocated)+' pcs</b></div>').join('');
+        return '<div class="pw-card grid md:grid-cols-[64px_1.5fr_100px_1.2fr] gap-3 items-start">'+
+          '<div class="w-16 h-16 rounded-xl overflow-hidden border bg-gray-100">'+orderedImage(i.image_url)+'</div>'+
+          '<div><div class="text-[10px] font-bold text-[#a77d1a]">'+esc(i.product_code||'No Code')+'</div><div class="font-semibold text-sm mt-0.5">'+esc(i.item_name||'Item')+'</div><div class="pw-mini mt-1">'+[i.brand,i.product_class].filter(Boolean).map(esc).join(' · ')+'</div></div>'+
+          '<div class="text-xs"><div>Qty <b>'+orderedQty(i.qty)+'</b></div><div class="pw-mini mt-1">'+esc(orderedStageLabel(i.item_status||i.po_status))+'</div><div class="pw-mini">'+(i.estimated_arrival?'ETA '+esc(fmtDate(i.estimated_arrival)):'ETA TBD')+'</div></div>'+
+          '<div class="rounded-xl border bg-[#faf9f6] px-3 py-2"><div class="text-[9px] uppercase font-bold text-gray-500 mb-1">Customer Allocation</div>'+
+            (allocationRows||'<div class="text-[10px] text-gray-400">No customer allocation. Stock / unallocated: '+orderedQty(i.unallocated_qty)+'</div>')+
+            (Number(i.unallocated_qty||0)>0?'<div class="pt-1 mt-1 border-t border-dashed flex justify-between text-[10px]"><span>Stock / Unallocated</span><b>'+orderedQty(i.unallocated_qty)+'</b></div>':'')+
+          '</div>'+
+        '</div>';
+      }).join('');
+
+      return '<div class="pw-card p-0 overflow-hidden">'+
+        '<button type="button" onclick="toggleProcOrderedPO(\''+esc(key)+'\')" class="w-full text-left p-4 flex items-start justify-between gap-3 hover:bg-amber-50/30">'+
+          '<div class="min-w-0"><div class="flex flex-wrap items-center gap-2"><b class="text-base">'+esc(po)+'</b><span class="lr-badge '+procOrderedStatusBadge(p.po_status)+'">'+esc(orderedStageLabel(p.po_status))+'</span><span class="lr-badge lr-badge-gray">'+items.length+' item line'+(items.length===1?'':'s')+'</span><span class="lr-badge lr-badge-gray">Total Qty '+orderedQty(qty)+'</span><span class="lr-badge lr-badge-blue">Allocated '+orderedQty(allocated)+'</span>'+(stock>0?'<span class="lr-badge lr-badge-gray">Stock '+orderedQty(stock)+'</span>':'')+'</div>'+
+          '<div class="text-xs mt-2"><span class="text-gray-400">Supplier:</span> <b>'+esc(p.vendor_name||'-')+'</b></div><div class="pw-mini mt-1">Ordered '+esc(fmtDate(p.order_date))+' · ETA '+esc(fmtDate(p.estimated_arrival))+'</div></div>'+
+          '<span class="text-[10px] text-gray-400 whitespace-nowrap">'+(open?'Hide items':'View items')+'</span>'+
+        '</button>'+
+        (open?'<div class="border-t bg-[#fcfbf8] p-3 grid gap-3">'+details+'</div>':'')+
+      '</div>';
+    }).join('');
+
+    return '<div class="rounded-xl border border-blue-100 bg-blue-50 p-3 mb-4 text-xs text-blue-800"><b>Incoming PO visibility:</b> grouped by Supplier PO with product photos, ordered quantity, ETA, customer allocation and unallocated stock. Supplier cost and payment figures stay in the other Procurement tabs.</div>'+
+      '<div class="flex flex-wrap gap-2 mb-4">'+chips+'</div>'+
+      '<div class="grid gap-3">'+(cards||'<div class="card rounded-xl p-8 text-center text-gray-400">No PO ordered items match this filter.</div>')+'</div>';
+  }
+
   window.saveProcShipping=async function(id){const status=document.getElementById('status-'+id)?.value,eta=document.getElementById('eta-'+id)?.value||null;const patch={status,estimated_arrival:eta};if(['arrived','delivered'].includes(status))patch.actual_arrival=new Date().toISOString().slice(0,10);const r=await db.from('supplier_pos').update(patch).eq('id',id);if(r.error)return showToast(r.error.message,'err');if(window.documentFlowState)window.documentFlowState.loaded=false;showToast('Shipping / ETA updated');await load();await renderProcurementWorkspace()};
 
   window.renderProcurementWorkspace=async function(){
     inject();requireAdmin();
-    const tabs=[['pos','Supplier POs'],['items','PO Items'],['payments','Supplier Payments'],['shipping','Shipping / ETA'],['allocations','SR Allocations'],['flow','PO → SR → TK/RK']];
+    const tabs=[['pos','Supplier POs'],['ordered','PO Ordered Items'],['items','PO Items'],['payments','Supplier Payments'],['shipping','Shipping / ETA'],['allocations','SR Allocations'],['flow','PO → SR → TK/RK']];
     let action='';
     if(pw.tab==='pos')action=`<div class="flex flex-wrap gap-2 justify-end"><button onclick="openBulkPOImport()" class="px-4 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-xl text-sm font-semibold">Bulk Import Excel</button><button onclick="openNewSupplierPO()" class="px-4 py-2 bg-[#211d18] text-white rounded-xl text-sm font-semibold">+ Supplier PO</button></div>`;
     if(pw.tab==='payments')action=`<button onclick="openSupplierPayment()" class="px-4 py-2 bg-[#211d18] text-white rounded-xl text-sm font-semibold">+ Supplier Payment</button>`;
