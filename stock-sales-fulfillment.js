@@ -4,6 +4,13 @@
   const F={rows:[],limit:60,loadedAt:0};
 
   function n(v){return Number(v||0)}
+  function localDateText(v){
+    if(!v)return '';
+    const s=String(v).slice(0,10);
+    const parts=s.split('-');
+    if(parts.length===3)return parts[2]+'/'+parts[1]+'/'+parts[0];
+    try{return new Date(v).toLocaleDateString()}catch(_){return String(v)}
+  }
   function role(){return String((typeof state!=='undefined'&&state?.profile?.role)||'')}
   function canOperate(){return ['stock_controller','admin','super_admin'].includes(role())}
   function activeDeliveryTab(){
@@ -85,7 +92,7 @@
           const arrived=statusQty(x,'arrived');
           const tracked=!!x.inventory_tracking_enabled;
           return `<div class="inv-card grid lg:grid-cols-[1.05fr_1.45fr_1.15fr_95px_105px_185px] gap-3 items-center ${tracked?'':'border-amber-200 bg-amber-50/20'}">
-            <div><div class="flex flex-wrap gap-1.5 items-center"><b>${esc(x.document_no||'Sales Order')}</b><span class="px-2 py-0.5 rounded-full border text-[8px] font-bold ${tracked?'bg-green-50 border-green-200 text-green-700':'bg-amber-50 border-amber-200 text-amber-700'}">${tracked?'Linked to Stock':'Not Linked'}</span></div><div class="text-xs text-gray-500 mt-1">${esc(x.customer_name||'')}</div><div class="text-[9px] text-gray-400">${esc(dateText(x.order_date))}${x.sales_rep_name?' · '+esc(x.sales_rep_name):''}</div></div>
+            <div><div class="flex flex-wrap gap-1.5 items-center"><b>${esc(x.document_no||'Sales Order')}</b><span class="px-2 py-0.5 rounded-full border text-[8px] font-bold ${tracked?'bg-green-50 border-green-200 text-green-700':'bg-amber-50 border-amber-200 text-amber-700'}">${tracked?'Linked to Stock':'Not Linked'}</span></div><div class="text-xs text-gray-500 mt-1">${esc(x.customer_name||'')}</div><div class="text-[9px] text-gray-400">${esc(localDateText(x.order_date))}${x.sales_rep_name?' · '+esc(x.sales_rep_name):''}</div></div>
             <div class="flex gap-3 items-center min-w-0"><div class="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 shrink-0">${x.image_url?`<img src="${esc(x.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(x.product_code||'')}</div><div class="text-sm font-semibold truncate">${esc(x.item_name||'')}</div></div></div>
             <div><div class="text-[9px] uppercase font-bold text-gray-400 mb-1">Item Status</div><div class="flex flex-wrap gap-1">${statusChips(x)}</div></div>
             <div class="text-xs"><div class="text-gray-400">Ordered</div><b>${q(x.ordered_qty)}</b><div class="text-[9px] text-gray-400 mt-1">OUT ${q(x.released_qty)}</div></div>
