@@ -49,17 +49,19 @@
       updateZeroButton(row);
     }
     if(input){
-      input.addEventListener('input',()=>updateZeroButton(row));
+      input.addEventListener('input',()=>{updateZeroButton(row);row.classList.add('ring-1','ring-amber-300')});
       input.title='Enter the quantity physically found. Blank = not counted.';
     }
+    row.querySelector('.count-qb')?.addEventListener('input',()=>row.classList.add('ring-1','ring-amber-300'));
+    row.querySelector('.count-note')?.addEventListener('input',()=>row.classList.add('ring-1','ring-amber-300'));
     const v=row.querySelector('.count-var');
     if(v)v.title='Physical variance = Physical Qty − System Qty';
     const qv=row.querySelector('.count-qbvar');
     if(qv)qv.title='QB variance = QB Qty − System Qty';
   }
 
-  function decorateStockCount(){
-    const body=modalBody();if(!body||!body.querySelector('.stock-count-row'))return;
+  function decorateStockCount(countId){
+    const body=modalBody();if(!body)return;
     body.querySelectorAll('.stock-count-row').forEach(decorateRow);
 
     const sticky=[...body.querySelectorAll('.sticky')].find(x=>/product/i.test(x.textContent||'')&&/physical/i.test(x.textContent||''));
@@ -72,6 +74,13 @@
     const guide=[...body.querySelectorAll('.text-\\[10px\\]')].find(x=>String(x.textContent||'').includes('Physical Qty:'));
     if(guide&&!document.getElementById('stockCountVarianceHelp')){
       guide.insertAdjacentHTML('beforeend',`<div id="stockCountVarianceHelp" class="mt-1 text-[9px] text-gray-400"><b>Physical Var = Physical − System.</b> Example: System 1, Physical 0 = <b class="text-red-600">−1</b> (1 unit missing). <b>Set 0</b> means counted and none found; click <b>Clear</b> to undo.</div>`);
+    }
+
+    if(countId&&!document.getElementById('stockCountSaveDraftBtn')){
+      const submit=[...body.querySelectorAll('button')].find(b=>String(b.getAttribute('onclick')||'').includes('submitStockCount'));
+      if(submit){
+        submit.insertAdjacentHTML('beforebegin',`<button id="stockCountSaveDraftBtn" type="button" onclick="saveStockCountDraft('${html(countId)}')" class="px-4 py-2 border border-gray-300 bg-white text-gray-700 rounded-xl text-xs font-semibold">Save Draft</button>`);
+      }
     }
     updateTopItemCount();
     if(typeof window.updateStockCountProgress==='function')window.updateStockCountProgress();
@@ -194,6 +203,54 @@
     showToast(wasZero?'Physical Qty cleared — item is uncounted again.':'Physical Qty saved as 0. You can still edit or Clear it.');
   };
 
+
+  function collectStockCountDraftItems(){
+    const rows=[...document.querySelectorAll('#modalBody .stock-count-row')];
+    const items=[];
+    for(const row of rows){
+      const itemId=row.dataset.countItem;
+      const physical=String(row.querySelector('.count-physical')?.value||'').trim();
+      const qb=String(row.querySelector('.count-qb')?.value||'').trim();
+      const note=String(row.querySelector('.count-note')?.value||'').trim();
+      if(physical!==''&&(!Number.isInteger(Number(physical))||Number(physical)<0)){
+        row.querySelector('.count-physical')?.focus();
+        throw new Error('Physical Qty must be a whole number: 0, 1, 2, 3...');
+      }
+      if(qb!==''&&(!Number.isInteger(Number(qb))||Number(qb)<0)){
+        row.querySelector('.count-qb')?.focus();
+        throw new Error('QB Qty must be a whole number: 0, 1, 2, 3...');
+      }
+      items.push({
+        item_id:itemId,
+        physical_qty:physical===''?null:Number(physical),
+        qb_qty:qb===''?null:Number(qb),
+        note:note||null
+      });
+    }
+    return items;
+  }
+
+  window.saveStockCountDraft=async function(countId,options={}){
+    const btn=document.getElementById('stockCountSaveDraftBtn');
+    const oldText=btn?.textContent||'Save Draft';
+    try{
+      const items=collectStockCountDraftItems();
+      if(btn){btn.disabled=true;btn.textContent='Saving Draft...'}
+      const r=await db.rpc('save_stock_count_draft',{p_count_id:countId,p_items:items});
+      if(r.error)throw r.error;
+      document.querySelectorAll('#modalBody .stock-count-row').forEach(row=>{
+        row.classList.remove('ring-1','ring-amber-300');
+      });
+      if(!options.silent)showToast('Draft saved. You can close this count and continue later.');
+      return true;
+    }catch(err){
+      if(!options.silent)showToast(err.message||'Could not save draft.','err');
+      return false;
+    }finally{
+      if(btn){btn.disabled=false;btn.textContent=oldText}
+    }
+  };
+
   window.fillStockCountBlanksZero=async function(countId){
     if(!confirm('Mark every remaining blank Physical Qty as 0? Blank means NOT COUNTED; 0 means COUNTED and none physically found. You can still change any row afterward while the count is Draft.'))return;
     const r=await db.rpc('fill_stock_count_blank_physical_zero',{p_count_id:countId});
@@ -219,12 +276,22 @@
   const baseOpen=window.openStockCount;
   if(typeof baseOpen==='function'){
     window.openStockCount=async function(){
+      const countId=arguments[0];
       const r=await baseOpen.apply(this,arguments);
-      setTimeout(decorateStockCount,0);
+      setTimeout(()=>decorateStockCount(countId),0);
       return r;
     };
   }
 
+  const baseSubmit=window.submitStockCount;
+  if(typeof baseSubmit==='function'){
+    window.submitStockCount=async function(countId){
+      const saved=await window.saveStockCountDraft(countId,{silent:true});
+      if(!saved)return showToast('Please fix the highlighted count values before submitting.','err');
+      return baseSubmit.apply(this,arguments);
+    };
+  }
+
   // Also decorate an already-open count if this script loads after it.
-  setTimeout(decorateStockCount,100);
+  setTimeout(()=>decorateStockCount(null),100);
 })();
