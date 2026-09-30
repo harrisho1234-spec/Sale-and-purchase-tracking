@@ -232,7 +232,7 @@
       ['delivery','Customer Delivery',inv.taskBadges.delivery||0]
     ];
     t.push(['counts','Stock Count',inv.taskBadges.counts||0],['reports','Reports',0]);
-    if(canAdmin()||isStockController())t.push(['requests',canAdmin()?'Edit Requests':'My Requests',inv.taskBadges.requests||0]);
+    if(canAdmin()||isStockController())t.push(['requests',canAdmin()?'Approvals / Requests':'My Requests',inv.taskBadges.requests||0]);
     return t;
   }
 
