@@ -133,7 +133,7 @@
   }
   window.expandInventoryList=function(tab,all=false){inv.limits[tab]=all?999999:inventoryLimit(tab)+30;renderStockInventoryBody()};
   window.collapseInventoryList=function(tab){inv.limits[tab]=30;renderStockInventoryBody()};
-  window.setInventoryTab=function(tab){inv.tab=tab;if(tab!=='balance')window.inventoryReservedOnly=false;resetInventoryLimit(tab);renderStockInventory()};
+  window.setInventoryTab=function(tab){inv.tab=tab;window.inventoryReservedOnly=false;resetInventoryLimit(tab);renderStockInventory()};
   window.setInventorySearch=function(v){inv.search=v;window.inventoryReservedOnly=false;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
 
   function invalidateInventoryTasks(){inv.taskLoadedAt=0}
@@ -410,7 +410,7 @@
         <div class="text-xs"><div class="text-gray-400">Incoming</div><b class="text-sm text-blue-600">${q(p.incoming)}</b></div>
         <div class="text-xs"><div class="text-gray-400">Aging</div><span class="inline-flex mt-1 px-2 py-1 rounded-lg border text-[9px] font-bold ${ageBadgeClass(a?.age_bucket||'Unknown')}">${esc(ageLabel(a))}</span>${a?.oldest_remaining_date?`<div class="text-[9px] text-gray-400 mt-1">Since ${esc(dateText(a.oldest_remaining_date))}</div>`:''}</div>
         <div class="text-[10px] text-gray-500">${(p.locations||[]).filter(l=>n(l.qty)!==0).map(l=>`<span class="inline-flex mr-1 mb-1 px-2 py-1 rounded-lg border ${inv.locationFilter&&String(l.location_id)===String(inv.locationFilter)?'bg-blue-50 border-blue-200 text-blue-700':'bg-gray-50'}"><b>${esc(l.code)}</b>&nbsp;${q(l.qty)}</span>`).join('')||'<span class="text-gray-400">No stock location</span>'}</div>
-        <div class="flex gap-1.5 justify-end">${canOperate()?`<button onclick="openStockTransfer('${p.product_id}')" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-semibold">Move</button>`:''}<button onclick="openProductStockHistory('${p.product_id}')" class="px-3 py-2 border rounded-lg text-[10px] font-semibold">History</button></div>
+        <div class="flex gap-1.5 justify-end">${canOperate()?`<button onclick="openStockTransfer('${p.product_id}')" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-semibold">Move</button>`:''}<button onclick="openProductStockCard('${p.product_id}')" class="px-3 py-2 border rounded-lg text-[10px] font-semibold">Stock Card</button></div>
       </div>`}).join(''):'<div class="p-10 text-center text-sm text-gray-400">No products match your search / filters.</div>'}</div>
       ${inventoryListControls('balance',rows.length)}
     </div>`;
