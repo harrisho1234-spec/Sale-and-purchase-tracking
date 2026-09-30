@@ -401,10 +401,10 @@
     const rows=balanceFiltered(),shown=rows.slice(0,inventoryLimit('balance'));
     return `${inventoryFilterControls('balance')}<div class="card rounded-2xl overflow-hidden">
       <div class="divide-y">${shown.length?shown.map(p=>{const a=inv.agingMap.get(p.product_id);return `<div class="p-4 grid xl:grid-cols-[1.55fr_80px_80px_80px_80px_105px_1.4fr_165px] gap-3 items-center">
-        <div class="flex items-center gap-3 min-w-0">
+        <button onclick="openProductStockCard('${p.product_id}')" class="flex items-center gap-3 min-w-0 text-left hover:opacity-80">
           <div class="w-12 h-12 rounded-xl bg-gray-100 overflow-hidden shrink-0">${p.image_url?`<img src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div>
-          <div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code)}</div><div class="font-semibold text-sm truncate">${esc(p.item_name)}</div><div class="text-[10px] text-gray-400">${esc(p.brand||'')}</div></div>
-        </div>
+          <div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code)}</div><div class="font-semibold text-sm truncate">${esc(p.item_name)}</div><div class="text-[10px] text-gray-400">${esc(p.brand||'')} · Open Stock Card</div></div>
+        </button>
         <div class="text-xs"><div class="text-gray-400">On Hand</div><b class="text-sm">${q(p.on_hand)}</b></div>
         <div class="text-xs"><div class="text-gray-400">Reserved</div><b class="text-sm text-amber-600">${q(p.reserved)}</b></div>
         <div class="text-xs"><div class="text-gray-400">Available</div><b class="text-sm ${n(p.available)<0?'text-red-600':'text-green-600'}">${q(p.available)}</b></div>
@@ -432,7 +432,7 @@
     }
     return `<div class="py-3 grid md:grid-cols-[105px_1.55fr_110px_90px_1fr_170px] gap-3 items-center text-xs">
       <div><b>${esc(dateText(m.movement_date))}</b><div class="text-[9px] text-gray-400">${esc(m.created_by_name||'System')}${m.legacy?' · Historical':''}</div></div>
-      <div class="flex items-center gap-3 min-w-0"><div class="w-11 h-11 rounded-lg overflow-hidden bg-gray-100 shrink-0">${p?.image_url?`<img src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(m.code||'')}</div><div class="font-semibold truncate">${esc(m.item_name||'')}</div><div class="text-[9px] text-gray-400 truncate">${esc(m.reference_no||m.counterparty||'')}</div></div></div>
+      <${m.product_id?'button':'div'} ${m.product_id?`onclick="openProductStockCard('${m.product_id}')"`:''} class="flex items-center gap-3 min-w-0 text-left ${m.product_id?'hover:opacity-80':''}"><div class="w-11 h-11 rounded-lg overflow-hidden bg-gray-100 shrink-0">${p?.image_url?`<img src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(m.code||'')}</div><div class="font-semibold truncate">${esc(m.item_name||'')}</div><div class="text-[9px] text-gray-400 truncate">${esc(m.reference_no||m.counterparty||'')}</div></div></${m.product_id?'button':'div'}>
       <span class="px-2 py-1 rounded-lg border text-[9px] font-bold w-fit ${movementBadge(m.movement_type)}">${esc(movementLabel(m.movement_type))}</span>
       <div><b>${q(m.qty)}</b><div class="text-[9px] text-gray-400">${esc(path)}</div></div>
       <div class="text-[10px] text-gray-500">${esc(m.note||m.counterparty||'-')}</div>
@@ -992,11 +992,11 @@
 
   window.renderStockInventory=async function(){
     if(!canView())throw new Error('Inventory access required.');
-    injectStyles();await loadCore();
+    injectStyles();await loadCore();await loadInventoryTasks();
     if(!tabs().some(x=>x[0]===inv.tab))inv.tab='dashboard';
     const searchPlaceholder=inv.tab==='receive'?'Search PO, vendor, SKU...':inv.tab==='delivery'?'Search invoice, customer, SKU...':'Search SKU, item, brand, location, reference...';
     document.getElementById('content').innerHTML=`<div class="max-w-[1550px] mx-auto">
-      <div class="inv-tabs">${tabs().map(([v,l])=>`<button class="inv-tab ${inv.tab===v?'active':''}" onclick="setInventoryTab('${v}')">${l}</button>`).join('')}</div>
+      <div class="inv-tabs">${tabs().map(([v,l,b])=>`<button class="inv-tab ${inv.tab===v?'active':''}" onclick="setInventoryTab('${v}')">${l}${b?`<span class="inv-tab-badge">${Number(b).toLocaleString()}</span>`:''}</button>`).join('')}</div>
       <div class="inv-toolbar">
         <input class="inv-search" value="${esc(inv.search)}" oninput="setInventorySearch(this.value)" placeholder="${esc(searchPlaceholder)}">
         <div>${topActions()}</div>
@@ -1158,7 +1158,7 @@
       };
       const r=await db.rpc('create_stock_movement',args);
       if(r.error){btn.disabled=false;btn.textContent='Save Stock Movement';return showToast(r.error.message,'err')}
-      closeModal();showToast('Stock movement saved.');inv.locations=[];inv.balances=[];await renderStockInventory();
+      closeModal();showToast('Stock movement saved.');invalidateInventoryTasks();inv.locations=[];inv.balances=[];await renderStockInventory();
     };
   };
 
@@ -1181,24 +1181,65 @@
     return openStockMovement('adjustment_in',productId);
   };
 
-  window.openProductStockHistory=async function(productId){
+  window.openProductStockCard=async function(productId){
     await loadCore();
     const p=inv.balanceMap.get(productId);
-    openModal('Stock History — '+(p?.code||'Product'),'<div class="py-12 text-center text-sm text-gray-400">Loading history...</div>');
-    const r=await db.from('inventory_movement_history').select('*').eq('product_id',productId).order('movement_date',{ascending:false}).order('created_at',{ascending:false}).limit(500);
-    if(r.error){document.getElementById('modalBody').innerHTML=`<div class="text-red-600">${esc(r.error.message)}</div>`;return}
-    const locs=(p?.locations||[]).filter(x=>n(x.qty)!==0);
+    if(!p)return showToast('Product stock record not found.','err');
+    openModal('Product Stock Card — '+(p.code||'Product'),'<div class="py-12 text-center text-sm text-gray-400">Loading product stock card...</div>');
+
+    const orderedPromise=role()==='accountant'
+      ?Promise.resolve({data:[],error:null})
+      :db.rpc('get_sales_po_ordered_items');
+
+    const [historyRes,receiveRes,orderedRes]=await Promise.all([
+      db.from('inventory_movement_history').select('*').eq('product_id',productId).order('movement_date',{ascending:false}).order('created_at',{ascending:false}).limit(30),
+      db.rpc('get_inventory_po_receiving_queue',{p_search:p.code||null}),
+      orderedPromise
+    ]);
+    if(historyRes.error){document.getElementById('modalBody').innerHTML=`<div class="text-red-600">${esc(historyRes.error.message)}</div>`;return}
+
+    const history=historyRes.data||[];
+    const incoming=(receiveRes.data||[]).filter(x=>String(x.product_id)===String(productId));
+    const ordered=(orderedRes.data||[]).filter(x=>String(x.product_id)===String(productId));
+    const a=inv.agingMap.get(productId);
+    const locs=(p.locations||[]).filter(x=>n(x.qty)!==0);
+    const customerAllocations=[];
+    ordered.forEach(x=>(Array.isArray(x.allocations)?x.allocations:[]).forEach(y=>customerAllocations.push({...y,po_number:x.po_number||x.po_pending_reference||'PO'})));
+
     document.getElementById('modalBody').innerHTML=`<div class="space-y-4">
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div class="rounded-xl bg-gray-50 border p-3"><div class="text-[9px] uppercase font-bold text-gray-400">On Hand</div><b class="text-xl">${q(p?.on_hand)}</b></div>
-        <div class="rounded-xl bg-gray-50 border p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Reserved</div><b class="text-xl text-amber-600">${q(p?.reserved)}</b></div>
-        <div class="rounded-xl bg-gray-50 border p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Available</div><b class="text-xl text-green-600">${q(p?.available)}</b></div>
-        <div class="rounded-xl bg-gray-50 border p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Incoming</div><b class="text-xl text-blue-600">${q(p?.incoming)}</b></div>
+      <div class="rounded-2xl border bg-[#fcfbf8] p-4 flex flex-col md:flex-row md:items-center gap-4">
+        <div class="w-24 h-24 rounded-2xl overflow-hidden border bg-white shrink-0">${p.image_url?`<img src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-xs text-gray-400">No Photo</div>'}</div>
+        <div class="min-w-0 flex-1"><div class="text-xs font-bold text-[#a77d1a]">${esc(p.code||'')}</div><h3 class="text-xl font-bold mt-1">${esc(p.item_name||'')}</h3><div class="text-xs text-gray-500 mt-1">${[p.brand,p.class].filter(Boolean).map(esc).join(' · ')}</div><div class="mt-3 flex flex-wrap gap-2">${locs.map(l=>`<span class="px-2.5 py-1.5 rounded-lg border bg-white text-xs"><b>${esc(l.code)}</b> ${q(l.qty)}</span>`).join('')||'<span class="text-xs text-gray-400">No live stock location.</span>'}</div></div>
+        ${canOperate()?`<div class="flex md:flex-col gap-2"><button onclick="openStockTransfer('${productId}')" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-xl text-xs font-semibold">Move</button><button onclick="openStockMovement('out','${productId}')" class="px-3 py-2 border border-red-200 bg-red-50 text-red-700 rounded-xl text-xs font-semibold">Stock OUT</button><button onclick="openStockMovement('return','${productId}')" class="px-3 py-2 border border-green-200 bg-green-50 text-green-700 rounded-xl text-xs font-semibold">Return</button></div>`:''}
       </div>
-      <div class="flex flex-wrap gap-2">${locs.map(l=>`<span class="px-2.5 py-1.5 rounded-lg border bg-white text-xs"><b>${esc(l.code)}</b> ${q(l.qty)}</span>`).join('')||'<span class="text-xs text-gray-400">No stock locations.</span>'}</div>
-      <div class="divide-y border rounded-xl px-4">${(r.data||[]).length?(r.data||[]).map(m=>movementRow(m)).join(''):'<div class="py-8 text-center text-xs text-gray-400">No history.</div>'}</div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <div class="rounded-xl bg-gray-50 border p-3"><div class="text-[9px] uppercase font-bold text-gray-400">On Hand</div><b class="text-xl">${q(p.on_hand)}</b></div>
+        <div class="rounded-xl bg-gray-50 border p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Reserved</div><b class="text-xl text-amber-600">${q(p.reserved)}</b></div>
+        <div class="rounded-xl bg-gray-50 border p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Available</div><b class="text-xl text-green-600">${q(p.available)}</b></div>
+        <div class="rounded-xl bg-gray-50 border p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Incoming</div><b class="text-xl text-blue-600">${q(p.incoming)}</b></div>
+        <div class="rounded-xl bg-gray-50 border p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Aging</div><span class="inline-flex mt-1 px-2 py-1 rounded-lg border text-[9px] font-bold ${ageBadgeClass(a?.age_bucket||'Unknown')}">${esc(ageLabel(a))}</span>${a?.oldest_remaining_date?`<div class="text-[9px] text-gray-400 mt-1">Since ${esc(dateText(a.oldest_remaining_date))}</div>`:''}</div>
+      </div>
+
+      <div class="grid lg:grid-cols-2 gap-4">
+        <div class="rounded-xl border p-4">
+          <div class="flex items-center justify-between mb-2"><div><h4 class="font-bold">Incoming PO</h4><div class="text-[10px] text-gray-400">PO quantities still waiting to be received.</div></div><span class="text-xs font-bold text-blue-600">${incoming.reduce((s,x)=>s+n(x.remaining_qty),0).toLocaleString()} pcs</span></div>
+          <div class="divide-y">${incoming.length?incoming.slice(0,10).map(x=>`<div class="py-2 flex justify-between gap-3 text-xs"><div><b>${esc(x.po_number||'PO')}</b><div class="text-[10px] text-gray-400">${esc(x.vendor_name||'')} · ETA ${esc(dateText(x.eta))}</div></div><div class="text-right"><b class="text-blue-600">${q(x.remaining_qty)}</b><div class="text-[9px] text-gray-400">remaining</div></div></div>`).join(''):'<div class="py-6 text-center text-xs text-gray-400">No PO quantity waiting to receive.</div>'}</div>
+        </div>
+        <div class="rounded-xl border p-4">
+          <div class="flex items-center justify-between mb-2"><div><h4 class="font-bold">Customer Allocation</h4><div class="text-[10px] text-gray-400">Incoming PO quantities already allocated to customers.</div></div><span class="text-xs font-bold text-amber-700">${customerAllocations.reduce((s,x)=>s+n(x.qty_allocated),0).toLocaleString()} pcs</span></div>
+          <div class="divide-y">${customerAllocations.length?customerAllocations.slice(0,12).map(x=>`<div class="py-2 flex justify-between gap-3 text-xs"><div class="min-w-0"><b class="truncate block">${esc(x.customer_name||'Customer')}</b><div class="text-[10px] text-gray-400 truncate">${esc(x.order_ref||'Sales Order')} · ${esc(x.po_number||'PO')}${x.sales_rep_name?' · '+esc(x.sales_rep_name):''}</div></div><b class="shrink-0">${q(x.qty_allocated)}</b></div>`).join(''):'<div class="py-6 text-center text-xs text-gray-400">No customer allocation for incoming PO quantities.</div>'}</div>
+        </div>
+      </div>
+
+      <div>
+        <div class="flex items-center justify-between gap-3 mb-2"><div><h4 class="font-bold">Recent Movement History</h4><div class="text-[10px] text-gray-400">Latest 30 ledger movements for this product.</div></div><button onclick="closeModal();inv.tab='movements';inv.search='${esc(p.code||'')}';renderStockInventory()" class="text-xs font-semibold text-[#a77d1a]">Open in Movements →</button></div>
+        <div class="divide-y border rounded-xl px-4 max-h-[42vh] overflow-auto">${history.length?history.map(m=>movementRow(m)).join(''):'<div class="py-8 text-center text-xs text-gray-400">No history.</div>'}</div>
+      </div>
     </div>`;
   };
+  window.openProductStockHistory=window.openProductStockCard;
+
 
   window.openReceivePOItem=async function(itemId){
     if(!canOperate())return;
@@ -1227,7 +1268,7 @@
       const btn=document.getElementById('rpoSave');btn.disabled=true;btn.textContent='Receiving...';
       const r=await db.rpc('receive_po_stock',{p_supplier_po_item_id:itemId,p_qty:qty,p_location_id:document.getElementById('rpoLocation').value,p_receipt_date:document.getElementById('rpoDate').value||null,p_note:document.getElementById('rpoNote').value.trim()||null});
       if(r.error){btn.disabled=false;btn.textContent='Confirm Receipt';return showToast(r.error.message,'err')}
-      closeModal();showToast('PO stock received.');inv.locations=[];inv.balances=[];await renderStockInventory();
+      closeModal();showToast('PO stock received.');invalidateInventoryTasks();inv.locations=[];inv.balances=[];await renderStockInventory();
     };
   };
 
@@ -1376,13 +1417,13 @@
   };
 
   window.submitStockCount=async function(id){
-    const r=await db.rpc('submit_stock_count',{p_count_id:id});if(r.error)return showToast(r.error.message,'err');showToast('Stock count submitted.');await openStockCount(id);
+    const r=await db.rpc('submit_stock_count',{p_count_id:id});if(r.error)return showToast(r.error.message,'err');showToast('Stock count submitted.');invalidateInventoryTasks();await openStockCount(id);
   };
   window.closeStockCountNow=async function(id){
     if(!canReconcile())return showToast('Admin or Super Admin access required.','err');
     if(!confirm('Close this stock count and apply physical-count variances to live stock? This creates audited adjustment movements.'))return;
     const r=await db.rpc('close_stock_count',{p_count_id:id});if(r.error)return showToast(r.error.message,'err');
-    showToast('Stock count closed and variances applied.');inv.locations=[];inv.balances=[];await openStockCount(id);
+    showToast('Stock count closed and variances applied.');invalidateInventoryTasks();inv.locations=[];inv.balances=[];await openStockCount(id);
   };
 
   function stockReportType(m){
