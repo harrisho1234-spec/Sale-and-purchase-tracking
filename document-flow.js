@@ -8,6 +8,7 @@
   function norm(v=''){return String(v||'').trim().toLowerCase().replace(/[\s-]+/g,'_')}
   function isPre(o){return (o.sales_flow_type||o.order_type)==='pre_order'||String(o.sr_no||o.order_no||'').toUpperCase().startsWith('SR')}
   function isAdminRole(){return typeof isAdmin==='function'&&isAdmin()}
+  function stockControllerTrackingRole(){return (state.profile?.role||'')==='stock_controller'}
   function salesTimelineOnly(){return (state.profile?.role||'')==='sales'}
   function canRequestInvoice(){return ['sales','manager','admin','super_admin'].includes(state.profile?.role)}
   function docLabel(o){
@@ -472,17 +473,18 @@
   if(baseTrackingBody){
     window.renderOrderTrackingBody=function(){
       const ui=window.trackingRedesign||{};
+      if(stockControllerTrackingRole()&&ui.trackingTab==='flow')ui.trackingTab='po_items';
       if(salesTimelineOnly()&&ui.trackingTab==='flow')ui.trackingTab='timeline';
       if(ui.trackingTab==='flow'){
         const root=document.getElementById('orderTrackingRoot');if(!root)return;root.innerHTML=`${typeof managerRepBanner==='function'&&managerRepActive()?managerRepBanner():''}<div class="lr-tabs mb-4"><button class="lr-tab" onclick="setTrackingTab('timeline')">Status Timeline</button><button class="lr-tab" onclick="setTrackingTab('eta')">ETA Schedule</button><button class="lr-tab" onclick="setTrackingTab('orders')">Orders</button><button class="lr-tab" onclick="setTrackingTab('items')">Items</button><button class="lr-tab active" onclick="setTrackingTab('flow')">PO → SR → TK/RK</button></div><div class="relative mb-5"><input class="lr-input pl-10" value="${esc(ui.trackingSearch||'')}" oninput="setTrackingSearch(this.value)" placeholder="Search PO, SR, TK/RK, client, item, SKU..."><span class="absolute left-3 top-2.5 text-gray-400">⌕</span></div>${flowTrackingHtml()}`;return;
       }
       baseTrackingBody();
-      if(salesTimelineOnly())return;
+      if(salesTimelineOnly()||stockControllerTrackingRole())return;
       const tabs=document.querySelector('#orderTrackingRoot .lr-tabs');if(tabs&&!tabs.querySelector('[data-flow-tab]')){const b=document.createElement('button');b.dataset.flowTab='1';b.className='lr-tab';b.textContent='PO → SR → TK/RK';b.onclick=()=>setTrackingTab('flow');tabs.appendChild(b)}
     };
   }
   const baseSetTrackingTab=window.setTrackingTab;
-  if(baseSetTrackingTab){window.setTrackingTab=function(tab){if(tab==='flow'){if(salesTimelineOnly())return;baseSetTrackingTab('flow');window.trackingRedesign.trackingTab='flow';renderOrderTrackingBody()}else baseSetTrackingTab(tab)}}
+  if(baseSetTrackingTab){window.setTrackingTab=function(tab){if(tab==='flow'){if(salesTimelineOnly()||stockControllerTrackingRole())return;baseSetTrackingTab('flow');window.trackingRedesign.trackingTab='flow';renderOrderTrackingBody()}else baseSetTrackingTab(tab)}}
   const baseTracking=window.renderTracking;
   if(baseTracking){window.renderTracking=async function(){await baseTracking();await refreshFlowData(true);renderOrderTrackingBody()}}
 
