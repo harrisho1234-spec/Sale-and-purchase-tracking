@@ -184,12 +184,19 @@
     P.openingTarget=true;
     try{
       if(await waitForUser()){
-        if(typeof go==='function')await go(target);
+        if(target==='tax-inventory'){
+          if(typeof go==='function')await go('stock-inventory');
+          if(typeof setInventoryTab==='function')await setInventoryTab('tax');
+        }else if(typeof go==='function'){
+          await go(target);
+        }
       }
     }finally{
       P.openingTarget=false;
     }
   }
+
+  window.refreshAppNotifications=refreshAttention;
 
   window.openAppNotifications=async function(){
     if(!('Notification' in window)||!('serviceWorker' in navigator)||!('PushManager' in window)){
