@@ -400,7 +400,7 @@
     await loadCore();
     const rows=balanceFiltered(),shown=rows.slice(0,inventoryLimit('balance'));
     return `${inventoryFilterControls('balance')}<div class="card rounded-2xl overflow-hidden">
-      <div class="divide-y">${shown.length?shown.map(p=>{const a=inv.agingMap.get(p.product_id);return `<div class="p-4 grid xl:grid-cols-[1.55fr_80px_80px_80px_80px_105px_1.4fr_165px] gap-3 items-center">
+      <div class="divide-y">${shown.length?shown.map(p=>{const a=inv.agingMap.get(p.product_id);return `<div class="p-4 grid xl:grid-cols-[1.55fr_80px_80px_80px_80px_105px_1.4fr_165px] gap-3 items-center ${n(p.on_hand)>0&&n(p.available)<=0?'bg-red-50/30 border-l-4 border-red-300':a?.age_bucket==='365+'?'bg-amber-50/25 border-l-4 border-amber-300':''}">
         <button onclick="openProductStockCard('${p.product_id}')" class="flex items-center gap-3 min-w-0 text-left hover:opacity-80">
           <div class="w-12 h-12 rounded-xl bg-gray-100 overflow-hidden shrink-0">${p.image_url?`<img src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div>
           <div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code)}</div><div class="font-semibold text-sm truncate">${esc(p.item_name)}</div><div class="text-[10px] text-gray-400">${esc(p.brand||'')} · Open Stock Card</div></div>
@@ -1233,12 +1233,15 @@
       </div>
 
       <div>
-        <div class="flex items-center justify-between gap-3 mb-2"><div><h4 class="font-bold">Recent Movement History</h4><div class="text-[10px] text-gray-400">Latest 30 ledger movements for this product.</div></div><button onclick="closeModal();inv.tab='movements';inv.search='${esc(p.code||'')}';renderStockInventory()" class="text-xs font-semibold text-[#a77d1a]">Open in Movements →</button></div>
+        <div class="flex items-center justify-between gap-3 mb-2"><div><h4 class="font-bold">Recent Movement History</h4><div class="text-[10px] text-gray-400">Latest 30 ledger movements for this product.</div></div><button onclick="openProductInMovements('${esc(p.code||'')}')" class="text-xs font-semibold text-[#a77d1a]">Open in Movements →</button></div>
         <div class="divide-y border rounded-xl px-4 max-h-[42vh] overflow-auto">${history.length?history.map(m=>movementRow(m)).join(''):'<div class="py-8 text-center text-xs text-gray-400">No history.</div>'}</div>
       </div>
     </div>`;
   };
   window.openProductStockHistory=window.openProductStockCard;
+  window.openProductInMovements=function(code){
+    closeModal();inv.tab='movements';inv.search=String(code||'');resetInventoryLimit('movements');renderStockInventory();
+  };
 
 
   window.openReceivePOItem=async function(itemId){
@@ -1307,7 +1310,7 @@
       const btn=document.getElementById('rsSave');btn.disabled=true;btn.textContent='Releasing...';
       const r=await db.rpc('release_sales_stock',{p_sales_order_item_id:itemId,p_qty:qty,p_location_id:document.getElementById('rsLocation').value,p_delivery_date:document.getElementById('rsDate').value||null,p_note:document.getElementById('rsNote').value.trim()||null});
       if(r.error){btn.disabled=false;btn.textContent='Confirm Stock OUT';return showToast(r.error.message,'err')}
-      closeModal();showToast('Customer stock released.');inv.locations=[];inv.balances=[];await renderStockInventory();
+      closeModal();showToast('Customer stock released.');invalidateInventoryTasks();inv.locations=[];inv.balances=[];await renderStockInventory();
     };
   };
 
@@ -1328,7 +1331,68 @@
     };
   };
 
-  window.saveStockCountRow=async function(itemId){
+  window.stockCountVarianceOnly=false;
+  window.updateStockCountProgress=function(){
+    const rows=[...document.querySelectorAll('.stock-count-row')];
+    if(!rows.length)return;
+    const counted=rows.filter(row=>String(row.querySelector('.count-physical')?.value||'').trim()!=='').length;
+    const variance=rows.filter(row=>row.dataset.variance==='1').length;
+    const pct=rows.length?Math.round(counted*100/rows.length):0;
+    const textEl=document.getElementById('stockCountProgressText');
+    const fill=document.getElementById('stockCountProgressFill');
+    const varEl=document.getElementById('stockCountVarianceCount');
+    if(textEl)textEl.textContent=counted+' / '+rows.length+' counted · '+pct+'%';
+    if(fill)fill.style.width=pct+'%';
+    if(varEl)varEl.textContent=variance+' variance'+(variance===1?'':'s');
+  };
+  window.filterStockCountRows=function(){
+    const qv=String(document.getElementById('stockCountSearch')?.value||'').trim().toLowerCase();
+    document.querySelectorAll('.stock-count-row').forEach(row=>{
+      const searchOk=!qv||String(row.dataset.search||'').includes(qv);
+      const varianceOk=!window.stockCountVarianceOnly||row.dataset.variance==='1';
+      row.classList.toggle('hidden',!(searchOk&&varianceOk));
+    });
+    updateStockCountProgress();
+  };
+  window.toggleStockCountVarianceOnly=function(){
+    window.stockCountVarianceOnly=!window.stockCountVarianceOnly;
+    const btn=document.getElementById('stockCountVarianceBtn');
+    if(btn){
+      btn.textContent=window.stockCountVarianceOnly?'Show All Items':'Show Variance Only';
+      btn.classList.toggle('bg-red-50',window.stockCountVarianceOnly);
+      btn.classList.toggle('text-red-700',window.stockCountVarianceOnly);
+      btn.classList.toggle('border-red-200',window.stockCountVarianceOnly);
+    }
+    filterStockCountRows();
+  };
+  window.focusNextStockCountUncounted=function(afterItemId=''){
+    const rows=[...document.querySelectorAll('.stock-count-row')];
+    if(!rows.length)return;
+    let start=afterItemId?rows.findIndex(r=>r.dataset.countItem===String(afterItemId)):-1;
+    for(let offset=1;offset<=rows.length;offset++){
+      const row=rows[(start+offset+rows.length)%rows.length];
+      const input=row.querySelector('.count-physical');
+      if(input&&!input.disabled&&String(input.value||'').trim()===''){
+        if(row.classList.contains('hidden')){
+          const search=document.getElementById('stockCountSearch');if(search)search.value='';
+          window.stockCountVarianceOnly=false;
+          const btn=document.getElementById('stockCountVarianceBtn');if(btn){btn.textContent='Show Variance Only';btn.classList.remove('bg-red-50','text-red-700','border-red-200')}
+          filterStockCountRows();
+        }
+        row.scrollIntoView({behavior:'smooth',block:'center'});
+        setTimeout(()=>{input.focus();input.select()},180);
+        return;
+      }
+    }
+    showToast('All visible items have a Physical Qty.');
+  };
+  window.stockCountPhysicalKeydown=function(event,itemId){
+    if(event.key!=='Enter')return;
+    event.preventDefault();
+    saveStockCountRow(itemId,true);
+  };
+
+  window.saveStockCountRow=async function(itemId,moveNext=false){
     const row=document.querySelector(`[data-count-item="${itemId}"]`);if(!row)return;
     const physical=row.querySelector('.count-physical').value.trim();
     const qb=row.querySelector('.count-qb').value.trim();
@@ -1338,9 +1402,15 @@
     const r=await db.rpc('save_stock_count_item',{p_item_id:itemId,p_physical_qty:physical===''?null:Number(physical),p_qb_qty:qb===''?null:Number(qb),p_note:note});
     if(r.error)return showToast(r.error.message,'err');
     const system=n(row.dataset.system),p=physical===''?null:n(physical),qv=qb===''?null:n(qb);
-    row.querySelector('.count-var').textContent=p==null?'-':q(p-system);
+    const variance=p!=null&&p!==system;
+    row.dataset.variance=variance?'1':'0';
+    row.classList.toggle('bg-red-50/40',variance);
+    const varCell=row.querySelector('.count-var');
+    if(varCell){varCell.textContent=p==null?'-':q(p-system);varCell.classList.toggle('text-red-600',variance)}
     row.querySelector('.count-qbvar').textContent=qv==null?'-':q(qv-system);
+    updateStockCountProgress();filterStockCountRows();
     showToast('Count row saved.');
+    if(moveNext&&p!=null)setTimeout(()=>focusNextStockCountUncounted(itemId),80);
   };
 
   window.setStockCountPhysicalZero=async function(itemId){
@@ -1349,7 +1419,7 @@
     const input=row.querySelector('.count-physical');
     if(!input||input.disabled)return;
     input.value='0';
-    await saveStockCountRow(itemId);
+    await saveStockCountRow(itemId,true);
   };
 
   window.fillStockCountBlanksZero=async function(countId){
@@ -1396,15 +1466,25 @@
     document.getElementById('modalBody').innerHTML=`<div class="space-y-4">
       <div class="rounded-xl border bg-gray-50 p-4 flex flex-wrap gap-4 justify-between"><div><div class="text-[9px] uppercase font-bold text-gray-400">Period</div><b>${esc(String(count.period_month).slice(0,7))}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Location</div><b>${esc(count.stock_locations?.code||'All')}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Status</div><b>${esc(titleCase(count.status))}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Items</div><b>${rows.length}</b></div></div>
       <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2">
-        <div class="text-[10px] text-gray-500"><b>Physical Qty:</b> blank = not counted yet · <b>0</b> = counted and none physically found.</div>
+        <div class="text-[10px] text-gray-500"><b>Physical Qty:</b> blank = not counted yet · <b>0</b> = counted and none physically found. Press <b>Enter</b> after a quantity to save and jump to the next uncounted item.</div>
         ${canEditCount&&count.status==='draft'?`<div class="flex flex-wrap gap-2"><button onclick="openAddStockCountItem('${count.id}')" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-xl text-xs font-semibold">+ Add Item</button><button onclick="fillStockCountBlanksZero('${count.id}')" class="px-3 py-2 border border-gray-200 bg-white rounded-xl text-xs font-semibold">Mark Remaining Blanks = 0</button></div>`:''}
+      </div>
+      <div class="rounded-xl border bg-[#fcfbf8] p-3">
+        <div class="flex flex-col lg:flex-row lg:items-center gap-3">
+          <input id="stockCountSearch" oninput="filterStockCountRows()" class="border rounded-xl px-3 py-2 text-xs flex-1" placeholder="Search SKU, item name or brand...">
+          <div class="flex flex-wrap gap-2">
+            <button onclick="focusNextStockCountUncounted()" class="px-3 py-2 border rounded-xl text-xs font-semibold bg-white">Next Uncounted</button>
+            <button id="stockCountVarianceBtn" onclick="toggleStockCountVarianceOnly()" class="px-3 py-2 border rounded-xl text-xs font-semibold bg-white">Show Variance Only</button>
+          </div>
+        </div>
+        <div class="mt-3 flex items-center gap-3"><div class="flex-1 inv-progress-track"><div id="stockCountProgressFill" class="inv-progress-fill" style="width:0%"></div></div><div id="stockCountProgressText" class="text-[10px] font-semibold text-gray-600 whitespace-nowrap">0 / ${rows.length} counted</div><div id="stockCountVarianceCount" class="text-[10px] text-red-600 whitespace-nowrap">0 variances</div></div>
       </div>
       <div class="max-h-[58vh] overflow-auto border rounded-xl">
         <div class="divide-y" style="min-width:1166px">
           <div class="sticky top-0 z-10 bg-gray-50 p-2 grid gap-2 text-[9px] uppercase font-bold text-gray-400" style="grid-template-columns:320px 90px 140px 110px 80px 80px 220px 70px">
             <div>Product</div><div>System</div><div>Physical</div><div>QB Qty</div><div>Var</div><div>QB Var</div><div>Note</div><div></div>
           </div>
-          ${rows.map(i=>`<div data-count-item="${i.id}" data-system="${n(i.system_qty)}" class="p-2 grid gap-2 items-center text-xs" style="grid-template-columns:320px 90px 140px 110px 80px 80px 220px 70px"><div class="min-w-0 flex items-center gap-2.5"><div class="w-10 h-10 rounded-lg overflow-hidden bg-gray-100 border shrink-0">${i.product_catalog?.image_url?`<img src="${esc(i.product_catalog.image_url)}" alt="" loading="lazy" class="w-full h-full object-cover" onerror="this.style.display='none';this.nextElementSibling?.classList.remove('hidden')"><div class="hidden w-full h-full items-center justify-center text-[7px] text-gray-400">No Photo</div>`:'<div class="w-full h-full flex items-center justify-center text-[7px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[9px] font-bold text-[#a77d1a] truncate">${esc(i.product_catalog?.code||'')}</div><div class="truncate">${esc(i.product_catalog?.item_name||'')}</div></div></div><b class="text-right pr-2">${q(i.system_qty)}</b><div class="flex items-center gap-1"><input class="count-physical min-w-0 w-full border rounded-lg px-2 py-1.5" type="number" min="0" step="1" value="${i.physical_qty==null?'':n(i.physical_qty)}" ${!canEditCount?'disabled':''}>${canEditCount?`<button type="button" onclick="setStockCountPhysicalZero('${i.id}')" class="shrink-0 w-7 h-7 rounded-lg border bg-gray-50 text-[9px] font-bold" title="Counted: zero physical stock">0</button>`:''}</div><input class="count-qb min-w-0 w-full border rounded-lg px-2 py-1.5" type="number" min="0" step="1" value="${i.qb_qty==null?'':n(i.qb_qty)}" ${!canEditCount?'disabled':''}><b class="count-var text-right pr-2 ${i.physical_qty!=null&&n(i.physical_qty)!==n(i.system_qty)?'text-red-600':''}">${i.physical_qty==null?'-':q(n(i.physical_qty)-n(i.system_qty))}</b><span class="count-qbvar text-right pr-2">${i.qb_qty==null?'-':q(n(i.qb_qty)-n(i.system_qty))}</span><input class="count-note min-w-0 w-full border rounded-lg px-2 py-1.5" value="${esc(i.note||'')}" ${!canEditCount?'disabled':''}><button onclick="saveStockCountRow('${i.id}')" class="px-2 py-1.5 border rounded-lg text-[9px] font-semibold ${!canEditCount?'hidden':''}">Save</button></div>`).join('')}
+          ${rows.map(i=>`<div data-count-item="${i.id}" data-system="${n(i.system_qty)}" data-search="${esc([i.product_catalog?.code,i.product_catalog?.item_name,i.product_catalog?.brand].filter(Boolean).join(' ').toLowerCase())}" data-variance="${i.physical_qty!=null&&n(i.physical_qty)!==n(i.system_qty)?'1':'0'}" class="stock-count-row p-2 grid gap-2 items-center text-xs ${i.physical_qty!=null&&n(i.physical_qty)!==n(i.system_qty)?'bg-red-50/40':''}" style="grid-template-columns:320px 90px 140px 110px 80px 80px 220px 70px"><div class="min-w-0 flex items-center gap-2.5"><div class="w-10 h-10 rounded-lg overflow-hidden bg-gray-100 border shrink-0">${i.product_catalog?.image_url?`<img src="${esc(i.product_catalog.image_url)}" alt="" loading="lazy" class="w-full h-full object-cover" onerror="this.style.display='none';this.nextElementSibling?.classList.remove('hidden')"><div class="hidden w-full h-full items-center justify-center text-[7px] text-gray-400">No Photo</div>`:'<div class="w-full h-full flex items-center justify-center text-[7px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[9px] font-bold text-[#a77d1a] truncate">${esc(i.product_catalog?.code||'')}</div><div class="truncate">${esc(i.product_catalog?.item_name||'')}</div></div></div><b class="text-right pr-2">${q(i.system_qty)}</b><div class="flex items-center gap-1"><input class="count-physical min-w-0 w-full border rounded-lg px-2 py-1.5" type="number" min="0" step="1" value="${i.physical_qty==null?'':n(i.physical_qty)}" oninput="updateStockCountProgress();filterStockCountRows()" onkeydown="stockCountPhysicalKeydown(event,'${i.id}')" ${!canEditCount?'disabled':''}>${canEditCount?`<button type="button" onclick="setStockCountPhysicalZero('${i.id}')" class="shrink-0 w-7 h-7 rounded-lg border bg-gray-50 text-[9px] font-bold" title="Counted: zero physical stock">0</button>`:''}</div><input class="count-qb min-w-0 w-full border rounded-lg px-2 py-1.5" type="number" min="0" step="1" value="${i.qb_qty==null?'':n(i.qb_qty)}" ${!canEditCount?'disabled':''}><b class="count-var text-right pr-2 ${i.physical_qty!=null&&n(i.physical_qty)!==n(i.system_qty)?'text-red-600':''}">${i.physical_qty==null?'-':q(n(i.physical_qty)-n(i.system_qty))}</b><span class="count-qbvar text-right pr-2">${i.qb_qty==null?'-':q(n(i.qb_qty)-n(i.system_qty))}</span><input class="count-note min-w-0 w-full border rounded-lg px-2 py-1.5" value="${esc(i.note||'')}" ${!canEditCount?'disabled':''}><button onclick="saveStockCountRow('${i.id}',true)" class="px-2 py-1.5 border rounded-lg text-[9px] font-semibold ${!canEditCount?'hidden':''}">Save</button></div>`).join('')}
         </div>
       </div>
       <div class="flex flex-wrap gap-2 justify-end">
@@ -1414,6 +1494,8 @@
         ${canAdmin()?`<button onclick="deleteStockCountAdmin('${count.id}')" class="px-4 py-2 border border-red-200 bg-red-50 text-red-600 rounded-xl text-xs font-semibold">Delete Count</button>`:''}
       </div>
     </div>`;
+    window.stockCountVarianceOnly=false;
+    setTimeout(()=>{updateStockCountProgress();filterStockCountRows()},0);
   };
 
   window.submitStockCount=async function(id){
