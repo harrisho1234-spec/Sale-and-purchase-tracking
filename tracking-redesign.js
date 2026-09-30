@@ -861,7 +861,59 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
     renderSalesTrackingBody();
   }
 
+  function stockTrackingViewer(){return (state.profile?.role||'')==='stock_controller'}
+
   async function loadOrderTrackingData() {
+    if(stockTrackingViewer()){
+      const [customerRes,poRes]=await Promise.all([
+        db.rpc('get_stock_controller_customer_items'),
+        db.rpc('get_sales_po_ordered_items')
+      ]);
+      if(customerRes.error)throw customerRes.error;
+      if(poRes.error)throw poRes.error;
+
+      const grouped=new Map();
+      for(const r of customerRes.data||[]){
+        const key=String(r.sales_order_id||'');
+        if(!grouped.has(key)){
+          grouped.set(key,{
+            id:r.sales_order_id,
+            order_no:r.order_ref,
+            invoice_no:r.order_ref,
+            customer_id:r.customer_id,
+            customer_name:r.customer_name||'',
+            customers:{id:r.customer_id,name:r.customer_name||'',customer_code:r.customer_code||''},
+            order_type:r.order_type,
+            status:r.order_status,
+            sales_rep_name_snapshot:'',
+            items:[]
+          });
+        }
+        grouped.get(key).items.push({
+          id:r.item_id,
+          product_id:r.product_id,
+          product_code_snapshot:r.product_code,
+          item_name_snapshot:r.item_name,
+          image_url_snapshot:r.image_url,
+          qty:r.qty,
+          source_type:r.source_type,
+          fulfillment_status:r.fulfillment_status,
+          product_catalog:{code:r.product_code,item_name:r.item_name,brand:r.brand,class:r.product_class,image_url:r.image_url},
+          item_tracking:{
+            status:r.tracking_status,
+            estimated_arrival:r.estimated_arrival,
+            actual_arrival:r.actual_arrival,
+            delivered_at:r.delivered_at,
+            customer_visible_note:r.customer_visible_note
+          }
+        });
+      }
+      ui.trackingOrders=[...grouped.values()];
+      ui.trackingPOItems=poRes.data||[];
+      if(!['po_items','items'].includes(ui.trackingTab))ui.trackingTab='po_items';
+      return;
+    }
+
     let q=db.from('sales_orders').select(`
       id,order_no,invoice_no,customer_id,sales_rep_id,sales_rep_name_snapshot,order_date,order_type,status,currency,notes,created_at,updated_at,
       customers(id,name,customer_code),
@@ -1099,7 +1151,7 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
       <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <div class="font-bold text-sm">All Supplier PO Ordered Items</div>
-          <div class="text-[10px] text-gray-400 mt-1">Shared operational view for Sales. Customer allocation is shown by quantity; supplier cost, shipping cost and payment information remain hidden.</div>
+          <div class="text-[10px] text-gray-400 mt-1">Shared operational view for Sales and Stock Controller. Customer allocation is shown by quantity; supplier cost, shipping cost and payment information remain hidden.</div>
         </div>
         <div class="lr-chip-row">${chips}</div>
       </div>
@@ -1123,6 +1175,7 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
   function salesTrackingTimelineOnly(){return (state.profile?.role||'')==='sales'}
   window.setTrackingTab=function(tab){
     if(salesTrackingTimelineOnly()&&!['timeline','po_items'].includes(tab))return;
+    if(stockTrackingViewer()&&!['po_items','items'].includes(tab))return;
     ui.trackingTab=tab;
     renderOrderTrackingBody();
   };
@@ -1132,7 +1185,7 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
     renderOrderTrackingBody();
   };
   window.openTrackingOrder=function(id){
-    if(salesTrackingTimelineOnly())return;
+    if(salesTrackingTimelineOnly()||stockTrackingViewer())return;
     ui.trackingTab='orders';
     ui.trackingExpanded.add(id);
     renderOrderTrackingBody();
@@ -1142,6 +1195,7 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
   window.renderOrderTrackingBody=function(){
     const root=document.getElementById('orderTrackingRoot');if(!root)return;
     if(salesTrackingTimelineOnly()&&!['timeline','po_items'].includes(ui.trackingTab))ui.trackingTab='timeline';
+    if(stockTrackingViewer()&&!['po_items','items'].includes(ui.trackingTab))ui.trackingTab='po_items';
     const orders=ui.trackingOrders.filter(trackingMatches);
     const flat=orders.flatMap(o=>(o.items||[]).map(i=>({...i,_order:o})));
     const stages=['placed','production','shipping','completed'];
@@ -1168,7 +1222,13 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
     root.innerHTML=`
       ${repContextBanner()}
       <div class="lr-tabs mb-4">
-        ${(salesTrackingTimelineOnly()?[['timeline','Status Timeline'],['po_items','PO Ordered Items']]:[['timeline','Status Timeline'],['eta','ETA Schedule'],['orders','Orders'],['items','Items']]).map(([v,l])=>`<button class="lr-tab ${ui.trackingTab===v?'active':''}" onclick="setTrackingTab('${v}')">${l}</button>`).join('')}
+        ${(stockTrackingViewer()
+          ?[['po_items','PO Ordered Items'],['items','Customer Items']]
+          :(salesTrackingTimelineOnly()
+            ?[['timeline','Status Timeline'],['po_items','PO Ordered Items']]
+            :[['timeline','Status Timeline'],['eta','ETA Schedule'],['orders','Orders'],['items','Items']]
+          )
+        ).map(([v,l])=>`<button class="lr-tab ${ui.trackingTab===v?'active':''}" onclick="setTrackingTab('${v}')">${l}</button>`).join('')}
       </div>
       <div class="relative mb-5">
         <input class="lr-input pl-10" value="${esc(ui.trackingSearch)}" oninput="setTrackingSearch(this.value)" placeholder="${ui.trackingTab==='po_items'?'Search PO, customer, supplier, item, brand, SKU...':'Search Order, Client, Item, Brand, SKU...'}">
