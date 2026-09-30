@@ -276,6 +276,7 @@
 
   async function renderDashboard(){
     await loadCore(true);
+    const tasks=await loadInventoryTasks(true);
     const onHand=inv.balances.reduce((a,x)=>a+n(x.on_hand),0);
     const reserved=inv.balances.reduce((a,x)=>a+n(x.reserved),0);
     const available=inv.balances.reduce((a,x)=>a+n(x.available),0);
@@ -300,10 +301,20 @@
       <div class="inv-stat"><div class="inv-stat-label">Fully Reserved</div><div class="inv-stat-value ${noAvail?'text-red-500':''}">${noAvail.toLocaleString()}</div></div>
     </div>
 
-    ${canOperate()?`<div class="grid md:grid-cols-2 gap-3 mb-5">
-      <button onclick="setInventoryTab('receive')" class="inv-card text-left hover:shadow-sm"><div class="text-[9px] uppercase font-bold text-gray-400">Supplier Receiving Queue</div><div class="text-2xl font-bold mt-1">${(poQ.data||[]).length}</div><div class="text-xs text-blue-600 mt-2">PO item lines remaining to receive →</div></button>
-      <button onclick="setInventoryTab('delivery')" class="inv-card text-left hover:shadow-sm"><div class="text-[9px] uppercase font-bold text-gray-400">Customer Delivery Queue</div><div class="text-2xl font-bold mt-1">${(delQ.data||[]).length}</div><div class="text-xs text-amber-700 mt-2">Tracked stock order lines awaiting release →</div></button>
-    </div>`:''}
+    <div class="flex items-end justify-between gap-3 mb-3">
+      <div><h3 class="font-bold text-lg">Today's Work</h3><div class="text-[10px] text-gray-400">Open the task that needs attention instead of searching through every tab.</div></div>
+      ${canOperate()?`<button onclick="openQuickStockAction()" class="px-3 py-2 bg-[#211d18] text-white rounded-xl text-xs font-semibold">＋ Quick Action</button>`:''}
+    </div>
+    <div class="grid sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-5">
+      <button onclick="setInventoryTab('receive')" class="inv-task-card border-blue-100 bg-blue-50/30"><div class="text-[9px] uppercase font-bold text-gray-400">PO Receiving</div><div class="text-2xl font-black mt-1">${tasks.poRows.length.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">${tasks.overduePO.length?tasks.overduePO.length+' overdue · ':''}${tasks.duePO.length} due within 7 days</div></button>
+      <button onclick="setInventoryTab('delivery')" class="inv-task-card border-amber-100 bg-amber-50/30"><div class="text-[9px] uppercase font-bold text-gray-400">Customer Delivery</div><div class="text-2xl font-black mt-1">${tasks.delRows.length.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">Tracked customer item lines waiting for release</div></button>
+      <button onclick="setInventoryTab('counts')" class="inv-task-card"><div class="text-[9px] uppercase font-bold text-gray-400">Open Stock Counts</div><div class="text-2xl font-black mt-1">${tasks.openCounts.length.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">Draft / submitted counts needing completion or reconciliation</div></button>
+      ${(canAdmin()||isStockController())?`<button onclick="setInventoryTab('requests')" class="inv-task-card"><div class="text-[9px] uppercase font-bold text-gray-400">${canAdmin()?'Pending Edit Requests':'My Pending Requests'}</div><div class="text-2xl font-black mt-1">${tasks.pendingRequests.length.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">Movement corrections waiting for action</div></button>`:''}
+      <button onclick="openInventoryTask('aged')" class="inv-task-card border-red-100 bg-red-50/20"><div class="text-[9px] uppercase font-bold text-gray-400">Aging 365+ Days</div><div class="text-2xl font-black mt-1">${tasks.aged365.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">Products with old remaining stock</div></button>
+      <button onclick="openInventoryTask('unassigned')" class="inv-task-card border-amber-100 bg-amber-50/20"><div class="text-[9px] uppercase font-bold text-gray-400">Unassigned Location</div><div class="text-2xl font-black mt-1">${tasks.unassigned.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">Products still sitting in UNASSIGNED / review</div></button>
+      <button onclick="openInventoryTask('reserved')" class="inv-task-card"><div class="text-[9px] uppercase font-bold text-gray-400">Fully Reserved</div><div class="text-2xl font-black mt-1">${noAvail.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">On-hand products with no available quantity</div></button>
+      <button onclick="openInventoryProductFinder()" class="inv-task-card"><div class="text-[9px] uppercase font-bold text-gray-400">Find Product</div><div class="text-2xl font-black mt-1">${stocked.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">Open a Stock Card by SKU, product or brand</div></button>
+    </div>
 
     <div class="grid xl:grid-cols-[1.2fr_.8fr] gap-4">
       <div class="inv-card">
@@ -321,6 +332,17 @@
       </div>
     </div>`;
   }
+
+  window.openInventoryTask=function(kind){
+    inv.search='';inv.locationFilter='';inv.ageFilter='';window.inventoryReservedOnly=false;
+    if(kind==='aged'){inv.tab='balance';inv.ageFilter='365+'}
+    else if(kind==='unassigned'){
+      inv.tab='balance';
+      const l=inv.locations.find(x=>String(x.code||'').toUpperCase()==='UNASSIGNED');
+      if(l)inv.locationFilter=l.id;else inv.search='UNASSIGNED';
+    }else if(kind==='reserved'){inv.tab='balance';window.inventoryReservedOnly=true}
+    renderStockInventory();
+  };
 
   function ageLabel(a){
     if(!a||a.age_bucket==='Unknown')return 'Unknown';
@@ -369,7 +391,8 @@
         x.code,x.item_name,x.brand,x.class,
         ...(Array.isArray(x.locations)?x.locations.map(l=>l.code):[])
       ].filter(Boolean).join(' ').toLowerCase().includes(s);
-      return searchOk&&productPassesInventoryFilters(x);
+      const reservedOk=!window.inventoryReservedOnly||(n(x.on_hand)>0&&n(x.available)<=0);
+      return searchOk&&reservedOk&&productPassesInventoryFilters(x);
     });
   }
 
