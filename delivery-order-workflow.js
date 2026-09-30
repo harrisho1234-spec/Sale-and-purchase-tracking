@@ -50,13 +50,13 @@
   function navHtml(reqCount,historyCount){
     function b(view,label,count){
       const active=D.view===view;
-      return '<button type="button" onclick="setStockDeliveryView(\''+view+'\')" class="px-3 py-2 rounded-lg border text-[10px] font-semibold '+(active?'bg-[#211d18] text-white border-[#211d18]':'bg-white')+'">'+label+' <span class="opacity-70">'+Number(count||0).toLocaleString()+'</span></button>';
+      return '<button type="button" onclick="setStockDeliveryView(\''+view+'\')" class="px-3 py-2 rounded-lg border text-[10px] font-semibold '+(active?'bg-[#211d18] text-white border-[#211d18]':'bg-white')+'">'+label+(count==null?'':' <span class="opacity-70">'+Number(count||0).toLocaleString()+'</span>')+'</button>';
     }
     return '<div id="deliveryOrderNav" class="rounded-xl border border-blue-100 bg-blue-50/40 p-3 mb-3">'+
       '<div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">'+
         '<div><b class="text-sm">Customer Fulfillment</b><div class="text-[10px] text-gray-500 mt-1">Sales delivery requests, official DO numbers, Stock OUT and delivery history stay connected.</div></div>'+
         '<div class="flex flex-wrap gap-2">'+
-          b('linked','Linked Fulfillment','')+
+          b('linked','Linked Fulfillment',null)+
           b('do','DO Requests',reqCount)+
           b('history','Delivery History',historyCount)+
         '</div>'+
