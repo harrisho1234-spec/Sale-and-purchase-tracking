@@ -276,8 +276,8 @@
 
 
   async function renderDashboard(){
-    await loadCore(true);
-    const tasks=await loadInventoryTasks(true);
+    await loadCore();
+    const tasks=await loadInventoryTasks();
     const onHand=inv.balances.reduce((a,x)=>a+n(x.on_hand),0);
     const reserved=inv.balances.reduce((a,x)=>a+n(x.reserved),0);
     const available=inv.balances.reduce((a,x)=>a+n(x.available),0);
@@ -288,6 +288,7 @@
     const mov=await db.from('inventory_movement_history').select('*').neq('movement_type','opening').order('movement_date',{ascending:false}).order('created_at',{ascending:false}).limit(8);
     if(mov.error)throw mov.error;
     const recent=mov.data||[];
+    const dashMatches=inv.search?stockProductMatches(inv.search).slice(0,8):[];
     return `<div class="grid sm:grid-cols-2 xl:grid-cols-6 gap-3 mb-5">
       <div class="inv-stat"><div class="inv-stat-label">On Hand</div><div class="inv-stat-value">${q(onHand)}</div></div>
       <div class="inv-stat"><div class="inv-stat-label">Reserved</div><div class="inv-stat-value text-amber-600">${q(reserved)}</div></div>
@@ -296,6 +297,8 @@
       <div class="inv-stat"><div class="inv-stat-label">SKUs In Stock</div><div class="inv-stat-value">${stocked.toLocaleString()}</div></div>
       <div class="inv-stat"><div class="inv-stat-label">Fully Reserved</div><div class="inv-stat-value ${noAvail?'text-red-500':''}">${noAvail.toLocaleString()}</div></div>
     </div>
+
+    ${inv.search?`<div class="inv-card mb-5"><div class="flex items-center justify-between gap-3 mb-3"><div><h3 class="font-bold">Product Search</h3><div class="text-[10px] text-gray-400">Quick stock results for "${esc(inv.search)}".</div></div><button onclick="setInventorySearch('')" class="text-xs text-gray-500">Clear</button></div><div class="grid sm:grid-cols-2 xl:grid-cols-4 gap-2">${dashMatches.length?dashMatches.map(p=>`<button onclick="openProductStockCard('${p.product_id}')" class="rounded-xl border p-3 text-left hover:bg-amber-50/30 flex gap-3 items-center"><div class="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 shrink-0">${p.image_url?`<img src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code||'')}</div><div class="text-sm font-semibold truncate">${esc(p.item_name||'')}</div><div class="text-[10px] text-gray-400">On hand ${q(p.on_hand)} · Available ${q(p.available)}</div></div></button>`).join(''):'<div class="col-span-full py-6 text-center text-sm text-gray-400">No matching product.</div>'}</div></div>`:''}
 
     <div class="flex items-end justify-between gap-3 mb-3">
       <div><h3 class="font-bold text-lg">Today's Work</h3><div class="text-[10px] text-gray-400">Open the task that needs attention instead of searching through every tab.</div></div>
