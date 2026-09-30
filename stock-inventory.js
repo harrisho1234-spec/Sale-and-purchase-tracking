@@ -291,7 +291,7 @@
     const dashMatches=inv.search?stockProductMatches(inv.search).slice(0,8):[];
     return `<div class="grid sm:grid-cols-2 xl:grid-cols-6 gap-3 mb-5">
       <div class="inv-stat"><div class="inv-stat-label">On Hand</div><div class="inv-stat-value">${q(onHand)}</div></div>
-      <div class="inv-stat"><div class="inv-stat-label">Reserved</div><div class="inv-stat-value text-amber-600">${q(reserved)}</div></div>
+      <button onclick="openAllReservedStockDetails()" class="inv-stat text-left hover:shadow-sm transition" title="View products reserved for active Sales Orders"><div class="inv-stat-label">Reserved</div><div class="inv-stat-value text-amber-600">${q(reserved)}</div><div class="text-[9px] text-gray-400 mt-1">Click to view orders</div></button>
       <div class="inv-stat"><div class="inv-stat-label">Available</div><div class="inv-stat-value text-green-600">${q(available)}</div></div>
       <div class="inv-stat"><div class="inv-stat-label">Incoming PO</div><div class="inv-stat-value text-blue-600">${q(incoming)}</div></div>
       <div class="inv-stat"><div class="inv-stat-label">SKUs In Stock</div><div class="inv-stat-value">${stocked.toLocaleString()}</div></div>
@@ -341,6 +341,84 @@
       if(l)inv.locationFilter=l.id;else inv.search='UNASSIGNED';
     }else if(kind==='reserved'){inv.tab='balance';window.inventoryReservedOnly=true}
     renderStockInventory();
+  };
+
+  window.openAllReservedStockDetails=async function(){
+    try{
+      await loadCore();
+      const rows=(inv.balances||[]).filter(x=>n(x.reserved)>0).sort((a,b)=>n(b.reserved)-n(a.reserved));
+      const total=rows.reduce((s,x)=>s+n(x.reserved),0);
+      openModal('Reserved Stock',`<div class="space-y-4">
+        <div class="rounded-2xl border bg-amber-50/40 border-amber-100 p-4">
+          <div class="text-xs text-gray-500">Stock committed to active Sales Orders and not yet delivered.</div>
+          <div class="mt-2 flex flex-wrap gap-4 text-xs">
+            <span>Reserved Qty <b class="text-amber-700">${q(total)}</b></span>
+            <span>Products <b>${rows.length.toLocaleString()}</b></span>
+          </div>
+        </div>
+        <div class="divide-y border rounded-xl px-4 max-h-[62vh] overflow-auto">
+          ${rows.length?rows.map(p=>`<button onclick="openReservedStockDetails('${p.product_id}')" class="w-full py-3 flex items-center justify-between gap-4 text-left hover:bg-gray-50">
+            <div class="min-w-0 flex items-center gap-3">
+              <div class="w-11 h-11 rounded-lg overflow-hidden bg-gray-100 shrink-0">${p.image_url?`<img src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div>
+              <div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code||'')}</div><div class="text-sm font-semibold truncate">${esc(p.item_name||'')}</div><div class="text-[10px] text-gray-400">On Hand ${q(p.on_hand)} · Available ${q(p.available)}</div></div>
+            </div>
+            <div class="text-right shrink-0"><div class="text-[9px] uppercase font-bold text-gray-400">Reserved</div><div class="text-lg font-black text-amber-600">${q(p.reserved)}</div></div>
+          </button>`).join(''):'<div class="py-10 text-center text-sm text-gray-400">No stock is currently reserved.</div>'}
+        </div>
+      </div>`);
+    }catch(err){
+      showToast(err.message||'Unable to load reserved stock.','err');
+    }
+  };
+
+  window.openReservedStockDetails=async function(productId){
+    try{
+      await loadCore();
+      const p=inv.balanceMap.get(productId);
+      if(!p)return showToast('Product not found.','err');
+      openModal('Reserved Stock — '+(p.code||p.item_name||'Product'),'<div class="py-10 text-center text-sm text-gray-400">Loading reservation details...</div>');
+      const r=await db.rpc('get_inventory_reserved_details',{p_product_id:productId});
+      if(r.error)throw r.error;
+      const rows=r.data||[];
+      const total=rows.reduce((s,x)=>s+n(x.reserved_qty),0);
+      const body=document.getElementById('modalBody');
+      if(!body)return;
+      body.innerHTML=`<div class="space-y-4">
+        <div class="rounded-2xl border bg-[#fcfbf8] p-4">
+          <div class="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div class="w-20 h-20 rounded-xl overflow-hidden border bg-white shrink-0">${p.image_url?`<img src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div>
+            <div class="min-w-0 flex-1"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code||'')}</div><div class="font-bold text-lg">${esc(p.item_name||'')}</div><div class="text-xs text-gray-400 mt-1">${esc(p.brand||'')}</div></div>
+            <div class="grid grid-cols-3 gap-2 text-center shrink-0">
+              <div class="rounded-xl border bg-white px-3 py-2"><div class="text-[9px] uppercase font-bold text-gray-400">On Hand</div><b>${q(p.on_hand)}</b></div>
+              <div class="rounded-xl border bg-amber-50/40 border-amber-100 px-3 py-2"><div class="text-[9px] uppercase font-bold text-gray-400">Reserved</div><b class="text-amber-700">${q(p.reserved)}</b></div>
+              <div class="rounded-xl border bg-white px-3 py-2"><div class="text-[9px] uppercase font-bold text-gray-400">Available</div><b class="text-green-700">${q(p.available)}</b></div>
+            </div>
+          </div>
+          <div class="text-[10px] text-gray-400 mt-3">Reserved = active stock-type Sales Order quantity minus stock already released/delivered. Cancelled orders and cancelled items are excluded.</div>
+          ${Math.abs(total-n(p.reserved))>0.0001?`<div class="mt-2 text-[10px] text-amber-700">Live detail total ${q(total)} differs from displayed balance ${q(p.reserved)}. Refreshing the Stock tab will update the balance.</div>`:''}
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between gap-3 mb-2">
+            <div><h4 class="font-bold">Sales Orders Reserving This Stock</h4><div class="text-[10px] text-gray-400">Only active, undelivered reservation quantities are shown.</div></div>
+            <span class="text-xs font-bold text-amber-700">${q(total)} pcs</span>
+          </div>
+          <div class="divide-y border rounded-xl px-4 max-h-[58vh] overflow-auto">
+            ${rows.length?rows.map(x=>`<div class="py-3 grid md:grid-cols-[1.15fr_1.35fr_90px_1fr_115px] gap-3 items-center text-xs">
+              <div class="min-w-0"><div class="font-bold truncate">${esc(x.document_no||'Sales Order')}</div><div class="text-[9px] text-gray-400">${esc(dateText(x.order_date||x.reservation_date))}</div></div>
+              <div class="min-w-0"><div class="font-semibold truncate">${esc(x.customer_name||'Customer')}</div><div class="text-[9px] text-gray-400 truncate">${x.sales_rep_name?'Sales: '+esc(x.sales_rep_name):'Sales rep not recorded'}</div></div>
+              <div><div class="text-[9px] uppercase font-bold text-gray-400">Reserved</div><b class="text-base text-amber-700">${q(x.reserved_qty)}</b></div>
+              <div><span class="inline-flex px-2 py-1 rounded-lg border bg-gray-50 text-[9px] font-bold">${esc(titleCase(x.order_status||'active'))}</span><div class="text-[9px] text-gray-400 mt-1">Item: ${esc(titleCase(x.fulfillment_status||'pending'))}</div></div>
+              <div class="text-right"><div class="text-[9px] uppercase font-bold text-gray-400">Reserved On</div><div class="font-semibold">${esc(dateText(x.reservation_date||x.order_date))}</div><div class="text-[9px] text-gray-400">Ordered ${q(x.ordered_qty)} · Released ${q(x.released_qty)}</div></div>
+            </div>`).join(''):'<div class="py-10 text-center text-sm text-gray-400">No active Sales Order reservations for this product.</div>'}
+          </div>
+        </div>
+      </div>`;
+    }catch(err){
+      const body=document.getElementById('modalBody');
+      if(body)body.innerHTML=`<div class="rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-600">Unable to load reservation details: ${esc(err.message||'Unknown error')}</div>`;
+      else showToast(err.message||'Unable to load reservation details.','err');
+    }
   };
 
   function ageLabel(a){
@@ -405,7 +483,7 @@
           <div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code)}</div><div class="font-semibold text-sm truncate">${esc(p.item_name)}</div><div class="text-[10px] text-gray-400">${esc(p.brand||'')} · Open Stock Card</div></div>
         </button>
         <div class="text-xs"><div class="text-gray-400">On Hand</div><b class="text-sm">${q(p.on_hand)}</b></div>
-        <div class="text-xs"><div class="text-gray-400">Reserved</div><b class="text-sm text-amber-600">${q(p.reserved)}</b></div>
+        <div class="text-xs"><div class="text-gray-400">Reserved</div>${n(p.reserved)>0?`<button onclick="openReservedStockDetails('${p.product_id}')" class="text-sm font-bold text-amber-600 hover:underline" title="View Sales Orders reserving this stock">${q(p.reserved)}</button>`:`<b class="text-sm text-amber-600">${q(p.reserved)}</b>`}</div>
         <div class="text-xs"><div class="text-gray-400">Available</div><b class="text-sm ${n(p.available)<0?'text-red-600':'text-green-600'}">${q(p.available)}</b></div>
         <div class="text-xs"><div class="text-gray-400">Incoming</div><b class="text-sm text-blue-600">${q(p.incoming)}</b></div>
         <div class="text-xs"><div class="text-gray-400">Aging</div><span class="inline-flex mt-1 px-2 py-1 rounded-lg border text-[9px] font-bold ${ageBadgeClass(a?.age_bucket||'Unknown')}">${esc(ageLabel(a))}</span>${a?.oldest_remaining_date?`<div class="text-[9px] text-gray-400 mt-1">Since ${esc(dateText(a.oldest_remaining_date))}</div>`:''}</div>
@@ -1214,7 +1292,7 @@
 
       <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <div class="rounded-xl bg-gray-50 border p-3"><div class="text-[9px] uppercase font-bold text-gray-400">On Hand</div><b class="text-xl">${q(p.on_hand)}</b></div>
-        <div class="rounded-xl bg-gray-50 border p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Reserved</div><b class="text-xl text-amber-600">${q(p.reserved)}</b></div>
+        <div class="rounded-xl bg-gray-50 border p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Reserved</div>${n(p.reserved)>0?`<button onclick="openReservedStockDetails('${p.product_id}')" class="text-xl font-bold text-amber-600 hover:underline" title="View Sales Orders reserving this stock">${q(p.reserved)}</button>`:`<b class="text-xl text-amber-600">${q(p.reserved)}</b>`}</div>
         <div class="rounded-xl bg-gray-50 border p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Available</div><b class="text-xl text-green-600">${q(p.available)}</b></div>
         <div class="rounded-xl bg-gray-50 border p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Incoming</div><b class="text-xl text-blue-600">${q(p.incoming)}</b></div>
         <div class="rounded-xl bg-gray-50 border p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Aging</div><span class="inline-flex mt-1 px-2 py-1 rounded-lg border text-[9px] font-bold ${ageBadgeClass(a?.age_bucket||'Unknown')}">${esc(ageLabel(a))}</span>${a?.oldest_remaining_date?`<div class="text-[9px] text-gray-400 mt-1">Since ${esc(dateText(a.oldest_remaining_date))}</div>`:''}</div>
