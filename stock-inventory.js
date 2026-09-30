@@ -12,6 +12,8 @@
     taxLoadedAt:0,
     taxAgingLoading:false,
     taxAgingLoaded:false,
+    taxSaleAlerts:[],
+    taxSaleAlertsLoadedAt:0,
     balanceMap:new Map(),
     movementRows:[],
     poRows:[],
@@ -160,6 +162,57 @@
     setTimeout(()=>ensureTaxAgingBackground(),0);
   }
 
+
+  async function loadTaxSaleAlerts(force=false){
+    if(role()!=='super_admin'){
+      inv.taxSaleAlerts=[];
+      inv.taxSaleAlertsLoadedAt=Date.now();
+      return inv.taxSaleAlerts;
+    }
+    const now=Date.now();
+    if(!force&&inv.taxSaleAlertsLoadedAt&&now-inv.taxSaleAlertsLoadedAt<30000)return inv.taxSaleAlerts;
+    const r=await db.rpc('get_tax_sale_alerts',{p_status:'open'});
+    if(r.error)throw r.error;
+    inv.taxSaleAlerts=Array.isArray(r.data)?r.data:[];
+    inv.taxSaleAlertsLoadedAt=now;
+    return inv.taxSaleAlerts;
+  }
+
+  window.acknowledgeTaxSaleAlert=async function(id){
+    if(role()!=='super_admin')return showToast('Super Admin only.','err');
+    const r=await db.rpc('acknowledge_tax_sale_alert',{p_alert_id:id});
+    if(r.error)return showToast(r.error.message,'err');
+    inv.taxSaleAlertsLoadedAt=0;
+    await loadTaxSaleAlerts(true);
+    await renderStockInventoryBody();
+    if(typeof window.refreshAppNotifications==='function')window.refreshAppNotifications();
+    showToast('Tax sale alert acknowledged.');
+  };
+
+  function taxSaleAlertsHtml(){
+    if(role()!=='super_admin')return '';
+    const rows=inv.taxSaleAlerts||[];
+    if(!rows.length){
+      return '<div class="mb-4 rounded-2xl border border-green-100 bg-green-50/30 p-4"><div class="font-bold text-sm text-green-800">Tax Sales Alerts</div><div class="text-xs text-green-700 mt-1">No unreviewed Tax Item sales.</div></div>';
+    }
+    return `<div class="mb-4 rounded-2xl border border-red-200 bg-red-50/30 overflow-hidden">
+      <div class="px-4 py-3 border-b border-red-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div><div class="font-bold text-sm text-red-800">Tax Item Sold · Action Required</div><div class="text-[10px] text-red-600 mt-1">The sale alert does not deduct stock. Stock changes only through the existing approved delivery / stock task.</div></div>
+        <span class="inline-flex min-w-[28px] h-7 px-2 rounded-full bg-red-600 text-white text-xs font-bold items-center justify-center">${rows.length}</span>
+      </div>
+      <div class="divide-y divide-red-100">
+        ${rows.slice(0,12).map(a=>`<div class="p-4 grid lg:grid-cols-[1.4fr_1.2fr_90px_110px_120px] gap-3 items-center bg-white/80">
+          <div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(a.code||'')}${taxBadge({tax_item:true})}</div><div class="font-semibold text-sm truncate">${esc(a.item_name||'Tax Item')}</div><div class="text-[10px] text-gray-400 mt-1">${esc(a.invoice_no||a.order_no||'Sales Order')} · ${esc(dateText(a.order_date))}</div></div>
+          <div class="min-w-0"><div class="text-xs font-semibold truncate">${esc(a.customer_name||'Customer')}</div><div class="text-[10px] text-gray-400 truncate">${a.sales_rep_name?'Sales: '+esc(a.sales_rep_name):'Sales rep not recorded'}</div><div class="text-[10px] text-gray-400 mt-1">${esc(new Date(a.sold_at).toLocaleString())}</div></div>
+          <div class="text-xs"><div class="text-gray-400">Sold</div><b class="text-base text-red-600">${q(a.qty)}</b></div>
+          <div class="text-xs"><div class="text-gray-400">Current Stock</div><b class="text-base">${q(a.on_hand)}</b><div class="text-[9px] text-gray-400">Available ${q(a.available)}</div></div>
+          <div class="text-right"><button onclick="acknowledgeTaxSaleAlert('${a.id}')" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-[10px] font-semibold">Acknowledge</button></div>
+        </div>`).join('')}
+      </div>
+      ${rows.length>12?`<div class="px-4 py-3 text-center text-[10px] text-red-600">Showing 12 of ${rows.length} open Tax sale alerts.</div>`:''}
+    </div>`;
+  }
+
   function injectStyles(){
     if(document.getElementById('inventory-workspace-css'))return;
     const st=document.createElement('style');st.id='inventory-workspace-css';st.textContent=`
@@ -200,7 +253,7 @@
   window.setInventorySearch=function(v){inv.search=v;window.inventoryReservedOnly=false;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
 
   function invalidateInventoryTasks(){inv.taskLoadedAt=0}
-  window.invalidateInventoryCache=function(){inv.taskLoadedAt=0;inv.locations=[];inv.balances=[];inv.taxBalances=[];inv.taxBalanceMap=new Map();inv.taxLoadedAt=0;inv.balanceMap=new Map();inv.deliveryRows=[];inv.poRows=[];};
+  window.invalidateInventoryCache=function(){inv.taskLoadedAt=0;inv.locations=[];inv.balances=[];inv.taxBalances=[];inv.taxBalanceMap=new Map();inv.taxLoadedAt=0;inv.taxSaleAlertsLoadedAt=0;inv.balanceMap=new Map();inv.deliveryRows=[];inv.poRows=[];};
 
   async function loadInventoryTasks(force=false){
     const now=Date.now();
@@ -515,7 +568,7 @@
   window.setInventoryLocationFilter=function(v){inv.locationFilter=v||'';window.inventoryReservedOnly=false;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
   window.setInventoryAgeFilter=function(v){inv.ageFilter=v||'';window.inventoryReservedOnly=false;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
   window.setInventoryTaxOnly=function(v){inv.taxOnly=!!v;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
-  window.refreshTaxInventory=async function(){try{await loadTaxCore(true);await renderStockInventoryBody()}catch(err){showToast(err.message,'err')}};
+  window.refreshTaxInventory=async function(){try{await Promise.all([loadTaxCore(true),loadTaxSaleAlerts(true)]);await renderStockInventoryBody()}catch(err){showToast(err.message,'err')}};
   window.clearInventoryFilters=function(){inv.taxOnly=false;inv.locationFilter='';inv.ageFilter='';window.inventoryReservedOnly=false;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
   function productPassesInventoryFilters(p){
     if((inv.tab==='tax'||inv.taxOnly)&&!p.tax_item)return false;
@@ -544,9 +597,19 @@
   }
 
   async function renderBalance(){
-    if(inv.tab==='tax')await loadTaxCore();else await loadCore();
+    if(inv.tab==='tax')await Promise.all([loadTaxCore(),loadTaxSaleAlerts()]);else await loadCore();
     const rows=balanceFiltered(),shown=rows.slice(0,inventoryLimit(inv.tab));
-    return `${inv.tab==='tax'?'<div class="tax-panel text-sm"><b>Tax Inventory</b><p class="mt-1 text-xs">Live mirror of tax-tagged products in the shared stock ledger. Open Stock Card for movement history. Quantities follow the existing stock workflow.</p></div>':''}${inventoryFilterControls('balance')}<div class="card rounded-2xl overflow-hidden">
+    const taxUnits=inv.tab==='tax'?inv.taxBalances.reduce((sum,p)=>sum+n(p.on_hand),0):0;
+    const taxNoStock=inv.tab==='tax'?inv.taxBalances.filter(p=>n(p.on_hand)<=0).length:0;
+    const taxHeader=inv.tab==='tax'?`<div class="tax-panel text-sm"><div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3"><div><b>Tax Inventory</b><p class="mt-1 text-xs">Live mirror of tax-tagged products in the shared stock ledger. Selling a Tax Item creates an alert; quantities still change only through approved stock tasks.</p></div><div class="text-[10px] text-gray-500">Imported master list: Tax Stock LPHome · 30 Sep 2026</div></div></div>
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <div class="inv-stat"><div class="inv-stat-label">Tax SKUs</div><div class="inv-stat-value">${inv.taxBalances.length.toLocaleString()}</div></div>
+        <div class="inv-stat"><div class="inv-stat-label">Tax Units On Hand</div><div class="inv-stat-value">${q(taxUnits)}</div></div>
+        <div class="inv-stat"><div class="inv-stat-label">No Tax Stock / Buy In</div><div class="inv-stat-value ${taxNoStock?'text-amber-600':''}">${taxNoStock.toLocaleString()}</div></div>
+        <div class="inv-stat"><div class="inv-stat-label">Sold / Action Required</div><div class="inv-stat-value ${inv.taxSaleAlerts.length?'text-red-600':''}">${role()==='super_admin'?inv.taxSaleAlerts.length.toLocaleString():'—'}</div></div>
+      </div>
+      ${taxSaleAlertsHtml()}`:'';
+    return `${taxHeader}${inventoryFilterControls('balance')}<div class="card rounded-2xl overflow-hidden">
       <div class="divide-y">${shown.length?shown.map(p=>{const a=inv.agingMap.get(p.product_id);return `<div class="p-4 grid xl:grid-cols-[1.55fr_80px_80px_80px_80px_105px_1.4fr_165px] gap-3 items-center ${n(p.on_hand)>0&&n(p.available)<=0?'bg-red-50/30 border-l-4 border-red-300':a?.age_bucket==='365+'?'bg-amber-50/25 border-l-4 border-amber-300':''}">
         <button onclick="openProductStockCard('${p.product_id}')" class="flex items-center gap-3 min-w-0 text-left hover:opacity-80">
           <div class="w-12 h-12 rounded-xl bg-gray-100 overflow-hidden shrink-0">${p.image_url?`<img loading="lazy" decoding="async" src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div>
