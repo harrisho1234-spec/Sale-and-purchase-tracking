@@ -1,9 +1,20 @@
 // Stock ↔ Sales fulfillment bridge.
 // Adds stock-side control for Sales Tracking item status without replacing the existing inventory module.
 (function(){
-  const F={rows:[],limit:60,loadedAt:0};
+  const F={rows:[],limit:60,loadedAt:0,showUnlinked:false};
 
   function n(v){return Number(v||0)}
+  function fmtQty(v){
+    const x=Number(v||0);
+    if(!Number.isFinite(x))return '0';
+    return Number.isInteger(x)?x.toLocaleString():x.toLocaleString(undefined,{maximumFractionDigits:2});
+  }
+  function escHtml(v){
+    return String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  }
+  function titleText(v){
+    return String(v??'').replace(/[_-]+/g,' ').replace(/\b\w/g,m=>m.toUpperCase());
+  }
   function localDateText(v){
     if(!v)return '';
     const s=String(v).slice(0,10);
@@ -36,7 +47,7 @@
           :r.status==='cancelled'
             ?'bg-gray-50 border-gray-200 text-gray-500'
             :'bg-amber-50 border-amber-200 text-amber-800';
-      return `<span class="inline-flex px-2 py-1 rounded-lg border text-[9px] font-bold ${cls}">${esc(titleCase(r.status))} ${q(r.qty)}</span>`;
+      return `<span class="inline-flex px-2 py-1 rounded-lg border text-[9px] font-bold ${cls}">${escHtml(titleText(r.status))} ${fmtQty(r.qty)}</span>`;
     }).join('');
   }
 
@@ -48,11 +59,11 @@
     return F.rows;
   }
 
-  function patchDeliveryTabLabel(total){
+  function patchDeliveryTabLabel(trackedTotal){
     const btn=[...document.querySelectorAll('.inv-tab')].find(b=>String(b.getAttribute('onclick')||'').includes("setInventoryTab('delivery')"));
     if(btn){
       const active=btn.classList.contains('active');
-      btn.innerHTML=`Customer Fulfillment${total?`<span class="inv-tab-badge">${Number(total).toLocaleString()}</span>`:''}`;
+      btn.innerHTML=`Customer Fulfillment${trackedTotal?`<span class="inv-tab-badge">${Number(trackedTotal).toLocaleString()}</span>`:''}`;
       if(active)btn.classList.add('active');
     }
   }
@@ -67,8 +78,8 @@
       const rows=await loadRows('');
       const tracked=rows.filter(x=>x.inventory_tracking_enabled).length;
       const unlinked=rows.length-tracked;
-      card.innerHTML=`<div class="text-[9px] uppercase font-bold text-gray-400">Customer Fulfillment</div><div class="text-2xl font-black mt-1">${rows.length.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">${tracked} linked · ${unlinked} unlinked Sales items</div>`;
-      patchDeliveryTabLabel(rows.length);
+      card.innerHTML=`<div class="text-[9px] uppercase font-bold text-gray-400">Customer Fulfillment</div><div class="text-2xl font-black mt-1">${tracked.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">${tracked} linked waiting · ${unlinked} older unlinked items to review</div>`;
+      patchDeliveryTabLabel(tracked);
     }catch(_){}
   }
 
@@ -80,35 +91,48 @@
     body.innerHTML='<div class="inv-card py-10 text-center text-sm text-gray-400">Loading Sales fulfillment...</div>';
     try{
       const rows=await loadRows(search);
-      patchDeliveryTabLabel(rows.length);
-      const shown=rows.slice(0,F.limit);
-      const unlinked=rows.filter(x=>!x.inventory_tracking_enabled).length;
+      const linkedRows=rows.filter(x=>!!x.inventory_tracking_enabled);
+      const unlinkedRows=rows.filter(x=>!x.inventory_tracking_enabled);
+      patchDeliveryTabLabel(linkedRows.length);
+      const sourceRows=F.showUnlinked?unlinkedRows:linkedRows;
+      const shown=sourceRows.slice(0,F.limit);
       body.innerHTML=`<div class="space-y-3">
         <div class="rounded-xl border border-blue-100 bg-blue-50/40 p-3 flex flex-wrap items-center justify-between gap-3">
-          <div><b class="text-sm">Sales Tracking ↔ Stock Fulfillment</b><div class="text-[10px] text-gray-500 mt-1">Stock can update Ordered / Production / Shipping / Arrived. <b>Delivered is controlled only by actual Stock OUT.</b></div></div>
-          <div class="text-[10px] text-gray-500">${unlinked?`<b class="text-amber-700">${unlinked}</b> older Sales item${unlinked===1?' is':'s are'} not linked to Stock yet.`:'All listed items are linked to Stock.'}</div>
+          <div><b class="text-sm">Sales Tracking ↔ Stock Fulfillment</b><div class="text-[10px] text-gray-500 mt-1">Linked Stock items are the live fulfillment queue. <b>Delivered is controlled only by actual Stock OUT.</b></div></div>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" onclick="showLinkedStockFulfillment()" class="px-3 py-2 rounded-lg border text-[10px] font-semibold ${!F.showUnlinked?'bg-[#211d18] text-white':'bg-white'}">Linked Fulfillment ${linkedRows.length}</button>
+            <button type="button" onclick="showUnlinkedStockFulfillment()" class="px-3 py-2 rounded-lg border border-amber-200 text-[10px] font-semibold ${F.showUnlinked?'bg-amber-100 text-amber-900':'bg-amber-50 text-amber-800'}">Review Unlinked Sales Items ${unlinkedRows.length}</button>
+          </div>
         </div>
+        ${F.showUnlinked?`<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>Review only:</b> these older Sales Tracking rows are not inventory-linked. They do not count as Reserved unless Stock intentionally chooses <b>Link & Manage</b>.</div>`:''}
         <div class="grid gap-3">${shown.length?shown.map(x=>{
           const arrived=statusQty(x,'arrived');
           const tracked=!!x.inventory_tracking_enabled;
           return `<div class="inv-card grid lg:grid-cols-[1.05fr_1.45fr_1.15fr_95px_105px_185px] gap-3 items-center ${tracked?'':'border-amber-200 bg-amber-50/20'}">
-            <div><div class="flex flex-wrap gap-1.5 items-center"><b>${esc(x.document_no||'Sales Order')}</b><span class="px-2 py-0.5 rounded-full border text-[8px] font-bold ${tracked?'bg-green-50 border-green-200 text-green-700':'bg-amber-50 border-amber-200 text-amber-700'}">${tracked?'Linked to Stock':'Not Linked'}</span></div><div class="text-xs text-gray-500 mt-1">${esc(x.customer_name||'')}</div><div class="text-[9px] text-gray-400">${esc(localDateText(x.order_date))}${x.sales_rep_name?' · '+esc(x.sales_rep_name):''}</div></div>
-            <div class="flex gap-3 items-center min-w-0"><div class="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 shrink-0">${x.image_url?`<img src="${esc(x.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(x.product_code||'')}</div><div class="text-sm font-semibold truncate">${esc(x.item_name||'')}</div></div></div>
+            <div><div class="flex flex-wrap gap-1.5 items-center"><b>${escHtml(x.document_no||'Sales Order')}</b><span class="px-2 py-0.5 rounded-full border text-[8px] font-bold ${tracked?'bg-green-50 border-green-200 text-green-700':'bg-amber-50 border-amber-200 text-amber-700'}">${tracked?'Linked to Stock':'Not Linked'}</span></div><div class="text-xs text-gray-500 mt-1">${escHtml(x.customer_name||'')}</div><div class="text-[9px] text-gray-400">${escHtml(localDateText(x.order_date))}${x.sales_rep_name?' · '+escHtml(x.sales_rep_name):''}</div></div>
+            <div class="flex gap-3 items-center min-w-0"><div class="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 shrink-0">${x.image_url?`<img src="${escHtml(x.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${escHtml(x.product_code||'')}</div><div class="text-sm font-semibold truncate">${escHtml(x.item_name||'')}</div></div></div>
             <div><div class="text-[9px] uppercase font-bold text-gray-400 mb-1">Item Status</div><div class="flex flex-wrap gap-1">${statusChips(x)}</div></div>
-            <div class="text-xs"><div class="text-gray-400">Ordered</div><b>${q(x.ordered_qty)}</b><div class="text-[9px] text-gray-400 mt-1">OUT ${q(x.released_qty)}</div></div>
-            <div class="text-xs"><div class="text-gray-400">To Deliver</div><b class="text-amber-600">${q(x.remaining_qty)}</b><div class="text-[9px] ${arrived>0?'text-blue-600':'text-gray-400'} mt-1">Arrived ${q(arrived)}</div></div>
+            <div class="text-xs"><div class="text-gray-400">Ordered</div><b>${fmtQty(x.ordered_qty)}</b><div class="text-[9px] text-gray-400 mt-1">OUT ${fmtQty(x.released_qty)}</div></div>
+            <div class="text-xs"><div class="text-gray-400">To Deliver</div><b class="text-amber-600">${fmtQty(x.remaining_qty)}</b><div class="text-[9px] ${arrived>0?'text-blue-600':'text-gray-400'} mt-1">Arrived ${fmtQty(arrived)}</div></div>
             <div class="flex flex-wrap gap-1.5 justify-end">${canOperate()?(tracked
               ?`<button onclick="openStockFulfillmentStatus('${x.sales_order_item_id}')" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-semibold">Update Status</button>${arrived>0?`<button onclick="openStockFulfillmentRelease('${x.sales_order_item_id}')" class="px-3 py-2 bg-[#211d18] text-white rounded-lg text-[10px] font-semibold">Release / OUT</button>`:`<span class="px-2 py-2 text-[9px] text-gray-400">Mark Arrived before OUT</span>`}`
               :`<button onclick="linkStockFulfillmentItem('${x.sales_order_item_id}',true)" class="px-3 py-2 border border-amber-300 bg-amber-50 text-amber-800 rounded-lg text-[10px] font-semibold">Link & Manage</button>`)
               :'<span class="text-[10px] text-gray-400">View only</span>'}</div>
           </div>`;
-        }).join(''):'<div class="inv-card py-12 text-center text-sm text-gray-400">No active stock Sales items are waiting for fulfillment.</div>'}</div>
-        ${rows.length>F.limit?`<div class="flex justify-center gap-2"><span class="text-xs text-gray-400 self-center">Showing ${Math.min(F.limit,rows.length)} of ${rows.length}</span><button onclick="showMoreStockFulfillment()" class="px-3 py-2 border rounded-xl text-xs font-semibold bg-white">Show More</button></div>`:''}
+        }).join(''):`<div class="inv-card py-12 text-center text-sm text-gray-400">${F.showUnlinked?'No unlinked Sales items match this search.':'No linked Stock items are currently waiting for fulfillment.'}</div>`}</div>
+        ${sourceRows.length>F.limit?`<div class="flex justify-center gap-2"><span class="text-xs text-gray-400 self-center">Showing ${Math.min(F.limit,sourceRows.length)} of ${sourceRows.length}</span><button onclick="showMoreStockFulfillment()" class="px-3 py-2 border rounded-xl text-xs font-semibold bg-white">Show More</button></div>`:''}
       </div>`;
     }catch(err){
-      body.innerHTML=`<div class="inv-card text-red-600">Error loading Sales fulfillment: ${esc(err.message||'Unknown error')}</div>`;
+      body.innerHTML=`<div class="inv-card text-red-600">Error loading Sales fulfillment: ${escHtml(err.message||'Unknown error')}</div>`;
     }
   }
+
+  window.showLinkedStockFulfillment=function(){
+    F.showUnlinked=false;F.limit=60;renderFulfillment();
+  };
+  window.showUnlinkedStockFulfillment=function(){
+    F.showUnlinked=true;F.limit=60;renderFulfillment();
+  };
 
   window.showMoreStockFulfillment=function(){
     F.limit+=60;
@@ -148,14 +172,14 @@
 
       openModal('Update Item Status — '+(x.document_no||'Sales Order'),`<form id="stockFulfillmentStatusForm" class="space-y-4">
         <div class="rounded-xl border bg-[#fcfbf8] p-4">
-          <div class="text-xs text-gray-500">${esc(x.customer_name||'')}</div>
-          <div class="text-[10px] font-bold text-[#a77d1a] mt-1">${esc(x.product_code||'')}</div>
-          <div class="font-semibold">${esc(x.item_name||'')}</div>
+          <div class="text-xs text-gray-500">${escHtml(x.customer_name||'')}</div>
+          <div class="text-[10px] font-bold text-[#a77d1a] mt-1">${escHtml(x.product_code||'')}</div>
+          <div class="font-semibold">${escHtml(x.item_name||'')}</div>
           <div class="mt-3 flex flex-wrap gap-2 text-[10px]">
-            <span class="px-2 py-1 rounded-lg border bg-white">Sold <b>${q(x.ordered_qty)}</b></span>
-            <span class="px-2 py-1 rounded-lg border bg-green-50 border-green-200 text-green-700">Delivered / OUT <b>${q(delivered)}</b></span>
-            ${cancelled>0?`<span class="px-2 py-1 rounded-lg border bg-gray-50">Cancelled <b>${q(cancelled)}</b></span>`:''}
-            <span class="px-2 py-1 rounded-lg border bg-amber-50 border-amber-200 text-amber-800">Qty to assign <b>${q(active)}</b></span>
+            <span class="px-2 py-1 rounded-lg border bg-white">Sold <b>${fmtQty(x.ordered_qty)}</b></span>
+            <span class="px-2 py-1 rounded-lg border bg-green-50 border-green-200 text-green-700">Delivered / OUT <b>${fmtQty(delivered)}</b></span>
+            ${cancelled>0?`<span class="px-2 py-1 rounded-lg border bg-gray-50">Cancelled <b>${fmtQty(cancelled)}</b></span>`:''}
+            <span class="px-2 py-1 rounded-lg border bg-amber-50 border-amber-200 text-amber-800">Qty to assign <b>${fmtQty(active)}</b></span>
           </div>
         </div>
         <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800"><b>Stock controls physical fulfillment.</b> Update the undelivered quantity below. Delivered is locked and changes only when Stock OUT is confirmed.</div>
@@ -172,7 +196,7 @@
         e.preventDefault();
         const allocations=['ordered','production','shipping','arrived'].map(status=>({status,qty:Number(document.getElementById('sfStatus_'+status)?.value||0)})).filter(a=>a.qty>0);
         const total=allocations.reduce((s,a)=>s+a.qty,0);
-        if(Math.abs(total-active)>0.0001)return showToast('Status quantities must equal '+q(active)+'.','err');
+        if(Math.abs(total-active)>0.0001)return showToast('Status quantities must equal '+fmtQty(active)+'.','err');
         const btn=document.getElementById('stockFulfillmentStatusSave');btn.disabled=true;btn.textContent='Saving...';
         const sr=await db.rpc('save_inventory_item_status_quantities',{p_sales_order_item_id:itemId,p_allocations:allocations});
         if(sr.error){btn.disabled=false;btn.textContent='Save Item Status';return showToast(sr.error.message,'err')}
@@ -188,7 +212,7 @@
     const el=document.getElementById('stockFulfillmentStatusTotal');if(!el)return;
     const ok=Math.abs(total-target)<=0.0001;
     el.className=`rounded-xl border p-3 text-xs ${ok?'bg-green-50 border-green-200 text-green-700':'bg-red-50 border-red-200 text-red-700'}`;
-    el.innerHTML=`Assigned <b>${q(total)}</b> / ${q(target)}${ok?' · Ready to save':' · Adjust the quantities above'}`;
+    el.innerHTML=`Assigned <b>${fmtQty(total)}</b> / ${fmtQty(target)}${ok?' · Ready to save':' · Adjust the quantities above'}`;
   };
 
   window.openStockFulfillmentRelease=async function(itemId){
@@ -208,10 +232,10 @@
       if(!locs.length)return showToast('No physical stock location has quantity available for this product.','err');
       const maxQty=Math.min(n(x.remaining_qty),arrived);
       openModal('Release Customer Stock — '+(x.document_no||'Sales Order'),`<form id="stockFulfillmentReleaseForm" class="space-y-4">
-        <div class="rounded-xl border bg-gray-50 p-4"><div class="text-xs text-gray-500">${esc(x.customer_name||'')}</div><div class="text-[10px] font-bold text-[#a77d1a] mt-1">${esc(x.product_code||'')}</div><div class="font-semibold">${esc(x.item_name||'')}</div><div class="text-xs mt-2">Ordered ${q(x.ordered_qty)} · OUT ${q(x.released_qty)} · Arrived ${q(arrived)} · <b>Remaining ${q(x.remaining_qty)}</b></div></div>
+        <div class="rounded-xl border bg-gray-50 p-4"><div class="text-xs text-gray-500">${escHtml(x.customer_name||'')}</div><div class="text-[10px] font-bold text-[#a77d1a] mt-1">${escHtml(x.product_code||'')}</div><div class="font-semibold">${escHtml(x.item_name||'')}</div><div class="text-xs mt-2">Ordered ${fmtQty(x.ordered_qty)} · OUT ${fmtQty(x.released_qty)} · Arrived ${fmtQty(arrived)} · <b>Remaining ${fmtQty(x.remaining_qty)}</b></div></div>
         <div class="grid md:grid-cols-2 gap-4">
           <div><label class="text-xs font-semibold">Release Qty *</label><input id="sfReleaseQty" type="number" min="1" max="${maxQty}" step="1" value="${maxQty}" required class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
-          <div><label class="text-xs font-semibold">From Location *</label><select id="sfReleaseLocation" required class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="">Select stock location</option>${locs.map(l=>`<option value="${l.location_id}">${esc(l.code||l.name||'Location')} · On Hand ${q(l.qty)}</option>`).join('')}</select></div>
+          <div><label class="text-xs font-semibold">From Location *</label><select id="sfReleaseLocation" required class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="">Select stock location</option>${locs.map(l=>`<option value="${l.location_id}">${escHtml(l.code||l.name||'Location')} · On Hand ${fmtQty(l.qty)}</option>`).join('')}</select></div>
           <div><label class="text-xs font-semibold">Delivery Date</label><input id="sfReleaseDate" type="date" value="${new Date().toISOString().slice(0,10)}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
           <div><label class="text-xs font-semibold">Remark</label><input id="sfReleaseNote" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
         </div>
@@ -220,7 +244,7 @@
       document.getElementById('stockFulfillmentReleaseForm').onsubmit=async e=>{
         e.preventDefault();
         const qty=Number(document.getElementById('sfReleaseQty')?.value||0);
-        if(!Number.isInteger(qty)||qty<=0||qty>maxQty)return showToast('Release quantity must be a whole number from 1 to '+q(maxQty)+'.','err');
+        if(!Number.isInteger(qty)||qty<=0||qty>maxQty)return showToast('Release quantity must be a whole number from 1 to '+fmtQty(maxQty)+'.','err');
         const loc=document.getElementById('sfReleaseLocation')?.value;
         if(!loc)return showToast('Select a stock location.','err');
         const btn=document.getElementById('sfReleaseSave');btn.disabled=true;btn.textContent='Releasing...';
