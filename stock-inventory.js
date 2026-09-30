@@ -336,9 +336,13 @@
   function inventoryFilterControls(context){
     const locOptions=inv.locations.filter(x=>x.active).map(x=>`<option value="${x.id}" ${String(inv.locationFilter)===String(x.id)?'selected':''}>${esc(stockLocationLabel(x))}</option>`).join('');
     const ages=[['','All Aging'],['0-30','0–30 days'],['31-90','31–90 days'],['91-180','91–180 days'],['181-365','181–365 days'],['365+','365+ days'],['Unknown','Unknown / Pre-history']];
+    const saved=savedInventoryViews();
     return `<div class="mb-4 flex flex-wrap gap-2 items-center">
       <select onchange="setInventoryLocationFilter(this.value)" class="border rounded-xl px-3 py-2 bg-white text-xs"><option value="">All Locations</option>${locOptions}</select>
       <select onchange="setInventoryAgeFilter(this.value)" class="border rounded-xl px-3 py-2 bg-white text-xs">${ages.map(([v,l])=>`<option value="${v}" ${inv.ageFilter===v?'selected':''}>${l}</option>`).join('')}</select>
+      <select onchange="applySavedInventoryView(this.value);this.value=''" class="border rounded-xl px-3 py-2 bg-white text-xs"><option value="">Saved Views</option>${saved.map((x,i)=>`<option value="${i}">${esc(x.name||'Saved View')}</option>`).join('')}</select>
+      <button onclick="saveCurrentInventoryView()" class="px-3 py-2 border rounded-xl text-xs font-semibold bg-white">Save View</button>
+      ${saved.length?`<button onclick="openSavedInventoryViews()" class="px-3 py-2 border rounded-xl text-xs bg-white text-gray-500">Manage</button>`:''}
       ${inv.locationFilter||inv.ageFilter?`<button onclick="clearInventoryFilters()" class="px-3 py-2 border rounded-xl text-xs font-semibold bg-white">Clear Filters</button>`:''}
       <div class="text-[10px] text-gray-400 ml-auto">Aging uses the oldest remaining recorded inbound layer (FIFO estimate). Stock older than imported history appears as Unknown.</div>
     </div>`;
