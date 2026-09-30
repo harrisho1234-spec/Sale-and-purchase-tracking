@@ -133,8 +133,8 @@
   }
   window.expandInventoryList=function(tab,all=false){inv.limits[tab]=all?999999:inventoryLimit(tab)+30;renderStockInventoryBody()};
   window.collapseInventoryList=function(tab){inv.limits[tab]=30;renderStockInventoryBody()};
-  window.setInventoryTab=function(tab){inv.tab=tab;resetInventoryLimit(tab);renderStockInventory()};
-  window.setInventorySearch=function(v){inv.search=v;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
+  window.setInventoryTab=function(tab){inv.tab=tab;if(tab!=='balance')window.inventoryReservedOnly=false;resetInventoryLimit(tab);renderStockInventory()};
+  window.setInventorySearch=function(v){inv.search=v;window.inventoryReservedOnly=false;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
 
   function invalidateInventoryTasks(){inv.taskLoadedAt=0}
 
@@ -205,6 +205,7 @@
     const row=savedInventoryViews()[Number(index)];
     if(!row)return;
     inv.tab=row.tab||'balance';
+    window.inventoryReservedOnly=false;
     inv.search=row.search||'';
     inv.locationFilter=row.locationFilter||'';
     inv.ageFilter=row.ageFilter||'';
@@ -284,13 +285,8 @@
     const stocked=inv.balances.filter(x=>n(x.on_hand)>0).length;
     const noAvail=inv.balances.filter(x=>n(x.on_hand)>0&&n(x.available)<=0).length;
 
-    const [mov,poQ,delQ]=await Promise.all([
-      db.from('inventory_movement_history').select('*').neq('movement_type','opening').order('movement_date',{ascending:false}).order('created_at',{ascending:false}).limit(8),
-      db.rpc('get_inventory_po_receiving_queue',{p_search:null}),
-      db.rpc('get_inventory_delivery_queue',{p_search:null})
-    ]);
-    if(mov.error)throw mov.error;if(poQ.error)throw poQ.error;if(delQ.error)throw delQ.error;
-
+    const mov=await db.from('inventory_movement_history').select('*').neq('movement_type','opening').order('movement_date',{ascending:false}).order('created_at',{ascending:false}).limit(8);
+    if(mov.error)throw mov.error;
     const recent=mov.data||[];
     return `<div class="grid sm:grid-cols-2 xl:grid-cols-6 gap-3 mb-5">
       <div class="inv-stat"><div class="inv-stat-label">On Hand</div><div class="inv-stat-value">${q(onHand)}</div></div>
@@ -369,9 +365,9 @@
       <div class="text-[10px] text-gray-400 ml-auto">Aging uses the oldest remaining recorded inbound layer (FIFO estimate). Stock older than imported history appears as Unknown.</div>
     </div>`;
   }
-  window.setInventoryLocationFilter=function(v){inv.locationFilter=v||'';resetInventoryLimit(inv.tab);renderStockInventoryBody()};
-  window.setInventoryAgeFilter=function(v){inv.ageFilter=v||'';resetInventoryLimit(inv.tab);renderStockInventoryBody()};
-  window.clearInventoryFilters=function(){inv.locationFilter='';inv.ageFilter='';resetInventoryLimit(inv.tab);renderStockInventoryBody()};
+  window.setInventoryLocationFilter=function(v){inv.locationFilter=v||'';window.inventoryReservedOnly=false;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
+  window.setInventoryAgeFilter=function(v){inv.ageFilter=v||'';window.inventoryReservedOnly=false;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
+  window.clearInventoryFilters=function(){inv.locationFilter='';inv.ageFilter='';window.inventoryReservedOnly=false;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
   function productPassesInventoryFilters(p){
     if(inv.locationFilter){
       const ok=(p.locations||[]).some(l=>String(l.location_id)===String(inv.locationFilter)&&n(l.qty)!==0);
