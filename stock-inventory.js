@@ -1353,7 +1353,7 @@
     window.navItems=function(){
       const items=previousNavItems.apply(this,arguments)||[];
       if(role()==='stock_controller'){
-        return [['products','Products','◇'],['stock-inventory','Stock & Inventory','▦']];
+        return [['tracking','Order Tracking','◎'],['products','Products','◇'],['stock-inventory','Stock & Inventory','▦']];
       }
       if(!canView())return items.filter(x=>x[0]!=='stock-inventory');
       if(items.some(x=>x[0]==='stock-inventory'))return items;
