@@ -137,6 +137,7 @@
   window.setInventorySearch=function(v){inv.search=v;window.inventoryReservedOnly=false;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
 
   function invalidateInventoryTasks(){inv.taskLoadedAt=0}
+  window.invalidateInventoryCache=function(){inv.taskLoadedAt=0;inv.locations=[];inv.balances=[];inv.balanceMap=new Map();inv.deliveryRows=[];inv.poRows=[];};
 
   async function loadInventoryTasks(force=false){
     const now=Date.now();
