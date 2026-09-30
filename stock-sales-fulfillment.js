@@ -1,7 +1,7 @@
 // Stock ↔ Sales fulfillment bridge.
 // Adds stock-side control for Sales Tracking item status without replacing the existing inventory module.
 (function(){
-  const F={rows:[],limit:60,loadedAt:0,showUnlinked:false};
+  const F={rows:[],limit:60,loadedAt:0,showUnlinked:false,justLinkedId:''};
 
   function n(v){return Number(v||0)}
   function fmtQty(v){
@@ -104,7 +104,7 @@
             <button type="button" onclick="showUnlinkedStockFulfillment()" class="px-3 py-2 rounded-lg border border-amber-200 text-[10px] font-semibold ${F.showUnlinked?'bg-amber-100 text-amber-900':'bg-amber-50 text-amber-800'}">Review Unlinked Sales Items ${unlinkedRows.length}</button>
           </div>
         </div>
-        ${F.showUnlinked?`<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>Review only:</b> these older Sales Tracking rows are not inventory-linked. They do not count as Reserved unless Stock intentionally chooses <b>Link & Manage</b>.</div>`:''}
+        ${F.showUnlinked?`<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>Review only:</b> these older Sales Tracking rows are not inventory-linked. They do not count as Reserved unless Stock intentionally chooses <b>Link to Stock</b>.</div>`:''}
         <div class="grid gap-3">${shown.length?shown.map(x=>{
           const arrived=statusQty(x,'arrived');
           const tracked=!!x.inventory_tracking_enabled;
@@ -116,7 +116,7 @@
             <div class="text-xs"><div class="text-gray-400">To Deliver</div><b class="text-amber-600">${fmtQty(x.remaining_qty)}</b><div class="text-[9px] ${arrived>0?'text-blue-600':'text-gray-400'} mt-1">Arrived ${fmtQty(arrived)}</div></div>
             <div class="flex flex-wrap gap-1.5 justify-end">${canOperate()?(tracked
               ?`<button onclick="openStockFulfillmentStatus('${x.sales_order_item_id}')" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-semibold">Update Status</button>${arrived>0?`<button onclick="openStockFulfillmentRelease('${x.sales_order_item_id}')" class="px-3 py-2 bg-[#211d18] text-white rounded-lg text-[10px] font-semibold">Release / OUT</button>`:`<span class="px-2 py-2 text-[9px] text-gray-400">Mark Arrived before OUT</span>`}`
-              :`<button onclick="linkStockFulfillmentItem('${x.sales_order_item_id}',true)" class="px-3 py-2 border border-amber-300 bg-amber-50 text-amber-800 rounded-lg text-[10px] font-semibold">Link & Manage</button>`)
+              :`<button onclick="linkStockFulfillmentItem('${x.sales_order_item_id}',true)" class="px-3 py-2 border border-amber-300 bg-amber-50 text-amber-800 rounded-lg text-[10px] font-semibold">Link to Stock</button>`)
               :'<span class="text-[10px] text-gray-400">View only</span>'}</div>
           </div>`;
         }).join(''):`<div class="inv-card py-12 text-center text-sm text-gray-400">${F.showUnlinked?'No unlinked Sales items match this search.':'No linked Stock items are currently waiting for fulfillment.'}</div>`}</div>
@@ -144,7 +144,8 @@
     try{
       const r=await db.rpc('enable_inventory_tracking_for_sales_item',{p_sales_order_item_id:itemId});
       if(r.error)throw r.error;
-      showToast('Sales item linked to Stock. Its quantity is now included in Reserved.');
+      F.justLinkedId=String(itemId);
+      showToast('Linked to Stock. Confirm the current item stage next.');
       await loadRows(document.querySelector('.inv-search')?.value||'');
       if(manageAfter)return openStockFulfillmentStatus(itemId);
       await renderFulfillment();
@@ -170,7 +171,9 @@
       const active=Math.max(n(x.ordered_qty)-delivered-cancelled,0);
       const vals={ordered:get('ordered'),production:get('production'),shipping:get('shipping'),arrived:get('arrived')};
 
-      openModal('Update Item Status — '+(x.document_no||'Sales Order'),`<form id="stockFulfillmentStatusForm" class="space-y-4">
+      const justLinked=F.justLinkedId===String(itemId);
+      openModal((justLinked?'Linked to Stock — Confirm Status — ':'Update Item Status — ')+(x.document_no||'Sales Order'),`<form id="stockFulfillmentStatusForm" class="space-y-4">
+        ${justLinked?`<div class="rounded-xl border border-green-200 bg-green-50 p-3 text-xs text-green-800"><b>Link completed.</b> This Sales item is now inventory-tracked and its undelivered quantity is included in Reserved. Confirm where the quantity currently is below.</div>`:''}
         <div class="rounded-xl border bg-[#fcfbf8] p-4">
           <div class="text-xs text-gray-500">${escHtml(x.customer_name||'')}</div>
           <div class="text-[10px] font-bold text-[#a77d1a] mt-1">${escHtml(x.product_code||'')}</div>
@@ -187,7 +190,7 @@
           ${[['ordered','Ordered'],['production','Production'],['shipping','Shipping'],['arrived','Arrived']].map(([s,l])=>`<div><label class="text-xs font-semibold">${l}</label><input id="sfStatus_${s}" type="number" min="0" step="any" value="${vals[s]||0}" oninput="updateStockFulfillmentStatusTotal()" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>`).join('')}
         </div>
         <div id="stockFulfillmentStatusTotal" class="rounded-xl border p-3 text-xs"></div>
-        <button id="stockFulfillmentStatusSave" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Item Status</button>
+        <button id="stockFulfillmentStatusSave" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">${justLinked?'Confirm Current Status':'Save Item Status'}</button>
       </form>`);
       window._stockFulfillmentTarget=active;
       updateStockFulfillmentStatusTotal();
@@ -200,7 +203,8 @@
         const btn=document.getElementById('stockFulfillmentStatusSave');btn.disabled=true;btn.textContent='Saving...';
         const sr=await db.rpc('save_inventory_item_status_quantities',{p_sales_order_item_id:itemId,p_allocations:allocations});
         if(sr.error){btn.disabled=false;btn.textContent='Save Item Status';return showToast(sr.error.message,'err')}
-        closeModal();showToast('Item status updated in Sales Tracking and Stock.');
+        F.justLinkedId='';
+        closeModal();showToast(justLinked?'Stock link confirmed and item status saved.':'Item status updated in Sales Tracking and Stock.');
         if(window.renderStockInventory)await window.renderStockInventory();else await renderFulfillment();
       };
     }catch(err){showToast(err.message||'Could not open item status.','err')}
