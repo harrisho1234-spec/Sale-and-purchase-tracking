@@ -7,7 +7,7 @@
   function badge(status){const s=nrm(status);return s==='arrived'?'lr-badge-green':s==='shipping'?'lr-badge-blue':s==='production'?'lr-badge-amber':'lr-badge-gray'}
 
   window.renderSupplierPOs=async function(){
-    if(!isAdmin())throw new Error('Access denied');
+    if(!(typeof window.hasAppPermission==='function'?window.hasAppPermission('procurement.po_edit'):isAdmin()))throw new Error('You do not have permission to edit Supplier POs.');
     const [sr,pr]=await Promise.all([
       db.from('supplier_po_summary').select('*').order('created_at',{ascending:false}),
       db.from('supplier_pos').select('id,po_number,po_document_path,po_document_name,po_pending_reference,status,estimated_arrival,vendor_name,shipping_agent,order_date,currency,notes').order('created_at',{ascending:false})
