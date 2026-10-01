@@ -9,7 +9,12 @@
   function fmtDate(v){if(!v)return 'TBD';const d=new Date(String(v).length<=10?v+'T00:00:00':v);return Number.isNaN(d.getTime())?String(v):d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}
   function poLabel(p){return p?.po_number||p?.po_pending_reference||'PO Pending'}
   function statusBadge(s){s=norm(s);return ['arrived','delivered','closed','complete','completed'].includes(s)?'lr-badge-green':s==='shipping'?'lr-badge-blue':s==='production'?'lr-badge-amber':'lr-badge-gray'}
-  function requireAdmin(){if(!isAdmin())throw new Error('Procurement is available to Admin and Super Admin only.')}
+  function requireAdmin(){
+    const allowed=typeof window.hasAppPermission==='function'
+      ?window.hasAppPermission('procurement.view')
+      :isAdmin();
+    if(!allowed)throw new Error('You do not have Procurement access.');
+  }
   function recState(p){return String(p?.reconciliation_state||'live')}
   function isHistoricalPO(p){return recState(p)==='historical_reconciled'}
   function isPartialHistoricalPO(p){return recState(p)==='partially_reconciled'}
