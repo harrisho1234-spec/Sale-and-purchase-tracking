@@ -55,7 +55,7 @@
   }
 
   async function renderPOItemsWithStatus(){
-    if(!isAdminRole())throw new Error('Admin access required.');
+    if(!canProcurementView())throw new Error('You do not have Procurement access.');
     const all=await loadPOItems();
     const q=norm(pw.search);
     const rows=all.filter(taxProcurementMatches).filter(i=>!q||[
@@ -167,7 +167,7 @@
   };
 
   window.reconcileSelectedPOItems=async function(reconciled){
-    if(!isAdminRole())return showToast('Admin access required.','err');
+    if(!canProcurementReconcile())return showToast('You do not have permission for PO historical reconciliation.','err');
     const selected=(poBulk.rows||[]).filter(x=>poBulk.selected.has(String(x.id))&&(reconciled?!x.historical_stock_reconciled:x.historical_stock_reconciled));
     if(!selected.length)return showToast(reconciled?'Select at least one live PO item.':'Select at least one Historical / Reconciled PO item.','err');
 
@@ -259,7 +259,7 @@
   };
 
   window.openHistoricalPOReconciliation=async function(){
-    if(!isAdminRole())return showToast('Admin access required.','err');
+    if(!canProcurementReconcile())return showToast('You do not have permission for PO historical reconciliation.','err');
     openModal('Historical Stock Reconciliation','<div class="py-12 text-center text-sm text-gray-400">Loading Supplier POs...</div>');
     const r=await db.rpc('get_historical_po_reconciliation_candidates');
     if(r.error){
@@ -276,7 +276,7 @@
   };
 
   window.applyHistoricalPOReconciliation=async function(reconciled){
-    if(!isAdminRole())return showToast('Admin access required.','err');
+    if(!canProcurementReconcile())return showToast('You do not have permission for PO historical reconciliation.','err');
     const ids=[...document.querySelectorAll('.hist-po-check:checked')].map(x=>x.value).filter(Boolean);
     if(!ids.length)return showToast('Select at least one Supplier PO.','err');
     const note=document.getElementById('histPoReconNote')?.value.trim()||null;
@@ -299,7 +299,7 @@
   };
 
   window.saveSupplierPOItemStatus=async function(itemId,status,selectEl=null){
-    if(!isAdminRole())return showToast('Admin access required.','err');
+    if(!canProcurementEdit())return showToast('You do not have permission to edit PO items.','err');
     if(!STATUSES.includes(norm(status)))return showToast('Invalid item status.','err');
     if(selectEl)selectEl.disabled=true;
     const r=await db.from('supplier_po_items').update({procurement_status:norm(status),updated_at:new Date().toISOString()}).eq('id',itemId);
@@ -343,7 +343,7 @@
   }
 
   window.setAllPOItemStatuses=async function(poId){
-    if(!isAdminRole())return showToast('Admin access required.','err');
+    if(!canProcurementEdit())return showToast('You do not have permission to edit PO items.','err');
     const status=document.getElementById('poAllItemStatus')?.value||'placed';
     const r=await db.from('supplier_po_items').update({procurement_status:status,updated_at:new Date().toISOString()}).eq('supplier_po_id',poId).eq('historical_stock_reconciled',false);
     if(r.error)return showToast(r.error.message,'err');
