@@ -4,7 +4,11 @@
   const VENDOR_PRODUCT_TYPES=['Furniture','Lighting','Carpet','Accessories','Decor','Service'];
   const VENDOR_STYLES=['Classic','Contemporary','Modern','Neo-Classic'];
 
-  function roleAllowed(){return ['admin','super_admin'].includes(state.profile?.role||'')}
+  function roleAllowed(){
+    return typeof window.hasAppPermission==='function'
+      ?window.hasAppPermission('procurement.vendor_manage')
+      :['admin','super_admin'].includes(state.profile?.role||'');
+  }
   function clean(v){return String(v==null?'':v).trim()}
   function viDate(v){
     const s=clean(v);if(!s)return '-';
