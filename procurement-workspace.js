@@ -406,14 +406,15 @@
 
   window.renderProcurementWorkspace=async function(){
     inject();requireAdmin();
-    const tabs=[['pos','Supplier POs'],['ordered','PO Ordered Items'],['items','PO Items'],['payments','Supplier Payments'],['shipping','Shipping / ETA'],['allocations','SR Allocations'],['flow','PO → SR → TK/RK']];
+    const tabs=[['pos','Supplier POs'],['needs','Needs Ordering'],['ordered','PO Ordered Items'],['items','PO Items'],['payments','Supplier Payments'],['shipping','Shipping / ETA'],['allocations','SR Allocations'],['flow','PO → SR → TK/RK']];
     let action='';
     if(pw.tab==='pos')action=`<div class="flex flex-wrap gap-2 justify-end"><button onclick="openBulkPOImport()" class="px-4 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-xl text-sm font-semibold">Bulk Import Excel</button><button onclick="openNewSupplierPO()" class="px-4 py-2 bg-[#211d18] text-white rounded-xl text-sm font-semibold">+ Supplier PO</button></div>`;
     if(pw.tab==='payments')action=`<button onclick="openSupplierPayment()" class="px-4 py-2 bg-[#211d18] text-white rounded-xl text-sm font-semibold">+ Supplier Payment</button>`;
-    document.getElementById('content').innerHTML=`<div class="max-w-[1500px] mx-auto"><div class="pw-tabs">${tabs.map(([v,l])=>`<button class="pw-tab ${pw.tab===v?'active':''}" onclick="setProcurementTab('${v}')">${l}</button>`).join('')}</div><div class="pw-toolbar"><div><input class="pw-search" value="${esc(pw.search)}" oninput="setProcurementSearch(this.value)" placeholder="Search PO, supplier, SKU, SR, customer..."></div><div>${action}</div></div><div id="procurementWorkspaceBody"><div class="py-16 text-center text-gray-400">Loading...</div></div></div>`;
+    document.getElementById('content').innerHTML=`<div class="max-w-[1500px] mx-auto"><div class="pw-tabs">${tabs.map(([v,l])=>`<button class="pw-tab ${pw.tab===v?'active':''}" ${v==='needs'?'data-needs-ordering-tab="1"':''} onclick="setProcurementTab('${v}')">${l}</button>`).join('')}</div><div class="pw-toolbar"><div><input class="pw-search" value="${esc(pw.search)}" oninput="setProcurementSearch(this.value)" placeholder="Search PO, supplier, SKU, SR, customer..."></div><div>${action}</div></div><div id="procurementWorkspaceBody"><div class="py-16 text-center text-gray-400">Loading...</div></div></div>`;
     try{
       let html='';
       if(pw.tab==='pos')html=await renderPOs();
+      else if(pw.tab==='ordered')html=await renderPOOrderedItems();
       else if(pw.tab==='items')html=await renderPOItems();
       else if(pw.tab==='payments')html=await renderPayments();
       else if(pw.tab==='shipping')html=await renderShipping();
