@@ -2,7 +2,11 @@
 // Loaded after stock-inventory.js so it can extend the final navigation safely.
 (function(){
   function role(){return state.profile?.role||''}
-  function canManage(){return ['admin','super_admin'].includes(role())}
+  function canManage(){
+    return typeof window.hasAppPermission==='function'
+      ?window.hasAppPermission('stock_locations.manage')
+      :['admin','super_admin'].includes(role());
+  }
   const lm={companies:[],groups:[],locations:[],memberships:[]};
   window.stockLocationManagementState=lm;
 
