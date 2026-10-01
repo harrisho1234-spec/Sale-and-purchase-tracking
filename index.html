@@ -5,12 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>L'Imperial Sales & Order Management</title>
   <!-- L'Imperial App Icon / PWA -->
-  <link rel="icon" type="image/png" href="/Sale-and-purchase-tracking/favicon.png">
-  <link rel="apple-touch-icon" href="/Sale-and-purchase-tracking/app-icon-192.png">
-  <link rel="manifest" href="/Sale-and-purchase-tracking/manifest.webmanifest">
+  <link rel="icon" type="image/png" href="/Sale-and-purchase-tracking/app-icon-192.png?v=20261001">
+  <link rel="apple-touch-icon" href="/Sale-and-purchase-tracking/app-icon-192.png?v=20261001">
+  <link rel="manifest" href="/Sale-and-purchase-tracking/manifest.webmanifest?v=20261001-pwa2">
   <meta name="theme-color" content="#211d18">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="L\'Imperial OM">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
@@ -197,7 +198,8 @@
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function () {
         navigator.serviceWorker.register('/Sale-and-purchase-tracking/service-worker.js', {
-          scope: '/Sale-and-purchase-tracking/'
+          scope: '/Sale-and-purchase-tracking/',
+          updateViaCache: 'none'
         }).catch(function (err) {
           console.warn('PWA service worker registration failed:', err);
         });
@@ -205,6 +207,7 @@
     }
   </script>
   <script src="push-notifications.js?v=20261001-stock-alerts1"></script>
+  <script src="pwa-install.js?v=20261001-pwa2"></script>
   <script>installTaxInventoryUI();</script>
 </body>
 </html>
