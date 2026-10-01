@@ -28,24 +28,29 @@
   };
 
   async function loadPOEditData(poId){
-    const [p,i]=await Promise.all([
+    const [p,i,r]=await Promise.all([
       db.from('supplier_pos').select('*').eq('id',poId).single(),
-      db.from('supplier_po_items').select('*').eq('supplier_po_id',poId).order('sort_order',{ascending:true}).order('created_at',{ascending:true})
+      db.from('supplier_po_items').select('*').eq('supplier_po_id',poId).order('sort_order',{ascending:true}).order('created_at',{ascending:true}),
+      db.rpc('get_supplier_po_reconciliation_status')
     ]);
-    if(p.error)throw p.error;if(i.error)throw i.error;return {po:p.data,items:i.data||[]};
+    if(p.error)throw p.error;if(i.error)throw i.error;if(r.error)throw r.error;
+    const reconciliation=(r.data||[]).find(x=>String(x.supplier_po_id)===String(poId))||{};
+    return {po:p.data,items:i.data||[],reconciliation};
   }
 
   window.openEditSupplierPO=async function(poId){
     try{
       const d=await loadPOEditData(poId),p=d.po;
+      const historical=String(d.reconciliation?.reconciliation_state||'live')==='historical_reconciled';
       if(typeof loadVendorMaster==='function')await loadVendorMaster(true);
       const vendorOptions=typeof vendorMasterOptionsHtml==='function'?vendorMasterOptionsHtml(true):'';
-      openModal('Edit Supplier PO',`<div class="space-y-6">
+      openModal(historical?'Supplier PO History':'Edit Supplier PO',`<div class="space-y-6">
+        ${historical?'<div class="rounded-xl border border-purple-200 bg-purple-50 p-4 text-xs text-purple-800"><b>Historical / Reconciled PO.</b> This PO is preserved as purchasing history. Its stock quantities are already reflected in opening/current stock. Live status, ETA and new PO-item entry are locked until reconciliation is undone.</div>':''}
         <form id="editPOForm" class="grid md:grid-cols-2 gap-4">
           <div><label class="text-xs font-semibold">Official PO Number</label><input id="epoNo" value="${esc(p.po_number||'')}" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Leave blank while pending"></div>
           <div><label class="text-xs font-semibold">Vendor</label><input id="epoVendor" list="epoVendorMasterList" value="${esc(p.vendor_name||'')}" required onchange="applyVendorMasterSelection(this,'epoVendorId','','epoVendorInfo')" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Type vendor name or code..."><input id="epoVendorId" type="hidden" value="${esc(p.vendor_id||'')}"><datalist id="epoVendorMasterList">${vendorOptions}</datalist><div id="epoVendorInfo" class="text-[10px] text-gray-400 mt-1">${p.vendor_id?'Linked to Vendor Info.':'Select a Vendor Info suggestion to link this PO.'}</div></div>
-          <div><label class="text-xs font-semibold">Status</label><select id="epoStatus" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white">${['placed','production','shipping','arrived'].map(s=>`<option value="${s}" ${p.status===s?'selected':''}>${titleCase(s)}</option>`).join('')}</select></div>
-          <div><label class="text-xs font-semibold">ETA</label><input id="epoEta" type="date" value="${esc(p.estimated_arrival||'')}" class="mt-1 w-full border rounded-xl px-3 py-2"></div>
+          <div><label class="text-xs font-semibold">Status</label>${historical?`<div class="mt-1 w-full border border-purple-200 rounded-xl px-3 py-2 bg-purple-50 text-purple-700 text-sm font-semibold">Historical / Reconciled</div><input id="epoStatus" type="hidden" value="${esc(p.status||'placed')}"><div class="text-[9px] text-gray-400 mt-1">Original status: ${esc(titleCase(p.status||'placed'))}</div>`:`<select id="epoStatus" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white">${['placed','production','shipping','arrived'].map(s=>`<option value="${s}" ${p.status===s?'selected':''}>${titleCase(s)}</option>`).join('')}</select>`}</div>
+          <div><label class="text-xs font-semibold">ETA</label><input id="epoEta" type="date" value="${esc(p.estimated_arrival||'')}" ${historical?'disabled':''} class="mt-1 w-full border rounded-xl px-3 py-2 ${historical?'bg-gray-50 text-gray-500':''}"><div class="text-[9px] text-gray-400 mt-1">${historical?'Historical ETA is view-only while reconciled.':''}</div></div>
           <div><label class="text-xs font-semibold">Shipping Agent</label><input id="epoAgent" value="${esc(p.shipping_agent||'')}" class="mt-1 w-full border rounded-xl px-3 py-2"></div>
           <div><label class="text-xs font-semibold">PO / Unit Cost Currency</label><div class="mt-1 w-full border rounded-xl px-3 py-2 bg-gray-50 text-sm font-semibold">${esc(p.currency||'USD')}</div><div class="text-[10px] text-gray-400 mt-1">Shipping cost is always USD.</div></div>
           <div><label class="text-xs font-semibold">Order Date</label><input id="epoDate" type="date" value="${esc(p.order_date||'')}" class="mt-1 w-full border rounded-xl px-3 py-2"></div>
@@ -57,29 +62,31 @@
         <div class="border-t pt-5">
           <div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">PO Items</h4><div class="text-xs text-gray-400">Items here can be linked to SR customer items.</div></div><span class="lr-badge lr-badge-gray">${d.items.length} items</span></div>
           <div id="poExistingItems" class="divide-y border rounded-xl mb-4">${d.items.length?d.items.map(i=>`<div class="p-3 grid md:grid-cols-[1fr_90px_170px] gap-2 text-xs"><div><b>${esc(i.product_code_snapshot||'No Code')}</b><div class="text-gray-500 mt-0.5">${esc(i.item_name_snapshot||'')}</div></div><div>Qty <b>${Number(i.qty||0)}</b></div><div class="text-right"><div>Cost <b>${money(i.unit_cost||0,p.currency||'USD')}</b></div><div class="text-[10px] text-gray-400 mt-1">Shipping <b>${money(i.shipping_cost||0,'USD')}</b></div></div></div>`).join(''):'<div class="p-4 text-xs text-gray-400">No PO items yet.</div>'}</div>
-          <form id="addPOItemForm" class="grid md:grid-cols-12 gap-3 bg-gray-50 rounded-xl p-4">
-            <div class="md:col-span-5 min-w-0">
-              <label class="text-[10px] font-semibold text-gray-500">Product Code / Item</label>
-              <input id="poiCode" required class="mt-1 w-full min-w-0 border rounded-lg px-3 py-2 bg-white" placeholder="Type SKU / code or item name...">
-            </div>
-            <div class="md:col-span-4 min-w-0">
-              <label class="text-[10px] font-semibold text-gray-500">Item Name</label>
-              <input id="poiName" required class="mt-1 w-full min-w-0 border rounded-lg px-3 py-2 bg-white" placeholder="Item name">
-            </div>
-            <div class="md:col-span-3">
-              <label class="text-[10px] font-semibold text-gray-500">Qty</label>
-              <input id="poiQty" type="number" min="0.01" step="0.01" value="1" required class="mt-1 w-full border rounded-lg px-3 py-2 bg-white" placeholder="Qty">
-            </div>
-            <div class="md:col-span-6">
-              <label class="text-[10px] font-semibold text-gray-500">Unit Cost (${esc(p.currency||'USD')})</label>
-              <input id="poiCost" type="number" min="0" step="0.01" value="0" class="mt-1 w-full border rounded-lg px-3 py-2 bg-white" placeholder="Unit cost">
-            </div>
-            <div class="md:col-span-6">
-              <label class="text-[10px] font-semibold text-gray-500">Shipping / Unit (USD $)</label>
-              <input id="poiShipping" type="number" min="0" step="0.01" value="0" class="mt-1 w-full border rounded-lg px-3 py-2 bg-white" placeholder="Shipping / unit">
-            </div>
-            <button class="md:col-span-12 w-full bg-[#b38b2e] text-white rounded-lg py-2.5 font-semibold">+ Add PO Item</button>
-          </form>
+          ${historical
+            ?'<div class="rounded-xl border border-purple-100 bg-purple-50/50 p-4 text-xs text-purple-700"><b>PO items locked as history.</b> Undo Historical Stock Reconciliation first if this PO needs to return to the live procurement workflow.</div>'
+            :`<form id="addPOItemForm" class="grid md:grid-cols-12 gap-3 bg-gray-50 rounded-xl p-4">
+              <div class="md:col-span-5 min-w-0">
+                <label class="text-[10px] font-semibold text-gray-500">Product Code / Item</label>
+                <input id="poiCode" required class="mt-1 w-full min-w-0 border rounded-lg px-3 py-2 bg-white" placeholder="Type SKU / code or item name...">
+              </div>
+              <div class="md:col-span-4 min-w-0">
+                <label class="text-[10px] font-semibold text-gray-500">Item Name</label>
+                <input id="poiName" required class="mt-1 w-full min-w-0 border rounded-lg px-3 py-2 bg-white" placeholder="Item name">
+              </div>
+              <div class="md:col-span-3">
+                <label class="text-[10px] font-semibold text-gray-500">Qty</label>
+                <input id="poiQty" type="number" min="0.01" step="0.01" value="1" required class="mt-1 w-full border rounded-lg px-3 py-2 bg-white" placeholder="Qty">
+              </div>
+              <div class="md:col-span-6">
+                <label class="text-[10px] font-semibold text-gray-500">Unit Cost (${esc(p.currency||'USD')})</label>
+                <input id="poiCost" type="number" min="0" step="0.01" value="0" class="mt-1 w-full border rounded-lg px-3 py-2 bg-white" placeholder="Unit cost">
+              </div>
+              <div class="md:col-span-6">
+                <label class="text-[10px] font-semibold text-gray-500">Shipping / Unit (USD $)</label>
+                <input id="poiShipping" type="number" min="0" step="0.01" value="0" class="mt-1 w-full border rounded-lg px-3 py-2 bg-white" placeholder="Shipping / unit">
+              </div>
+              <button class="md:col-span-12 w-full bg-[#b38b2e] text-white rounded-lg py-2.5 font-semibold">+ Add PO Item</button>
+            </form>`}
         </div>
 
         <div class="border-t pt-5">
@@ -94,13 +101,14 @@
         e.preventDefault();
         const file=document.getElementById('epoFile').files[0]||null;
         const selectedVendor=typeof findVendorMaster==='function'?findVendorMaster(document.getElementById('epoVendor').value):null;
-        const patch={po_number:document.getElementById('epoNo').value.trim()||null,vendor_id:selectedVendor?.id||document.getElementById('epoVendorId')?.value||null,vendor_name:selectedVendor?.name||document.getElementById('epoVendor').value.trim(),status:document.getElementById('epoStatus').value,estimated_arrival:document.getElementById('epoEta').value||null,shipping_agent:document.getElementById('epoAgent').value.trim()||null,order_date:document.getElementById('epoDate').value||p.order_date,notes:document.getElementById('epoNotes').value.trim()||null};
+        const patch={po_number:document.getElementById('epoNo').value.trim()||null,vendor_id:selectedVendor?.id||document.getElementById('epoVendorId')?.value||null,vendor_name:selectedVendor?.name||document.getElementById('epoVendor').value.trim(),status:historical?(p.status||'placed'):document.getElementById('epoStatus').value,estimated_arrival:historical?(p.estimated_arrival||null):(document.getElementById('epoEta').value||null),shipping_agent:document.getElementById('epoAgent').value.trim()||null,order_date:document.getElementById('epoDate').value||p.order_date,notes:document.getElementById('epoNotes').value.trim()||null};
         const r=await db.from('supplier_pos').update(patch).eq('id',poId);if(r.error)return showToast(r.error.message,'err');
         if(file){const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,'_'),path=`${poId}/${Date.now()}-${safe}`;const up=await db.storage.from('po-documents').upload(path,file,{upsert:false});if(up.error)return showToast(`PO updated but file upload failed: ${up.error.message}`,'err');const u=await db.from('supplier_pos').update({po_document_path:path,po_document_name:file.name}).eq('id',poId);if(u.error)return showToast(u.error.message,'err')}
         showToast('Supplier PO updated');closeModal();if(window.documentFlowState)window.documentFlowState.loaded=false;await go('supplier-pos');
       };
 
-      document.getElementById('addPOItemForm').onsubmit=async e=>{
+      const addPOItemForm=document.getElementById('addPOItemForm');
+      if(addPOItemForm)addPOItemForm.onsubmit=async e=>{
         e.preventDefault();const code=document.getElementById('poiCode').value.trim(),name=document.getElementById('poiName').value.trim();
         let productId=null;const q=await db.from('product_catalog').select('id').ilike('code',code).maybeSingle();if(!q.error&&q.data)productId=q.data.id;
         if(!productId){
