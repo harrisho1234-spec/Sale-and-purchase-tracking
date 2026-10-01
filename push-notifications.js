@@ -126,22 +126,23 @@
     const supported='Notification' in window&&'serviceWorker' in navigator&&'PushManager' in window;
     const permission=supported?Notification.permission:'unsupported';
 
+    const countBadge=count>0?'<span class="absolute -top-2 -right-2 min-w-[20px] h-[20px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold inline-flex items-center justify-center">'+Math.min(count,99)+(count>99?'+':'')+'</span>':'';
     if(permission==='granted'){
-      b.innerHTML='🔔'+(count>0?'<span class="absolute -top-2 -right-2 min-w-[20px] h-[20px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold inline-flex items-center justify-center">'+Math.min(count,99)+(count>99?'+':'')+'</span>':'');
+      b.innerHTML='🔔'+countBadge;
       b.title=count>0?(P.attention.body||count+' action items'):'Notifications enabled · No action items';
       b.classList.toggle('border-amber-300',count>0);
     }else if(permission==='denied'){
-      b.innerHTML='🔕';
-      b.title='Notifications are blocked in browser settings';
-      b.classList.remove('border-amber-300');
+      b.innerHTML='🔕'+countBadge;
+      b.title=count>0?(P.attention.body||count+' action items')+' · Browser push is blocked':'Notifications are blocked in browser settings';
+      b.classList.toggle('border-amber-300',count>0);
     }else if(permission==='unsupported'){
-      b.innerHTML='🔔';
-      b.title='Push notifications are not supported on this browser';
-      b.classList.remove('border-amber-300');
+      b.innerHTML='🔔'+countBadge;
+      b.title=count>0?(P.attention.body||count+' action items')+' · Browser push is not supported':'Push notifications are not supported on this browser';
+      b.classList.toggle('border-amber-300',count>0);
     }else{
-      b.innerHTML='🔔<span class="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-amber-500"></span>';
-      b.title='Enable app notifications';
-      b.classList.remove('border-amber-300');
+      b.innerHTML='🔔'+(countBadge||'<span class="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-amber-500"></span>');
+      b.title=count>0?(P.attention.body||count+' action items')+' · Click to enable browser notifications':'Enable app notifications';
+      b.classList.toggle('border-amber-300',count>0);
     }
   }
 
