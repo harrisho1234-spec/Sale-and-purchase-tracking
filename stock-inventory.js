@@ -354,6 +354,9 @@
     const r=await db.rpc('set_tax_declared_set_component',{p_declared_product_id:st.parent.product_id,p_component_product_id:componentId,p_required_qty:qty,p_note:note});
     if(r.error)return showToast(r.error.message,'err');
     await reloadDeclaredSetState();
+    inv.taxSaleAlertsLoadedAt=0;
+    await loadTaxSaleAlerts(true);
+    if(typeof window.refreshAppNotifications==='function')window.refreshAppNotifications();
     showToast('Component added to Declared Set.');
   };
 
@@ -366,6 +369,9 @@
     const r=await db.rpc('set_tax_declared_set_component',{p_declared_product_id:st.parent.product_id,p_component_product_id:componentId,p_required_qty:qty,p_note:note});
     if(r.error)return showToast(r.error.message,'err');
     await reloadDeclaredSetState();
+    inv.taxSaleAlertsLoadedAt=0;
+    await loadTaxSaleAlerts(true);
+    if(typeof window.refreshAppNotifications==='function')window.refreshAppNotifications();
     showToast('Declared Set component updated.');
   };
 
@@ -374,6 +380,9 @@
     const r=await db.rpc('remove_tax_declared_set_component',{p_mapping_id:mappingId});
     if(r.error)return showToast(r.error.message,'err');
     await reloadDeclaredSetState();
+    inv.taxSaleAlertsLoadedAt=0;
+    await loadTaxSaleAlerts(true);
+    if(typeof window.refreshAppNotifications==='function')window.refreshAppNotifications();
     showToast('Component removed from Declared Set.');
   };
 
@@ -417,7 +426,7 @@
   window.setInventorySearch=function(v){inv.search=v;window.inventoryReservedOnly=false;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
 
   function invalidateInventoryTasks(){inv.taskLoadedAt=0}
-  window.invalidateInventoryCache=function(){inv.taskLoadedAt=0;inv.locations=[];inv.balances=[];inv.taxBalances=[];inv.taxBalanceMap=new Map();inv.taxLoadedAt=0;inv.taxSaleAlertsLoadedAt=0;inv.balanceMap=new Map();inv.deliveryRows=[];inv.poRows=[];};
+  window.invalidateInventoryCache=function(){inv.taskLoadedAt=0;inv.locations=[];inv.balances=[];inv.taxBalances=[];inv.taxBalanceMap=new Map();inv.taxLoadedAt=0;inv.taxSaleAlertsLoadedAt=0;inv.declaredSetCatalog=[];inv.declaredSetCatalogLoaded=false;inv.balanceMap=new Map();inv.deliveryRows=[];inv.poRows=[];};
 
   async function loadInventoryTasks(force=false){
     const now=Date.now();
@@ -765,7 +774,7 @@
     const rows=balanceFiltered(),shown=rows.slice(0,inventoryLimit(inv.tab));
     const taxUnits=inv.tab==='tax'?inv.taxBalances.reduce((sum,p)=>sum+n(p.on_hand),0):0;
     const taxNoStock=inv.tab==='tax'?inv.taxBalances.filter(p=>n(p.on_hand)<=0).length:0;
-    const taxHeader=inv.tab==='tax'?`<div class="tax-panel text-sm"><div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3"><div><b>Tax Inventory</b><p class="mt-1 text-xs">Live mirror of tax-tagged products in the shared stock ledger. Selling a Tax Item creates an alert; quantities still change only through approved stock tasks.</p></div><div class="text-[10px] text-gray-500">Imported master list: Tax Stock LPHome · 30 Sep 2026</div></div></div>
+    const taxHeader=inv.tab==='tax'?`<div class="tax-panel text-sm"><div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3"><div><b>Tax Inventory</b><p class="mt-1 text-xs">Live mirror of tax-tagged products in the shared stock ledger. Selling a Tax Item or a mapped Declared Set component creates an alert; quantities still change only through approved stock tasks.</p></div><div class="text-[10px] text-gray-500">Imported master list: Tax Stock LPHome · 30 Sep 2026</div></div></div>
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <div class="inv-stat"><div class="inv-stat-label">Tax SKUs</div><div class="inv-stat-value">${inv.taxBalances.length.toLocaleString()}</div></div>
         <div class="inv-stat"><div class="inv-stat-label">Tax Units On Hand</div><div class="inv-stat-value">${q(taxUnits)}</div></div>
@@ -785,7 +794,7 @@
         <div class="text-xs"><div class="text-gray-400">Incoming</div><b class="text-sm text-blue-600">${q(p.incoming)}</b></div>
         <div class="text-xs"><div class="text-gray-400">Aging</div><span class="inline-flex mt-1 px-2 py-1 rounded-lg border text-[9px] font-bold ${ageBadgeClass(a?.age_bucket||'Unknown')}">${esc(ageLabel(a))}</span>${a?.oldest_remaining_date?`<div class="text-[9px] text-gray-400 mt-1">Since ${esc(dateText(a.oldest_remaining_date))}</div>`:''}</div>
         <div class="text-[10px] text-gray-500">${(p.locations||[]).filter(l=>n(l.qty)!==0).map(l=>`<span class="inline-flex mr-1 mb-1 px-2 py-1 rounded-lg border ${inv.locationFilter&&String(l.location_id)===String(inv.locationFilter)?'bg-blue-50 border-blue-200 text-blue-700':'bg-gray-50'}"><b>${esc(l.code)}</b>&nbsp;${q(l.qty)}</span>`).join('')||'<span class="text-gray-400">No stock location</span>'}</div>
-        <div class="flex gap-1.5 justify-end">${inv.tab==='tax'?`<button onclick="openTaxDeclaredSet('${p.product_id}')" class="px-3 py-2 border border-amber-200 bg-amber-50 text-amber-800 rounded-lg text-[10px] font-semibold">Declared Set</button>`:''}${canOperate()?`<button onclick="openStockTransfer('${p.product_id}')" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-semibold">Move</button>`:''}<button onclick="openProductStockCard('${p.product_id}')" class="px-3 py-2 border rounded-lg text-[10px] font-semibold">Stock Card</button></div>
+        <div class="flex flex-wrap gap-1.5 justify-end">${inv.tab==='tax'?`<button onclick="openTaxDeclaredSet('${p.product_id}')" class="px-3 py-2 border border-amber-200 bg-amber-50 text-amber-800 rounded-lg text-[10px] font-semibold">Declared Set</button>`:''}${canOperate()?`<button onclick="openStockTransfer('${p.product_id}')" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-semibold">Move</button>`:''}<button onclick="openProductStockCard('${p.product_id}')" class="px-3 py-2 border rounded-lg text-[10px] font-semibold">Stock Card</button></div>
       </div>`}).join(''):'<div class="p-10 text-center text-sm text-gray-400">No products match your search / filters.</div>'}</div>
       ${inventoryListControls(inv.tab,rows.length)}
     </div>`;
@@ -2021,7 +2030,7 @@
   setInterval(async()=>{
     if(taxRefreshing||state.page!=='stock-inventory'||inv.tab!=='tax'||document.hidden||!document.getElementById('modal')?.classList.contains('hidden'))return;
     taxRefreshing=true;
-    try{await loadTaxCore(true);await renderStockInventoryBody()}catch(err){showToast('Tax Inventory refresh failed: '+err.message,'err')}finally{taxRefreshing=false}
+    try{await Promise.all([loadTaxCore(true),loadTaxSaleAlerts(true)]);await renderStockInventoryBody()}catch(err){showToast('Tax Inventory refresh failed: '+err.message,'err')}finally{taxRefreshing=false}
   },30000);
   // Navigation / permissions.
   const previousNavItems=window.navItems;
