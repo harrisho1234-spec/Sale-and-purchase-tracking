@@ -263,7 +263,7 @@
 
   async function loadDeclaredSetCatalog(){
     if(inv.declaredSetCatalogLoaded)return inv.declaredSetCatalog;
-    inv.declaredSetCatalog=await taxFetchAll('product_catalog','id,code,item_name,brand,class,image_url,tax_item,active','code');
+    inv.declaredSetCatalog=await taxFetchAll('product_catalog','id,code,item_name,brand,class,image_url,tax_item,tax_cost,tax_sale_price,tax_currency,tax_pricing_note,active','code');
     inv.declaredSetCatalogLoaded=true;
     return inv.declaredSetCatalog;
   }
@@ -271,6 +271,21 @@
   function declaredSetAvailability(rows,key){
     if(!rows.length)return 0;
     return Math.max(0,Math.min(...rows.map(x=>Math.floor(n(x[key])/Math.max(n(x.required_qty),0.000001)))));
+  }
+
+  function declaredSetTaxPriceTotals(rows,key){
+    const totals=new Map();
+    rows.forEach(x=>{
+      if(x[key]==null||x[key]==='')return;
+      const cur=String(x.tax_currency||'USD').toUpperCase();
+      totals.set(cur,(totals.get(cur)||0)+(n(x[key])*n(x.required_qty)));
+    });
+    return totals;
+  }
+
+  function declaredSetTaxPriceText(totals){
+    const parts=[...totals.entries()].map(([cur,val])=>money(val,cur));
+    return parts.length?parts.join(' + '):'—';
   }
 
   function renderDeclaredSetModal(){
@@ -281,12 +296,19 @@
     const rows=st.components||[];
     const onHandSets=declaredSetAvailability(rows,'on_hand');
     const availableSets=declaredSetAvailability(rows,'available');
+    const componentTaxCost=declaredSetTaxPriceTotals(rows,'tax_cost');
+    const componentTaxSale=declaredSetTaxPriceTotals(rows,'tax_sale_price');
     body.innerHTML=`<div class="space-y-4">
       <div class="rounded-2xl border bg-[#fcfbf8] p-4">
         <div class="flex flex-col md:flex-row md:items-center gap-4">
           <div class="w-20 h-20 rounded-xl overflow-hidden border bg-white shrink-0">${p.image_url?`<img loading="lazy" decoding="async" src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[9px] text-gray-400">No Photo</div>'}</div>
           <div class="min-w-0 flex-1"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code||'')}${taxBadge(p)}</div><div class="font-bold text-lg">${esc(p.item_name||'Declared Tax Item')}</div><div class="text-xs text-gray-400 mt-1">Declared parent · Physical inventory remains on the component SKUs below.</div></div>
-          <div class="grid grid-cols-2 gap-2 text-center"><div class="rounded-xl border bg-white px-4 py-3"><div class="text-[9px] uppercase font-bold text-gray-400">Sets On Hand</div><div class="text-xl font-black">${rows.length?q(onHandSets):'—'}</div></div><div class="rounded-xl border bg-white px-4 py-3"><div class="text-[9px] uppercase font-bold text-gray-400">Sets Available</div><div class="text-xl font-black text-green-700">${rows.length?q(availableSets):'—'}</div></div></div>
+          <div class="grid grid-cols-2 gap-2 text-center">
+            <div class="rounded-xl border bg-white px-4 py-3"><div class="text-[9px] uppercase font-bold text-gray-400">Sets On Hand</div><div class="text-xl font-black">${rows.length?q(onHandSets):'—'}</div></div>
+            <div class="rounded-xl border bg-white px-4 py-3"><div class="text-[9px] uppercase font-bold text-gray-400">Sets Available</div><div class="text-xl font-black text-green-700">${rows.length?q(availableSets):'—'}</div></div>
+            <div class="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3"><div class="text-[9px] uppercase font-bold text-amber-700">Component Tax Cost / Set</div><div class="text-sm font-black text-amber-900">${declaredSetTaxPriceText(componentTaxCost)}</div></div>
+            <div class="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3"><div class="text-[9px] uppercase font-bold text-amber-700">Component Tax Sale / Set</div><div class="text-sm font-black text-amber-900">${declaredSetTaxPriceText(componentTaxSale)}</div></div>
+          </div>
         </div>
       </div>
 
@@ -303,10 +325,11 @@
 
       <div class="rounded-2xl border overflow-hidden">
         <div class="px-4 py-3 bg-gray-50 border-b flex items-center justify-between gap-3"><div><div class="font-bold text-sm">Set Components</div><div class="text-[10px] text-gray-400">${rows.length} mapped product${rows.length===1?'':'s'}</div></div><div class="text-[10px] text-gray-500">Complete set = every component meets its Required Qty.</div></div>
-        <div class="divide-y">${rows.length?rows.map(x=>`<div class="p-4 grid xl:grid-cols-[1.5fr_95px_95px_1.2fr_220px] gap-3 items-center">
+        <div class="divide-y">${rows.length?rows.map(x=>`<div class="p-4 grid xl:grid-cols-[1.35fr_95px_95px_150px_1.05fr_220px] gap-3 items-center">
           <div class="flex items-center gap-3 min-w-0"><div class="w-12 h-12 rounded-xl bg-gray-100 overflow-hidden shrink-0">${x.image_url?`<img loading="lazy" decoding="async" src="${esc(x.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(x.code||'')}${x.tax_item?taxBadge({tax_item:true}):''}</div><div class="font-semibold text-sm truncate">${esc(x.item_name||'')}</div><div class="text-[10px] text-gray-400">${esc(x.brand||'')}</div></div></div>
           <div class="text-xs"><div class="text-gray-400">On Hand</div><b class="text-base">${q(x.on_hand)}</b><div class="text-[9px] text-gray-400">Available ${q(x.available)}</div></div>
           <div class="text-xs">${role()==='super_admin'?`<label class="text-gray-400">Required Qty</label><input id="taxSetReq_${x.id}" type="number" min="0.0001" step="0.01" value="${esc(x.required_qty)}" class="mt-1 w-full border rounded-lg px-2 py-1.5 text-xs">`:`<div class="text-gray-400">Required</div><b class="text-base">${q(x.required_qty)}</b>`}</div>
+          <div class="text-xs"><div class="text-gray-400">Tax Pricing</div><div class="mt-1"><b>${x.tax_cost==null?'—':money(n(x.tax_cost),x.tax_currency||'USD')}</b><div class="text-[9px] text-gray-400">Cost</div></div><div class="mt-1"><b class="text-amber-800">${x.tax_sale_price==null?'—':money(n(x.tax_sale_price),x.tax_currency||'USD')}</b><div class="text-[9px] text-gray-400">Sale</div></div></div>
           <div class="text-[10px] text-gray-500">${(x.locations||[]).filter(l=>n(l.qty)!==0).map(l=>`<span class="inline-flex mr-1 mb-1 px-2 py-1 rounded-lg border bg-gray-50"><b>${esc(l.code)}</b>&nbsp;${q(l.qty)}</span>`).join('')||'<span class="text-gray-400">No stock location</span>'}</div>
           <div>${role()==='super_admin'?`<input id="taxSetNote_${x.id}" value="${esc(x.note||'')}" class="w-full border rounded-lg px-2 py-1.5 text-[10px]" placeholder="Component note"><div class="flex justify-end gap-1.5 mt-2"><button onclick="saveTaxDeclaredComponent('${x.id}','${x.component_product_id}')" class="px-2.5 py-1.5 border rounded-lg text-[10px] font-semibold">Save</button><button onclick="removeTaxDeclaredComponent('${x.id}')" class="px-2.5 py-1.5 border border-red-200 text-red-600 rounded-lg text-[10px] font-semibold">Remove</button></div>`:x.note?`<div class="text-[10px] text-gray-500">${esc(x.note)}</div>`:''}</div>
         </div>`).join(''):'<div class="p-10 text-center text-sm text-gray-400">No components mapped yet. This Tax Item currently behaves as a direct Tax Item.</div>'}</div>
@@ -828,7 +851,7 @@
       <div class="divide-y">${shown.length?shown.map(p=>{const a=inv.agingMap.get(p.product_id);return `<div class="p-4 grid xl:grid-cols-[1.45fr_68px_68px_68px_68px_68px_82px_92px_1.15fr_150px] gap-3 items-center ${n(p.on_hand)>0&&n(p.available)<=0?'bg-red-50/30 border-l-4 border-red-300':a?.age_bucket==='365+'?'bg-amber-50/25 border-l-4 border-amber-300':''}">
         <button onclick="openProductStockCard('${p.product_id}')" class="flex items-center gap-3 min-w-0 text-left hover:opacity-80">
           <div class="w-12 h-12 rounded-xl bg-gray-100 overflow-hidden shrink-0">${p.image_url?`<img loading="lazy" decoding="async" src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div>
-          <div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code)}${taxBadge(p)}</div><div class="font-semibold text-sm truncate">${esc(p.item_name)}</div><div class="text-[10px] text-gray-400">${esc(p.brand||'')} · Open Stock Card</div>${p.tax_group_or_set?`<div class="text-xs">${esc(p.tax_group_or_set)}</div>`:''}${p.tax_note?`<div class="text-[10px] text-gray-500 whitespace-pre-wrap">${esc(p.tax_note)}</div>`:''}</div>
+          <div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code)}${taxBadge(p)}</div><div class="font-semibold text-sm truncate">${esc(p.item_name)}</div><div class="text-[10px] text-gray-400">${esc(p.brand||'')} · Open Stock Card</div>${p.tax_group_or_set?`<div class="text-xs">${esc(p.tax_group_or_set)}</div>`:''}${inv.tab==='tax'?`<div class="text-[10px] mt-1 text-amber-800"><b>Tax Cost:</b> ${p.tax_cost==null?'—':money(n(p.tax_cost),p.tax_currency||'USD')} · <b>Tax Sale:</b> ${p.tax_sale_price==null?'—':money(n(p.tax_sale_price),p.tax_currency||'USD')}</div>`:''}${p.tax_pricing_note&&inv.tab==='tax'?`<div class="text-[9px] text-amber-700 mt-1 truncate">${esc(p.tax_pricing_note)}</div>`:''}${p.tax_note?`<div class="text-[10px] text-gray-500 whitespace-pre-wrap">${esc(p.tax_note)}</div>`:''}</div>
         </button>
         <div class="text-xs"><div class="text-gray-400">On Hand</div><b class="text-sm">${q(p.on_hand)}</b></div>
         <div class="text-xs"><div class="text-gray-400">Reserved</div>${n(p.reserved)>0?`<button onclick="openReservedStockDetails('${p.product_id}')" class="text-sm font-bold text-amber-600 hover:underline" title="View Sales Orders reserving this stock">${q(p.reserved)}</button>`:`<b class="text-sm text-amber-600">${q(p.reserved)}</b>`}</div>
