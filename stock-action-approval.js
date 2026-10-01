@@ -451,6 +451,8 @@
     if(r.error)return showToast(r.error.message,'err');
     showToast(approve?'Approved. Stock quantity is now updated.':'Rejected. Stock quantity remains unchanged.');
     await refreshInventoryAfterApproval();
+    if(typeof window.refreshApprovalNotifications==='function')setTimeout(()=>window.refreshApprovalNotifications(),50);
+    if(typeof window.refreshAppNotifications==='function')setTimeout(()=>window.refreshAppNotifications(),80);
   };
 
   const baseBody=window.renderStockInventoryBody;
