@@ -187,6 +187,9 @@
         if(target==='tax-inventory'){
           if(typeof go==='function')await go('stock-inventory');
           if(typeof setInventoryTab==='function')await setInventoryTab('tax');
+        }else if(target==='stock-approvals'){
+          if(typeof go==='function')await go('stock-inventory');
+          if(typeof setInventoryTab==='function')await setInventoryTab('requests');
         }else if(typeof go==='function'){
           await go(target);
         }
