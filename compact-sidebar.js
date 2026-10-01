@@ -1,6 +1,7 @@
-// Compact grouped sidebar navigation.
+// Compact grouped sidebar navigation with independent scrolling and collapsible desktop rail.
 (function(){
   var storageKey='limperial_sidebar_groups_v1';
+  var collapseKey='limperial_sidebar_collapsed_v1';
   var groupDefs=[
     {key:'sales',label:'Sales & Customers',icon:'▤',ids:['customers','sales-orders','tracking','rep-workspace']},
     {key:'finance',label:'Finance & Control',icon:'$',ids:['approvals','payments','returns']},
@@ -16,6 +17,29 @@
   function writeState(v){
     try{sessionStorage.setItem(storageKey,JSON.stringify(v))}catch(_){}
   }
+  function readCollapsed(){
+    try{return localStorage.getItem(collapseKey)==='1'}catch(_){return false}
+  }
+  function writeCollapsed(v){
+    try{localStorage.setItem(collapseKey,v?'1':'0')}catch(_){}
+  }
+  function applyCollapsed(v){
+    var collapsed=!!v;
+    document.body.classList.toggle('sidebar-collapsed',collapsed);
+    var btn=document.getElementById('desktopSidebarToggle');
+    if(btn){
+      btn.setAttribute('aria-expanded',collapsed?'false':'true');
+      btn.setAttribute('title',collapsed?'Expand sidebar':'Collapse sidebar');
+      btn.innerHTML=collapsed?'›':'‹';
+    }
+  }
+
+  window.toggleDesktopSidebar=function(){
+    var next=!document.body.classList.contains('sidebar-collapsed');
+    writeCollapsed(next);
+    applyCollapsed(next);
+  };
+
   function groupForPage(page){
     var g=groupDefs.find(function(x){return x.ids.indexOf(page)>=0});
     return g?g.key:null;
@@ -47,16 +71,16 @@
 
   function approvalBadge(id){
     return id==='approvals'
-      ? '<span class="approval-count-badge ml-auto min-w-[20px] h-[20px] px-1.5 rounded-full bg-red-500 text-white text-[9px] font-bold items-center justify-center" style="display:none"></span>'
+      ? '<span class="approval-count-badge sidebar-approval-badge ml-auto min-w-[20px] h-[20px] px-1.5 rounded-full bg-red-500 text-white text-[9px] font-bold items-center justify-center" style="display:none"></span>'
       : '';
   }
 
   function navButton(item){
     var id=item[0],label=item[1],icon=item[2]||'·';
     var active=state.page===id;
-    return '<button onclick="go(\''+id+'\')" class="sidebar-btn '+(active?'active ':'')+'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] '+(active?'font-semibold':'text-gray-600')+' hover:bg-gray-100">'
-      +'<span class="nav-icon w-4 text-center text-[12px]">'+icon+'</span>'
-      +'<span class="truncate">'+label+'</span>'
+    return '<button title="'+esc(label)+'" onclick="go(\''+id+'\')" class="sidebar-btn '+(active?'active ':'')+'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] '+(active?'font-semibold':'text-gray-600')+' hover:bg-gray-100">'
+      +'<span class="nav-icon w-4 shrink-0 text-center text-[12px]">'+icon+'</span>'
+      +'<span class="sidebar-label truncate">'+esc(label)+'</span>'
       +approvalBadge(id)
       +'</button>';
   }
@@ -64,13 +88,13 @@
   function sectionHtml(group,items,open){
     if(!items.length)return '';
     return '<div class="sidebar-group">'
-      +'<button type="button" onclick="toggleSidebarGroup(\''+group.key+'\')" class="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[10px] uppercase tracking-[.08em] font-bold text-gray-400 hover:bg-gray-50">'
-      +'<span class="w-4 text-center text-[11px]">'+group.icon+'</span>'
-      + '<span class="flex-1 text-left">'+group.label+'</span>'
-      +(group.key==='finance'?'<span id="sidebar-finance-approval-badge" class="min-w-[19px] h-[19px] px-1 rounded-full bg-red-500 text-white text-[9px] items-center justify-center" style="display:none"></span>':'')
-      +'<span id="sidebar-chevron-'+group.key+'" class="text-gray-400 text-sm">'+(open?'⌄':'›')+'</span>'
+      +'<button title="'+esc(group.label)+'" type="button" onclick="toggleSidebarGroup(\''+group.key+'\')" class="sidebar-group-header w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[10px] uppercase tracking-[.08em] font-bold text-gray-400 hover:bg-gray-50">'
+      +'<span class="w-4 shrink-0 text-center text-[11px]">'+group.icon+'</span>'
+      +'<span class="sidebar-group-label flex-1 text-left">'+esc(group.label)+'</span>'
+      +(group.key==='finance'?'<span id="sidebar-finance-approval-badge" class="sidebar-approval-badge min-w-[19px] h-[19px] px-1 rounded-full bg-red-500 text-white text-[9px] items-center justify-center" style="display:none"></span>':'')
+      +'<span id="sidebar-chevron-'+group.key+'" class="sidebar-chevron text-gray-400 text-sm">'+(open?'⌄':'›')+'</span>'
       +'</button>'
-      +'<div id="sidebar-group-'+group.key+'" class="'+(open?'':'hidden ')+'ml-2 pl-2 border-l border-gray-100 space-y-0.5">'
+      +'<div id="sidebar-group-'+group.key+'" class="sidebar-group-panel '+(open?'':'hidden ')+'ml-2 pl-2 border-l border-gray-100 space-y-0.5">'
       +items.map(navButton).join('')
       +'</div></div>';
   }
@@ -89,9 +113,9 @@
       var groupItems=g.ids.map(function(id){return byId.get(id)}).filter(Boolean);
       groupItems.forEach(function(x){used.add(x[0])});
       if(!groupItems.length)return;
-      html+='<div><div class="px-1 mb-1 text-[9px] uppercase tracking-wide font-bold text-gray-400">'+g.label+'</div><div class="grid grid-cols-2 gap-2">';
+      html+='<div><div class="px-1 mb-1 text-[9px] uppercase tracking-wide font-bold text-gray-400">'+esc(g.label)+'</div><div class="grid grid-cols-2 gap-2">';
       html+=groupItems.map(function(x){
-        return '<button onclick="go(\''+x[0]+'\');document.getElementById(\'mobileNav\').classList.add(\'hidden\')" class="text-left px-3 py-2 border rounded-lg text-xs">'+x[1]+'</button>';
+        return '<button onclick="go(\''+x[0]+'\');document.getElementById(\'mobileNav\').classList.add(\'hidden\')" class="text-left px-3 py-2 border rounded-lg text-xs">'+esc(x[1])+'</button>';
       }).join('');
       html+='</div></div>';
     });
@@ -99,7 +123,7 @@
     if(extra.length){
       html+='<div><div class="px-1 mb-1 text-[9px] uppercase tracking-wide font-bold text-gray-400">More</div><div class="grid grid-cols-2 gap-2">';
       html+=extra.map(function(x){
-        return '<button onclick="go(\''+x[0]+'\');document.getElementById(\'mobileNav\').classList.add(\'hidden\')" class="text-left px-3 py-2 border rounded-lg text-xs">'+x[1]+'</button>';
+        return '<button onclick="go(\''+x[0]+'\');document.getElementById(\'mobileNav\').classList.add(\'hidden\')" class="text-left px-3 py-2 border rounded-lg text-xs">'+esc(x[1])+'</button>';
       }).join('');
       html+='</div></div>';
     }
@@ -139,11 +163,13 @@
       root.classList.add('text-sm');
     }
     renderMobile(items);
+    applyCollapsed(readCollapsed());
 
     if(typeof refreshApprovalNotifications==='function'&&['manager','admin','super_admin'].indexOf(state.profile&&state.profile.role||'')>=0){
       setTimeout(function(){refreshApprovalNotifications()},20);
     }
   };
 
+  applyCollapsed(readCollapsed());
   try{if(state&&state.profile)renderNav()}catch(_){}
 })();
