@@ -24,6 +24,11 @@
     deliveryRows:[],
     agingRows:[],
     agingMap:new Map(),
+    locationCompanies:[],
+    locationGroups:[],
+    locationMemberships:[],
+    companyFilter:'',
+    groupFilter:'',
     locationFilter:'',
     ageFilter:'',
     reportPeriod:'week',
@@ -75,8 +80,24 @@
     if(v==='transfer')return 'bg-blue-50 text-blue-700 border-blue-200';
     return 'bg-gray-50 text-gray-600 border-gray-200';
   }
+  function locationCompany(id){return inv.locationCompanies.find(x=>String(x.id)===String(id))||null}
+  function locationMembershipSet(groupId){
+    return new Set(inv.locationMemberships.filter(x=>String(x.group_id)===String(groupId)).map(x=>String(x.location_id)));
+  }
+  async function loadLocationMetadata(force=false){
+    if(!force&&inv.locationCompanies.length&&inv.locationGroups.length)return;
+    const [cr,gr,mr]=await Promise.all([
+      db.from('stock_location_companies').select('*').order('sort_order').order('name'),
+      db.from('stock_location_groups').select('*').order('sort_order').order('name'),
+      db.from('stock_location_group_memberships').select('*')
+    ]);
+    if(cr.error)throw cr.error;if(gr.error)throw gr.error;if(mr.error)throw mr.error;
+    inv.locationCompanies=cr.data||[];
+    inv.locationGroups=gr.data||[];
+    inv.locationMemberships=mr.data||[];
+  }
   function locationOptions(selected='',blankLabel='Select location'){
-    return `<option value="">${esc(blankLabel)}</option>${inv.locations.filter(x=>x.active).map(x=>`<option value="${x.id}" ${String(selected)===String(x.id)?'selected':''}>${esc(stockLocationLabel(x))}</option>`).join('')}`;
+    return `<option value="">${esc(blankLabel)}</option>${inv.locations.filter(x=>x.active).map(x=>{const c=locationCompany(x.company_id);const label=c?`${c.name} · ${stockLocationLabel(x)}`:stockLocationLabel(x);return `<option value="${x.id}" ${String(selected)===String(x.id)?'selected':''}>${esc(label)}</option>`}).join('')}`;
   }
   function productDisplay(p){return `${p.code||''} · ${p.item_name||''}`}
   function findProduct(value){
@@ -97,7 +118,8 @@
     const [locs,bals,aging]=await Promise.all([
       db.from('stock_locations').select('*').order('sort_order').order('code'),
       taxFetchAll('inventory_product_tax_balance','*','product_id').then(data=>({data})),
-      taxFetchAll('get_inventory_stock_aging','*','product_id',true).then(data=>({data}))
+      taxFetchAll('get_inventory_stock_aging','*','product_id',true).then(data=>({data})),
+      loadLocationMetadata(force)
     ]);
     if(locs.error)throw locs.error;if(bals.error)throw bals.error;if(aging.error)throw aging.error;
     inv.locations=locs.data||[];
@@ -152,7 +174,7 @@
     const locPromise=inv.locations.length
       ?Promise.resolve({data:inv.locations,error:null})
       :db.from('stock_locations').select('*').order('sort_order').order('code');
-    const [locs,taxRows]=await Promise.all([locPromise,fetchTaxBalances()]);
+    const [locs,taxRows]=await Promise.all([locPromise,fetchTaxBalances(),loadLocationMetadata(force)]);
     if(locs.error)throw locs.error;
 
     inv.locations=locs.data||[];
@@ -426,7 +448,7 @@
   window.setInventorySearch=function(v){inv.search=v;window.inventoryReservedOnly=false;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
 
   function invalidateInventoryTasks(){inv.taskLoadedAt=0}
-  window.invalidateInventoryCache=function(){inv.taskLoadedAt=0;inv.locations=[];inv.balances=[];inv.taxBalances=[];inv.taxBalanceMap=new Map();inv.taxLoadedAt=0;inv.taxSaleAlertsLoadedAt=0;inv.declaredSetCatalog=[];inv.declaredSetCatalogLoaded=false;inv.balanceMap=new Map();inv.deliveryRows=[];inv.poRows=[];};
+  window.invalidateInventoryCache=function(){inv.taskLoadedAt=0;inv.locations=[];inv.balances=[];inv.taxBalances=[];inv.taxBalanceMap=new Map();inv.taxLoadedAt=0;inv.taxSaleAlertsLoadedAt=0;inv.declaredSetCatalog=[];inv.declaredSetCatalogLoaded=false;inv.balanceMap=new Map();inv.locationCompanies=[];inv.locationGroups=[];inv.locationMemberships=[];inv.deliveryRows=[];inv.poRows=[];};
 
   async function loadInventoryTasks(force=false){
     const now=Date.now();
@@ -483,7 +505,7 @@
     if(!name||!name.trim())return;
     const rows=savedInventoryViews();
     const clean=name.trim();
-    const view={name:clean,tab:inv.tab,search:inv.search||'',locationFilter:inv.locationFilter||'',ageFilter:inv.ageFilter||'',taxOnly:inv.taxOnly};
+    const view={name:clean,tab:inv.tab,search:inv.search||'',companyFilter:inv.companyFilter||'',groupFilter:inv.groupFilter||'',locationFilter:inv.locationFilter||'',ageFilter:inv.ageFilter||'',taxOnly:inv.taxOnly};
     const idx=rows.findIndex(x=>String(x.name||'').toLowerCase()===clean.toLowerCase());
     if(idx>=0)rows[idx]=view;else rows.push(view);
     writeSavedInventoryViews(rows.slice(-20));
@@ -497,6 +519,8 @@
     inv.tab=row.tab||'balance';
     window.inventoryReservedOnly=false;
     inv.search=row.search||'';
+    inv.companyFilter=row.companyFilter||'';
+    inv.groupFilter=row.groupFilter||'';
     inv.locationFilter=row.locationFilter||'';
     inv.ageFilter=row.ageFilter||'';inv.taxOnly=!!row.taxOnly;
     resetInventoryLimit(inv.tab);
@@ -505,7 +529,7 @@
   window.openSavedInventoryViews=function(){
     const rows=savedInventoryViews();
     openModal('Saved Stock Views',`<div class="space-y-3">
-      ${rows.length?rows.map((x,i)=>`<div class="rounded-xl border p-3 flex items-center justify-between gap-3"><button onclick="applySavedInventoryView('${i}');closeModal()" class="text-left min-w-0"><b class="text-sm">${esc(x.name||'Saved View')}</b><div class="text-[10px] text-gray-400 mt-1">${esc(titleCase(x.tab||'balance'))}${x.locationFilter?' · Location filter':''}${x.ageFilter?' · Aging '+esc(x.ageFilter):''}${x.search?' · Search: '+esc(x.search):''}</div></button><button onclick="deleteSavedInventoryView(${i})" class="px-2 py-1.5 border border-red-200 text-red-600 rounded-lg text-[10px] font-semibold">Delete</button></div>`).join(''):'<div class="py-10 text-center text-sm text-gray-400">No saved Stock views yet.</div>'}
+      ${rows.length?rows.map((x,i)=>`<div class="rounded-xl border p-3 flex items-center justify-between gap-3"><button onclick="applySavedInventoryView('${i}');closeModal()" class="text-left min-w-0"><b class="text-sm">${esc(x.name||'Saved View')}</b><div class="text-[10px] text-gray-400 mt-1">${esc(titleCase(x.tab||'balance'))}${x.companyFilter?' · Company filter':''}${x.groupFilter?' · Group filter':''}${x.locationFilter?' · Location filter':''}${x.ageFilter?' · Aging '+esc(x.ageFilter):''}${x.search?' · Search: '+esc(x.search):''}</div></button><button onclick="deleteSavedInventoryView(${i})" class="px-2 py-1.5 border border-red-200 text-red-600 rounded-lg text-[10px] font-semibold">Delete</button></div>`).join(''):'<div class="py-10 text-center text-sm text-gray-400">No saved Stock views yet.</div>'}
     </div>`);
   };
   window.deleteSavedInventoryView=function(index){
@@ -628,7 +652,7 @@
   }
 
   window.openInventoryTask=function(kind){
-    inv.search='';inv.locationFilter='';inv.ageFilter='';window.inventoryReservedOnly=false;
+    inv.search='';inv.companyFilter='';inv.groupFilter='';inv.locationFilter='';inv.ageFilter='';window.inventoryReservedOnly=false;
     if(kind==='aged'){inv.tab='balance';inv.ageFilter='365+'}
     else if(kind==='unassigned'){
       inv.tab='balance';
@@ -728,27 +752,41 @@
     return 'bg-gray-50 text-gray-500 border-gray-200';
   }
   function inventoryFilterControls(context){
-    const locOptions=inv.locations.filter(x=>x.active).map(x=>`<option value="${x.id}" ${String(inv.locationFilter)===String(x.id)?'selected':''}>${esc(stockLocationLabel(x))}</option>`).join('');
+    const locOptions=inv.locations.filter(x=>x.active).map(x=>{const c=locationCompany(x.company_id);const label=c?`${c.name} · ${stockLocationLabel(x)}`:stockLocationLabel(x);return `<option value="${x.id}" ${String(inv.locationFilter)===String(x.id)?'selected':''}>${esc(label)}</option>`}).join('');
+    const companyOptions=inv.locationCompanies.filter(x=>x.active).map(x=>`<option value="${x.id}" ${String(inv.companyFilter)===String(x.id)?'selected':''}>${esc(x.name)}</option>`).join('');
+    const groupOptions=inv.locationGroups.filter(x=>x.active).map(x=>`<option value="${x.id}" ${String(inv.groupFilter)===String(x.id)?'selected':''}>${esc(x.name)}</option>`).join('');
     const ages=[['','All Aging'],['0-30','0–30 days'],['31-90','31–90 days'],['91-180','91–180 days'],['181-365','181–365 days'],['365+','365+ days'],['Unknown','Unknown / Pre-history']];
     const saved=savedInventoryViews();
     return `<div class="mb-4 flex flex-wrap gap-2 items-center">
-      ${context==='balance'?`<label class="text-xs flex gap-2 items-center"><input type="checkbox" ${inv.tab==='tax'||inv.taxOnly?'checked':''} ${inv.tab==='tax'?'disabled':''} onchange="setInventoryTaxOnly(this.checked)">Tax Items Only</label><button onclick="refreshTaxInventory()" class="px-3 py-2 border rounded-xl text-xs">Refresh Balances</button>${role()==='super_admin'?'<button onclick="openBulkTaxTagging()" class="px-3 py-2 border rounded-xl text-xs">Bulk Tax Tagging</button>':''}`:''}
+      ${context==='balance'?`<label class="text-xs flex gap-2 items-center"><input type="checkbox" ${inv.tab==='tax'||inv.taxOnly?'checked':''} ${inv.tab==='tax'?'disabled':''} onchange="setInventoryTaxOnly(this.checked)">Tax Items Only</label><button onclick="refreshTaxInventory()" class="px-3 py-2 border rounded-xl text-xs">Refresh Balances</button>${role()==='super_admin'?'<button onclick="openBulkTaxTagging()" class="px-3 py-2 border rounded-xl text-xs">Bulk Tax Tagging</button>':''}<select onchange="setInventoryCompanyFilter(this.value)" class="border rounded-xl px-3 py-2 bg-white text-xs"><option value="">All Companies</option>${companyOptions}</select><select onchange="setInventoryGroupFilter(this.value)" class="border rounded-xl px-3 py-2 bg-white text-xs"><option value="">All Location Groups</option>${groupOptions}</select>`:''}
       <select onchange="setInventoryLocationFilter(this.value)" class="border rounded-xl px-3 py-2 bg-white text-xs"><option value="">All Locations</option>${locOptions}</select>
       <select onchange="setInventoryAgeFilter(this.value)" class="border rounded-xl px-3 py-2 bg-white text-xs">${ages.map(([v,l])=>`<option value="${v}" ${inv.ageFilter===v?'selected':''}>${l}</option>`).join('')}</select>
       <select onchange="applySavedInventoryView(this.value);this.value=''" class="border rounded-xl px-3 py-2 bg-white text-xs"><option value="">Saved Views</option>${saved.map((x,i)=>`<option value="${i}">${esc(x.name||'Saved View')}</option>`).join('')}</select>
       <button onclick="saveCurrentInventoryView()" class="px-3 py-2 border rounded-xl text-xs font-semibold bg-white">Save View</button>
       ${saved.length?`<button onclick="openSavedInventoryViews()" class="px-3 py-2 border rounded-xl text-xs bg-white text-gray-500">Manage</button>`:''}
-      ${inv.locationFilter||inv.ageFilter||inv.taxOnly?`<button onclick="clearInventoryFilters()" class="px-3 py-2 border rounded-xl text-xs font-semibold bg-white">Clear Filters</button>`:''}
+      ${inv.companyFilter||inv.groupFilter||inv.locationFilter||inv.ageFilter||inv.taxOnly?`<button onclick="clearInventoryFilters()" class="px-3 py-2 border rounded-xl text-xs font-semibold bg-white">Clear Filters</button>`:''}
       <div class="text-[10px] text-gray-400 ml-auto">Aging uses the oldest remaining recorded inbound layer (FIFO estimate). Stock older than imported history appears as Unknown.</div>
     </div>`;
   }
+  window.setInventoryCompanyFilter=function(v){inv.companyFilter=v||'';window.inventoryReservedOnly=false;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
+  window.setInventoryGroupFilter=function(v){inv.groupFilter=v||'';window.inventoryReservedOnly=false;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
   window.setInventoryLocationFilter=function(v){inv.locationFilter=v||'';window.inventoryReservedOnly=false;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
   window.setInventoryAgeFilter=function(v){inv.ageFilter=v||'';window.inventoryReservedOnly=false;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
   window.setInventoryTaxOnly=function(v){inv.taxOnly=!!v;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
   window.refreshTaxInventory=async function(){try{await Promise.all([loadTaxCore(true),loadTaxSaleAlerts(true)]);await renderStockInventoryBody()}catch(err){showToast(err.message,'err')}};
-  window.clearInventoryFilters=function(){inv.taxOnly=false;inv.locationFilter='';inv.ageFilter='';window.inventoryReservedOnly=false;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
+  window.clearInventoryFilters=function(){inv.taxOnly=false;inv.companyFilter='';inv.groupFilter='';inv.locationFilter='';inv.ageFilter='';window.inventoryReservedOnly=false;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
   function productPassesInventoryFilters(p){
     if((inv.tab==='tax'||inv.taxOnly)&&!p.tax_item)return false;
+    if(inv.companyFilter){
+      const companyLocs=new Set(inv.locations.filter(x=>String(x.company_id||'')===String(inv.companyFilter)).map(x=>String(x.id)));
+      const ok=(p.locations||[]).some(l=>companyLocs.has(String(l.location_id))&&n(l.qty)!==0);
+      if(!ok)return false;
+    }
+    if(inv.groupFilter){
+      const groupLocs=locationMembershipSet(inv.groupFilter);
+      const ok=(p.locations||[]).some(l=>groupLocs.has(String(l.location_id))&&n(l.qty)!==0);
+      if(!ok)return false;
+    }
     if(inv.locationFilter){
       const ok=(p.locations||[]).some(l=>String(l.location_id)===String(inv.locationFilter)&&n(l.qty)!==0);
       if(!ok)return false;
