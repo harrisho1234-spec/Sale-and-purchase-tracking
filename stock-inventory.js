@@ -562,7 +562,7 @@
   window.showInventoryFinderSuggestions=function(input){
     const box=document.getElementById('invFindSuggestions');if(!box)return;
     const rows=stockProductMatches(input?.value||'').slice(0,30);
-    box.innerHTML=rows.length?rows.map(p=>`<button onclick="openProductStockCard('${p.product_id}')" class="w-full text-left px-3 py-2.5 hover:bg-amber-50 border-b last:border-0 flex gap-3 items-center"><div class="w-11 h-11 rounded-lg overflow-hidden bg-gray-100 shrink-0">${p.image_url?`<img loading="lazy" decoding="async" src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code||'')}${taxBadge(p)}</div><div class="font-semibold text-sm truncate">${esc(p.item_name||'')}</div><div class="text-[10px] text-gray-400">On hand ${q(p.on_hand)} · Available ${q(p.available)} · Incoming ${q(p.incoming)}</div></div></button>`).join(''):'<div class="p-4 text-sm text-gray-400">No matching product.</div>';
+    box.innerHTML=rows.length?rows.map(p=>`<button onclick="openProductStockCard('${p.product_id}')" class="w-full text-left px-3 py-2.5 hover:bg-amber-50 border-b last:border-0 flex gap-3 items-center"><div class="w-11 h-11 rounded-lg overflow-hidden bg-gray-100 shrink-0">${p.image_url?`<img loading="lazy" decoding="async" src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code||'')}${taxBadge(p)}</div><div class="font-semibold text-sm truncate">${esc(p.item_name||'')}</div><div class="text-[10px] text-gray-400">On hand ${q(p.on_hand)} · Available ${q(p.available)} · On order ${q(p.on_order)} · Incoming ${q(p.incoming)} · Arrived ${q(p.arrived_pending_receive)}</div></div></button>`).join(''):'<div class="p-4 text-sm text-gray-400">No matching product.</div>';
   };
 
 
@@ -572,7 +572,9 @@
     const onHand=inv.balances.reduce((a,x)=>a+n(x.on_hand),0);
     const reserved=inv.balances.reduce((a,x)=>a+n(x.reserved),0);
     const available=inv.balances.reduce((a,x)=>a+n(x.available),0);
+    const onOrder=inv.balances.reduce((a,x)=>a+n(x.on_order),0);
     const incoming=inv.balances.reduce((a,x)=>a+n(x.incoming),0);
+    const arrivedPending=inv.balances.reduce((a,x)=>a+n(x.arrived_pending_receive),0);
     const stocked=inv.balances.filter(x=>n(x.on_hand)>0).length;
     const noAvail=inv.balances.filter(x=>n(x.on_hand)>0&&n(x.available)<=0).length;
 
@@ -580,11 +582,13 @@
     if(mov.error)throw mov.error;
     const recent=mov.data||[];
     const dashMatches=inv.search?stockProductMatches(inv.search).slice(0,8):[];
-    return `<div class="grid sm:grid-cols-2 xl:grid-cols-6 gap-3 mb-5">
+    return `<div class="grid sm:grid-cols-2 xl:grid-cols-8 gap-3 mb-5">
       <div class="inv-stat"><div class="inv-stat-label">On Hand</div><div class="inv-stat-value">${q(onHand)}</div></div>
       <button onclick="openAllReservedStockDetails()" class="inv-stat text-left hover:shadow-sm transition" title="View products reserved for active Sales Orders"><div class="inv-stat-label">Reserved</div><div class="inv-stat-value text-amber-600">${q(reserved)}</div><div class="text-[9px] text-gray-400 mt-1">Click to view orders</div></button>
       <div class="inv-stat"><div class="inv-stat-label">Available</div><div class="inv-stat-value text-green-600">${q(available)}</div></div>
-      <div class="inv-stat"><div class="inv-stat-label">Incoming PO</div><div class="inv-stat-value text-blue-600">${q(incoming)}</div></div>
+      <div class="inv-stat"><div class="inv-stat-label">On Order</div><div class="inv-stat-value text-amber-700">${q(onOrder)}</div><div class="text-[9px] text-gray-400 mt-1">Ordered / Production / Ready</div></div>
+      <div class="inv-stat"><div class="inv-stat-label">Incoming</div><div class="inv-stat-value text-blue-600">${q(incoming)}</div><div class="text-[9px] text-gray-400 mt-1">Shipping only</div></div>
+      <div class="inv-stat"><div class="inv-stat-label">Arrived Pending Receive</div><div class="inv-stat-value text-purple-600">${q(arrivedPending)}</div></div>
       <div class="inv-stat"><div class="inv-stat-label">SKUs In Stock</div><div class="inv-stat-value">${stocked.toLocaleString()}</div></div>
       <div class="inv-stat"><div class="inv-stat-label">Fully Reserved</div><div class="inv-stat-value ${noAvail?'text-red-500':''}">${noAvail.toLocaleString()}</div></div>
     </div>
@@ -596,7 +600,7 @@
       ${canOperate()?`<button onclick="openQuickStockAction()" class="px-3 py-2 bg-[#211d18] text-white rounded-xl text-xs font-semibold">＋ Quick Action</button>`:''}
     </div>
     <div class="grid sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-5">
-      <button onclick="setInventoryTab('receive')" class="inv-task-card border-blue-100 bg-blue-50/30"><div class="text-[9px] uppercase font-bold text-gray-400">PO Receiving</div><div class="text-2xl font-black mt-1">${tasks.poRows.length.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">${tasks.overduePO.length?tasks.overduePO.length+' overdue · ':''}${tasks.duePO.length} due within 7 days</div></button>
+      <button onclick="setInventoryTab('receive')" class="inv-task-card border-purple-100 bg-purple-50/30"><div class="text-[9px] uppercase font-bold text-gray-400">Arrived Pending Receive</div><div class="text-2xl font-black mt-1">${tasks.poRows.length.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">Only PO items marked Arrived and waiting for warehouse receipt</div></button>
       <button onclick="setInventoryTab('delivery')" class="inv-task-card border-amber-100 bg-amber-50/30"><div class="text-[9px] uppercase font-bold text-gray-400">Customer Delivery</div><div class="text-2xl font-black mt-1">${tasks.delRows.length.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">Tracked customer item lines waiting for release</div></button>
       <button onclick="setInventoryTab('counts')" class="inv-task-card"><div class="text-[9px] uppercase font-bold text-gray-400">Open Stock Counts</div><div class="text-2xl font-black mt-1">${tasks.openCounts.length.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">Draft / submitted counts needing completion or reconciliation</div></button>
       ${(canAdmin()||isStockController())?`<button onclick="setInventoryTab('requests')" class="inv-task-card"><div class="text-[9px] uppercase font-bold text-gray-400">${canAdmin()?'Pending Edit Requests':'My Pending Requests'}</div><div class="text-2xl font-black mt-1">${tasks.pendingRequests.length.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">Movement corrections waiting for action</div></button>`:''}
@@ -783,7 +787,7 @@
       </div>
       ${taxSaleAlertsHtml()}`:'';
     return `${taxHeader}${inventoryFilterControls('balance')}<div class="card rounded-2xl overflow-hidden">
-      <div class="divide-y">${shown.length?shown.map(p=>{const a=inv.agingMap.get(p.product_id);return `<div class="p-4 grid xl:grid-cols-[1.55fr_80px_80px_80px_80px_105px_1.4fr_165px] gap-3 items-center ${n(p.on_hand)>0&&n(p.available)<=0?'bg-red-50/30 border-l-4 border-red-300':a?.age_bucket==='365+'?'bg-amber-50/25 border-l-4 border-amber-300':''}">
+      <div class="divide-y">${shown.length?shown.map(p=>{const a=inv.agingMap.get(p.product_id);return `<div class="p-4 grid xl:grid-cols-[1.45fr_68px_68px_68px_68px_68px_82px_92px_1.15fr_150px] gap-3 items-center ${n(p.on_hand)>0&&n(p.available)<=0?'bg-red-50/30 border-l-4 border-red-300':a?.age_bucket==='365+'?'bg-amber-50/25 border-l-4 border-amber-300':''}">
         <button onclick="openProductStockCard('${p.product_id}')" class="flex items-center gap-3 min-w-0 text-left hover:opacity-80">
           <div class="w-12 h-12 rounded-xl bg-gray-100 overflow-hidden shrink-0">${p.image_url?`<img loading="lazy" decoding="async" src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div>
           <div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code)}${taxBadge(p)}</div><div class="font-semibold text-sm truncate">${esc(p.item_name)}</div><div class="text-[10px] text-gray-400">${esc(p.brand||'')} · Open Stock Card</div>${p.tax_group_or_set?`<div class="text-xs">${esc(p.tax_group_or_set)}</div>`:''}${p.tax_note?`<div class="text-[10px] text-gray-500 whitespace-pre-wrap">${esc(p.tax_note)}</div>`:''}</div>
@@ -791,7 +795,9 @@
         <div class="text-xs"><div class="text-gray-400">On Hand</div><b class="text-sm">${q(p.on_hand)}</b></div>
         <div class="text-xs"><div class="text-gray-400">Reserved</div>${n(p.reserved)>0?`<button onclick="openReservedStockDetails('${p.product_id}')" class="text-sm font-bold text-amber-600 hover:underline" title="View Sales Orders reserving this stock">${q(p.reserved)}</button>`:`<b class="text-sm text-amber-600">${q(p.reserved)}</b>`}</div>
         <div class="text-xs"><div class="text-gray-400">Available</div><b class="text-sm ${n(p.available)<0?'text-red-600':'text-green-600'}">${q(p.available)}</b></div>
+        <div class="text-xs"><div class="text-gray-400">On Order</div><b class="text-sm text-amber-700">${q(p.on_order)}</b></div>
         <div class="text-xs"><div class="text-gray-400">Incoming</div><b class="text-sm text-blue-600">${q(p.incoming)}</b></div>
+        <div class="text-xs"><div class="text-gray-400">Arrived</div><b class="text-sm text-purple-600">${q(p.arrived_pending_receive)}</b><div class="text-[8px] text-gray-400">Pending receive</div></div>
         <div class="text-xs"><div class="text-gray-400">Aging</div><span class="inline-flex mt-1 px-2 py-1 rounded-lg border text-[9px] font-bold ${ageBadgeClass(a?.age_bucket||'Unknown')}">${esc(ageLabel(a))}</span>${a?.oldest_remaining_date?`<div class="text-[9px] text-gray-400 mt-1">Since ${esc(dateText(a.oldest_remaining_date))}</div>`:''}</div>
         <div class="text-[10px] text-gray-500">${(p.locations||[]).filter(l=>n(l.qty)!==0).map(l=>`<span class="inline-flex mr-1 mb-1 px-2 py-1 rounded-lg border ${inv.locationFilter&&String(l.location_id)===String(inv.locationFilter)?'bg-blue-50 border-blue-200 text-blue-700':'bg-gray-50'}"><b>${esc(l.code)}</b>&nbsp;${q(l.qty)}</span>`).join('')||'<span class="text-gray-400">No stock location</span>'}</div>
         <div class="flex flex-wrap gap-1.5 justify-end">${inv.tab==='tax'?`<button onclick="openTaxDeclaredSet('${p.product_id}')" class="px-3 py-2 border border-amber-200 bg-amber-50 text-amber-800 rounded-lg text-[10px] font-semibold">Declared Set</button>`:''}${canOperate()?`<button onclick="openStockTransfer('${p.product_id}')" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-semibold">Move</button>`:''}<button onclick="openProductStockCard('${p.product_id}')" class="px-3 py-2 border rounded-lg text-[10px] font-semibold">Stock Card</button></div>
@@ -1029,7 +1035,7 @@
       grouped.get(key).items.push(x);
     }
     const groups=[...grouped.values()],shownGroups=groups.slice(0,inventoryLimit('receive'));
-    return `<div class="grid gap-3">${shownGroups.length?shownGroups.map(g=>{
+    return `<div class="rounded-xl border border-purple-100 bg-purple-50/30 p-3 mb-4 text-xs text-purple-800"><b>Receive PO:</b> this queue now shows only items already marked <b>Arrived</b>. Ordered / Production / Ready items stay under <b>On Order</b>; Shipping items show as <b>Incoming</b>.</div><div class="grid gap-3">${shownGroups.length?shownGroups.map(g=>{
       const ordered=g.items.reduce((a,x)=>a+n(x.ordered_qty),0);
       const remaining=g.items.reduce((a,x)=>a+n(x.remaining_qty),0);
       const expanded=inv.poExpanded.has(g.id);
@@ -1584,7 +1590,7 @@
     if(historyRes.error){document.getElementById('modalBody').innerHTML=`<div class="text-red-600">${esc(historyRes.error.message)}</div>`;return}
 
     const history=historyRes.data||[];
-    const incoming=(receiveRes.data||[]).filter(x=>String(x.product_id)===String(productId));
+    const arrivedPending=(receiveRes.data||[]).filter(x=>String(x.product_id)===String(productId));
     const ordered=(orderedRes.data||[]).filter(x=>String(x.product_id)===String(productId));
     const a=inv.agingMap.get(productId);
     const locs=(p.locations||[]).filter(x=>n(x.qty)!==0);
@@ -1598,21 +1604,23 @@
         <div class="flex md:flex-col gap-2">${p.tax_item?`<button onclick="openTaxDeclaredSet('${productId}')" class="px-3 py-2 border border-amber-200 bg-amber-50 text-amber-800 rounded-xl text-xs font-semibold">Declared Set</button>`:''}${canOperate()?`<button onclick="openStockTransfer('${productId}')" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-xl text-xs font-semibold">Move</button><button onclick="openStockMovement('out','${productId}')" class="px-3 py-2 border border-red-200 bg-red-50 text-red-700 rounded-xl text-xs font-semibold">Stock OUT</button><button onclick="openStockMovement('return','${productId}')" class="px-3 py-2 border border-green-200 bg-green-50 text-green-700 rounded-xl text-xs font-semibold">Return</button>`:''}</div>
       </div>
 
-      <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
         <div class="rounded-xl bg-gray-50 border p-3"><div class="text-[9px] uppercase font-bold text-gray-400">On Hand</div><b class="text-xl">${q(p.on_hand)}</b></div>
         <div class="rounded-xl bg-gray-50 border p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Reserved</div>${n(p.reserved)>0?`<button onclick="openReservedStockDetails('${p.product_id}')" class="text-xl font-bold text-amber-600 hover:underline" title="View Sales Orders reserving this stock">${q(p.reserved)}</button>`:`<b class="text-xl text-amber-600">${q(p.reserved)}</b>`}</div>
         <div class="rounded-xl bg-gray-50 border p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Available</div><b class="text-xl text-green-600">${q(p.available)}</b></div>
-        <div class="rounded-xl bg-gray-50 border p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Incoming</div><b class="text-xl text-blue-600">${q(p.incoming)}</b></div>
+        <div class="rounded-xl bg-gray-50 border p-3"><div class="text-[9px] uppercase font-bold text-gray-400">On Order</div><b class="text-xl text-amber-700">${q(p.on_order)}</b></div>
+        <div class="rounded-xl bg-gray-50 border p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Incoming</div><b class="text-xl text-blue-600">${q(p.incoming)}</b><div class="text-[8px] text-gray-400 mt-1">Shipping</div></div>
+        <div class="rounded-xl bg-gray-50 border p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Arrived Pending</div><b class="text-xl text-purple-600">${q(p.arrived_pending_receive)}</b></div>
         <div class="rounded-xl bg-gray-50 border p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Aging</div><span class="inline-flex mt-1 px-2 py-1 rounded-lg border text-[9px] font-bold ${ageBadgeClass(a?.age_bucket||'Unknown')}">${esc(ageLabel(a))}</span>${a?.oldest_remaining_date?`<div class="text-[9px] text-gray-400 mt-1">Since ${esc(dateText(a.oldest_remaining_date))}</div>`:''}</div>
       </div>
 
       <div class="grid lg:grid-cols-2 gap-4">
         <div class="rounded-xl border p-4">
-          <div class="flex items-center justify-between mb-2"><div><h4 class="font-bold">Incoming PO</h4><div class="text-[10px] text-gray-400">PO quantities still waiting to be received.</div></div><span class="text-xs font-bold text-blue-600">${incoming.reduce((s,x)=>s+n(x.remaining_qty),0).toLocaleString()} pcs</span></div>
-          <div class="divide-y">${incoming.length?incoming.slice(0,10).map(x=>`<div class="py-2 flex justify-between gap-3 text-xs"><div><b>${esc(x.po_number||'PO')}</b><div class="text-[10px] text-gray-400">${esc(x.vendor_name||'')} · ETA ${esc(dateText(x.eta))}</div></div><div class="text-right"><b class="text-blue-600">${q(x.remaining_qty)}</b><div class="text-[9px] text-gray-400">remaining</div></div></div>`).join(''):'<div class="py-6 text-center text-xs text-gray-400">No PO quantity waiting to receive.</div>'}</div>
+          <div class="flex items-center justify-between mb-2"><div><h4 class="font-bold">Arrived · Pending Receive</h4><div class="text-[10px] text-gray-400">Only PO quantities marked Arrived and still waiting for warehouse receipt.</div></div><span class="text-xs font-bold text-purple-600">${arrivedPending.reduce((s,x)=>s+n(x.remaining_qty),0).toLocaleString()} pcs</span></div>
+          <div class="divide-y">${arrivedPending.length?arrivedPending.slice(0,10).map(x=>`<div class="py-2 flex justify-between gap-3 text-xs"><div><b>${esc(x.po_number||'PO')}</b><div class="text-[10px] text-gray-400">${esc(x.vendor_name||'')} · ETA ${esc(dateText(x.eta))}</div></div><div class="text-right"><b class="text-purple-600">${q(x.remaining_qty)}</b><div class="text-[9px] text-gray-400">pending receive</div></div></div>`).join(''):'<div class="py-6 text-center text-xs text-gray-400">Nothing has arrived waiting for receipt.</div>'}</div>
         </div>
         <div class="rounded-xl border p-4">
-          <div class="flex items-center justify-between mb-2"><div><h4 class="font-bold">Customer Allocation</h4><div class="text-[10px] text-gray-400">Incoming PO quantities already allocated to customers.</div></div><span class="text-xs font-bold text-amber-700">${customerAllocations.reduce((s,x)=>s+n(x.qty_allocated),0).toLocaleString()} pcs</span></div>
+          <div class="flex items-center justify-between mb-2"><div><h4 class="font-bold">Customer Allocation</h4><div class="text-[10px] text-gray-400">Supplier PO quantities already allocated to customers.</div></div><span class="text-xs font-bold text-amber-700">${customerAllocations.reduce((s,x)=>s+n(x.qty_allocated),0).toLocaleString()} pcs</span></div>
           <div class="divide-y">${customerAllocations.length?customerAllocations.slice(0,12).map(x=>`<div class="py-2 flex justify-between gap-3 text-xs"><div class="min-w-0"><b class="truncate block">${esc(x.customer_name||'Customer')}</b><div class="text-[10px] text-gray-400 truncate">${esc(x.order_ref||'Sales Order')} · ${esc(x.po_number||'PO')}${x.sales_rep_name?' · '+esc(x.sales_rep_name):''}</div></div><b class="shrink-0">${q(x.qty_allocated)}</b></div>`).join(''):'<div class="py-6 text-center text-xs text-gray-400">No customer allocation for incoming PO quantities.</div>'}</div>
         </div>
       </div>
