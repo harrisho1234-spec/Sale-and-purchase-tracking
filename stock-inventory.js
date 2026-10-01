@@ -14,6 +14,9 @@
     taxAgingLoaded:false,
     taxSaleAlerts:[],
     taxSaleAlertsLoadedAt:0,
+    declaredSetCatalog:[],
+    declaredSetCatalogLoaded:false,
+    declaredSetState:null,
     balanceMap:new Map(),
     movementRows:[],
     poRows:[],
@@ -189,29 +192,190 @@
     showToast('Tax sale alert acknowledged.');
   };
 
+  function taxSaleStatusBadge(a){
+    if(a.alert_type!=='declared_set')return '<span class="inline-flex px-2 py-1 rounded-lg border bg-red-50 text-red-700 text-[9px] font-bold">DIRECT TAX ITEM</span>';
+    const status=String(a.set_status||'partial').toLowerCase();
+    const cls=status==='multiple'?'bg-purple-50 text-purple-700 border-purple-200':status==='complete'?'bg-green-50 text-green-700 border-green-200':'bg-amber-50 text-amber-700 border-amber-200';
+    const label=status==='multiple'?'MULTIPLE SETS':status==='complete'?'COMPLETE SET':'PARTIAL SET';
+    return '<span class="inline-flex px-2 py-1 rounded-lg border '+cls+' text-[9px] font-bold">'+label+'</span>';
+  }
+
+  function taxSaleComponentsHtml(a){
+    if(a.alert_type!=='declared_set')return '';
+    const rows=Array.isArray(a.components)?a.components:[];
+    if(!rows.length)return '';
+    return '<div class="mt-2 flex flex-wrap gap-1">'+rows.map(c=>{
+      const sold=n(c.sold_qty),req=n(c.required_qty),met=sold>=req;
+      return '<span class="inline-flex px-2 py-1 rounded-lg border text-[9px] '+(met?'bg-green-50 border-green-200 text-green-700':'bg-amber-50 border-amber-200 text-amber-700')+'"><b>'+esc(c.code||'')+'</b>&nbsp;'+q(sold)+' / '+q(req)+'</span>';
+    }).join('')+'</div>';
+  }
+
   function taxSaleAlertsHtml(){
     if(role()!=='super_admin')return '';
     const rows=inv.taxSaleAlerts||[];
     if(!rows.length){
-      return '<div class="mb-4 rounded-2xl border border-green-100 bg-green-50/30 p-4"><div class="font-bold text-sm text-green-800">Tax Sales Alerts</div><div class="text-xs text-green-700 mt-1">No unreviewed Tax Item sales.</div></div>';
+      return '<div class="mb-4 rounded-2xl border border-green-100 bg-green-50/30 p-4"><div class="font-bold text-sm text-green-800">Tax Sales Alerts</div><div class="text-xs text-green-700 mt-1">No unreviewed Tax Item or Declared Set sales.</div></div>';
     }
     return `<div class="mb-4 rounded-2xl border border-red-200 bg-red-50/30 overflow-hidden">
       <div class="px-4 py-3 border-b border-red-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <div><div class="font-bold text-sm text-red-800">Tax Item Sold · Action Required</div><div class="text-[10px] text-red-600 mt-1">The sale alert does not deduct stock. Stock changes only through the existing approved delivery / stock task.</div></div>
+        <div><div class="font-bold text-sm text-red-800">Tax Sale · Action Required</div><div class="text-[10px] text-red-600 mt-1">Direct Tax Items and Declared Sets are monitored here. These alerts never deduct stock; approved delivery / stock tasks remain the only posting path.</div></div>
         <span class="inline-flex min-w-[28px] h-7 px-2 rounded-full bg-red-600 text-white text-xs font-bold items-center justify-center">${rows.length}</span>
       </div>
       <div class="divide-y divide-red-100">
-        ${rows.slice(0,12).map(a=>`<div class="p-4 grid lg:grid-cols-[1.4fr_1.2fr_90px_110px_120px] gap-3 items-center bg-white/80">
-          <div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(a.code||'')}${taxBadge({tax_item:true})}</div><div class="font-semibold text-sm truncate">${esc(a.item_name||'Tax Item')}</div><div class="text-[10px] text-gray-400 mt-1">${esc(a.invoice_no||a.order_no||'Sales Order')} · ${esc(dateText(a.order_date))}</div></div>
+        ${rows.slice(0,12).map(a=>`<div class="p-4 grid lg:grid-cols-[1.45fr_1.2fr_110px_120px] gap-3 items-center bg-white/80">
+          <div class="min-w-0">
+            <div class="flex flex-wrap gap-2 items-center"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(a.code||'')}${taxBadge({tax_item:true})}</div>${taxSaleStatusBadge(a)}</div>
+            <div class="font-semibold text-sm truncate mt-1">${esc(a.item_name||'Tax Item')}</div>
+            <div class="text-[10px] text-gray-400 mt-1">${esc(a.invoice_no||a.order_no||'Sales Order')} · ${esc(dateText(a.order_date))}</div>
+            ${taxSaleComponentsHtml(a)}
+          </div>
           <div class="min-w-0"><div class="text-xs font-semibold truncate">${esc(a.customer_name||'Customer')}</div><div class="text-[10px] text-gray-400 truncate">${a.sales_rep_name?'Sales: '+esc(a.sales_rep_name):'Sales rep not recorded'}</div><div class="text-[10px] text-gray-400 mt-1">${esc(new Date(a.sold_at).toLocaleString())}</div></div>
-          <div class="text-xs"><div class="text-gray-400">Sold</div><b class="text-base text-red-600">${q(a.qty)}</b></div>
-          <div class="text-xs"><div class="text-gray-400">Current Stock</div><b class="text-base">${q(a.on_hand)}</b><div class="text-[9px] text-gray-400">Available ${q(a.available)}</div></div>
+          <div class="text-xs">${a.alert_type==='declared_set'?'<div class="text-gray-400">Complete Sets</div><b class="text-base '+(n(a.complete_sets)>0?'text-green-700':'text-amber-700')+'">'+q(a.complete_sets)+'</b><div class="text-[9px] text-gray-400">Component qty '+q(a.qty)+'</div>':'<div class="text-gray-400">Sold</div><b class="text-base text-red-600">'+q(a.qty)+'</b><div class="text-[9px] text-gray-400">On hand '+q(a.on_hand)+'</div>'}</div>
           <div class="text-right"><button onclick="acknowledgeTaxSaleAlert('${a.id}')" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-[10px] font-semibold">Acknowledge</button></div>
         </div>`).join('')}
       </div>
       ${rows.length>12?`<div class="px-4 py-3 text-center text-[10px] text-red-600">Showing 12 of ${rows.length} open Tax sale alerts.</div>`:''}
     </div>`;
   }
+
+
+  async function loadDeclaredSetCatalog(){
+    if(inv.declaredSetCatalogLoaded)return inv.declaredSetCatalog;
+    inv.declaredSetCatalog=await taxFetchAll('product_catalog','id,code,item_name,brand,class,image_url,tax_item,active','code');
+    inv.declaredSetCatalogLoaded=true;
+    return inv.declaredSetCatalog;
+  }
+
+  function declaredSetAvailability(rows,key){
+    if(!rows.length)return 0;
+    return Math.max(0,Math.min(...rows.map(x=>Math.floor(n(x[key])/Math.max(n(x.required_qty),0.000001)))));
+  }
+
+  function renderDeclaredSetModal(){
+    const st=inv.declaredSetState;
+    const body=document.getElementById('modalBody');
+    if(!st||!body)return;
+    const p=st.parent;
+    const rows=st.components||[];
+    const onHandSets=declaredSetAvailability(rows,'on_hand');
+    const availableSets=declaredSetAvailability(rows,'available');
+    body.innerHTML=`<div class="space-y-4">
+      <div class="rounded-2xl border bg-[#fcfbf8] p-4">
+        <div class="flex flex-col md:flex-row md:items-center gap-4">
+          <div class="w-20 h-20 rounded-xl overflow-hidden border bg-white shrink-0">${p.image_url?`<img loading="lazy" decoding="async" src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[9px] text-gray-400">No Photo</div>'}</div>
+          <div class="min-w-0 flex-1"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code||'')}${taxBadge(p)}</div><div class="font-bold text-lg">${esc(p.item_name||'Declared Tax Item')}</div><div class="text-xs text-gray-400 mt-1">Declared parent · Physical inventory remains on the component SKUs below.</div></div>
+          <div class="grid grid-cols-2 gap-2 text-center"><div class="rounded-xl border bg-white px-4 py-3"><div class="text-[9px] uppercase font-bold text-gray-400">Sets On Hand</div><div class="text-xl font-black">${rows.length?q(onHandSets):'—'}</div></div><div class="rounded-xl border bg-white px-4 py-3"><div class="text-[9px] uppercase font-bold text-gray-400">Sets Available</div><div class="text-xl font-black text-green-700">${rows.length?q(availableSets):'—'}</div></div></div>
+        </div>
+      </div>
+
+      ${role()==='super_admin'?`<div class="rounded-2xl border p-4">
+        <div class="font-bold text-sm">Add Existing Product to This Declared Set</div>
+        <div class="text-[10px] text-gray-400 mt-1">A component keeps its own SKU, stock and locations. One component SKU can belong to one primary Declared Tax Item.</div>
+        <div class="grid lg:grid-cols-[1fr_110px_1fr_120px] gap-2 mt-3">
+          <div class="relative"><input id="taxSetComponentSearch" oninput="showTaxDeclaredComponentSuggestions(this)" class="w-full border rounded-xl px-3 py-2 text-xs" placeholder="Search SKU, product or brand..."><input id="taxSetComponentId" type="hidden"><div id="taxSetComponentSuggestions" class="absolute left-0 right-0 top-full mt-1 z-30 bg-white border rounded-xl shadow-xl max-h-64 overflow-auto hidden"></div></div>
+          <input id="taxSetRequiredQty" type="number" min="0.0001" step="0.01" value="1" class="border rounded-xl px-3 py-2 text-xs" placeholder="Required qty">
+          <input id="taxSetComponentNote" class="border rounded-xl px-3 py-2 text-xs" placeholder="Optional note">
+          <button onclick="addTaxDeclaredComponent()" class="px-3 py-2 rounded-xl bg-[#211d18] text-white text-xs font-semibold">Add Component</button>
+        </div>
+      </div>`:''}
+
+      <div class="rounded-2xl border overflow-hidden">
+        <div class="px-4 py-3 bg-gray-50 border-b flex items-center justify-between gap-3"><div><div class="font-bold text-sm">Set Components</div><div class="text-[10px] text-gray-400">${rows.length} mapped product${rows.length===1?'':'s'}</div></div><div class="text-[10px] text-gray-500">Complete set = every component meets its Required Qty.</div></div>
+        <div class="divide-y">${rows.length?rows.map(x=>`<div class="p-4 grid xl:grid-cols-[1.5fr_95px_95px_1.2fr_220px] gap-3 items-center">
+          <div class="flex items-center gap-3 min-w-0"><div class="w-12 h-12 rounded-xl bg-gray-100 overflow-hidden shrink-0">${x.image_url?`<img loading="lazy" decoding="async" src="${esc(x.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(x.code||'')}${x.tax_item?taxBadge({tax_item:true}):''}</div><div class="font-semibold text-sm truncate">${esc(x.item_name||'')}</div><div class="text-[10px] text-gray-400">${esc(x.brand||'')}</div></div></div>
+          <div class="text-xs"><div class="text-gray-400">On Hand</div><b class="text-base">${q(x.on_hand)}</b><div class="text-[9px] text-gray-400">Available ${q(x.available)}</div></div>
+          <div class="text-xs">${role()==='super_admin'?`<label class="text-gray-400">Required Qty</label><input id="taxSetReq_${x.id}" type="number" min="0.0001" step="0.01" value="${esc(x.required_qty)}" class="mt-1 w-full border rounded-lg px-2 py-1.5 text-xs">`:`<div class="text-gray-400">Required</div><b class="text-base">${q(x.required_qty)}</b>`}</div>
+          <div class="text-[10px] text-gray-500">${(x.locations||[]).filter(l=>n(l.qty)!==0).map(l=>`<span class="inline-flex mr-1 mb-1 px-2 py-1 rounded-lg border bg-gray-50"><b>${esc(l.code)}</b>&nbsp;${q(l.qty)}</span>`).join('')||'<span class="text-gray-400">No stock location</span>'}</div>
+          <div>${role()==='super_admin'?`<input id="taxSetNote_${x.id}" value="${esc(x.note||'')}" class="w-full border rounded-lg px-2 py-1.5 text-[10px]" placeholder="Component note"><div class="flex justify-end gap-1.5 mt-2"><button onclick="saveTaxDeclaredComponent('${x.id}','${x.component_product_id}')" class="px-2.5 py-1.5 border rounded-lg text-[10px] font-semibold">Save</button><button onclick="removeTaxDeclaredComponent('${x.id}')" class="px-2.5 py-1.5 border border-red-200 text-red-600 rounded-lg text-[10px] font-semibold">Remove</button></div>`:x.note?`<div class="text-[10px] text-gray-500">${esc(x.note)}</div>`:''}</div>
+        </div>`).join(''):'<div class="p-10 text-center text-sm text-gray-400">No components mapped yet. This Tax Item currently behaves as a direct Tax Item.</div>'}</div>
+      </div>
+      <div class="rounded-xl border border-amber-100 bg-amber-50 p-3 text-[10px] text-amber-800"><b>Important:</b> Declared Set mapping never moves or combines physical stock. Sales are classified as Partial / Complete / Multiple Sets for tax monitoring only. Actual deductions still require the approved stock workflow.</div>
+    </div>`;
+  }
+
+  window.openTaxDeclaredSet=async function(productId){
+    if(!canView())return showToast('Inventory access required.','err');
+    try{
+      if(inv.tab==='tax')await loadTaxCore();else await loadCore();
+      const p=inv.taxBalanceMap.get(productId)||inv.balanceMap.get(productId);
+      if(!p||!p.tax_item)return showToast('Only Tax Items can be Declared Items.','err');
+      openModal('Declared Tax Set — '+(p.code||p.item_name||'Tax Item'),'<div class="py-12 text-center text-sm text-gray-400">Loading declared set...</div>');
+      const [r]=await Promise.all([
+        db.rpc('get_tax_declared_set_components',{p_declared_product_id:productId}),
+        role()==='super_admin'?loadDeclaredSetCatalog():Promise.resolve([])
+      ]);
+      if(r.error)throw r.error;
+      inv.declaredSetState={parent:p,components:Array.isArray(r.data)?r.data:[]};
+      renderDeclaredSetModal();
+    }catch(err){
+      const body=document.getElementById('modalBody');
+      if(body)body.innerHTML='<div class="rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-600">'+esc(err.message||'Unable to load Declared Set.')+'</div>';
+      else showToast(err.message||'Unable to load Declared Set.','err');
+    }
+  };
+
+  window.showTaxDeclaredComponentSuggestions=function(input){
+    const st=inv.declaredSetState,box=document.getElementById('taxSetComponentSuggestions');
+    if(!st||!box)return;
+    document.getElementById('taxSetComponentId').value='';
+    const s=String(input?.value||'').trim().toLowerCase();
+    if(!s){box.classList.add('hidden');box.innerHTML='';return}
+    const used=new Set((st.components||[]).map(x=>String(x.component_product_id)));
+    const rows=(inv.declaredSetCatalog||[]).filter(p=>p.active!==false&&String(p.id)!==String(st.parent.product_id)&&!used.has(String(p.id))&&[p.code,p.item_name,p.brand,p.class].filter(Boolean).join(' ').toLowerCase().includes(s)).slice(0,25);
+    box.innerHTML=rows.length?rows.map(p=>'<button type="button" onclick="selectTaxDeclaredComponent(\''+p.id+'\')" class="w-full text-left px-3 py-2.5 hover:bg-amber-50 border-b last:border-0"><div class="text-[10px] font-bold text-[#a77d1a]">'+esc(p.code||'')+(p.tax_item?taxBadge({tax_item:true}):'')+'</div><div class="text-xs font-semibold">'+esc(p.item_name||'')+'</div><div class="text-[9px] text-gray-400">'+esc(p.brand||'')+'</div></button>').join(''):'<div class="p-3 text-xs text-gray-400">No matching available product.</div>';
+    box.classList.remove('hidden');
+  };
+
+  window.selectTaxDeclaredComponent=function(id){
+    const p=(inv.declaredSetCatalog||[]).find(x=>String(x.id)===String(id));
+    if(!p)return;
+    document.getElementById('taxSetComponentId').value=p.id;
+    document.getElementById('taxSetComponentSearch').value=(p.code||'')+' · '+(p.item_name||'');
+    document.getElementById('taxSetComponentSuggestions').classList.add('hidden');
+  };
+
+  async function reloadDeclaredSetState(){
+    const st=inv.declaredSetState;
+    if(!st)return;
+    const r=await db.rpc('get_tax_declared_set_components',{p_declared_product_id:st.parent.product_id});
+    if(r.error)throw r.error;
+    st.components=Array.isArray(r.data)?r.data:[];
+    renderDeclaredSetModal();
+  }
+
+  window.addTaxDeclaredComponent=async function(){
+    if(role()!=='super_admin')return showToast('Super Admin only.','err');
+    const st=inv.declaredSetState;if(!st)return;
+    const componentId=document.getElementById('taxSetComponentId')?.value||'';
+    const qty=n(document.getElementById('taxSetRequiredQty')?.value);
+    const note=document.getElementById('taxSetComponentNote')?.value.trim()||null;
+    if(!componentId)return showToast('Choose a product from the suggestions.','err');
+    if(qty<=0)return showToast('Required Qty must be greater than 0.','err');
+    const r=await db.rpc('set_tax_declared_set_component',{p_declared_product_id:st.parent.product_id,p_component_product_id:componentId,p_required_qty:qty,p_note:note});
+    if(r.error)return showToast(r.error.message,'err');
+    await reloadDeclaredSetState();
+    showToast('Component added to Declared Set.');
+  };
+
+  window.saveTaxDeclaredComponent=async function(mappingId,componentId){
+    if(role()!=='super_admin')return;
+    const st=inv.declaredSetState;if(!st)return;
+    const qty=n(document.getElementById('taxSetReq_'+mappingId)?.value);
+    const note=document.getElementById('taxSetNote_'+mappingId)?.value.trim()||null;
+    if(qty<=0)return showToast('Required Qty must be greater than 0.','err');
+    const r=await db.rpc('set_tax_declared_set_component',{p_declared_product_id:st.parent.product_id,p_component_product_id:componentId,p_required_qty:qty,p_note:note});
+    if(r.error)return showToast(r.error.message,'err');
+    await reloadDeclaredSetState();
+    showToast('Declared Set component updated.');
+  };
+
+  window.removeTaxDeclaredComponent=async function(mappingId){
+    if(role()!=='super_admin')return;
+    const r=await db.rpc('remove_tax_declared_set_component',{p_mapping_id:mappingId});
+    if(r.error)return showToast(r.error.message,'err');
+    await reloadDeclaredSetState();
+    showToast('Component removed from Declared Set.');
+  };
 
   function injectStyles(){
     if(document.getElementById('inventory-workspace-css'))return;
@@ -621,7 +785,7 @@
         <div class="text-xs"><div class="text-gray-400">Incoming</div><b class="text-sm text-blue-600">${q(p.incoming)}</b></div>
         <div class="text-xs"><div class="text-gray-400">Aging</div><span class="inline-flex mt-1 px-2 py-1 rounded-lg border text-[9px] font-bold ${ageBadgeClass(a?.age_bucket||'Unknown')}">${esc(ageLabel(a))}</span>${a?.oldest_remaining_date?`<div class="text-[9px] text-gray-400 mt-1">Since ${esc(dateText(a.oldest_remaining_date))}</div>`:''}</div>
         <div class="text-[10px] text-gray-500">${(p.locations||[]).filter(l=>n(l.qty)!==0).map(l=>`<span class="inline-flex mr-1 mb-1 px-2 py-1 rounded-lg border ${inv.locationFilter&&String(l.location_id)===String(inv.locationFilter)?'bg-blue-50 border-blue-200 text-blue-700':'bg-gray-50'}"><b>${esc(l.code)}</b>&nbsp;${q(l.qty)}</span>`).join('')||'<span class="text-gray-400">No stock location</span>'}</div>
-        <div class="flex gap-1.5 justify-end">${canOperate()?`<button onclick="openStockTransfer('${p.product_id}')" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-semibold">Move</button>`:''}<button onclick="openProductStockCard('${p.product_id}')" class="px-3 py-2 border rounded-lg text-[10px] font-semibold">Stock Card</button></div>
+        <div class="flex gap-1.5 justify-end">${inv.tab==='tax'?`<button onclick="openTaxDeclaredSet('${p.product_id}')" class="px-3 py-2 border border-amber-200 bg-amber-50 text-amber-800 rounded-lg text-[10px] font-semibold">Declared Set</button>`:''}${canOperate()?`<button onclick="openStockTransfer('${p.product_id}')" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-semibold">Move</button>`:''}<button onclick="openProductStockCard('${p.product_id}')" class="px-3 py-2 border rounded-lg text-[10px] font-semibold">Stock Card</button></div>
       </div>`}).join(''):'<div class="p-10 text-center text-sm text-gray-400">No products match your search / filters.</div>'}</div>
       ${inventoryListControls(inv.tab,rows.length)}
     </div>`;
@@ -1422,7 +1586,7 @@
       <div class="rounded-2xl border bg-[#fcfbf8] p-4 flex flex-col md:flex-row md:items-center gap-4">
         <div class="w-24 h-24 rounded-2xl overflow-hidden border bg-white shrink-0">${p.image_url?`<img loading="lazy" decoding="async" src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-xs text-gray-400">No Photo</div>'}</div>
         <div class="min-w-0 flex-1"><div class="text-xs font-bold text-[#a77d1a]">${esc(p.code||'')}${taxBadge(p)}</div><h3 class="text-xl font-bold mt-1">${esc(p.item_name||'')}</h3><div class="text-xs text-gray-500 mt-1">${[p.brand,p.class].filter(Boolean).map(esc).join(' · ')}</div><div class="mt-3 flex flex-wrap gap-2">${locs.map(l=>`<span class="px-2.5 py-1.5 rounded-lg border bg-white text-xs"><b>${esc(l.code)}</b> ${q(l.qty)}</span>`).join('')||'<span class="text-xs text-gray-400">No live stock location.</span>'}</div></div>
-        ${canOperate()?`<div class="flex md:flex-col gap-2"><button onclick="openStockTransfer('${productId}')" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-xl text-xs font-semibold">Move</button><button onclick="openStockMovement('out','${productId}')" class="px-3 py-2 border border-red-200 bg-red-50 text-red-700 rounded-xl text-xs font-semibold">Stock OUT</button><button onclick="openStockMovement('return','${productId}')" class="px-3 py-2 border border-green-200 bg-green-50 text-green-700 rounded-xl text-xs font-semibold">Return</button></div>`:''}
+        <div class="flex md:flex-col gap-2">${p.tax_item?`<button onclick="openTaxDeclaredSet('${productId}')" class="px-3 py-2 border border-amber-200 bg-amber-50 text-amber-800 rounded-xl text-xs font-semibold">Declared Set</button>`:''}${canOperate()?`<button onclick="openStockTransfer('${productId}')" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-xl text-xs font-semibold">Move</button><button onclick="openStockMovement('out','${productId}')" class="px-3 py-2 border border-red-200 bg-red-50 text-red-700 rounded-xl text-xs font-semibold">Stock OUT</button><button onclick="openStockMovement('return','${productId}')" class="px-3 py-2 border border-green-200 bg-green-50 text-green-700 rounded-xl text-xs font-semibold">Return</button>`:''}</div>
       </div>
 
       <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
