@@ -7,6 +7,7 @@
 
   function role(){return String((typeof state!=='undefined'&&state&&state.profile&&state.profile.role)||'')}
   function isStockController(){return role()==='stock_controller'}
+  function isSuperAdmin(){return role()==='super_admin'}
   function canApprove(){return ['admin','super_admin'].includes(role())}
   function esc(v){
     return String(v==null?'':v).replace(/[&<>"']/g,function(ch){
@@ -376,7 +377,7 @@
             (r.reviewer_note?'<div class="mt-2 text-[10px] text-gray-500"><b>Reviewer note:</b> '+esc(r.reviewer_note)+'</div>':'')+
             '<div class="mt-2 text-[10px] font-semibold text-[#a77d1a] group-hover:underline">Click to '+(expanded?'hide':'view')+' details & product photo <span id="stockActionArrow_'+id+'">'+(expanded?'⌃':'⌄')+'</span></div>'+
           '</div>'+
-          (canApprove()&&pending?'<div class="flex gap-2 shrink-0"><button onclick="event.stopPropagation();reviewStockActionRequest(\''+id+'\',true)" class="px-3 py-2 rounded-lg bg-green-600 text-white text-xs font-semibold">Approve</button><button onclick="event.stopPropagation();reviewStockActionRequest(\''+id+'\',false)" class="px-3 py-2 rounded-lg border border-red-200 text-red-600 text-xs font-semibold">Reject</button></div>':'')+
+          (canApprove()&&pending?'<div class="flex gap-2 shrink-0"><button onclick="event.stopPropagation();reviewStockActionRequest(\''+id+'\',true)" class="px-3 py-2 rounded-lg bg-green-600 text-white text-xs font-semibold">Approve</button><button onclick="event.stopPropagation();reviewStockActionRequest(\''+id+'\',false)" class="px-3 py-2 rounded-lg border border-red-200 text-red-600 text-xs font-semibold">Reject</button></div>':(!pending&&isSuperAdmin()?'<div class="flex gap-2 shrink-0"><button onclick="event.stopPropagation();deleteStockActionHistory(\''+id+'\')" class="px-3 py-2 rounded-lg border border-red-200 bg-red-50 text-red-700 text-xs font-semibold">Delete History</button></div>':''))+
         '</div>'+
       '</div>'+
       '<div id="stockActionDetail_'+id+'" class="'+(expanded?'':'hidden ')+'mt-4 pt-4 border-t">'+(expanded?(cached?actionDetailHtml(cached,r):'<div class="rounded-xl border bg-gray-50 p-6 text-center text-xs text-gray-400">Click again if details do not load automatically.</div>'):'')+'</div>'+
@@ -451,6 +452,23 @@
     if(r.error)return showToast(r.error.message,'err');
     showToast(approve?'Approved. Stock quantity is now updated.':'Rejected. Stock quantity remains unchanged.');
     await refreshInventoryAfterApproval();
+    if(typeof window.refreshApprovalNotifications==='function')setTimeout(()=>window.refreshApprovalNotifications(),50);
+    if(typeof window.refreshAppNotifications==='function')setTimeout(()=>window.refreshAppNotifications(),80);
+  };
+
+  window.deleteStockActionHistory=async function(id){
+    if(!isSuperAdmin())return;
+    const row=A.rows.find(function(x){return String(x.request_id)===String(id)})||{};
+    if(String(row.request_status||'')==='pending')return showToast('Pending requests cannot be deleted. Approve or reject them first.','err');
+    const label=[actionLabel(row),row.document_no||row.reference_no||row.do_no||''].filter(Boolean).join(' · ');
+    const ok=confirm('Delete this stock approval history'+(label?' — '+label:'')+'?\n\nThis only removes the approval-history record. If it was previously approved, the real stock movement and inventory quantity will NOT be reversed or deleted.');
+    if(!ok)return;
+    const r=await db.rpc('superadmin_delete_stock_action_history',{p_request_id:id});
+    if(r.error)return showToast(r.error.message||'Could not delete stock approval history.','err');
+    A.expanded.delete(String(id));
+    A.details.delete(String(id));
+    showToast('Stock approval history deleted. Inventory movement was not changed.');
+    await renderActionRequestsPanel();
     if(typeof window.refreshApprovalNotifications==='function')setTimeout(()=>window.refreshApprovalNotifications(),50);
     if(typeof window.refreshAppNotifications==='function')setTimeout(()=>window.refreshAppNotifications(),80);
   };
