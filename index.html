@@ -29,7 +29,16 @@
     #sidebarNav{min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#d8d2c8 transparent}
     #sidebarNav::-webkit-scrollbar{width:6px}
     #sidebarNav::-webkit-scrollbar-thumb{background:#d8d2c8;border-radius:999px}
-    .sidebar-compact-brand{display:none}
+    .sidebar-compact-brand{
+      display:none;
+      width:40px;height:40px;border-radius:12px;
+      align-items:center;justify-content:center;
+      background:#211d18;color:#d8b04d;
+      border:1px solid #cfae58;
+      box-shadow:0 5px 14px rgba(33,29,24,.14);
+      font-family:"Playfair Display",serif;
+      font-size:15px;font-weight:800;letter-spacing:-.04em;
+    }
     @media (min-width:1024px){
       body.sidebar-collapsed #desktopSidebar{width:4.5rem;padding-left:.5rem;padding-right:.5rem}
       body.sidebar-collapsed #appMain{margin-left:4.5rem!important}
@@ -39,7 +48,16 @@
       body.sidebar-collapsed .sidebar-chevron,
       body.sidebar-collapsed #sidebarUser,
       body.sidebar-collapsed .sidebar-signout-label{display:none!important}
-      body.sidebar-collapsed .sidebar-compact-brand{display:block}
+      body.sidebar-collapsed .sidebar-header{position:relative;justify-content:center;align-items:center;padding:.8rem 0 1rem}
+      body.sidebar-collapsed .sidebar-brand-wrap{width:100%;display:flex;justify-content:center}
+      body.sidebar-collapsed .sidebar-compact-brand{display:flex}
+      body.sidebar-collapsed #desktopSidebarToggle{
+        position:absolute;right:-1rem;top:1.18rem;
+        width:28px;height:28px;border-radius:9999px;
+        background:#fff;border:1px solid #e2dbcf;
+        box-shadow:0 3px 10px rgba(31,41,55,.12);
+        z-index:2;
+      }
       body.sidebar-collapsed #sidebarNav .sidebar-btn{justify-content:center;gap:0;padding-left:.5rem;padding-right:.5rem}
       body.sidebar-collapsed #sidebarNav .sidebar-group-header{justify-content:center;gap:0;padding-left:.5rem;padding-right:.5rem}
       body.sidebar-collapsed #sidebarNav .sidebar-group-panel{margin-left:0;padding-left:0;border-left:0}
@@ -72,10 +90,10 @@
 
   <div id="appShell" class="hidden min-h-screen">
     <aside id="desktopSidebar" class="fixed inset-y-0 left-0 bg-white border-r border-[#ece6dc] p-4 hidden lg:flex flex-col z-40">
-      <div class="px-2 py-4 flex items-start justify-between gap-2 shrink-0">
-        <div class="min-w-0">
+      <div class="sidebar-header px-2 py-4 flex items-start justify-between gap-2 shrink-0">
+        <div class="sidebar-brand-wrap min-w-0">
           <div class="sidebar-full-brand"><div class="font-serif text-2xl font-bold gold whitespace-nowrap">L'IMPERIAL</div><div class="text-[9px] tracking-[.22em] text-gray-400 whitespace-nowrap">ORDER MANAGEMENT</div></div>
-          <div class="sidebar-compact-brand font-serif text-2xl font-bold gold text-center" title="L'IMPERIAL">L'</div>
+          <div class="sidebar-compact-brand" title="L'IMPERIAL">LI</div>
         </div>
         <button id="desktopSidebarToggle" type="button" onclick="toggleDesktopSidebar()" aria-label="Toggle sidebar" aria-expanded="true" title="Collapse sidebar" class="w-8 h-8 shrink-0 rounded-lg border border-[#e7e1d7] bg-white text-gray-500 hover:bg-gray-50 flex items-center justify-center text-lg leading-none">‹</button>
       </div>
@@ -162,7 +180,7 @@
   <script src="customer-database.js?v=20260929-1215"></script>
   <script src="customer-database-social-overlay.js?v=20260928-1715"></script>
   <script src="customer-google-history.js?v=20260928-0825"></script>
-  <script src="compact-sidebar.js?v=20261001-collapse1"></script>
+  <script src="compact-sidebar.js?v=20261001-collapse2"></script>
   <script src="tax-inventory.js?v=20260930-tax1"></script>
   <script src="stock-inventory.js?v=20261001-location-groups1"></script>
   <script src="stock-location-management.js?v=20261001-1"></script>
