@@ -1,7 +1,11 @@
 // Role and sales-access overrides. Loaded after app.js and product-admin.js.
 
 function isManager(){return state.profile?.role==='manager'}
-function canManageSalesAccess(){return ['super_admin','admin','manager'].includes(state.profile?.role)}
+function canManageSalesAccess(){
+  return typeof window.hasAppPermission==='function'
+    ?window.hasAppPermission('sales_access.manage')
+    :['super_admin','admin','manager'].includes(state.profile?.role)
+}
 
 navItems=function(){
   const base=[
