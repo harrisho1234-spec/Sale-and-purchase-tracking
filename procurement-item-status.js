@@ -4,6 +4,9 @@
   const pw=window.procurementWorkspace;
   const previousRenderProcurementWorkspace=window.renderProcurementWorkspace;
   const previousOpenEditSupplierPO=window.openEditSupplierPO;
+  const poBulk=window.poItemBulkSelection||{selected:new Set(),rows:[]};
+  if(!(poBulk.selected instanceof Set))poBulk.selected=new Set();
+  window.poItemBulkSelection=poBulk;
   if(!pw||typeof previousRenderProcurementWorkspace!=='function')return;
 
   const STATUSES=['placed','production','ready','shipping','arrived','closed','cancelled'];
@@ -60,6 +63,14 @@
     const shipping=liveRows.filter(x=>norm(x.procurement_status)==='shipping').length;
     const arrived=liveRows.filter(x=>['arrived','closed'].includes(norm(x.procurement_status))).length;
     const reconciled=rows.filter(x=>x.historical_stock_reconciled).length;
+    poBulk.rows=rows;
+    const visibleIds=new Set(rows.map(x=>String(x.id)));
+    poBulk.selected=new Set([...poBulk.selected].filter(id=>visibleIds.has(String(id))));
+    window.poItemBulkSelection=poBulk;
+    const selectedRows=rows.filter(x=>poBulk.selected.has(String(x.id)));
+    const selectedLive=selectedRows.filter(x=>!x.historical_stock_reconciled);
+    const selectedHistorical=selectedRows.filter(x=>x.historical_stock_reconciled);
+    const allSelected=rows.length>0&&rows.every(x=>poBulk.selected.has(String(x.id)));
 
     document.getElementById('content').innerHTML=`<div class="max-w-[1500px] mx-auto">
       <div class="pw-tabs">
@@ -80,10 +91,25 @@
         <div class="pw-stat"><div class="pw-stat-label">Historical Reconciled</div><div class="pw-stat-value text-purple-700">${reconciled}</div></div>
       </div>
       <div class="pw-toolbar"><input class="pw-search" value="${esc(pw.search)}" oninput="setProcurementSearch(this.value)" placeholder="Search PO, supplier, SKU, item, status..."><button onclick="openHistoricalPOReconciliation()" class="px-4 py-2 border border-purple-200 bg-purple-50 text-purple-700 rounded-xl text-xs font-semibold">Historical Stock Reconciliation</button></div>
+      <div class="rounded-xl border bg-white p-3 mb-3 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
+        <div class="flex flex-wrap items-center gap-3">
+          <label class="inline-flex items-center gap-2 text-xs font-semibold cursor-pointer"><input type="checkbox" onchange="toggleSelectAllPOItems(this.checked)" ${allSelected?'checked':''}> Select All ${rows.length}</label>
+          <span class="text-[10px] text-gray-400">${selectedRows.length} selected</span>
+          ${selectedRows.length?'<button type="button" onclick="clearPOItemSelection()" class="px-2.5 py-1.5 border rounded-lg text-[10px] font-semibold">Clear</button>':''}
+        </div>
+        <div class="flex flex-wrap items-center gap-2 justify-end">
+          <select id="poBulkItemStatus" class="border rounded-lg px-2.5 py-2 text-[10px] bg-white" ${selectedLive.length?'':'disabled'}>${options('placed')}</select>
+          <button type="button" onclick="applyBulkPOItemStatus()" ${selectedLive.length?'':'disabled'} class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-semibold disabled:opacity-40">Set Status — Selected Live (${selectedLive.length})</button>
+          <button type="button" onclick="reconcileSelectedPOItems(true)" ${selectedLive.length?'':'disabled'} class="px-3 py-2 border border-purple-200 bg-purple-50 text-purple-700 rounded-lg text-[10px] font-semibold disabled:opacity-40">Reconcile Selected (${selectedLive.length})</button>
+          <button type="button" onclick="reconcileSelectedPOItems(false)" ${selectedHistorical.length?'':'disabled'} class="px-3 py-2 border border-purple-200 bg-white text-purple-700 rounded-lg text-[10px] font-semibold disabled:opacity-40">Undo Selected (${selectedHistorical.length})</button>
+        </div>
+      </div>
       <div class="card rounded-2xl overflow-hidden"><div class="divide-y">${rows.length?rows.map(i=>{
         const p=i.supplier_pos||{};
         const photo=i.image_url_snapshot||i.product_catalog?.image_url||'';
-        return `<div class="p-4 grid xl:grid-cols-[64px_1.05fr_1.5fr_90px_230px_120px] gap-3 items-center ${i.historical_stock_reconciled?'bg-purple-50/20':''}">
+        const checked=poBulk.selected.has(String(i.id));
+        return `<div class="p-4 grid xl:grid-cols-[34px_64px_1.05fr_1.5fr_90px_230px_120px] gap-3 items-center ${i.historical_stock_reconciled?'bg-purple-50/20':''} ${checked?'ring-2 ring-purple-100':''}">
+          <div class="flex justify-center"><input type="checkbox" aria-label="Select PO item" ${checked?'checked':''} onchange="togglePOItemSelection('${i.id}',this.checked)"></div>
           ${photoHtml(photo,56)}
           <div><b>${esc(poLabel(p))}</b><div class="text-[10px] text-gray-400">${esc(p.vendor_name||'')}</div><div class="text-[10px] text-gray-400 mt-1">ETA ${esc(p.estimated_arrival||'TBD')}</div></div>
           <div class="min-w-0"><div class="flex flex-wrap items-center gap-1.5"><div class="text-xs font-extrabold text-[#a77d1a] truncate">${esc(i.product_code_snapshot||'No Code')}${taxBadge(i)}</div>${i.historical_stock_reconciled?'<span class="px-2 py-0.5 rounded-md border border-purple-200 bg-purple-50 text-purple-700 text-[8px] font-bold">OPENING STOCK RECONCILED</span>':''}</div><div class="text-sm font-semibold truncate">${esc(i.item_name_snapshot||'')}</div><div class="text-[10px] text-gray-400 mt-1">Cost ${money(i.unit_cost||0,p.currency||'USD')} + Shipping ${money(i.shipping_cost||0,'USD')}${i.historical_stock_reconciliation_note?' · '+esc(i.historical_stock_reconciliation_note):''}</div></div>
@@ -97,6 +123,74 @@
     </div>`;
   }
 
+
+  window.togglePOItemSelection=function(itemId,checked){
+    const id=String(itemId);
+    if(checked)poBulk.selected.add(id);else poBulk.selected.delete(id);
+    renderPOItemsWithStatus().catch(err=>showToast(err.message||'Could not refresh PO Items.','err'));
+  };
+
+  window.toggleSelectAllPOItems=function(checked){
+    (poBulk.rows||[]).forEach(x=>{
+      const id=String(x.id);
+      if(checked)poBulk.selected.add(id);else poBulk.selected.delete(id);
+    });
+    renderPOItemsWithStatus().catch(err=>showToast(err.message||'Could not refresh PO Items.','err'));
+  };
+
+  window.clearPOItemSelection=function(){
+    poBulk.selected.clear();
+    renderPOItemsWithStatus().catch(err=>showToast(err.message||'Could not refresh PO Items.','err'));
+  };
+
+  window.applyBulkPOItemStatus=async function(){
+    if(!isAdminRole())return showToast('Admin access required.','err');
+    const selected=(poBulk.rows||[]).filter(x=>poBulk.selected.has(String(x.id))&&!x.historical_stock_reconciled);
+    if(!selected.length)return showToast('Select at least one live PO item.','err');
+    const status=document.getElementById('poBulkItemStatus')?.value||'placed';
+    if(!STATUSES.includes(norm(status)))return showToast('Invalid PO item status.','err');
+    if(!confirm('Update '+selected.length+' selected live PO item(s) to '+statusLabel(status)+'?'))return;
+    const r=await db.rpc('set_supplier_po_items_status_bulk',{
+      p_supplier_po_item_ids:selected.map(x=>x.id),
+      p_status:status
+    });
+    if(r.error)return showToast(r.error.message,'err');
+    poBulk.selected.clear();
+    if(window.documentFlowState)window.documentFlowState.loaded=false;
+    if(typeof window.invalidateInventoryCache==='function')window.invalidateInventoryCache();
+    if(typeof window.invalidateInventoryTasks==='function')window.invalidateInventoryTasks();
+    showToast((r.data||0)+' PO item'+(Number(r.data||0)===1?'':'s')+' updated to '+statusLabel(status)+'.');
+    await renderPOItemsWithStatus();
+  };
+
+  window.reconcileSelectedPOItems=async function(reconciled){
+    if(!isAdminRole())return showToast('Admin access required.','err');
+    const selected=(poBulk.rows||[]).filter(x=>poBulk.selected.has(String(x.id))&&(reconciled?!x.historical_stock_reconciled:x.historical_stock_reconciled));
+    if(!selected.length)return showToast(reconciled?'Select at least one live PO item.':'Select at least one Historical / Reconciled PO item.','err');
+
+    let note=null;
+    if(reconciled){
+      note=prompt('Historical reconciliation note for '+selected.length+' selected PO item(s):','Already reflected in opening/current stock');
+      if(note===null)return;
+      if(!confirm('Mark '+selected.length+' selected PO item(s) as already reflected in opening/current stock?\n\nThis will NOT add stock or create stock movements.'))return;
+    }else{
+      if(!confirm('Undo historical reconciliation for '+selected.length+' selected PO item(s)?\n\nTheir outstanding quantities will return to the live PO pipeline.'))return;
+    }
+
+    const r=await db.rpc('set_supplier_po_items_historical_reconciled',{
+      p_supplier_po_item_ids:selected.map(x=>x.id),
+      p_reconciled:!!reconciled,
+      p_note:note
+    });
+    if(r.error)return showToast(r.error.message,'err');
+
+    poBulk.selected.clear();
+    if(typeof window.invalidateInventoryCache==='function')window.invalidateInventoryCache();
+    if(typeof window.invalidateInventoryTasks==='function')window.invalidateInventoryTasks();
+    if(window.documentFlowState)window.documentFlowState.loaded=false;
+    showToast((r.data||0)+' PO item'+(Number(r.data||0)===1?'':'s')+(reconciled?' reconciled without changing stock.':' restored to the live PO pipeline.'));
+    await renderPOItemsWithStatus();
+  };
 
   window._historicalPOReconciliationRows=window._historicalPOReconciliationRows||[];
   window._historicalPOReconciliationMode=window._historicalPOReconciliationMode||'needs';
