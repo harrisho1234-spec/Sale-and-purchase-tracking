@@ -1,7 +1,7 @@
 // Safe Supplier PO deletion for Admin / Super Admin.
 (function(){
   function canDeletePO(){
-    return ['admin','super_admin'].includes(state.profile?.role||'');
+    return typeof window.hasAppPermission==='function'?window.hasAppPermission('procurement.po_delete'):['admin','super_admin'].includes(state.profile?.role||'');
   }
 
   window.deleteSupplierPO=async function(poId,label='Supplier PO'){
