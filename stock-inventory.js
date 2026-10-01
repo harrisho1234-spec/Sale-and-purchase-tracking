@@ -56,7 +56,7 @@
       ?window.hasAppPermission('inventory.approve')
       :['admin','super_admin'].includes(role());
   }
-  function canReconcile(){return canAdmin()}
+  function canReconcile(){return typeof window.hasAppPermission==='function'?window.hasAppPermission('inventory.reconcile'):canAdmin()}
   function isStockController(){return role()==='stock_controller'}
   function n(v){return Number(v||0)}
   function stockLocationLabel(loc){
