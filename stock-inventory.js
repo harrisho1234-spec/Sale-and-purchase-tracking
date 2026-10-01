@@ -782,7 +782,7 @@
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <div class="inv-stat"><div class="inv-stat-label">Tax SKUs</div><div class="inv-stat-value">${inv.taxBalances.length.toLocaleString()}</div></div>
         <div class="inv-stat"><div class="inv-stat-label">Tax Units On Hand</div><div class="inv-stat-value">${q(taxUnits)}</div></div>
-        <div class="inv-stat"><div class="inv-stat-label">No Tax Stock / Buy In</div><div class="inv-stat-value ${taxNoStock?'text-amber-600':''}">${taxNoStock.toLocaleString()}</div></div>
+        <div class="inv-stat"><div class="inv-stat-label">Tax Items Out of Stock</div><div class="inv-stat-value ${taxNoStock?'text-amber-600':''}">${taxNoStock.toLocaleString()}</div></div>
         <div class="inv-stat"><div class="inv-stat-label">Sold / Action Required</div><div class="inv-stat-value ${inv.taxSaleAlerts.length?'text-red-600':''}">${role()==='super_admin'?inv.taxSaleAlerts.length.toLocaleString():'—'}</div></div>
       </div>
       ${taxSaleAlertsHtml()}`:'';
