@@ -16,8 +16,10 @@ navItems=function(){
     ['products','Products','◇'],
     ['payments','Payments','＄']
   ];
-  if(isAdmin()) base.push(['procurement','Procurement','▣'],['supplier-pos','Supplier POs','⌑']);
-  if(canManageSalesAccess()) base.push(['reports','Reports','▥'],['sales-access','Sales Access','⊕']);
+  const granular=typeof window.hasAppPermission==='function';
+  if(granular?window.hasAppPermission('procurement.view'):isAdmin()) base.push(['procurement','Procurement','▣'],['supplier-pos','Supplier POs','⌑']);
+  if(granular?window.hasAppPermission('reports.view'):canManageSalesAccess()) base.push(['reports','Reports','▥']);
+  if(granular?window.hasAppPermission('sales_access.manage'):canManageSalesAccess()) base.push(['sales-access','Sales Access','⊕']);
   if(isSuper()) base.push(['users','Users & Access','♙']);
   return base;
 };
