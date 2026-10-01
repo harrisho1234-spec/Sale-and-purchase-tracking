@@ -2,14 +2,45 @@
 // Loaded after document-flow.js, po-edit.js, and flow-refresh-fix.js.
 
 (function(){
-  const pw={tab:'pos',search:'',orderedStatus:'all',orderedExpanded:new Set()};
+  const pw={tab:'pos',search:'',poView:'active',orderedStatus:'all',orderedExpanded:new Set()};
   window.procurementWorkspace=pw;
 
   function norm(v=''){return String(v||'').trim().toLowerCase()}
   function fmtDate(v){if(!v)return 'TBD';const d=new Date(String(v).length<=10?v+'T00:00:00':v);return Number.isNaN(d.getTime())?String(v):d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}
   function poLabel(p){return p?.po_number||p?.po_pending_reference||'PO Pending'}
-  function statusBadge(s){s=norm(s);return s==='arrived'?'lr-badge-green':s==='shipping'?'lr-badge-blue':s==='production'?'lr-badge-amber':'lr-badge-gray'}
+  function statusBadge(s){s=norm(s);return ['arrived','delivered','closed','complete','completed'].includes(s)?'lr-badge-green':s==='shipping'?'lr-badge-blue':s==='production'?'lr-badge-amber':'lr-badge-gray'}
   function requireAdmin(){if(!isAdmin())throw new Error('Procurement is available to Admin and Super Admin only.')}
+  function recState(p){return String(p?.reconciliation_state||'live')}
+  function isHistoricalPO(p){return recState(p)==='historical_reconciled'}
+  function isPartialHistoricalPO(p){return recState(p)==='partially_reconciled'}
+  function isClosedPO(p){return ['delivered','closed','complete','completed'].includes(norm(p?.status))}
+  function isCancelledPO(p){return norm(p?.status)==='cancelled'}
+  function poDisplayStatus(p){
+    if(isHistoricalPO(p))return 'Historical / Reconciled';
+    if(isPartialHistoricalPO(p))return 'Partially Reconciled';
+    return norm(p?.status)==='placed'?'Ordered':titleCase(p?.status||'placed');
+  }
+  function poDisplayStatusHtml(p){
+    if(isHistoricalPO(p))return '<span class="inline-flex px-2.5 py-1 rounded-lg border border-purple-200 bg-purple-50 text-purple-700 text-[9px] font-bold">HISTORICAL / RECONCILED</span>';
+    if(isPartialHistoricalPO(p)){
+      const rec=Number(p?.reconciled_items||0),out=Number(p?.outstanding_items||0);
+      return '<span class="inline-flex px-2.5 py-1 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 text-[9px] font-bold">PARTIALLY RECONCILED'+(out?' · '+rec+'/'+out:'')+'</span>';
+    }
+    return '<span class="lr-badge '+statusBadge(p?.status)+'">'+esc(poDisplayStatus(p))+'</span>';
+  }
+  function poMatchesView(p){
+    if(pw.poView==='all')return true;
+    if(pw.poView==='history')return isHistoricalPO(p);
+    if(pw.poView==='closed')return !isHistoricalPO(p)&&isClosedPO(p);
+    if(pw.poView==='cancelled')return isCancelledPO(p);
+    return !isHistoricalPO(p)&&!isClosedPO(p)&&!isCancelledPO(p);
+  }
+  async function reconciliationMap(){
+    const r=await db.rpc('get_supplier_po_reconciliation_status');
+    if(r.error)throw r.error;
+    return new Map((r.data||[]).map(x=>[String(x.supplier_po_id),x]));
+  }
+  window.loadSupplierPOReconciliationMap=reconciliationMap;
   function moneyByCurrency(rows,key,currencyKey='currency'){
     const sums=new Map();
     for(const r of rows||[]){
@@ -56,22 +87,38 @@
 
   window.setProcurementTab=function(tab){pw.tab=tab;renderProcurementWorkspace()};
   window.setProcurementSearch=function(v){pw.search=v;renderProcurementWorkspace()};
+  window.setProcurementPOView=function(v){pw.poView=v||'active';renderProcurementWorkspace()};
 
   async function loadPOs(){
-    const [sum,raw]=await Promise.all([
+    const [sum,raw,rec]=await Promise.all([
       db.from('supplier_po_summary').select('*').order('created_at',{ascending:false}),
-      db.from('supplier_pos').select('*').order('created_at',{ascending:false})
+      db.from('supplier_pos').select('*').order('created_at',{ascending:false}),
+      db.rpc('get_supplier_po_reconciliation_status')
     ]);
-    if(sum.error)throw sum.error;if(raw.error)throw raw.error;
+    if(sum.error)throw sum.error;if(raw.error)throw raw.error;if(rec.error)throw rec.error;
     const m=new Map((raw.data||[]).map(x=>[x.id,x]));
-    return (sum.data||[]).map(x=>({...x,...(m.get(x.id)||{})}));
+    const rm=new Map((rec.data||[]).map(x=>[String(x.supplier_po_id),x]));
+    return (sum.data||[]).map(x=>({...x,...(m.get(x.id)||{}),...(rm.get(String(x.id))||{})}));
   }
 
   async function renderPOs(){
     const list=await loadPOs();const q=pw.search.toLowerCase();
-    const rows=list.filter(p=>!q||[poLabel(p),p.vendor_name,p.status,p.shipping_agent,p.notes].filter(Boolean).join(' ').toLowerCase().includes(q));
+    const counts={
+      all:list.length,
+      active:list.filter(p=>!isHistoricalPO(p)&&!isClosedPO(p)&&!isCancelledPO(p)).length,
+      history:list.filter(isHistoricalPO).length,
+      closed:list.filter(p=>!isHistoricalPO(p)&&isClosedPO(p)).length,
+      cancelled:list.filter(isCancelledPO).length
+    };
+    const rows=list.filter(poMatchesView).filter(p=>!q||[poLabel(p),p.vendor_name,p.status,poDisplayStatus(p),p.shipping_agent,p.notes].filter(Boolean).join(' ').toLowerCase().includes(q));
     const shippingTotal=rows.reduce((a,p)=>a+Number(p.shipping_total_usd||0),0);
-    return `<div class="grid sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-4"><div class="pw-stat"><div class="pw-stat-label">PO Goods Value</div><div class="pw-stat-value text-[16px]">${moneyByCurrency(rows,'po_total')}</div></div><div class="pw-stat"><div class="pw-stat-label">Supplier Paid</div><div class="pw-stat-value text-[16px] text-green-600">${moneyByCurrency(rows,'amount_paid')}</div></div><div class="pw-stat"><div class="pw-stat-label">Supplier Balance</div><div class="pw-stat-value text-[16px] text-red-500">${moneyByCurrency(rows,'balance_due')}</div></div><div class="pw-stat"><div class="pw-stat-label">Shipping Cost · USD</div><div class="pw-stat-value">${money(shippingTotal,'USD')}</div></div></div><div class="card rounded-2xl overflow-hidden"><div class="divide-y">${rows.length?rows.map(p=>`<div class="pw-row grid lg:grid-cols-[1.1fr_1.2fr_110px_165px_140px] gap-3 items-center"><div><b>${esc(poLabel(p))}</b><div class="pw-mini">${esc(p.order_date||'')}</div></div><div><div class="text-sm font-semibold">${esc(p.vendor_name||'-')}</div><div class="pw-mini">${esc(p.shipping_agent||'No shipping agent')}</div></div><span class="lr-badge ${statusBadge(p.status)}">${esc(titleCase(p.status||'placed'))}</span><div class="text-xs">ETA <b>${esc(fmtDate(p.estimated_arrival))}</b><div class="pw-mini">Goods balance ${money(p.balance_due,p.currency||'USD')}</div><div class="pw-mini">Shipping balance ${money(p.shipping_balance_usd||0,'USD')}</div></div><div class="flex gap-2 justify-end flex-wrap"><button onclick="openManageSupplierPO('${p.id}')" class="px-3 py-2 bg-[#211d18] text-white rounded-lg text-[10px] font-semibold">Manage PO</button>${p.po_document_path?`<button onclick="viewPODocument('${p.id}')" class="px-3 py-2 border border-blue-200 text-blue-600 rounded-lg text-[10px] font-semibold">Document</button>`:''}<button onclick="deleteSupplierPO('${p.id}','${esc(poLabel(p))}')" class="px-3 py-2 border border-red-200 bg-red-50 text-red-600 rounded-lg text-[10px] font-semibold">Delete</button></div></div>`).join(''):empty('No supplier POs yet.')}</div></div>`;
+    const filterBtn=(v,l)=>`<button onclick="setProcurementPOView('${v}')" class="px-3 py-2 rounded-xl border text-xs font-semibold ${pw.poView===v?'bg-[#211d18] text-white border-[#211d18]':'bg-white text-gray-600'}">${l} <span class="${pw.poView===v?'text-white/70':'text-gray-400'}">(${counts[v]||0})</span></button>`;
+    return `<div class="mb-4 flex flex-wrap items-center gap-2">
+      ${filterBtn('active','Active POs')}${filterBtn('history','Historical / Reconciled')}${filterBtn('closed','Closed / Complete')}${filterBtn('cancelled','Cancelled')}${filterBtn('all','All')}
+    </div>
+    ${pw.poView==='history'?'<div class="rounded-xl border border-purple-200 bg-purple-50 p-3 text-xs text-purple-800 mb-4"><b>Historical / Reconciled:</b> these POs are preserved as purchasing history. Their reconciled quantities are already represented in opening/current stock and are excluded from the live PO stock pipeline.</div>':''}
+    <div class="grid sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-4"><div class="pw-stat"><div class="pw-stat-label">PO Goods Value</div><div class="pw-stat-value text-[16px]">${moneyByCurrency(rows,'po_total')}</div></div><div class="pw-stat"><div class="pw-stat-label">Supplier Paid</div><div class="pw-stat-value text-[16px] text-green-600">${moneyByCurrency(rows,'amount_paid')}</div></div><div class="pw-stat"><div class="pw-stat-label">Supplier Balance</div><div class="pw-stat-value text-[16px] text-red-500">${moneyByCurrency(rows,'balance_due')}</div></div><div class="pw-stat"><div class="pw-stat-label">Shipping Cost · USD</div><div class="pw-stat-value">${money(shippingTotal,'USD')}</div></div></div>
+    <div class="card rounded-2xl overflow-hidden"><div class="divide-y">${rows.length?rows.map(p=>`<div class="pw-row grid lg:grid-cols-[1.1fr_1.2fr_190px_165px_140px] gap-3 items-center ${isHistoricalPO(p)?'bg-purple-50/20':''}"><div><div class="flex flex-wrap items-center gap-2"><b>${esc(poLabel(p))}</b>${isHistoricalPO(p)?'<span class="text-[8px] font-bold text-purple-700">HISTORY</span>':''}</div><div class="pw-mini">${esc(p.order_date||'')}</div></div><div><div class="text-sm font-semibold">${esc(p.vendor_name||'-')}</div><div class="pw-mini">${esc(p.shipping_agent||'No shipping agent')}</div></div><div>${poDisplayStatusHtml(p)}${isPartialHistoricalPO(p)?`<div class="pw-mini mt-1">${Number(p.reconciled_items||0)} reconciled · ${Number(p.unreconciled_outstanding_items||0)} still live</div>`:''}</div><div class="text-xs">ETA <b>${esc(fmtDate(p.estimated_arrival))}</b><div class="pw-mini">Goods balance ${money(p.balance_due,p.currency||'USD')}</div><div class="pw-mini">Shipping balance ${money(p.shipping_balance_usd||0,'USD')}</div></div><div class="flex gap-2 justify-end flex-wrap"><button onclick="openManageSupplierPO('${p.id}')" class="px-3 py-2 bg-[#211d18] text-white rounded-lg text-[10px] font-semibold">${isHistoricalPO(p)?'View History':'Manage PO'}</button>${p.po_document_path?`<button onclick="viewPODocument('${p.id}')" class="px-3 py-2 border border-blue-200 text-blue-600 rounded-lg text-[10px] font-semibold">Document</button>`:''}<button onclick="deleteSupplierPO('${p.id}','${esc(poLabel(p))}')" class="px-3 py-2 border border-red-200 bg-red-50 text-red-600 rounded-lg text-[10px] font-semibold">Delete</button></div></div>`).join(''):empty(pw.poView==='history'?'No reconciled historical POs.':'No supplier POs in this view.')}</div></div>`;
   }
 
   async function renderPOItems(){
@@ -90,9 +137,9 @@
   }
 
   async function renderShipping(){
-    const r=await db.from('supplier_pos').select('*').order('estimated_arrival',{ascending:true,nullsFirst:false});if(r.error)throw r.error;
-    const q=pw.search.toLowerCase();const rows=(r.data||[]).filter(p=>!q||[poLabel(p),p.vendor_name,p.status,p.shipping_agent].filter(Boolean).join(' ').toLowerCase().includes(q));
-    return `<div class="pw-grid">${rows.length?rows.map(p=>`<div class="pw-card grid lg:grid-cols-[1.2fr_1fr_160px_170px_100px] gap-3 items-center"><div><div class="font-bold">${esc(poLabel(p))}</div><div class="pw-mini">${esc(p.vendor_name||'')}</div></div><div><span class="lr-badge ${statusBadge(p.status)}">${esc(titleCase(p.status||'placed'))}</span><div class="pw-mini mt-1">${esc(p.shipping_agent||'No shipping agent')}</div></div><div><label class="pw-mini">ETA</label><input id="eta-${p.id}" type="date" value="${esc(p.estimated_arrival||'')}" class="mt-1 w-full border rounded-lg px-2 py-2 text-xs"></div><div><label class="pw-mini">Status</label><select id="status-${p.id}" class="mt-1 w-full border rounded-lg px-2 py-2 text-xs bg-white">${[['placed','Ordered'],['production','Production'],['shipping','Shipping'],['arrived','Arrived'],['delivered','Delivered']].map(([s,l])=>`<option value="${s}" ${p.status===s?'selected':''}>${l}</option>`).join('')}</select></div><button onclick="saveProcShipping('${p.id}')" class="px-3 py-2 bg-[#211d18] text-white rounded-lg text-xs font-semibold">Save</button></div>`).join(''):'<div class="card rounded-2xl">'+empty('No supplier POs to track yet.')+'</div>'}</div>`;
+    const list=await loadPOs();
+    const q=pw.search.toLowerCase();const rows=list.filter(p=>!isHistoricalPO(p)&&!isClosedPO(p)&&!isCancelledPO(p)).filter(p=>!q||[poLabel(p),p.vendor_name,p.status,poDisplayStatus(p),p.shipping_agent].filter(Boolean).join(' ').toLowerCase().includes(q));
+    return `<div class="rounded-xl border border-blue-100 bg-blue-50 p-3 mb-4 text-xs text-blue-800"><b>Live Shipping / ETA only.</b> Historical / Reconciled POs are kept in Supplier PO history and are not editable here.</div><div class="pw-grid">${rows.length?rows.map(p=>`<div class="pw-card grid lg:grid-cols-[1.2fr_1fr_160px_170px_100px] gap-3 items-center"><div><div class="font-bold">${esc(poLabel(p))}</div><div class="pw-mini">${esc(p.vendor_name||'')}</div></div><div>${poDisplayStatusHtml(p)}<div class="pw-mini mt-1">${esc(p.shipping_agent||'No shipping agent')}</div></div><div><label class="pw-mini">ETA</label><input id="eta-${p.id}" type="date" value="${esc(p.estimated_arrival||'')}" class="mt-1 w-full border rounded-lg px-2 py-2 text-xs"></div><div><label class="pw-mini">Status</label><select id="status-${p.id}" class="mt-1 w-full border rounded-lg px-2 py-2 text-xs bg-white">${[['placed','Ordered'],['production','Production'],['shipping','Shipping'],['arrived','Arrived'],['delivered','Delivered']].map(([s,l])=>`<option value="${s}" ${p.status===s?'selected':''}>${l}</option>`).join('')}</select></div><button onclick="saveProcShipping('${p.id}')" class="px-3 py-2 bg-[#211d18] text-white rounded-lg text-xs font-semibold">Save</button></div>`).join(''):'<div class="card rounded-2xl">'+empty('No active supplier POs to track.')+'</div>'}</div>`;
   }
 
   async function renderAllocations(){
@@ -135,6 +182,8 @@
   }
 
   window.saveManagePOStatus=async function(id){
+    const rm=await reconciliationMap();
+    if(rm.get(String(id))?.reconciliation_state==='historical_reconciled')return showToast('Historical / Reconciled POs are locked. Undo reconciliation first.','err');
     const status=document.getElementById('managePOStatus')?.value||'placed';
     const eta=document.getElementById('managePOEta')?.value||null;
     const patch={status,estimated_arrival:eta,updated_at:new Date().toISOString()};
@@ -154,16 +203,18 @@
   window.openManageSupplierPO=async function(id){
     openModal('Manage Supplier PO','<div class="py-14 text-center text-sm text-gray-400">Loading PO...</div>');
     try{
-      const [poRes,summaryRes,itemRes,payRes]=await Promise.all([
+      const [poRes,summaryRes,itemRes,payRes,recRes]=await Promise.all([
         db.from('supplier_pos').select('*').eq('id',id).single(),
         db.from('supplier_po_summary').select('*').eq('id',id).maybeSingle(),
-        db.from('supplier_po_items').select('id,product_code_snapshot,item_name_snapshot,qty,unit_cost,shipping_cost,shipping_currency,procurement_status,image_url_snapshot,sort_order,created_at').eq('supplier_po_id',id).order('sort_order',{ascending:true,nullsFirst:false}).order('created_at',{ascending:true}),
-        db.from('supplier_payments').select('id,payment_type,payment_date,amount,currency,reference_no,notes,created_at').eq('supplier_po_id',id).order('payment_date',{ascending:false}).order('created_at',{ascending:false})
+        db.from('supplier_po_items').select('id,product_code_snapshot,item_name_snapshot,qty,unit_cost,shipping_cost,shipping_currency,procurement_status,historical_stock_reconciled,historical_stock_reconciliation_note,image_url_snapshot,sort_order,created_at').eq('supplier_po_id',id).order('sort_order',{ascending:true,nullsFirst:false}).order('created_at',{ascending:true}),
+        db.from('supplier_payments').select('id,payment_type,payment_date,amount,currency,reference_no,notes,created_at').eq('supplier_po_id',id).order('payment_date',{ascending:false}).order('created_at',{ascending:false}),
+        db.rpc('get_supplier_po_reconciliation_status')
       ]);
       if(poRes.error)throw poRes.error;
       if(summaryRes.error)throw summaryRes.error;
       if(itemRes.error)throw itemRes.error;
       if(payRes.error)throw payRes.error;
+      if(recRes.error)throw recRes.error;
 
       const p=poRes.data;
       const s=summaryRes.data||{};
@@ -173,6 +224,10 @@
       const label=poLabel(p);
       const goodsBalance=Number(s.balance_due||0);
       const shippingBalance=Number(s.shipping_balance_usd||0);
+      const rec=(recRes.data||[]).find(x=>String(x.supplier_po_id)===String(id))||{};
+      Object.assign(p,rec);
+      const historical=isHistoricalPO(p);
+      const partial=isPartialHistoricalPO(p);
 
       const paymentHtml=payments.length?payments.map(x=>`<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 py-2 border-b last:border-0">
         <div><div class="text-xs font-semibold">${esc(fmtDate(x.payment_date))} · ${esc(titleCase(x.payment_type||'payment'))}</div><div class="text-[10px] text-gray-400">${esc(x.reference_no||x.notes||'No reference')}</div></div>
@@ -182,25 +237,27 @@
       const itemHtml=items.length?items.slice(0,8).map(i=>`<div class="flex items-center gap-3 py-2 border-b last:border-0">
         <div class="w-10 h-10 rounded-lg overflow-hidden bg-gray-100 shrink-0">${i.image_url_snapshot?`<img src="${esc(i.image_url_snapshot)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div>
         <div class="min-w-0 flex-1"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(i.product_code_snapshot||'')}</div><div class="text-xs truncate">${esc(i.item_name_snapshot||'Item')}</div></div>
-        <div class="text-right"><b class="text-xs">${Number(i.qty||0).toLocaleString()}x</b><div class="text-[9px] text-gray-400">${esc(poManageStatusLabel(i.procurement_status||p.status))}</div></div>
+        <div class="text-right"><b class="text-xs">${Number(i.qty||0).toLocaleString()}x</b><div class="text-[9px] ${i.historical_stock_reconciled?'text-purple-700':'text-gray-400'}">${i.historical_stock_reconciled?'Historical / Reconciled':esc(poManageStatusLabel(i.procurement_status||p.status))}</div></div>
       </div>`).join(''):'<div class="py-4 text-center text-xs text-gray-400">No PO items yet.</div>';
 
       const html=`<div class="space-y-5">
         <div class="rounded-2xl border bg-[#faf9f6] p-4">
           <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
             <div>
-              <div class="flex flex-wrap items-center gap-2"><b class="text-lg">${esc(label)}</b><span class="lr-badge ${statusBadge(p.status)}">${esc(poManageStatusLabel(p.status))}</span></div>
+              <div class="flex flex-wrap items-center gap-2"><b class="text-lg">${esc(label)}</b>${poDisplayStatusHtml(p)}</div>
               <div class="text-sm font-semibold mt-2">${esc(p.vendor_name||'-')}</div>
               <div class="text-[10px] text-gray-400 mt-1">Ordered: ${esc(fmtDate(p.order_date))} · Currency: ${esc(p.currency||'USD')}${p.shipping_agent?' · Shipping: '+esc(p.shipping_agent):''}</div>
             </div>
             <div class="flex flex-wrap gap-2">
               <button onclick="openSupplierPayment('${p.id}',true)" class="px-3 py-2 rounded-lg bg-green-600 text-white text-xs font-semibold">+ Record Payment</button>
-              ${typeof openReceivePOForPO==='function'? `<button onclick="openReceivePOForPO('${p.id}')" class="px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 text-xs font-semibold">Receive Stock</button>`:''}
-              <button onclick="openEditSupplierPO('${p.id}')" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">Edit Items / PO</button>
+              ${!historical&&typeof openReceivePOForPO==='function'? `<button onclick="openReceivePOForPO('${p.id}')" class="px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 text-xs font-semibold">Receive Stock</button>`:''}
+              <button onclick="openEditSupplierPO('${p.id}')" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">${historical?'View / Edit History':'Edit Items / PO'}</button>
               ${p.po_document_path?`<button onclick="viewPODocument('${p.id}')" class="px-3 py-2 rounded-lg border border-blue-200 bg-white text-blue-600 text-xs font-semibold">PO Document</button>`:''}
             </div>
           </div>
         </div>
+
+        ${historical?`<div class="rounded-xl border border-purple-200 bg-purple-50 p-4 text-xs text-purple-800"><b>Historical / Reconciled PO.</b> This PO is now purchasing history. Its reconciled quantities are already reflected in opening/current stock. Live Shipping / ETA and Receive Stock actions are locked. Use Historical Stock Reconciliation → Reconciled History if you need to undo it.</div>`:partial?`<div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-800"><b>Partially Reconciled.</b> ${Number(p.reconciled_items||0)} item line(s) are historical while ${Number(p.unreconciled_outstanding_items||0)} outstanding line(s) remain live.</div>`:''}
 
         <div class="grid sm:grid-cols-2 xl:grid-cols-4 gap-3">
           <div class="rounded-xl border p-3 bg-white"><div class="text-[9px] uppercase font-bold text-gray-400">Goods Total</div><div class="text-lg font-bold mt-1">${money(Number(s.po_total||0),p.currency||'USD')}</div></div>
@@ -211,12 +268,14 @@
 
         <div class="grid lg:grid-cols-[1fr_1fr] gap-4">
           <div class="rounded-2xl border bg-white p-4">
-            <div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">Status & ETA</h4><div class="text-[10px] text-gray-400">Quickly update the PO without opening the Shipping tab.</div></div></div>
-            <div class="grid sm:grid-cols-2 gap-3">
-              <div><label class="text-xs font-semibold">PO Status</label><select id="managePOStatus" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${[['placed','Ordered'],['production','Production'],['shipping','Shipping'],['arrived','Arrived'],['delivered','Delivered']].map(([v,l])=>`<option value="${v}" ${p.status===v?'selected':''}>${l}</option>`).join('')}</select></div>
-              <div><label class="text-xs font-semibold">ETA</label><input id="managePOEta" type="date" value="${esc(p.estimated_arrival||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
-              <button onclick="saveManagePOStatus('${p.id}')" class="sm:col-span-2 bg-[#211d18] text-white rounded-xl py-2.5 text-xs font-semibold">Save Status / ETA</button>
-            </div>
+            <div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">${historical?'Historical Status':'Status & ETA'}</h4><div class="text-[10px] text-gray-400">${historical?'This PO is locked as history until reconciliation is undone.':'Quickly update the PO without opening the Shipping tab.'}</div></div></div>
+            ${historical
+              ?`<div class="rounded-xl border border-purple-200 bg-purple-50 p-4"><div class="text-[9px] uppercase font-bold text-purple-500">Workflow Status</div><div class="text-sm font-bold text-purple-700 mt-1">Historical / Reconciled</div><div class="text-[10px] text-gray-500 mt-2">Original PO status: ${esc(poManageStatusLabel(p.status))} · Original ETA: ${esc(fmtDate(p.estimated_arrival))}</div></div>`
+              :`<div class="grid sm:grid-cols-2 gap-3">
+                <div><label class="text-xs font-semibold">PO Status</label><select id="managePOStatus" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${[['placed','Ordered'],['production','Production'],['shipping','Shipping'],['arrived','Arrived'],['delivered','Delivered']].map(([v,l])=>`<option value="${v}" ${p.status===v?'selected':''}>${l}</option>`).join('')}</select></div>
+                <div><label class="text-xs font-semibold">ETA</label><input id="managePOEta" type="date" value="${esc(p.estimated_arrival||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+                <button onclick="saveManagePOStatus('${p.id}')" class="sm:col-span-2 bg-[#211d18] text-white rounded-xl py-2.5 text-xs font-semibold">Save Status / ETA</button>
+              </div>`}
           </div>
 
           <div class="rounded-2xl border bg-white p-4">
