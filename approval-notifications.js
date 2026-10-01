@@ -3,8 +3,8 @@
   var A={orders:[],customers:[],payments:[],stages:[],stockActions:[],stockEdits:[],loading:false};
 
   function role(){return state.profile&&state.profile.role||''}
-  function reviewer(){return ['manager','admin','super_admin'].indexOf(role())>=0}
-  function stockReviewer(){return ['admin','super_admin'].indexOf(role())>=0}
+  function reviewer(){return typeof window.hasAppPermission==='function'?window.hasAppPermission('approvals.view'):['manager','admin','super_admin'].indexOf(role())>=0}
+  function stockReviewer(){return typeof window.hasAppPermission==='function'?window.hasAppPermission('inventory.approve'):['admin','super_admin'].indexOf(role())>=0}
   function stockTotal(){return A.stockActions.length+A.stockEdits.length}
   function total(){return A.orders.length+A.customers.length+A.payments.length+A.stages.length+stockTotal()}
   function dateText(v){var d=new Date(v);return isNaN(d.getTime())?String(v||''):d.toLocaleString()}
