@@ -62,11 +62,32 @@
     var saved=readState();
     var panel=document.getElementById('sidebar-group-'+key);
     var chevron=document.getElementById('sidebar-chevron-'+key);
+
+    // In collapsed desktop mode, clicking a group icon should restore the
+    // full sidebar and open that group, rather than exposing tiny child icons.
+    if(document.body.classList.contains('sidebar-collapsed')){
+      writeCollapsed(false);
+      applyCollapsed(false);
+      if(panel)panel.classList.remove('hidden');
+      if(chevron)chevron.textContent='⌄';
+      saved[key]=true;
+      writeState(saved);
+      return;
+    }
+
     var opening=panel?panel.classList.contains('hidden'):false;
     if(panel)panel.classList.toggle('hidden',!opening);
     if(chevron)chevron.textContent=opening?'⌄':'›';
     saved[key]=opening;
     writeState(saved);
+  };
+
+  window.sidebarNavigate=function(id){
+    if(document.body.classList.contains('sidebar-collapsed')){
+      writeCollapsed(false);
+      applyCollapsed(false);
+    }
+    return go(id);
   };
 
   function approvalBadge(id){
@@ -78,7 +99,7 @@
   function navButton(item){
     var id=item[0],label=item[1],icon=item[2]||'·';
     var active=state.page===id;
-    return '<button title="'+esc(label)+'" onclick="go(\''+id+'\')" class="sidebar-btn '+(active?'active ':'')+'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] '+(active?'font-semibold':'text-gray-600')+' hover:bg-gray-100">'
+    return '<button title="'+esc(label)+'" onclick="sidebarNavigate(\''+id+'\')" class="sidebar-btn '+(active?'active ':'')+'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] '+(active?'font-semibold':'text-gray-600')+' hover:bg-gray-100">'
       +'<span class="nav-icon w-4 shrink-0 text-center text-[12px]">'+icon+'</span>'
       +'<span class="sidebar-label truncate">'+esc(label)+'</span>'
       +approvalBadge(id)
