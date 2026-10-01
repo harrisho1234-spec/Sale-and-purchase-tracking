@@ -1,7 +1,7 @@
 // Stock ↔ Sales fulfillment bridge.
 // Adds stock-side control for Sales Tracking item status without replacing the existing inventory module.
 (function(){
-  const F={rows:[],limit:60,loadedAt:0,showUnlinked:false};
+  const F={rows:[],limit:60,loadedAt:0,showUnlinked:false,selected:new Set()};
 
   function n(v){return Number(v||0)}
   function fmtQty(v){
@@ -56,9 +56,20 @@
     const r=await db.rpc('get_inventory_fulfillment_queue',{p_search:String(search||'').trim()||null});
     if(r.error)throw r.error;
     F.rows=r.data||[];
+    const liveIds=new Set(F.rows.map(x=>String(x.sales_order_item_id)));
+    F.selected=new Set([...F.selected].filter(id=>liveIds.has(String(id))));
     F.loadedAt=Date.now();
     return F.rows;
   }
+
+  function currentFulfillmentRows(){
+    return F.rows.filter(x=>F.showUnlinked?!x.inventory_tracking_enabled:!!x.inventory_tracking_enabled);
+  }
+  function selectedFulfillmentRows(){
+    const ids=F.selected;
+    return currentFulfillmentRows().filter(x=>ids.has(String(x.sales_order_item_id))&&n(x.remaining_qty)>0);
+  }
+  function selectedCount(){return selectedFulfillmentRows().length}
 
   function patchDeliveryTabLabel(trackedTotal){
     const btn=[...document.querySelectorAll('.inv-tab')].find(b=>String(b.getAttribute('onclick')||'').includes("setInventoryTab('delivery')"));
@@ -107,11 +118,27 @@
           </div>
         </div>
         ${F.showUnlinked?`<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>Older Sales items:</b> choose <b>Link to Stock</b> if they still need real fulfillment, or use <b>Historical Delivery</b> when they were already delivered before this workflow and current stock already reflects it.</div>`:''}
+        <div class="rounded-xl border bg-white p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div class="flex flex-wrap items-center gap-3">
+            <label class="inline-flex items-center gap-2 text-xs font-semibold cursor-pointer">
+              <input id="fulfillmentSelectAll" type="checkbox" onchange="toggleSelectAllFulfillment(this.checked)" ${sourceRows.length&&sourceRows.filter(x=>n(x.remaining_qty)>0).every(x=>F.selected.has(String(x.sales_order_item_id)))?'checked':''}>
+              Select All ${sourceRows.filter(x=>n(x.remaining_qty)>0).length}
+            </label>
+            <span class="text-[10px] text-gray-400">${selectedCount()} selected</span>
+            ${selectedCount()?'<button type="button" onclick="clearFulfillmentSelection()" class="px-2.5 py-1.5 border rounded-lg text-[10px] font-semibold">Clear</button>':''}
+          </div>
+          <div class="flex flex-wrap gap-2 justify-end">
+            ${canHistoricalReconcile()&&selectedCount()?'<button type="button" onclick="openBulkHistoricalFulfillmentReconcile()" class="px-3 py-2 rounded-lg border border-purple-200 bg-purple-50 text-purple-700 text-[10px] font-semibold">Historical Delivery Selected ('+selectedCount()+')</button>':''}
+          </div>
+        </div>
         <div class="grid gap-3">${shown.length?shown.map(x=>{
           const arrived=statusQty(x,'arrived');
           const tracked=!!x.inventory_tracking_enabled;
           const historical=n(x.historical_qty);
-          return `<div class="inv-card grid lg:grid-cols-[1.05fr_1.45fr_1.15fr_95px_105px_185px] gap-3 items-center ${tracked?'':'border-amber-200 bg-amber-50/20'}">
+          const sid=String(x.sales_order_item_id);
+          const checked=F.selected.has(sid);
+          return `<div class="inv-card grid lg:grid-cols-[34px_1.05fr_1.45fr_1.15fr_95px_105px_185px] gap-3 items-center ${tracked?'':'border-amber-200 bg-amber-50/20'} ${checked?'ring-2 ring-purple-100':''}">
+            <div class="flex items-start justify-center"><input type="checkbox" aria-label="Select fulfillment item" ${checked?'checked':''} onchange="toggleFulfillmentSelection('${sid}',this.checked)" class="mt-1"></div>
             <div><div class="flex flex-wrap gap-1.5 items-center"><b>${escHtml(x.document_no||'Sales Order')}</b><span class="px-2 py-0.5 rounded-full border text-[8px] font-bold ${tracked?'bg-green-50 border-green-200 text-green-700':'bg-amber-50 border-amber-200 text-amber-700'}">${tracked?'Linked to Stock':'Not Linked'}</span></div><div class="text-xs text-gray-500 mt-1">${escHtml(x.customer_name||'')}</div><div class="text-[9px] text-gray-400">${escHtml(localDateText(x.order_date))}${x.sales_rep_name?' · '+escHtml(x.sales_rep_name):''}</div></div>
             <div class="flex gap-3 items-center min-w-0"><div class="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 shrink-0">${x.image_url?`<img src="${escHtml(x.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${escHtml(x.product_code||'')}</div><div class="text-sm font-semibold truncate">${escHtml(x.item_name||'')}</div></div></div>
             <div><div class="text-[9px] uppercase font-bold text-gray-400 mb-1">Item Status</div><div class="flex flex-wrap gap-1">${statusChips(x)}</div></div>
@@ -131,15 +158,121 @@
   }
 
   window.showLinkedStockFulfillment=function(){
-    F.showUnlinked=false;F.limit=60;renderFulfillment();
+    F.showUnlinked=false;F.limit=60;F.selected.clear();renderFulfillment();
   };
   window.showUnlinkedStockFulfillment=function(){
-    F.showUnlinked=true;F.limit=60;renderFulfillment();
+    F.showUnlinked=true;F.limit=60;F.selected.clear();renderFulfillment();
+  };
+
+  window.toggleFulfillmentSelection=function(itemId,checked){
+    const id=String(itemId);
+    if(checked)F.selected.add(id);else F.selected.delete(id);
+    renderFulfillment();
+  };
+
+  window.toggleSelectAllFulfillment=function(checked){
+    const rows=currentFulfillmentRows().filter(x=>n(x.remaining_qty)>0);
+    if(checked)rows.forEach(x=>F.selected.add(String(x.sales_order_item_id)));
+    else rows.forEach(x=>F.selected.delete(String(x.sales_order_item_id)));
+    renderFulfillment();
+  };
+
+  window.clearFulfillmentSelection=function(){
+    F.selected.clear();
+    renderFulfillment();
   };
 
   window.showMoreStockFulfillment=function(){
     F.limit+=60;
     renderFulfillment();
+  };
+
+  window.openBulkHistoricalFulfillmentReconcile=async function(){
+    if(!canHistoricalReconcile())return showToast('Admin or Super Admin access required.','err');
+    const rows=selectedFulfillmentRows();
+    if(!rows.length)return showToast('Select at least one fulfillment item.','err');
+
+    try{
+      const lr=await db.from('stock_locations').select('id,code,name,active').eq('active',true).order('sort_order').order('code');
+      if(lr.error)throw lr.error;
+      const locations=lr.data||[];
+
+      const dates=[...new Set(rows.map(x=>String(x.order_date||'').slice(0,10)).filter(Boolean))];
+      const defaultDate=dates.length===1?dates[0]:'';
+
+      openModal('Bulk Historical Delivery — '+rows.length+' Selected',`<form id="bulkHistoricalFulfillmentForm" class="space-y-4">
+        <div class="rounded-xl border border-purple-200 bg-purple-50 p-3 text-xs text-purple-900">
+          <b>No current stock will be deducted.</b> This is only for items physically delivered before the live Customer Fulfillment / Stock OUT workflow was introduced.
+        </div>
+        <div class="grid md:grid-cols-3 gap-3">
+          <div><label class="text-xs font-semibold">Historical Delivery Date *</label><input id="bhfDate" type="date" max="${new Date().toISOString().slice(0,10)}" value="${defaultDate}" required class="mt-1 w-full border rounded-xl px-3 py-2.5"><div class="text-[9px] text-gray-400 mt-1">${dates.length===1?'Prefilled from the selected Sales Order date.':'Selected rows have different order dates; choose the correct common historical delivery date.'}</div></div>
+          <div><label class="text-xs font-semibold">Former Stock Location <span class="font-normal text-gray-400">(optional)</span></label><select id="bhfLocation" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="">Unknown / not recorded</option>${locations.map(l=>`<option value="${l.id}">${escHtml(l.code||l.name||'Location')}${l.name&&l.name!==l.code?' · '+escHtml(l.name):''}</option>`).join('')}</select><div class="text-[9px] text-gray-400 mt-1">Audit reference only; this does not change that location's stock.</div></div>
+          <div><label class="text-xs font-semibold">Batch Note</label><textarea id="bhfNote" maxlength="2000" rows="3" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Example: Historical delivery before inventory migration."></textarea></div>
+        </div>
+
+        <div class="rounded-xl border overflow-hidden">
+          <div class="px-3 py-2 bg-gray-50 border-b flex items-center justify-between"><b class="text-xs">Selected Items</b><span class="text-[10px] text-gray-400">Adjust Qty if only part was historically delivered</span></div>
+          <div class="max-h-[46vh] overflow-auto divide-y">
+            ${rows.map((x,i)=>`<div class="p-3 grid md:grid-cols-[1.1fr_1.5fr_90px] gap-3 items-center">
+              <div><div class="font-semibold text-xs">${escHtml(x.document_no||'Sales Order')}</div><div class="text-[10px] text-gray-400">${escHtml(x.customer_name||'')}</div></div>
+              <div class="min-w-0"><div class="text-[9px] font-bold text-[#a77d1a]">${escHtml(x.product_code||'')}</div><div class="text-xs font-semibold truncate">${escHtml(x.item_name||'')}</div><div class="text-[9px] text-gray-400">Remaining ${fmtQty(x.remaining_qty)}</div></div>
+              <div><label class="text-[9px] uppercase font-bold text-gray-400">Hist. Qty</label><input data-bhf-id="${escHtml(x.sales_order_item_id)}" data-bhf-max="${n(x.remaining_qty)}" type="number" min="1" max="${n(x.remaining_qty)}" step="1" value="${n(x.remaining_qty)}" class="mt-1 w-full border rounded-lg px-2 py-1.5 text-xs"></div>
+            </div>`).join('')}
+          </div>
+        </div>
+
+        <div id="bhfResult" class="hidden rounded-xl border p-3 text-xs"></div>
+        <button id="bhfSave" class="w-full bg-purple-700 text-white rounded-xl py-3 font-semibold">Reconcile ${rows.length} Selected — No Stock Deduction</button>
+      </form>`);
+
+      document.getElementById('bulkHistoricalFulfillmentForm').onsubmit=async e=>{
+        e.preventDefault();
+        const date=document.getElementById('bhfDate')?.value;
+        if(!date)return showToast('Historical delivery date is required.','err');
+
+        const inputs=[...document.querySelectorAll('[data-bhf-id]')];
+        const items=[];
+        for(const input of inputs){
+          const qty=Number(input.value||0),max=Number(input.dataset.bhfMax||0);
+          if(!Number.isInteger(qty)||qty<=0||qty>max)return showToast('Each historical quantity must be a whole number within its remaining quantity.','err');
+          items.push({sales_order_item_id:input.dataset.bhfId,qty});
+        }
+
+        const ok=confirm('Reconcile '+items.length+' selected Customer Fulfillment item(s) as historical delivery?\n\nThis WILL update fulfillment status and remaining quantity, but WILL NOT deduct current stock.');
+        if(!ok)return;
+
+        const btn=document.getElementById('bhfSave');btn.disabled=true;btn.textContent='Reconciling selected items...';
+        const rr=await db.rpc('reconcile_historical_customer_deliveries_batch',{
+          p_items:items,
+          p_delivery_date:date,
+          p_stock_location_id:document.getElementById('bhfLocation')?.value||null,
+          p_note:document.getElementById('bhfNote')?.value.trim()||null
+        });
+
+        if(rr.error){btn.disabled=false;btn.textContent='Reconcile '+rows.length+' Selected — No Stock Deduction';return showToast(rr.error.message,'err')}
+
+        const result=rr.data||{};
+        const success=Number(result.success_count||0),failed=Number(result.failed_count||0);
+        if(failed>0){
+          const detail=document.getElementById('bhfResult');
+          if(detail){
+            const failures=(Array.isArray(result.results)?result.results:[]).filter(x=>!x.ok).slice(0,8);
+            detail.className='rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900';
+            detail.innerHTML='<b>'+success+' reconciled · '+failed+' failed.</b>'+failures.map(x=>'<div class="mt-1">'+escHtml(x.error||'Could not reconcile one item.')+'</div>').join('')+(failed>8?'<div class="mt-1">More failed items omitted from this preview.</div>':'');
+          }
+          btn.disabled=false;btn.textContent='Close & Refresh';
+          btn.onclick=async ev=>{ev.preventDefault();closeModal();F.selected.clear();await loadRows(document.querySelector('.inv-search')?.value||'');await renderFulfillment()};
+          showToast(success+' historical deliveries reconciled; '+failed+' need review.','err');
+        }else{
+          closeModal();
+          F.selected.clear();
+          showToast(success+' historical delivery item'+(success===1?'':'s')+' reconciled. Current stock was not changed.');
+          await loadRows(document.querySelector('.inv-search')?.value||'');
+          await renderFulfillment();
+        }
+        if(typeof window.refreshAppNotifications==='function')setTimeout(()=>window.refreshAppNotifications(),50);
+      };
+    }catch(err){showToast(err.message||'Could not open bulk Historical Delivery reconciliation.','err')}
   };
 
   window.openHistoricalFulfillmentReconcile=async function(itemId){
