@@ -1,28 +1,42 @@
 // Unified pending approvals notification center.
 (function(){
-  var A={orders:[],customers:[],payments:[],stages:[],loading:false};
+  var A={orders:[],customers:[],payments:[],stages:[],stockActions:[],stockEdits:[],loading:false};
 
   function role(){return state.profile&&state.profile.role||''}
   function reviewer(){return ['manager','admin','super_admin'].indexOf(role())>=0}
-  function total(){return A.orders.length+A.customers.length+A.payments.length+A.stages.length}
+  function stockReviewer(){return ['admin','super_admin'].indexOf(role())>=0}
+  function stockTotal(){return A.stockActions.length+A.stockEdits.length}
+  function total(){return A.orders.length+A.customers.length+A.payments.length+A.stages.length+stockTotal()}
   function dateText(v){var d=new Date(v);return isNaN(d.getTime())?String(v||''):d.toLocaleString()}
 
   async function loadPending(){
-    if(!reviewer()){A.orders=[];A.customers=[];A.payments=[];A.stages=[];return}
+    if(!reviewer()){A.orders=[];A.customers=[];A.payments=[];A.stages=[];A.stockActions=[];A.stockEdits=[];return}
+    var stockActionPromise=stockReviewer()
+      ?db.rpc('get_stock_action_requests',{p_status:'pending'})
+      :Promise.resolve({data:[],error:null});
+    var stockEditPromise=stockReviewer()
+      ?db.from('stock_change_requests').select('id,status,requested_at').eq('status','pending').order('requested_at',{ascending:false}).limit(500)
+      :Promise.resolve({data:[],error:null});
     var res=await Promise.all([
       db.rpc('get_visible_sales_order_edit_requests',{p_status:'pending'}),
       db.rpc('get_visible_customer_change_requests',{p_status:'pending'}),
       db.rpc('get_visible_sales_payment_requests',{p_status:'pending'}),
-      db.rpc('get_visible_customer_lead_stage_change_requests',{p_status:'pending'})
+      db.rpc('get_visible_customer_lead_stage_change_requests',{p_status:'pending'}),
+      stockActionPromise,
+      stockEditPromise
     ]);
     if(res[0].error)throw res[0].error;
     if(res[1].error)throw res[1].error;
     if(res[2].error)throw res[2].error;
     if(res[3].error)throw res[3].error;
+    if(res[4].error)throw res[4].error;
+    if(res[5].error)throw res[5].error;
     A.orders=res[0].data||[];
     A.customers=res[1].data||[];
     A.payments=res[2].data||[];
     A.stages=res[3].data||[];
+    A.stockActions=res[4].data||[];
+    A.stockEdits=res[5].data||[];
   }
 
   function addNavBadge(){
@@ -83,13 +97,14 @@
       '<div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">'
       +'<div><div class="flex items-center gap-2"><h3 class="text-lg font-bold">Pending Approvals</h3>'
       +(count?'<span class="inline-flex min-w-[28px] h-[28px] px-2 rounded-full bg-red-500 text-white items-center justify-center text-xs font-bold">'+count+'</span>':'')
-      +'</div><p class="text-xs text-gray-500 mt-1">'+(count?'Sales requests are waiting for review.':'No Sales requests are waiting for review.')+'</p></div>'
-      +'<div class="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:min-w-[820px]">'
+      +'</div><p class="text-xs text-gray-500 mt-1">'+(count?'Sales and stock requests are waiting for review.':'No requests are waiting for review.')+'</p></div>'
+      +'<div class="grid grid-cols-2 lg:grid-cols-6 gap-3 lg:min-w-[940px]">'
       +'<button onclick="go(\'approvals\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">All Pending</div><div class="text-2xl font-bold mt-1">'+count+'</div></button>'
       +'<button onclick="openApprovalCenter(\'orders\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Order Edits</div><div class="text-2xl font-bold mt-1">'+A.orders.length+'</div></button>'
       +'<button onclick="openApprovalCenter(\'customers\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Customers</div><div class="text-2xl font-bold mt-1">'+A.customers.length+'</div></button>'
       +'<button onclick="openApprovalCenter(\'payments\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Payments</div><div class="text-2xl font-bold mt-1">'+A.payments.length+'</div></button>'
       +'<button onclick="openApprovalCenter(\'stages\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Stage Changes</div><div class="text-2xl font-bold mt-1">'+A.stages.length+'</div></button>'
+      +(stockReviewer()?'<button onclick="openStockApprovalRequests()" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Stock</div><div class="text-2xl font-bold mt-1">'+stockTotal()+'</div></button>':'')
       +'</div></div>';
     root.insertBefore(box,root.firstChild);
   }
@@ -146,7 +161,23 @@
     return r.request_type==='create'?'New Customer':'Customer Change';
   }
 
+  window.openStockApprovalRequests=async function(){
+    if(!stockReviewer())return showToast('Admin access required.','err');
+    closeModal();
+    if(typeof go==='function')await go('stock-inventory');
+    if(typeof setInventoryTab==='function')await setInventoryTab('requests');
+  };
+
   function requestHtml(r,type){
+    if(type==='stock'){
+      return '<button type="button" onclick="openStockApprovalRequests()" class="w-full text-left rounded-xl border border-amber-200 bg-amber-50/40 p-4 hover:bg-amber-50">'
+        +'<div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">'
+        +'<div><div class="flex flex-wrap items-center gap-2"><span class="px-2 py-1 rounded-md text-[9px] font-bold bg-amber-100 text-amber-800">STOCK</span><b>Stock & Inventory Approvals</b></div>'
+        +'<div class="text-xs text-gray-500 mt-1">'+stockTotal()+' pending stock request'+(stockTotal()===1?'':'s')+'</div>'
+        +'<div class="text-xs text-gray-700 mt-2">Open Stock & Inventory → Approvals / Requests to review full product details and approve or reject.</div></div>'
+        +'<span class="text-xs font-semibold text-amber-700">Open →</span>'
+        +'</div></button>';
+    }
     var order=type==='order',payment=type==='payment',stage=type==='stage';
     var title=order
       ?(r.document_no||'Order Edit')
@@ -197,6 +228,10 @@
     if(filter==='all'||filter==='customers')A.customers.forEach(function(x){rows.push({type:'customer',x:x})});
     if(filter==='all'||filter==='payments')A.payments.forEach(function(x){rows.push({type:'payment',x:x})});
     if(filter==='all'||filter==='stages')A.stages.forEach(function(x){rows.push({type:'stage',x:x})});
+    if((filter==='all'||filter==='stock')&&stockReviewer()&&stockTotal()>0){
+      var latest=([].concat(A.stockActions||[],A.stockEdits||[]).sort(function(a,b){return new Date(b.requested_at)-new Date(a.requested_at)})[0]||{});
+      rows.push({type:'stock',x:{requested_at:latest.requested_at||new Date().toISOString()}});
+    }
     rows.sort(function(a,b){return new Date(b.x.requested_at)-new Date(a.x.requested_at)});
     return rows;
   }
@@ -208,12 +243,13 @@
     var rows=rowsFor(filter);
 
     var html='<div class="space-y-4">'
-      +'<div class="grid grid-cols-2 md:grid-cols-5 gap-2">'
+      +'<div class="grid grid-cols-2 md:grid-cols-6 gap-2">'
       +'<button onclick="closeModal();openApprovalCenter(\'all\')" class="rounded-xl border px-3 py-3 '+(filter==='all'?'bg-[#211d18] text-white':'bg-white')+'"><div class="text-[9px] uppercase font-bold opacity-70">All</div><div class="text-xl font-bold">'+total()+'</div></button>'
       +'<button onclick="closeModal();openApprovalCenter(\'orders\')" class="rounded-xl border px-3 py-3 '+(filter==='orders'?'bg-[#211d18] text-white':'bg-white')+'"><div class="text-[9px] uppercase font-bold opacity-70">Order Edits</div><div class="text-xl font-bold">'+A.orders.length+'</div></button>'
       +'<button onclick="closeModal();openApprovalCenter(\'customers\')" class="rounded-xl border px-3 py-3 '+(filter==='customers'?'bg-[#211d18] text-white':'bg-white')+'"><div class="text-[9px] uppercase font-bold opacity-70">Customers</div><div class="text-xl font-bold">'+A.customers.length+'</div></button>'
       +'<button onclick="closeModal();openApprovalCenter(\'payments\')" class="rounded-xl border px-3 py-3 '+(filter==='payments'?'bg-[#211d18] text-white':'bg-white')+'"><div class="text-[9px] uppercase font-bold opacity-70">Payments</div><div class="text-xl font-bold">'+A.payments.length+'</div></button>'
       +'<button onclick="closeModal();openApprovalCenter(\'stages\')" class="rounded-xl border px-3 py-3 '+(filter==='stages'?'bg-[#211d18] text-white':'bg-white')+'"><div class="text-[9px] uppercase font-bold opacity-70">Stage Changes</div><div class="text-xl font-bold">'+A.stages.length+'</div></button>'
+      +(stockReviewer()?'<button onclick="closeModal();openApprovalCenter(\'stock\')" class="rounded-xl border px-3 py-3 '+(filter==='stock'?'bg-[#211d18] text-white':'bg-white')+'"><div class="text-[9px] uppercase font-bold opacity-70">Stock</div><div class="text-xl font-bold">'+stockTotal()+'</div></button>':'')
       +'</div>'
       +'<div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">Open a request to review it, make any final adjustment, then approve/post/publish or reject.</div>'
       +'<div class="grid gap-2 max-h-[58vh] overflow-y-auto pr-1">'
@@ -229,12 +265,13 @@
 
     document.getElementById('content').innerHTML=
       '<div class="space-y-5">'
-      +'<div class="grid sm:grid-cols-2 xl:grid-cols-5 gap-4">'
+      +'<div class="grid sm:grid-cols-2 xl:grid-cols-6 gap-4">'
       +'<button onclick="openApprovalCenter(\'all\')" class="card rounded-2xl p-5 text-left border"><div class="text-[10px] uppercase font-bold text-gray-400">All Pending</div><div class="text-3xl font-bold mt-2">'+total()+'</div><div class="text-xs text-gray-400 mt-1">Awaiting review</div></button>'
       +'<button onclick="openApprovalCenter(\'orders\')" class="card rounded-2xl p-5 text-left"><div class="text-[10px] uppercase font-bold text-gray-400">Order Edit Requests</div><div class="text-3xl font-bold mt-2">'+A.orders.length+'</div><div class="text-xs text-gray-400 mt-1">Sales order corrections</div></button>'
       +'<button onclick="openApprovalCenter(\'customers\')" class="card rounded-2xl p-5 text-left"><div class="text-[10px] uppercase font-bold text-gray-400">Customer Requests</div><div class="text-3xl font-bold mt-2">'+A.customers.length+'</div><div class="text-xs text-gray-400 mt-1">New customers and changes</div></button>'
       +'<button onclick="openApprovalCenter(\'payments\')" class="card rounded-2xl p-5 text-left"><div class="text-[10px] uppercase font-bold text-gray-400">Payment Requests</div><div class="text-3xl font-bold mt-2">'+A.payments.length+'</div><div class="text-xs text-gray-400 mt-1">Deposits and payments</div></button>'
       +'<button onclick="openApprovalCenter(\'stages\')" class="card rounded-2xl p-5 text-left"><div class="text-[10px] uppercase font-bold text-gray-400">Stage Corrections</div><div class="text-3xl font-bold mt-2">'+A.stages.length+'</div><div class="text-xs text-gray-400 mt-1">Backward CRM stage requests</div></button>'
+      +(stockReviewer()?'<button onclick="openStockApprovalRequests()" class="card rounded-2xl p-5 text-left border-amber-200"><div class="text-[10px] uppercase font-bold text-gray-400">Stock Approvals</div><div class="text-3xl font-bold mt-2 text-amber-700">'+stockTotal()+'</div><div class="text-xs text-gray-400 mt-1">Stock OUT, transfer and delivery requests</div></button>':'')
       +'</div>'
       +'<div class="card rounded-2xl p-5"><div class="flex items-center justify-between gap-3 mb-4"><div><h3 class="font-bold text-lg">Waiting for Review</h3><p class="text-xs text-gray-400">Newest first</p></div><button onclick="renderApprovals().then(refreshApprovalNotifications)" class="px-3 py-2 border rounded-lg text-xs font-semibold">Refresh</button></div>'
       +'<div class="grid gap-2">'+(rows.length?rows.map(function(r){return requestHtml(r.x,r.type)}).join(''):'<div class="rounded-xl border border-dashed p-10 text-center text-sm text-gray-400">No pending approvals.</div>')+'</div></div>'
@@ -252,7 +289,7 @@
       state.page='approvals';
       renderNav();
       document.getElementById('pageTitle').textContent='Pending Approvals';
-      document.getElementById('pageSubtitle').textContent='Review Sales requests before they become final';
+      document.getElementById('pageSubtitle').textContent='Review Sales and Stock requests before they become final';
       document.getElementById('content').innerHTML='<div class="py-20 text-center text-gray-400">Loading approvals...</div>';
       try{await renderApprovals()}catch(e){document.getElementById('content').innerHTML='<div class="card rounded-xl p-5 text-red-600">Error: '+esc(e.message)+'</div>'}
     };
