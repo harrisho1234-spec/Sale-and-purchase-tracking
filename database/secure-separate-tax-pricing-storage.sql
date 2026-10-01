@@ -165,6 +165,40 @@ where tax_item;
 grant select on public.inventory_product_tax_balance to authenticated;
 grant select on public.tax_inventory to authenticated;
 
+
+create or replace function public.get_tax_declared_set_components(p_declared_product_id uuid)
+returns jsonb
+language plpgsql
+stable
+set search_path to 'public','auth','pg_temp'
+as $function$
+declare v_result jsonb;
+begin
+  if not coalesce(public.can_view_inventory(),false) then raise exception 'Inventory access required'; end if;
+  if not exists(select 1 from public.product_catalog where id=p_declared_product_id and active=true and tax_item=true) then
+    raise exception 'Declared Tax Item not found';
+  end if;
+
+  select coalesce(
+    jsonb_agg(jsonb_build_object(
+      'id',m.id,'declared_product_id',m.declared_product_id,'component_product_id',m.component_product_id,
+      'required_qty',m.required_qty,'note',m.note,'code',p.code,'item_name',p.item_name,'brand',p.brand,'class',p.class,
+      'image_url',p.image_url,'tax_item',p.tax_item,'on_hand',coalesce(b.on_hand,0),'reserved',coalesce(b.reserved,0),
+      'available',coalesce(b.available,0),'incoming',coalesce(b.incoming,0),
+      'locations',coalesce(b.locations,'[]'::jsonb),'updated_at',m.updated_at
+    ) order by p.code,p.item_name),
+    '[]'::jsonb
+  )
+  into v_result
+  from public.tax_declared_set_components m
+  join public.product_catalog p on p.id=m.component_product_id
+  left join public.inventory_product_tax_balance b on b.product_id=p.id
+  where m.declared_product_id=p_declared_product_id;
+
+  return v_result;
+end
+$function$;
+
 alter table public.product_catalog
   drop column if exists tax_cost,
   drop column if exists tax_sale_price,
