@@ -581,6 +581,7 @@
       ['delivery','Customer Delivery',inv.taskBadges.delivery||0]
     ];
     t.push(['counts','Stock Count',inv.taskBadges.counts||0],['reports','Reports',0]);
+    if(role()==='super_admin')t.push(['history-reconstruction','History Repair',0]);
     if(canAdmin()||isStockController())t.push(['requests',canAdmin()?'Approvals / Requests':'My Requests',inv.taskBadges.requests||0]);
     return t;
   }
@@ -1446,6 +1447,7 @@
       else if(inv.tab==='receive')html=await renderReceive();
       else if(inv.tab==='delivery')html=await renderDelivery();
       else if(inv.tab==='counts')html=await renderCounts();
+      else if(inv.tab==='history-reconstruction'&&typeof window.renderHistoricalReconstructionPanel==='function')html=await window.renderHistoricalReconstructionPanel();
       else if(inv.tab==='requests')html=await renderStockRequests();
       else html=await renderReports();
       body.innerHTML=html;
@@ -1458,7 +1460,7 @@
     if(inv.tab==='tax')await loadTaxCore();
     else{await loadCore();await loadInventoryTasks()}
     if(!tabs().some(x=>x[0]===inv.tab))inv.tab='dashboard';
-    const searchPlaceholder=inv.tab==='receive'?'Search PO, vendor, SKU...':inv.tab==='delivery'?'Search invoice, customer, SKU...':'Search SKU, item, brand, location, reference...';
+    const searchPlaceholder=inv.tab==='receive'?'Search PO, vendor, SKU...':inv.tab==='delivery'?'Search invoice, customer, SKU...':inv.tab==='history-reconstruction'?'Search historical reference, customer/vendor, SKU...':'Search SKU, item, brand, location, reference...';
     document.getElementById('content').innerHTML=`<div class="max-w-[1550px] mx-auto">
       <div class="inv-tabs">${tabs().map(([v,l,b])=>`<button class="inv-tab ${inv.tab===v?'active':''}" onclick="setInventoryTab('${v}')">${l}${b?`<span class="inv-tab-badge">${Number(b).toLocaleString()}</span>`:''}</button>`).join('')}</div>
       <div class="inv-toolbar">
