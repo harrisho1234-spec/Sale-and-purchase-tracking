@@ -4,7 +4,7 @@
   let poProducts=[];
   let poItemSeq=0;
 
-  function isAdminRole(){return ['admin','super_admin'].includes(state.profile?.role||'')}
+  function isAdminRole(){return typeof window.hasAppPermission==='function'?window.hasAppPermission('procurement.po_create'):['admin','super_admin'].includes(state.profile?.role||'')}
   function uploaderReady(){return /^https:\/\/script\.google\.com\/macros\/s\//i.test(String(window.APP_CONFIG?.DRIVE_PHOTO_UPLOAD_URL||''))}
   function round2(v){return Math.round((Number(v||0)+Number.EPSILON)*100)/100}
   function imgUrl(raw){return typeof normalizeGoogleImageUrl==='function'?normalizeGoogleImageUrl(raw||''):(raw||'')}
