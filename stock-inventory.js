@@ -1717,6 +1717,16 @@
   };
 
   window.stockCountVarianceOnly=false;
+
+  function stockCountProductType(value){
+    const raw=String(value||'').trim();
+    if(!raw)return 'Uncategorized';
+    const styleWords=new Set(['classic','modern','neo-classic','contemporary','crystal','cast','glass','brass','ceramic']);
+    const parts=raw.split(',').map(x=>x.trim()).filter(Boolean);
+    const type=parts.find(x=>!styleWords.has(x.toLowerCase()))||parts[0]||'Uncategorized';
+    return type||'Uncategorized';
+  }
+
   window.updateStockCountProgress=function(){
     const rows=[...document.querySelectorAll('.stock-count-row')];
     if(!rows.length)return;
@@ -1732,10 +1742,17 @@
   };
   window.filterStockCountRows=function(){
     const qv=String(document.getElementById('stockCountSearch')?.value||'').trim().toLowerCase();
+    const type=String(document.getElementById('stockCountTypeFilter')?.value||'');
     document.querySelectorAll('.stock-count-row').forEach(row=>{
       const searchOk=!qv||String(row.dataset.search||'').includes(qv);
       const varianceOk=!window.stockCountVarianceOnly||row.dataset.variance==='1';
-      row.classList.toggle('hidden',!(searchOk&&varianceOk));
+      const typeOk=!type||String(row.dataset.productType||'')===type;
+      row.classList.toggle('hidden',!(searchOk&&varianceOk&&typeOk));
+    });
+    document.querySelectorAll('.stock-count-group-header').forEach(header=>{
+      const group=String(header.dataset.productType||'');
+      const visible=[...document.querySelectorAll('.stock-count-row')].some(row=>String(row.dataset.productType||'')===group&&!row.classList.contains('hidden'));
+      header.classList.toggle('hidden',!visible);
     });
     updateStockCountProgress();
   };
@@ -1760,6 +1777,7 @@
       if(input&&!input.disabled&&String(input.value||'').trim()===''){
         if(row.classList.contains('hidden')){
           const search=document.getElementById('stockCountSearch');if(search)search.value='';
+          const type=document.getElementById('stockCountTypeFilter');if(type)type.value='';
           window.stockCountVarianceOnly=false;
           const btn=document.getElementById('stockCountVarianceBtn');if(btn){btn.textContent='Show Variance Only';btn.classList.remove('bg-red-50','text-red-700','border-red-200')}
           filterStockCountRows();
@@ -1843,11 +1861,19 @@
     openModal('Stock Count','<div class="py-12 text-center text-sm text-gray-400">Loading stock count...</div>');
     const [c,items]=await Promise.all([
       db.from('stock_counts').select('*,stock_locations(code,name)').eq('id',countId).single(),
-      db.from('stock_count_items').select('*,product_catalog(code,item_name,brand,image_url),stock_locations(code,name)').eq('stock_count_id',countId).order('updated_at').limit(2000)
+      db.from('stock_count_items').select('*,product_catalog(code,item_name,brand,class,image_url),stock_locations(code,name)').eq('stock_count_id',countId).order('updated_at').limit(2000)
     ]);
     if(c.error||items.error){document.getElementById('modalBody').innerHTML=`<div class="text-red-600">${esc((c.error||items.error).message)}</div>`;return}
     const count=c.data,rows=items.data||[],closed=count.status==='closed';
     const canEditCount=canAdmin()||(isStockController()&&count.status==='draft');
+    const typedRows=rows.map(i=>({...i,_productType:stockCountProductType(i.product_catalog?.class)}));
+    const typeCounts=new Map();
+    typedRows.forEach(i=>typeCounts.set(i._productType,(typeCounts.get(i._productType)||0)+1));
+    const productTypes=[...typeCounts.keys()].sort((a,b)=>a.localeCompare(b));
+    const groupedRows=productTypes.map(type=>({
+      type,
+      rows:typedRows.filter(i=>i._productType===type).sort((a,b)=>String(a.product_catalog?.item_name||a.product_catalog?.code||'').localeCompare(String(b.product_catalog?.item_name||b.product_catalog?.code||'')))
+    }));
     document.getElementById('modalBody').innerHTML=`<div class="space-y-4">
       <div class="rounded-xl border bg-gray-50 p-4 flex flex-wrap gap-4 justify-between"><div><div class="text-[9px] uppercase font-bold text-gray-400">Period</div><b>${esc(String(count.period_month).slice(0,7))}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Location</div><b>${esc(count.stock_locations?.code||'All')}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Status</div><b>${esc(titleCase(count.status))}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Items</div><b>${rows.length}</b></div></div>
       <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2">
@@ -1857,6 +1883,10 @@
       <div class="rounded-xl border bg-[#fcfbf8] p-3">
         <div class="flex flex-col lg:flex-row lg:items-center gap-3">
           <input id="stockCountSearch" oninput="filterStockCountRows()" class="border rounded-xl px-3 py-2 text-xs flex-1" placeholder="Search SKU, item name or brand...">
+          <select id="stockCountTypeFilter" onchange="filterStockCountRows()" class="border rounded-xl px-3 py-2 text-xs bg-white lg:w-[190px]">
+            <option value="">All Product Types (${rows.length})</option>
+            ${productTypes.map(type=>`<option value="${esc(type)}">${esc(type)} (${typeCounts.get(type)||0})</option>`).join('')}
+          </select>
           <div class="flex flex-wrap gap-2">
             <button onclick="focusNextStockCountUncounted()" class="px-3 py-2 border rounded-xl text-xs font-semibold bg-white">Next Uncounted</button>
             <button id="stockCountVarianceBtn" onclick="toggleStockCountVarianceOnly()" class="px-3 py-2 border rounded-xl text-xs font-semibold bg-white">Show Variance Only</button>
@@ -1869,7 +1899,7 @@
           <div class="sticky top-0 z-10 bg-gray-50 p-2 grid gap-2 text-[9px] uppercase font-bold text-gray-400" style="grid-template-columns:320px 90px 140px 110px 80px 80px 220px 70px">
             <div>Product</div><div>System</div><div>Physical</div><div>QB Qty</div><div>Var</div><div>QB Var</div><div>Note</div><div></div>
           </div>
-          ${rows.map(i=>`<div data-count-item="${i.id}" data-system="${n(i.system_qty)}" data-search="${esc([i.product_catalog?.code,i.product_catalog?.item_name,i.product_catalog?.brand].filter(Boolean).join(' ').toLowerCase())}" data-variance="${i.physical_qty!=null&&n(i.physical_qty)!==n(i.system_qty)?'1':'0'}" class="stock-count-row p-2 grid gap-2 items-center text-xs ${i.physical_qty!=null&&n(i.physical_qty)!==n(i.system_qty)?'bg-red-50/40':''}" style="grid-template-columns:320px 90px 140px 110px 80px 80px 220px 70px"><div class="min-w-0 flex items-center gap-2.5"><div class="w-10 h-10 rounded-lg overflow-hidden bg-gray-100 border shrink-0">${i.product_catalog?.image_url?`<img src="${esc(i.product_catalog.image_url)}" alt="" loading="lazy" class="w-full h-full object-cover" onerror="this.style.display='none';this.nextElementSibling?.classList.remove('hidden')"><div class="hidden w-full h-full items-center justify-center text-[7px] text-gray-400">No Photo</div>`:'<div class="w-full h-full flex items-center justify-center text-[7px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[9px] font-bold text-[#a77d1a] truncate">${esc(i.product_catalog?.code||'')}</div><div class="truncate">${esc(i.product_catalog?.item_name||'')}</div></div></div><b class="text-right pr-2">${q(i.system_qty)}</b><div class="flex items-center gap-1"><input class="count-physical min-w-0 w-full border rounded-lg px-2 py-1.5" type="number" min="0" step="1" value="${i.physical_qty==null?'':n(i.physical_qty)}" oninput="updateStockCountProgress();filterStockCountRows()" onkeydown="stockCountPhysicalKeydown(event,'${i.id}')" ${!canEditCount?'disabled':''}>${canEditCount?`<button type="button" onclick="setStockCountPhysicalZero('${i.id}')" class="shrink-0 w-7 h-7 rounded-lg border bg-gray-50 text-[9px] font-bold" title="Counted: zero physical stock">0</button>`:''}</div><input class="count-qb min-w-0 w-full border rounded-lg px-2 py-1.5" type="number" min="0" step="1" value="${i.qb_qty==null?'':n(i.qb_qty)}" ${!canEditCount?'disabled':''}><b class="count-var text-right pr-2 ${i.physical_qty!=null&&n(i.physical_qty)!==n(i.system_qty)?'text-red-600':''}">${i.physical_qty==null?'-':q(n(i.physical_qty)-n(i.system_qty))}</b><span class="count-qbvar text-right pr-2">${i.qb_qty==null?'-':q(n(i.qb_qty)-n(i.system_qty))}</span><input class="count-note min-w-0 w-full border rounded-lg px-2 py-1.5" value="${esc(i.note||'')}" ${!canEditCount?'disabled':''}><button onclick="saveStockCountRow('${i.id}',true)" class="px-2 py-1.5 border rounded-lg text-[9px] font-semibold ${!canEditCount?'hidden':''}">Save</button></div>`).join('')}
+          ${groupedRows.map(group=>`<div class="stock-count-group-header sticky top-[32px] z-[9] px-3 py-2 bg-[#f7f3e8] border-y border-[#eadfbe] text-[10px] font-bold text-[#8a6717] uppercase tracking-wide" data-product-type="${esc(group.type)}">${esc(group.type)} <span class="ml-1 text-[9px] font-semibold text-gray-500">(${group.rows.length} item${group.rows.length===1?'':'s'})</span></div>${group.rows.map(i=>`<div data-count-item="${i.id}" data-system="${n(i.system_qty)}" data-product-type="${esc(i._productType)}" data-search="${esc([i.product_catalog?.code,i.product_catalog?.item_name,i.product_catalog?.brand,i._productType,i.product_catalog?.class].filter(Boolean).join(' ').toLowerCase())}" data-variance="${i.physical_qty!=null&&n(i.physical_qty)!==n(i.system_qty)?'1':'0'}" class="stock-count-row p-2 grid gap-2 items-center text-xs ${i.physical_qty!=null&&n(i.physical_qty)!==n(i.system_qty)?'bg-red-50/40':''}" style="grid-template-columns:320px 90px 140px 110px 80px 80px 220px 70px"><div class="min-w-0 flex items-center gap-2.5"><div class="w-10 h-10 rounded-lg overflow-hidden bg-gray-100 border shrink-0">${i.product_catalog?.image_url?`<img src="${esc(i.product_catalog.image_url)}" alt="" loading="lazy" class="w-full h-full object-cover" onerror="this.style.display='none';this.nextElementSibling?.classList.remove('hidden')"><div class="hidden w-full h-full items-center justify-center text-[7px] text-gray-400">No Photo</div>`:'<div class="w-full h-full flex items-center justify-center text-[7px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[9px] font-bold text-[#a77d1a] truncate">${esc(i.product_catalog?.code||'')}</div><div class="truncate">${esc(i.product_catalog?.item_name||'')}</div><div class="text-[8px] text-gray-400 truncate">${esc(i.product_catalog?.class||i._productType)}</div></div></div><b class="text-right pr-2">${q(i.system_qty)}</b><div class="flex items-center gap-1"><input class="count-physical min-w-0 w-full border rounded-lg px-2 py-1.5" type="number" min="0" step="1" value="${i.physical_qty==null?'':n(i.physical_qty)}" oninput="updateStockCountProgress();filterStockCountRows()" onkeydown="stockCountPhysicalKeydown(event,'${i.id}')" ${!canEditCount?'disabled':''}>${canEditCount?`<button type="button" onclick="setStockCountPhysicalZero('${i.id}')" class="shrink-0 w-7 h-7 rounded-lg border bg-gray-50 text-[9px] font-bold" title="Counted: zero physical stock">0</button>`:''}</div><input class="count-qb min-w-0 w-full border rounded-lg px-2 py-1.5" type="number" min="0" step="1" value="${i.qb_qty==null?'':n(i.qb_qty)}" ${!canEditCount?'disabled':''}><b class="count-var text-right pr-2 ${i.physical_qty!=null&&n(i.physical_qty)!==n(i.system_qty)?'text-red-600':''}">${i.physical_qty==null?'-':q(n(i.physical_qty)-n(i.system_qty))}</b><span class="count-qbvar text-right pr-2">${i.qb_qty==null?'-':q(n(i.qb_qty)-n(i.system_qty))}</span><input class="count-note min-w-0 w-full border rounded-lg px-2 py-1.5" value="${esc(i.note||'')}" ${!canEditCount?'disabled':''}><button onclick="saveStockCountRow('${i.id}',true)" class="px-2 py-1.5 border rounded-lg text-[9px] font-semibold ${!canEditCount?'hidden':''}">Save</button></div>`).join('')}`).join('')}
         </div>
       </div>
       <div class="flex flex-wrap gap-2 justify-end">
