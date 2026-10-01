@@ -106,7 +106,7 @@
             <button type="button" onclick="showUnlinkedStockFulfillment()" class="px-3 py-2 rounded-lg border border-amber-200 text-[10px] font-semibold ${F.showUnlinked?'bg-amber-100 text-amber-900':'bg-amber-50 text-amber-800'}">Review Unlinked Sales Items ${unlinkedRows.length}</button>
           </div>
         </div>
-        ${F.showUnlinked?`<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>Review only:</b> these older Sales Tracking rows are not inventory-linked. They do not count as Reserved unless Stock intentionally chooses <b>Link to Stock</b>.</div>`:''}
+        ${F.showUnlinked?`<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>Older Sales items:</b> choose <b>Link to Stock</b> if they still need real fulfillment, or use <b>Historical Delivery</b> when they were already delivered before this workflow and current stock already reflects it.</div>`:''}
         <div class="grid gap-3">${shown.length?shown.map(x=>{
           const arrived=statusQty(x,'arrived');
           const tracked=!!x.inventory_tracking_enabled;
@@ -262,12 +262,12 @@
           <div class="font-semibold">${escHtml(x.item_name||'')}</div>
           <div class="mt-3 flex flex-wrap gap-2 text-[10px]">
             <span class="px-2 py-1 rounded-lg border bg-white">Sold <b>${fmtQty(x.ordered_qty)}</b></span>
-            <span class="px-2 py-1 rounded-lg border bg-green-50 border-green-200 text-green-700">Delivered / OUT <b>${fmtQty(delivered)}</b></span>
+            <span class="px-2 py-1 rounded-lg border bg-green-50 border-green-200 text-green-700">Delivered / Fulfilled <b>${fmtQty(delivered)}</b></span>${n(x.historical_qty)>0?`<span class="px-2 py-1 rounded-lg border border-purple-200 bg-purple-50 text-purple-700">Historical <b>${fmtQty(x.historical_qty)}</b></span>`:''}
             ${cancelled>0?`<span class="px-2 py-1 rounded-lg border bg-gray-50">Cancelled <b>${fmtQty(cancelled)}</b></span>`:''}
             <span class="px-2 py-1 rounded-lg border bg-amber-50 border-amber-200 text-amber-800">Qty to assign <b>${fmtQty(active)}</b></span>
           </div>
         </div>
-        <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800"><b>Stock controls physical fulfillment.</b> Update the undelivered quantity below. Delivered is locked and changes only when Stock OUT is confirmed.</div>
+        <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800"><b>Stock controls physical fulfillment.</b> Update the undelivered quantity below. Delivered is locked; it changes only through approved Stock OUT or Admin Historical Delivery Reconciliation.</div>
         <div class="grid sm:grid-cols-2 gap-3">
           ${[['ordered','Ordered'],['production','Production'],['shipping','Shipping'],['arrived','Arrived']].map(([s,l])=>`<div><label class="text-xs font-semibold">${l}</label><input id="sfStatus_${s}" type="number" min="0" step="any" value="${vals[s]||0}" oninput="updateStockFulfillmentStatusTotal()" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>`).join('')}
         </div>
