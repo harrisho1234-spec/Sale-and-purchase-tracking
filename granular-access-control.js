@@ -163,7 +163,7 @@
     if(typeof esc==='function')return esc(v==null?'':String(v));
     return String(v==null?'':v).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   }
-  function currentRole(){return String((window.state&&state.profile&&state.profile.role)||'')}
+  function currentRole(){return String((typeof state!=='undefined'&&state.profile&&state.profile.role)||'')}
   function isSuperAdmin(){return currentRole()==='super_admin'}
   function legacyPermission(key){
     if(currentRole()==='super_admin')return true;
@@ -186,7 +186,7 @@
   async function loadMyAccess(force=false){
     if(A.loading)return;
     if(A.loaded&&!force)return;
-    if(!window.db||!window.state||!state.user||!state.profile)return;
+    if(typeof db==='undefined'||typeof state==='undefined'||!state.user||!state.profile)return;
     A.loading=true;
     try{
       const r=await db.rpc('get_my_effective_access');
@@ -587,7 +587,7 @@
   const boot=setInterval(()=>{
     tries++;
     try{
-      if(window.state&&state.user&&state.profile){
+      if(typeof state!=='undefined'&&state.user&&state.profile){
         clearInterval(boot);
         loadMyAccess(true);
       }else if(tries>100)clearInterval(boot);
@@ -597,7 +597,7 @@
   // Permission changes made by Super Admin are picked up by signed-in users without requiring a new login.
   setInterval(()=>{
     try{
-      if(window.state&&state.user&&state.profile&&!document.hidden)loadMyAccess(true);
+      if(typeof state!=='undefined'&&state.user&&state.profile&&!document.hidden)loadMyAccess(true);
     }catch(_){}
   },60000);
 })();
