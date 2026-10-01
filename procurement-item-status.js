@@ -13,7 +13,7 @@
     ready:'Ready to Ship',
     shipping:'Shipping',
     arrived:'Arrived',
-    closed:'Closed',
+    closed:'Closed / Complete',
     cancelled:'Cancelled'
   };
 
@@ -55,9 +55,10 @@
     const rows=all.filter(taxProcurementMatches).filter(i=>!q||[
       i.product_code_snapshot,i.item_name_snapshot,poLabel(i.supplier_pos),i.supplier_pos?.vendor_name,i.procurement_status
     ].some(v=>norm(v).includes(q)));
-    const production=rows.filter(x=>norm(x.procurement_status)==='production').length;
-    const shipping=rows.filter(x=>norm(x.procurement_status)==='shipping').length;
-    const arrived=rows.filter(x=>['arrived','closed'].includes(norm(x.procurement_status))).length;
+    const liveRows=rows.filter(x=>!x.historical_stock_reconciled);
+    const production=liveRows.filter(x=>norm(x.procurement_status)==='production').length;
+    const shipping=liveRows.filter(x=>norm(x.procurement_status)==='shipping').length;
+    const arrived=liveRows.filter(x=>['arrived','closed'].includes(norm(x.procurement_status))).length;
     const reconciled=rows.filter(x=>x.historical_stock_reconciled).length;
 
     document.getElementById('content').innerHTML=`<div class="max-w-[1500px] mx-auto">
@@ -69,7 +70,7 @@
         <button class="pw-tab" onclick="setProcurementTab('shipping')">Shipping / ETA</button>
         <button class="pw-tab" onclick="setProcurementTab('allocations')">SR Allocations</button>
       </div>
-      <div class="rounded-xl bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800 mb-4"><b>Item progress:</b> Admin and Super Admin can update each PO item separately. Stock Balance now treats Ordered / Production / Ready as <b>On Order</b>, Shipping as <b>Incoming</b>, and Arrived as <b>Arrived Pending Receive</b>.</div>
+      <div class="rounded-xl bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800 mb-4"><b>Item progress:</b> Admin and Super Admin can update each live PO item separately. Stock Balance treats Ordered / Production / Ready as <b>On Order</b>, Shipping as <b>Incoming</b>, and Arrived as <b>Arrived Pending Receive</b>. <b>Closed / Complete</b> is a finished terminal status and is excluded from the live procurement/stock pipeline. Historical / Reconciled items are locked until reconciliation is undone.</div>
       <div class="grid sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-4">
         <div class="pw-stat"><div class="pw-stat-label">In Production</div><div class="pw-stat-value text-amber-700">${production}</div></div>
         <div class="pw-stat"><div class="pw-stat-label">Shipping</div><div class="pw-stat-value text-blue-700">${shipping}</div></div>
@@ -85,7 +86,9 @@
           <div><b>${esc(poLabel(p))}</b><div class="text-[10px] text-gray-400">${esc(p.vendor_name||'')}</div><div class="text-[10px] text-gray-400 mt-1">ETA ${esc(p.estimated_arrival||'TBD')}</div></div>
           <div class="min-w-0"><div class="flex flex-wrap items-center gap-1.5"><div class="text-xs font-extrabold text-[#a77d1a] truncate">${esc(i.product_code_snapshot||'No Code')}${taxBadge(i)}</div>${i.historical_stock_reconciled?'<span class="px-2 py-0.5 rounded-md border border-purple-200 bg-purple-50 text-purple-700 text-[8px] font-bold">OPENING STOCK RECONCILED</span>':''}</div><div class="text-sm font-semibold truncate">${esc(i.item_name_snapshot||'')}</div><div class="text-[10px] text-gray-400 mt-1">Cost ${money(i.unit_cost||0,p.currency||'USD')} + Shipping ${money(i.shipping_cost||0,'USD')}${i.historical_stock_reconciliation_note?' · '+esc(i.historical_stock_reconciliation_note):''}</div></div>
           <div class="text-sm">Qty <b>${Number(i.qty||0)}</b></div>
-          <div><label class="text-[9px] uppercase font-bold text-gray-400">Item Status</label><select onchange="saveSupplierPOItemStatus('${i.id}',this.value,this)" class="mt-1 w-full border rounded-xl px-3 py-2 text-xs bg-white ${statusClass(i.procurement_status)}">${options(i.procurement_status)}</select></div>
+          <div><label class="text-[9px] uppercase font-bold text-gray-400">Item Status</label>${i.historical_stock_reconciled
+            ?'<div class="mt-1 w-full border border-purple-200 rounded-xl px-3 py-2 text-xs font-semibold bg-purple-50 text-purple-700">Historical / Reconciled</div><div class="text-[8px] text-gray-400 mt-1">Locked · undo reconciliation to reopen</div>'
+            :`<select onchange="saveSupplierPOItemStatus('${i.id}',this.value,this)" class="mt-1 w-full border rounded-xl px-3 py-2 text-xs bg-white ${statusClass(i.procurement_status)}">${options(i.procurement_status)}</select>`}</div>
           <div class="text-right"><button onclick="openEditSupplierPO('${i.supplier_po_id}')" class="px-3 py-2 border rounded-lg text-[10px] font-semibold">Open PO</button></div>
         </div>`;
       }).join(''):empty('No PO items found.')}</div></div>
@@ -190,16 +193,19 @@
     const section=document.querySelector('#modalBody .border-t.pt-5');
     if(!section)return;
     document.getElementById('poItemProgressManager')?.remove();
-    let r=await db.from('supplier_po_items').select('id,product_id,product_code_snapshot,item_name_snapshot,image_url_snapshot,qty,procurement_status,product_catalog(image_url)').eq('supplier_po_id',poId).order('created_at');
+    let r=await db.from('supplier_po_items').select('id,product_id,product_code_snapshot,item_name_snapshot,image_url_snapshot,qty,procurement_status,historical_stock_reconciled,historical_stock_reconciliation_note,product_catalog(image_url)').eq('supplier_po_id',poId).order('created_at');
     if(r.error){
-      r=await db.from('supplier_po_items').select('id,product_id,product_code_snapshot,item_name_snapshot,image_url_snapshot,qty,procurement_status').eq('supplier_po_id',poId).order('created_at');
+      r=await db.from('supplier_po_items').select('id,product_id,product_code_snapshot,item_name_snapshot,image_url_snapshot,qty,procurement_status,historical_stock_reconciled,historical_stock_reconciliation_note').eq('supplier_po_id',poId).order('created_at');
     }
     if(r.error||!(r.data||[]).length)return;
     const items=r.data||[];
     const box=document.createElement('div');box.id='poItemProgressManager';box.className='mb-4 rounded-2xl border border-[#e9e3d8] overflow-hidden bg-white';
-    box.innerHTML=`<div class="px-4 py-3 bg-[#fffaf0] border-b flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><div class="font-bold text-sm">Item Progress Status</div><div class="text-[10px] text-gray-500 mt-1">Update products separately when some are in Production, Shipping or Arrived.</div></div><div class="flex gap-2"><select id="poAllItemStatus" class="border rounded-lg px-2 py-2 text-xs bg-white">${options('placed')}</select><button type="button" onclick="setAllPOItemStatuses('${poId}')" class="px-3 py-2 bg-[#211d18] text-white rounded-lg text-xs font-semibold">Apply to All</button></div></div><div class="divide-y">${items.map(i=>{
+    box.innerHTML=`<div class="px-4 py-3 bg-[#fffaf0] border-b flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><div class="font-bold text-sm">Item Progress Status</div><div class="text-[10px] text-gray-500 mt-1">Update live products separately when some are in Production, Shipping or Arrived. Historical / Reconciled items stay locked.</div></div><div class="flex gap-2"><select id="poAllItemStatus" class="border rounded-lg px-2 py-2 text-xs bg-white">${options('placed')}</select><button type="button" onclick="setAllPOItemStatuses('${poId}')" class="px-3 py-2 bg-[#211d18] text-white rounded-lg text-xs font-semibold">Apply to Live Items</button></div></div><div class="divide-y">${items.map(i=>{
       const photo=i.image_url_snapshot||i.product_catalog?.image_url||'';
-      return `<div class="p-3 grid md:grid-cols-[58px_1fr_90px_230px] gap-3 items-center">${photoHtml(photo,52)}<div class="min-w-0"><div class="text-xs font-bold text-[#a77d1a] truncate">${esc(i.product_code_snapshot||'No Code')}${taxBadge(i)}</div><div class="text-sm truncate">${esc(i.item_name_snapshot||'')}</div></div><div class="text-xs">Qty <b>${Number(i.qty||0)}</b></div><select onchange="saveSupplierPOItemStatus('${i.id}',this.value,this)" class="w-full border rounded-xl px-3 py-2 text-xs bg-white ${statusClass(i.procurement_status)}">${options(i.procurement_status)}</select></div>`;
+      const statusControl=i.historical_stock_reconciled
+        ?'<div><div class="w-full border border-purple-200 rounded-xl px-3 py-2 text-xs font-semibold bg-purple-50 text-purple-700">Historical / Reconciled</div><div class="text-[8px] text-gray-400 mt-1">Locked</div></div>'
+        :`<select onchange="saveSupplierPOItemStatus('${i.id}',this.value,this)" class="w-full border rounded-xl px-3 py-2 text-xs bg-white ${statusClass(i.procurement_status)}">${options(i.procurement_status)}</select>`;
+      return `<div class="p-3 grid md:grid-cols-[58px_1fr_90px_230px] gap-3 items-center ${i.historical_stock_reconciled?'bg-purple-50/20':''}">${photoHtml(photo,52)}<div class="min-w-0"><div class="text-xs font-bold text-[#a77d1a] truncate">${esc(i.product_code_snapshot||'No Code')}${taxBadge(i)}</div><div class="text-sm truncate">${esc(i.item_name_snapshot||'')}</div>${i.historical_stock_reconciled?'<div class="text-[8px] text-purple-700 mt-1">Opening stock reconciled</div>':''}</div><div class="text-xs">Qty <b>${Number(i.qty||0)}</b></div>${statusControl}</div>`;
     }).join('')}</div>`;
     const firstList=section.querySelector('.divide-y.border.rounded-xl.mb-4');
     if(firstList)section.insertBefore(box,firstList);else section.prepend(box);
@@ -208,12 +214,12 @@
   window.setAllPOItemStatuses=async function(poId){
     if(!isAdminRole())return showToast('Admin access required.','err');
     const status=document.getElementById('poAllItemStatus')?.value||'placed';
-    const r=await db.from('supplier_po_items').update({procurement_status:status,updated_at:new Date().toISOString()}).eq('supplier_po_id',poId);
+    const r=await db.from('supplier_po_items').update({procurement_status:status,updated_at:new Date().toISOString()}).eq('supplier_po_id',poId).eq('historical_stock_reconciled',false);
     if(r.error)return showToast(r.error.message,'err');
     if(window.documentFlowState)window.documentFlowState.loaded=false;
     if(typeof window.invalidateInventoryCache==='function')window.invalidateInventoryCache();
     if(typeof window.invalidateInventoryTasks==='function')window.invalidateInventoryTasks();
-    showToast(`All PO items updated: ${statusLabel(status)}`);
+    showToast(`Live PO items updated: ${statusLabel(status)}`);
     await injectPOItemStatusManager(poId);
   };
 
