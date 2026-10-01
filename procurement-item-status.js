@@ -21,7 +21,10 @@
   };
 
   function norm(v=''){return String(v||'').trim().toLowerCase()}
-  function isAdminRole(){return ['admin','super_admin'].includes(state.profile?.role||'')}
+  function canProcurementView(){return typeof window.hasAppPermission==='function'?window.hasAppPermission('procurement.view'):['admin','super_admin'].includes(state.profile?.role||'')}
+  function canProcurementEdit(){return typeof window.hasAppPermission==='function'?window.hasAppPermission('procurement.po_edit'):['admin','super_admin'].includes(state.profile?.role||'')}
+  function canProcurementReconcile(){return typeof window.hasAppPermission==='function'?window.hasAppPermission('procurement.historical_reconcile'):['admin','super_admin'].includes(state.profile?.role||'')}
+  function isAdminRole(){return canProcurementView()}
   function statusLabel(s){return LABELS[norm(s)]||titleCase(s||'placed')}
   function statusClass(s){
     s=norm(s);
@@ -144,7 +147,7 @@
   };
 
   window.applyBulkPOItemStatus=async function(){
-    if(!isAdminRole())return showToast('Admin access required.','err');
+    if(!canProcurementEdit())return showToast('You do not have permission to edit PO items.','err');
     const selected=(poBulk.rows||[]).filter(x=>poBulk.selected.has(String(x.id))&&!x.historical_stock_reconciled);
     if(!selected.length)return showToast('Select at least one live PO item.','err');
     const status=document.getElementById('poBulkItemStatus')?.value||'placed';
