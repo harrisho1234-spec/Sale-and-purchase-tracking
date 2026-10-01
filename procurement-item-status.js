@@ -96,6 +96,69 @@
   }
 
 
+  window._historicalPOReconciliationRows=window._historicalPOReconciliationRows||[];
+  window._historicalPOReconciliationMode=window._historicalPOReconciliationMode||'needs';
+
+  function historicalPOIsFullyReconciled(x){
+    const out=Number(x.outstanding_items||0),rec=Number(x.reconciled_items||0);
+    return rec>0&&out>0&&rec>=out;
+  }
+  function historicalPOIsCandidate(x){
+    const out=Number(x.outstanding_items||0),rec=Number(x.reconciled_items||0);
+    return out>rec;
+  }
+  window.renderHistoricalPOReconciliationBody=function(){
+    const body=document.getElementById('modalBody');if(!body)return;
+    const all=window._historicalPOReconciliationRows||[];
+    const mode=window._historicalPOReconciliationMode||'needs';
+    const rows=mode==='history'?all.filter(historicalPOIsFullyReconciled):all.filter(historicalPOIsCandidate);
+    const needsCount=all.filter(historicalPOIsCandidate).length;
+    const historyCount=all.filter(historicalPOIsFullyReconciled).length;
+    body.innerHTML=`<div class="space-y-4">
+      <div class="rounded-xl border border-purple-200 bg-purple-50 p-4 text-xs text-purple-900">
+        <b>Use this only for imported / historical POs whose remaining quantities are already included in your opening or current physical stock.</b>
+        Marking a PO here does <b>not</b> create any stock movement and does <b>not</b> increase On Hand. It moves the PO into historical purchasing history once all of its remaining inventory lines are reconciled.
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button type="button" onclick="setHistoricalPOReconciliationMode('needs')" class="px-3 py-2 rounded-xl border text-xs font-semibold ${mode==='needs'?'bg-[#211d18] text-white border-[#211d18]':'bg-white'}">Needs Reconciliation (${needsCount})</button>
+        <button type="button" onclick="setHistoricalPOReconciliationMode('history')" class="px-3 py-2 rounded-xl border text-xs font-semibold ${mode==='history'?'bg-purple-700 text-white border-purple-700':'bg-white text-purple-700 border-purple-200'}">Reconciled History (${historyCount})</button>
+      </div>
+      <div class="flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between">
+        <label class="flex items-center gap-2 text-xs font-semibold"><input id="histPoSelectAll" type="checkbox" onchange="toggleHistoricalPOSelectAll(this.checked)"> Select all shown</label>
+        <div class="text-[10px] text-gray-400">${rows.length} PO${rows.length===1?'':'s'} ${mode==='history'?'in reconciled history':'still needing reconciliation'}</div>
+      </div>
+      ${mode==='needs'?'<input id="histPoReconNote" class="w-full border rounded-xl px-3 py-2 text-xs" value="Already reflected in opening/current stock" placeholder="Reconciliation note">':''}
+      <div class="max-h-[52vh] overflow-auto border rounded-xl divide-y">
+        ${rows.length?rows.map(x=>{
+          const out=Number(x.outstanding_items||0),rec=Number(x.reconciled_items||0);
+          const remaining=Math.max(out-rec,0);
+          return `<label class="flex gap-3 items-start p-3 hover:bg-gray-50 cursor-pointer ${mode==='history'?'bg-purple-50/20':''}">
+            <input class="hist-po-check mt-1" type="checkbox" value="${x.supplier_po_id}">
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-2"><b class="text-sm">${esc(x.po_number||'PO')}</b>${mode==='history'?'<span class="px-2 py-0.5 rounded-md border border-purple-200 bg-purple-50 text-purple-700 text-[8px] font-bold">HISTORICAL / RECONCILED</span>':rec>0?'<span class="px-2 py-0.5 rounded-md border border-amber-200 bg-amber-50 text-amber-700 text-[8px] font-bold">PARTIAL</span>':''}</div>
+              <div class="text-[10px] text-gray-500 mt-1">${esc(x.vendor_name||'')} · ${esc(String(x.order_date||''))}</div>
+            </div>
+            <div class="grid grid-cols-3 gap-4 text-right shrink-0">
+              <div><div class="text-[8px] uppercase text-gray-400 font-bold">Outstanding</div><b class="text-xs">${Number(x.outstanding_qty||0).toLocaleString()}</b></div>
+              <div><div class="text-[8px] uppercase text-purple-500 font-bold">Reconciled</div><b class="text-xs text-purple-700">${rec}</b></div>
+              <div><div class="text-[8px] uppercase text-gray-400 font-bold">${mode==='history'?'Lines':'Still Live'}</div><b class="text-xs">${mode==='history'?out:remaining}</b></div>
+            </div>
+          </label>`;
+        }).join(''):`<div class="p-10 text-center text-sm text-gray-400">${mode==='history'?'No reconciled historical POs yet.':'No POs currently need historical reconciliation.'}</div>`}
+      </div>
+      <div class="flex flex-wrap justify-end gap-2">
+        ${mode==='history'
+          ?'<button type="button" onclick="applyHistoricalPOReconciliation(false)" class="px-4 py-2 border border-purple-200 bg-purple-50 text-purple-700 rounded-xl text-xs font-semibold">Undo Selected Reconciliation</button>'
+          :'<button type="button" onclick="applyHistoricalPOReconciliation(true)" class="px-4 py-2 bg-[#211d18] text-white rounded-xl text-xs font-semibold">Mark Selected as Opening Stock</button>'}
+      </div>
+    </div>`;
+  };
+
+  window.setHistoricalPOReconciliationMode=function(mode){
+    window._historicalPOReconciliationMode=mode==='history'?'history':'needs';
+    renderHistoricalPOReconciliationBody();
+  };
+
   window.openHistoricalPOReconciliation=async function(){
     if(!isAdminRole())return showToast('Admin access required.','err');
     openModal('Historical Stock Reconciliation','<div class="py-12 text-center text-sm text-gray-400">Loading Supplier POs...</div>');
@@ -104,43 +167,9 @@
       document.getElementById('modalBody').innerHTML='<div class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">'+esc(r.error.message)+'</div>';
       return;
     }
-    const rows=Array.isArray(r.data)?r.data:[];
-    const body=document.getElementById('modalBody');
-    if(!body)return;
-    body.innerHTML=`<div class="space-y-4">
-      <div class="rounded-xl border border-purple-200 bg-purple-50 p-4 text-xs text-purple-900">
-        <b>Use this only for imported / historical POs whose remaining quantities are already included in your opening or current physical stock.</b>
-        Marking a PO here does <b>not</b> create any stock movement and does <b>not</b> increase On Hand. It only removes the remaining historical PO quantity from On Order / Incoming / Arrived Pending Receive.
-      </div>
-      <div class="flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between">
-        <label class="flex items-center gap-2 text-xs font-semibold"><input id="histPoSelectAll" type="checkbox" onchange="toggleHistoricalPOSelectAll(this.checked)"> Select all shown</label>
-        <div class="text-[10px] text-gray-400">${rows.length} PO${rows.length===1?'':'s'} with outstanding or reconciled inventory lines</div>
-      </div>
-      <input id="histPoReconNote" class="w-full border rounded-xl px-3 py-2 text-xs" value="Already reflected in opening/current stock" placeholder="Reconciliation note">
-      <div class="max-h-[52vh] overflow-auto border rounded-xl divide-y">
-        ${rows.length?rows.map(x=>{
-          const out=Number(x.outstanding_items||0);
-          const rec=Number(x.reconciled_items||0);
-          const fully=out>0&&rec>=out;
-          return `<label class="flex gap-3 items-start p-3 hover:bg-gray-50 cursor-pointer">
-            <input class="hist-po-check mt-1" type="checkbox" value="${x.supplier_po_id}">
-            <div class="min-w-0 flex-1">
-              <div class="flex flex-wrap items-center gap-2"><b class="text-sm">${esc(x.po_number||'PO')}</b>${fully?'<span class="px-2 py-0.5 rounded-md border border-purple-200 bg-purple-50 text-purple-700 text-[8px] font-bold">RECONCILED</span>':''}</div>
-              <div class="text-[10px] text-gray-500 mt-1">${esc(x.vendor_name||'')} · ${esc(String(x.order_date||''))}</div>
-            </div>
-            <div class="grid grid-cols-3 gap-4 text-right shrink-0">
-              <div><div class="text-[8px] uppercase text-gray-400 font-bold">Outstanding</div><b class="text-xs">${Number(x.outstanding_qty||0).toLocaleString()}</b></div>
-              <div><div class="text-[8px] uppercase text-gray-400 font-bold">Lines</div><b class="text-xs">${out}</b></div>
-              <div><div class="text-[8px] uppercase text-purple-500 font-bold">Reconciled</div><b class="text-xs text-purple-700">${rec}</b></div>
-            </div>
-          </label>`;
-        }).join(''):'<div class="p-10 text-center text-sm text-gray-400">No historical reconciliation candidates.</div>'}
-      </div>
-      <div class="flex flex-wrap justify-end gap-2">
-        <button type="button" onclick="applyHistoricalPOReconciliation(false)" class="px-4 py-2 border rounded-xl text-xs font-semibold">Undo Selected</button>
-        <button type="button" onclick="applyHistoricalPOReconciliation(true)" class="px-4 py-2 bg-[#211d18] text-white rounded-xl text-xs font-semibold">Mark Selected as Opening Stock</button>
-      </div>
-    </div>`;
+    window._historicalPOReconciliationRows=Array.isArray(r.data)?r.data:[];
+    if(!['needs','history'].includes(window._historicalPOReconciliationMode))window._historicalPOReconciliationMode='needs';
+    renderHistoricalPOReconciliationBody();
   };
 
   window.toggleHistoricalPOSelectAll=function(checked){
@@ -165,6 +194,8 @@
     if(typeof window.invalidateInventoryCache==='function')window.invalidateInventoryCache();
     if(typeof window.invalidateInventoryTasks==='function')window.invalidateInventoryTasks();
     showToast((r.data||0)+' PO item'+(Number(r.data||0)===1?'':'s')+(reconciled?' reconciled.':' restored to the PO pipeline.'));
+    window._historicalPOReconciliationMode=reconciled?'history':'needs';
+    if(typeof window.procurementWorkspace==='object'&&window.procurementWorkspace)window.procurementWorkspace.poView=reconciled?'history':'active';
     await openHistoricalPOReconciliation();
   };
 
