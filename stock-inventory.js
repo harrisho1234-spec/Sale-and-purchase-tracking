@@ -263,7 +263,7 @@
 
   async function loadDeclaredSetCatalog(){
     if(inv.declaredSetCatalogLoaded)return inv.declaredSetCatalog;
-    inv.declaredSetCatalog=await taxFetchAll('product_catalog','id,code,item_name,brand,class,image_url,tax_item,tax_cost,tax_sale_price,tax_currency,tax_pricing_note,active','code');
+    inv.declaredSetCatalog=await taxFetchAll('product_catalog','id,code,item_name,brand,class,image_url,tax_item,active','code');
     inv.declaredSetCatalogLoaded=true;
     return inv.declaredSetCatalog;
   }
@@ -292,8 +292,8 @@
     const st=inv.declaredSetState;
     const body=document.getElementById('modalBody');
     if(!st||!body)return;
-    const p=st.parent;
-    const rows=st.components||[];
+    const p=typeof taxProduct==='function'?taxProduct(st.parent):st.parent;
+    const rows=(st.components||[]).map(x=>typeof taxProduct==='function'?taxProduct(x):x);
     const onHandSets=declaredSetAvailability(rows,'on_hand');
     const availableSets=declaredSetAvailability(rows,'available');
     const componentTaxCost=declaredSetTaxPriceTotals(rows,'tax_cost');
@@ -835,7 +835,7 @@
   }
 
   async function renderBalance(){
-    if(inv.tab==='tax')await Promise.all([loadTaxCore(),loadTaxSaleAlerts()]);else await loadCore();
+    if(inv.tab==='tax')await Promise.all([loadTaxCore(),loadTaxSaleAlerts(),typeof loadTaxProducts==='function'?loadTaxProducts():Promise.resolve([])]);else await loadCore();
     const rows=balanceFiltered(),shown=rows.slice(0,inventoryLimit(inv.tab));
     const taxUnits=inv.tab==='tax'?inv.taxBalances.reduce((sum,p)=>sum+n(p.on_hand),0):0;
     const taxNoStock=inv.tab==='tax'?inv.taxBalances.filter(p=>n(p.on_hand)<=0).length:0;
@@ -848,10 +848,10 @@
       </div>
       ${taxSaleAlertsHtml()}`:'';
     return `${taxHeader}${inventoryFilterControls('balance')}<div class="card rounded-2xl overflow-hidden">
-      <div class="divide-y">${shown.length?shown.map(p=>{const a=inv.agingMap.get(p.product_id);return `<div class="p-4 grid xl:grid-cols-[1.45fr_68px_68px_68px_68px_68px_82px_92px_1.15fr_150px] gap-3 items-center ${n(p.on_hand)>0&&n(p.available)<=0?'bg-red-50/30 border-l-4 border-red-300':a?.age_bucket==='365+'?'bg-amber-50/25 border-l-4 border-amber-300':''}">
+      <div class="divide-y">${shown.length?shown.map(p=>{const a=inv.agingMap.get(p.product_id),tp=typeof taxProduct==='function'?taxProduct(p):p;return `<div class="p-4 grid xl:grid-cols-[1.45fr_68px_68px_68px_68px_68px_82px_92px_1.15fr_150px] gap-3 items-center ${n(p.on_hand)>0&&n(p.available)<=0?'bg-red-50/30 border-l-4 border-red-300':a?.age_bucket==='365+'?'bg-amber-50/25 border-l-4 border-amber-300':''}">
         <button onclick="openProductStockCard('${p.product_id}')" class="flex items-center gap-3 min-w-0 text-left hover:opacity-80">
           <div class="w-12 h-12 rounded-xl bg-gray-100 overflow-hidden shrink-0">${p.image_url?`<img loading="lazy" decoding="async" src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div>
-          <div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code)}${taxBadge(p)}</div><div class="font-semibold text-sm truncate">${esc(p.item_name)}</div><div class="text-[10px] text-gray-400">${esc(p.brand||'')} · Open Stock Card</div>${p.tax_group_or_set?`<div class="text-xs">${esc(p.tax_group_or_set)}</div>`:''}${inv.tab==='tax'?`<div class="text-[10px] mt-1 text-amber-800"><b>Tax Cost:</b> ${p.tax_cost==null?'—':money(n(p.tax_cost),p.tax_currency||'USD')} · <b>Tax Sale:</b> ${p.tax_sale_price==null?'—':money(n(p.tax_sale_price),p.tax_currency||'USD')}</div>`:''}${p.tax_pricing_note&&inv.tab==='tax'?`<div class="text-[9px] text-amber-700 mt-1 truncate">${esc(p.tax_pricing_note)}</div>`:''}${p.tax_note?`<div class="text-[10px] text-gray-500 whitespace-pre-wrap">${esc(p.tax_note)}</div>`:''}</div>
+          <div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code)}${taxBadge(p)}</div><div class="font-semibold text-sm truncate">${esc(p.item_name)}</div><div class="text-[10px] text-gray-400">${esc(p.brand||'')} · Open Stock Card</div>${p.tax_group_or_set?`<div class="text-xs">${esc(p.tax_group_or_set)}</div>`:''}${inv.tab==='tax'&&role()==='super_admin'?`<div class="text-[10px] mt-1 text-amber-800"><b>Tax Cost:</b> ${tp.tax_cost==null?'—':money(n(tp.tax_cost),tp.tax_currency||'USD')} · <b>Tax Sale:</b> ${tp.tax_sale_price==null?'—':money(n(tp.tax_sale_price),tp.tax_currency||'USD')}</div>`:''}${tp.tax_pricing_note&&inv.tab==='tax'&&role()==='super_admin'?`<div class="text-[9px] text-amber-700 mt-1 truncate">${esc(tp.tax_pricing_note)}</div>`:''}${p.tax_note?`<div class="text-[10px] text-gray-500 whitespace-pre-wrap">${esc(p.tax_note)}</div>`:''}</div>
         </button>
         <div class="text-xs"><div class="text-gray-400">On Hand</div><b class="text-sm">${q(p.on_hand)}</b></div>
         <div class="text-xs"><div class="text-gray-400">Reserved</div>${n(p.reserved)>0?`<button onclick="openReservedStockDetails('${p.product_id}')" class="text-sm font-bold text-amber-600 hover:underline" title="View Sales Orders reserving this stock">${q(p.reserved)}</button>`:`<b class="text-sm text-amber-600">${q(p.reserved)}</b>`}</div>
