@@ -64,11 +64,13 @@
     document.getElementById('content').innerHTML=`<div class="max-w-[1500px] mx-auto">
       <div class="pw-tabs">
         <button class="pw-tab" onclick="setProcurementTab('pos')">Supplier POs</button>
-        <button class="pw-tab" onclick="setProcurementTab('needs')">Needs Ordering</button>
+        <button class="pw-tab" data-needs-ordering-tab="1" onclick="setProcurementTab('needs')">Needs Ordering</button>
+        <button class="pw-tab" onclick="setProcurementTab('ordered')">PO Ordered Items</button>
         <button class="pw-tab active" onclick="setProcurementTab('items')">PO Items</button>
         <button class="pw-tab" onclick="setProcurementTab('payments')">Supplier Payments</button>
         <button class="pw-tab" onclick="setProcurementTab('shipping')">Shipping / ETA</button>
         <button class="pw-tab" onclick="setProcurementTab('allocations')">SR Allocations</button>
+        <button class="pw-tab" onclick="setProcurementTab('flow')">PO → SR → TK/RK</button>
       </div>
       <div class="rounded-xl bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800 mb-4"><b>Item progress:</b> Admin and Super Admin can update each live PO item separately. Stock Balance treats Ordered / Production / Ready as <b>On Order</b>, Shipping as <b>Incoming</b>, and Arrived as <b>Arrived Pending Receive</b>. <b>Closed / Complete</b> is a finished terminal status and is excluded from the live procurement/stock pipeline. Historical / Reconciled items are locked until reconciliation is undone.</div>
       <div class="grid sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-4">
