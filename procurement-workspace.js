@@ -343,7 +343,7 @@
       '<div class="grid gap-3">'+(cards||'<div class="card rounded-xl p-8 text-center text-gray-400">No PO ordered items match this filter.</div>')+'</div>';
   }
 
-  window.saveProcShipping=async function(id){const status=document.getElementById('status-'+id)?.value,eta=document.getElementById('eta-'+id)?.value||null;const patch={status,estimated_arrival:eta};if(['arrived','delivered'].includes(status))patch.actual_arrival=new Date().toISOString().slice(0,10);const r=await db.from('supplier_pos').update(patch).eq('id',id);if(r.error)return showToast(r.error.message,'err');if(window.documentFlowState)window.documentFlowState.loaded=false;showToast('Shipping / ETA updated');await load();await renderProcurementWorkspace()};
+  window.saveProcShipping=async function(id){const status=document.getElementById('status-'+id)?.value,eta=document.getElementById('eta-'+id)?.value||null;const patch={status,estimated_arrival:eta};if(['arrived','delivered'].includes(status))patch.actual_arrival=new Date().toISOString().slice(0,10);const r=await db.from('supplier_pos').update(patch).eq('id',id);if(r.error)return showToast(r.error.message,'err');if(window.documentFlowState)window.documentFlowState.loaded=false;if(typeof window.invalidateInventoryCache==='function')window.invalidateInventoryCache();if(typeof window.invalidateInventoryTasks==='function')window.invalidateInventoryTasks();showToast('Shipping / ETA updated');await load();await renderProcurementWorkspace()};
 
   window.renderProcurementWorkspace=async function(){
     inject();requireAdmin();
