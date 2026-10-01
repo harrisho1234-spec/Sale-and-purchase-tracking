@@ -24,6 +24,31 @@
     .gold{color:#b38b2e}.bg-gold{background:#b38b2e}
     .sidebar-btn.active{background:#211d18;color:#fff}
     .sidebar-btn.active .nav-icon{color:#d8b04d}
+    #desktopSidebar{width:16rem;transition:width .2s ease,padding .2s ease}
+    #appMain{transition:margin-left .2s ease}
+    #sidebarNav{min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#d8d2c8 transparent}
+    #sidebarNav::-webkit-scrollbar{width:6px}
+    #sidebarNav::-webkit-scrollbar-thumb{background:#d8d2c8;border-radius:999px}
+    .sidebar-compact-brand{display:none}
+    @media (min-width:1024px){
+      body.sidebar-collapsed #desktopSidebar{width:4.5rem;padding-left:.5rem;padding-right:.5rem}
+      body.sidebar-collapsed #appMain{margin-left:4.5rem!important}
+      body.sidebar-collapsed .sidebar-full-brand,
+      body.sidebar-collapsed .sidebar-label,
+      body.sidebar-collapsed .sidebar-group-label,
+      body.sidebar-collapsed .sidebar-chevron,
+      body.sidebar-collapsed #sidebarUser,
+      body.sidebar-collapsed .sidebar-signout-label{display:none!important}
+      body.sidebar-collapsed .sidebar-compact-brand{display:block}
+      body.sidebar-collapsed #sidebarNav .sidebar-btn{justify-content:center;gap:0;padding-left:.5rem;padding-right:.5rem}
+      body.sidebar-collapsed #sidebarNav .sidebar-group-header{justify-content:center;gap:0;padding-left:.5rem;padding-right:.5rem}
+      body.sidebar-collapsed #sidebarNav .sidebar-group-panel{margin-left:0;padding-left:0;border-left:0}
+      body.sidebar-collapsed #sidebarNav .nav-icon{width:1.5rem}
+      body.sidebar-collapsed .sidebar-approval-badge{position:absolute;right:.15rem;top:.15rem;min-width:14px;height:14px;padding:0;font-size:7px}
+      body.sidebar-collapsed #sidebarNav button{position:relative}
+      body.sidebar-collapsed #sidebarFooter{padding-top:.75rem}
+      body.sidebar-collapsed #sidebarFooter .sidebar-signout-btn{justify-content:center;padding-left:.5rem;padding-right:.5rem}
+    }
     .modal-bg{background:rgba(20,18,15,.55);backdrop-filter:blur(4px)}
     .hidden-force{display:none!important}
   </style>
@@ -46,12 +71,18 @@
   </div>
 
   <div id="appShell" class="hidden min-h-screen">
-    <aside class="fixed inset-y-0 left-0 w-64 bg-white border-r border-[#ece6dc] p-4 hidden lg:flex flex-col z-40">
-      <div class="px-3 py-4"><div class="font-serif text-2xl font-bold gold">L'IMPERIAL</div><div class="text-[9px] tracking-[.22em] text-gray-400">ORDER MANAGEMENT</div></div>
-      <nav id="sidebarNav" class="mt-4 space-y-1 flex-1"></nav>
-      <div class="border-t pt-4"><div id="sidebarUser" class="px-3 mb-3 text-xs text-gray-500"></div><button onclick="logout()" class="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-gray-100">Sign Out</button></div>
+    <aside id="desktopSidebar" class="fixed inset-y-0 left-0 bg-white border-r border-[#ece6dc] p-4 hidden lg:flex flex-col z-40">
+      <div class="px-2 py-4 flex items-start justify-between gap-2 shrink-0">
+        <div class="min-w-0">
+          <div class="sidebar-full-brand"><div class="font-serif text-2xl font-bold gold whitespace-nowrap">L'IMPERIAL</div><div class="text-[9px] tracking-[.22em] text-gray-400 whitespace-nowrap">ORDER MANAGEMENT</div></div>
+          <div class="sidebar-compact-brand font-serif text-2xl font-bold gold text-center" title="L'IMPERIAL">L'</div>
+        </div>
+        <button id="desktopSidebarToggle" type="button" onclick="toggleDesktopSidebar()" aria-label="Toggle sidebar" aria-expanded="true" title="Collapse sidebar" class="w-8 h-8 shrink-0 rounded-lg border border-[#e7e1d7] bg-white text-gray-500 hover:bg-gray-50 flex items-center justify-center text-lg leading-none">‹</button>
+      </div>
+      <nav id="sidebarNav" class="mt-2 space-y-1 flex-1 min-h-0 overflow-y-auto pr-1"></nav>
+      <div id="sidebarFooter" class="border-t pt-4 shrink-0"><div id="sidebarUser" class="px-3 mb-3 text-xs text-gray-500"></div><button title="Sign Out" onclick="logout()" class="sidebar-signout-btn w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-gray-100"><span class="w-4 text-center shrink-0">⇥</span><span class="sidebar-signout-label">Sign Out</span></button></div>
     </aside>
-    <main class="lg:ml-64 min-h-screen">
+    <main id="appMain" class="lg:ml-64 min-h-screen">
       <header class="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-[#ece6dc]">
         <div class="px-4 md:px-7 h-16 flex items-center justify-between"><div><h1 id="pageTitle" class="text-lg md:text-xl font-bold">Dashboard</h1><p id="pageSubtitle" class="text-[11px] text-gray-400">Sales & Order Management</p></div><div class="flex items-center gap-2"><button onclick="openChangeMyPassword()" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">My Password</button><button onclick="refreshCurrentPage()" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">Refresh</button><button id="mobileMenuBtn" class="lg:hidden px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs">Menu</button></div></div>
         <div id="mobileNav" class="hidden lg:hidden px-4 pb-3 bg-white border-t"></div>
@@ -131,7 +162,7 @@
   <script src="customer-database.js?v=20260929-1215"></script>
   <script src="customer-database-social-overlay.js?v=20260928-1715"></script>
   <script src="customer-google-history.js?v=20260928-0825"></script>
-  <script src="compact-sidebar.js?v=20261001-stock-locations1"></script>
+  <script src="compact-sidebar.js?v=20261001-collapse1"></script>
   <script src="tax-inventory.js?v=20260930-tax1"></script>
   <script src="stock-inventory.js?v=20261001-location-groups1"></script>
   <script src="stock-location-management.js?v=20261001-1"></script>
