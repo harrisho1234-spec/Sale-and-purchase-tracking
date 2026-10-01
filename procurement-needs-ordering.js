@@ -131,11 +131,13 @@
     document.getElementById('content').innerHTML=`<div class="max-w-[1500px] mx-auto">
       <div class="pw-tabs">
         <button class="pw-tab" onclick="setProcurementTab('pos')">Supplier POs</button>
-        <button class="pw-tab active" onclick="setProcurementTab('needs')">Needs Ordering <span class="ml-1 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">${needsCache.length}</span></button>
+        <button class="pw-tab active" data-needs-ordering-tab="1" onclick="setProcurementTab('needs')">Needs Ordering <span class="ml-1 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">${needsCache.length}</span></button>
+        <button class="pw-tab" onclick="setProcurementTab('ordered')">PO Ordered Items</button>
         <button class="pw-tab" onclick="setProcurementTab('items')">PO Items</button>
         <button class="pw-tab" onclick="setProcurementTab('payments')">Supplier Payments</button>
         <button class="pw-tab" onclick="setProcurementTab('shipping')">Shipping / ETA</button>
         <button class="pw-tab" onclick="setProcurementTab('allocations')">SR Allocations</button>
+        <button class="pw-tab" onclick="setProcurementTab('flow')">PO → SR → TK/RK</button>
       </div>
       <div class="rounded-xl bg-amber-50 border border-amber-100 p-3 text-xs text-amber-900 mb-4"><b>Needs Ordering</b> automatically shows SR / pre-order quantities that are not yet fully covered by supplier PO allocations. Once the full quantity is linked to a PO, it disappears from this list.</div>
       <div class="grid sm:grid-cols-3 gap-3 mb-4"><div class="pw-stat"><div class="pw-stat-label">SRs Waiting</div><div class="pw-stat-value">${srCount}</div></div><div class="pw-stat"><div class="pw-stat-label">Products</div><div class="pw-stat-value">${productCount}</div></div><div class="pw-stat"><div class="pw-stat-label">Total Qty to Order</div><div class="pw-stat-value text-amber-700">${fmtQty(totalQty)}</div></div></div>
