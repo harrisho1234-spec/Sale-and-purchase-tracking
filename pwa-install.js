@@ -21,7 +21,7 @@
     const b=document.createElement('button');
     b.id='pwaInstallBtn';
     b.type='button';
-    b.className='hidden sm:inline-flex px-3 py-2 rounded-lg border border-[#d8b04d] bg-[#fffaf0] text-[#8b6914] text-xs font-semibold whitespace-nowrap';
+    b.className='hidden inline-flex px-3 py-2 rounded-lg border border-[#d8b04d] bg-[#fffaf0] text-[#8b6914] text-xs font-semibold whitespace-nowrap';
     b.textContent='Install App';
     b.title="Install L'Imperial Order Management";
     b.onclick=window.installLimperialApp;
