@@ -41,9 +41,21 @@
   };
 
   function role(){return state.profile?.role||''}
-  function canView(){return ['stock_controller','accountant','manager','admin','super_admin'].includes(role())}
-  function canOperate(){return ['stock_controller','admin','super_admin'].includes(role())}
-  function canAdmin(){return ['admin','super_admin'].includes(role())}
+  function canView(){
+    return typeof window.hasAppPermission==='function'
+      ?window.hasAppPermission('inventory.view')
+      :['stock_controller','accountant','manager','admin','super_admin'].includes(role());
+  }
+  function canOperate(){
+    return typeof window.hasAppPermission==='function'
+      ?window.hasAppPermission('inventory.operate')
+      :['stock_controller','admin','super_admin'].includes(role());
+  }
+  function canAdmin(){
+    return typeof window.hasAppPermission==='function'
+      ?window.hasAppPermission('inventory.approve')
+      :['admin','super_admin'].includes(role());
+  }
   function canReconcile(){return canAdmin()}
   function isStockController(){return role()==='stock_controller'}
   function n(v){return Number(v||0)}
