@@ -213,6 +213,20 @@ function openModal(title,body){
   requestAnimationFrame(()=>{ modal.scrollTop=0; });
 }
 function closeModal(){document.getElementById('modal').classList.add('hidden')}
+
+// Shared modal close behavior: click/tap the dimmed backdrop or press Escape.
+// Clicks inside the white modal card do not close it.
+const sharedModal=document.getElementById('modal');
+if(sharedModal&&!sharedModal.dataset.outsideCloseBound){
+  sharedModal.dataset.outsideCloseBound='1';
+  sharedModal.addEventListener('click',e=>{
+    if(e.target===sharedModal)closeModal();
+  });
+  document.addEventListener('keydown',e=>{
+    if(e.key==='Escape'&&!sharedModal.classList.contains('hidden'))closeModal();
+  });
+}
+
 function openNewCustomer(){openModal('Add Customer',`<form id="customerForm" class="grid md:grid-cols-2 gap-4"><input name="name" required class="md:col-span-2 border rounded-xl px-3 py-2" placeholder="Customer name"><div class="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-700"><b>Customer ID is automatic.</b> Phone formatting is normalized for duplicate checking.</div><input name="phone" class="border rounded-xl px-3 py-2" placeholder="Phone"><input name="email" type="email" class="border rounded-xl px-3 py-2" placeholder="Email"><input name="address" class="md:col-span-2 border rounded-xl px-3 py-2" placeholder="Address"><textarea name="notes" class="md:col-span-2 border rounded-xl px-3 py-2" placeholder="Notes"></textarea><button class="md:col-span-2 bg-[#211d18] text-white rounded-xl py-3">Save Customer</button></form>`);document.getElementById('customerForm').onsubmit=saveCustomer}
 async function saveCustomer(e){e.preventDefault();const row=Object.fromEntries(new FormData(e.target).entries());row.assigned_sales_id=state.user.id;row.created_by=state.user.id;const {error}=await db.from('customers').insert(row);if(error)return showToast(error.message,'err');closeModal();showToast('Customer added');await go('customers')}
 
