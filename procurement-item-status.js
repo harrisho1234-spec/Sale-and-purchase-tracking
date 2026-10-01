@@ -40,9 +40,9 @@
   function poLabel(p){return p?.po_number||p?.po_pending_reference||'PO Pending'}
 
   async function loadPOItems(){
-    let r=await db.from('supplier_po_items').select('id,supplier_po_id,product_id,product_code_snapshot,item_name_snapshot,image_url_snapshot,qty,unit_cost,shipping_cost,procurement_status,created_at,product_catalog(image_url),supplier_pos(id,po_number,po_pending_reference,vendor_name,currency,status,estimated_arrival)').order('created_at',{ascending:false});
+    let r=await db.from('supplier_po_items').select('id,supplier_po_id,product_id,product_code_snapshot,item_name_snapshot,image_url_snapshot,qty,unit_cost,shipping_cost,procurement_status,historical_stock_reconciled,historical_stock_reconciled_at,historical_stock_reconciliation_note,created_at,product_catalog(image_url),supplier_pos(id,po_number,po_pending_reference,vendor_name,currency,status,estimated_arrival)').order('created_at',{ascending:false});
     if(r.error){
-      r=await db.from('supplier_po_items').select('id,supplier_po_id,product_id,product_code_snapshot,item_name_snapshot,image_url_snapshot,qty,unit_cost,shipping_cost,procurement_status,created_at,supplier_pos(id,po_number,po_pending_reference,vendor_name,currency,status,estimated_arrival)').order('created_at',{ascending:false});
+      r=await db.from('supplier_po_items').select('id,supplier_po_id,product_id,product_code_snapshot,item_name_snapshot,image_url_snapshot,qty,unit_cost,shipping_cost,procurement_status,historical_stock_reconciled,historical_stock_reconciled_at,historical_stock_reconciliation_note,created_at,supplier_pos(id,po_number,po_pending_reference,vendor_name,currency,status,estimated_arrival)').order('created_at',{ascending:false});
     }
     if(r.error)throw r.error;
     return r.data||[];
@@ -58,6 +58,7 @@
     const production=rows.filter(x=>norm(x.procurement_status)==='production').length;
     const shipping=rows.filter(x=>norm(x.procurement_status)==='shipping').length;
     const arrived=rows.filter(x=>['arrived','closed'].includes(norm(x.procurement_status))).length;
+    const reconciled=rows.filter(x=>x.historical_stock_reconciled).length;
 
     document.getElementById('content').innerHTML=`<div class="max-w-[1500px] mx-auto">
       <div class="pw-tabs">
@@ -68,20 +69,21 @@
         <button class="pw-tab" onclick="setProcurementTab('shipping')">Shipping / ETA</button>
         <button class="pw-tab" onclick="setProcurementTab('allocations')">SR Allocations</button>
       </div>
-      <div class="rounded-xl bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800 mb-4"><b>Item progress:</b> Admin and Super Admin can update each PO item separately. For linked SR items, this status automatically flows into Sales Order Tracking.</div>
-      <div class="grid sm:grid-cols-3 gap-3 mb-4">
+      <div class="rounded-xl bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800 mb-4"><b>Item progress:</b> Admin and Super Admin can update each PO item separately. Stock Balance now treats Ordered / Production / Ready as <b>On Order</b>, Shipping as <b>Incoming</b>, and Arrived as <b>Arrived Pending Receive</b>.</div>
+      <div class="grid sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-4">
         <div class="pw-stat"><div class="pw-stat-label">In Production</div><div class="pw-stat-value text-amber-700">${production}</div></div>
         <div class="pw-stat"><div class="pw-stat-label">Shipping</div><div class="pw-stat-value text-blue-700">${shipping}</div></div>
         <div class="pw-stat"><div class="pw-stat-label">Arrived / Closed</div><div class="pw-stat-value text-green-700">${arrived}</div></div>
+        <div class="pw-stat"><div class="pw-stat-label">Historical Reconciled</div><div class="pw-stat-value text-purple-700">${reconciled}</div></div>
       </div>
-      <div class="pw-toolbar"><input class="pw-search" value="${esc(pw.search)}" oninput="setProcurementSearch(this.value)" placeholder="Search PO, supplier, SKU, item, status..."></div>
+      <div class="pw-toolbar"><input class="pw-search" value="${esc(pw.search)}" oninput="setProcurementSearch(this.value)" placeholder="Search PO, supplier, SKU, item, status..."><button onclick="openHistoricalPOReconciliation()" class="px-4 py-2 border border-purple-200 bg-purple-50 text-purple-700 rounded-xl text-xs font-semibold">Historical Stock Reconciliation</button></div>
       <div class="card rounded-2xl overflow-hidden"><div class="divide-y">${rows.length?rows.map(i=>{
         const p=i.supplier_pos||{};
         const photo=i.image_url_snapshot||i.product_catalog?.image_url||'';
-        return `<div class="p-4 grid xl:grid-cols-[64px_1.05fr_1.5fr_90px_230px_120px] gap-3 items-center">
+        return `<div class="p-4 grid xl:grid-cols-[64px_1.05fr_1.5fr_90px_230px_120px] gap-3 items-center ${i.historical_stock_reconciled?'bg-purple-50/20':''}">
           ${photoHtml(photo,56)}
           <div><b>${esc(poLabel(p))}</b><div class="text-[10px] text-gray-400">${esc(p.vendor_name||'')}</div><div class="text-[10px] text-gray-400 mt-1">ETA ${esc(p.estimated_arrival||'TBD')}</div></div>
-          <div class="min-w-0"><div class="text-xs font-extrabold text-[#a77d1a] truncate">${esc(i.product_code_snapshot||'No Code')}${taxBadge(i)}</div><div class="text-sm font-semibold truncate">${esc(i.item_name_snapshot||'')}</div><div class="text-[10px] text-gray-400 mt-1">Cost ${money(i.unit_cost||0,p.currency||'USD')} + Shipping ${money(i.shipping_cost||0,'USD')}</div></div>
+          <div class="min-w-0"><div class="flex flex-wrap items-center gap-1.5"><div class="text-xs font-extrabold text-[#a77d1a] truncate">${esc(i.product_code_snapshot||'No Code')}${taxBadge(i)}</div>${i.historical_stock_reconciled?'<span class="px-2 py-0.5 rounded-md border border-purple-200 bg-purple-50 text-purple-700 text-[8px] font-bold">OPENING STOCK RECONCILED</span>':''}</div><div class="text-sm font-semibold truncate">${esc(i.item_name_snapshot||'')}</div><div class="text-[10px] text-gray-400 mt-1">Cost ${money(i.unit_cost||0,p.currency||'USD')} + Shipping ${money(i.shipping_cost||0,'USD')}${i.historical_stock_reconciliation_note?' · '+esc(i.historical_stock_reconciliation_note):''}</div></div>
           <div class="text-sm">Qty <b>${Number(i.qty||0)}</b></div>
           <div><label class="text-[9px] uppercase font-bold text-gray-400">Item Status</label><select onchange="saveSupplierPOItemStatus('${i.id}',this.value,this)" class="mt-1 w-full border rounded-xl px-3 py-2 text-xs bg-white ${statusClass(i.procurement_status)}">${options(i.procurement_status)}</select></div>
           <div class="text-right"><button onclick="openEditSupplierPO('${i.supplier_po_id}')" class="px-3 py-2 border rounded-lg text-[10px] font-semibold">Open PO</button></div>
@@ -89,6 +91,79 @@
       }).join(''):empty('No PO items found.')}</div></div>
     </div>`;
   }
+
+
+  window.openHistoricalPOReconciliation=async function(){
+    if(!isAdminRole())return showToast('Admin access required.','err');
+    openModal('Historical Stock Reconciliation','<div class="py-12 text-center text-sm text-gray-400">Loading Supplier POs...</div>');
+    const r=await db.rpc('get_historical_po_reconciliation_candidates');
+    if(r.error){
+      document.getElementById('modalBody').innerHTML='<div class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">'+esc(r.error.message)+'</div>';
+      return;
+    }
+    const rows=Array.isArray(r.data)?r.data:[];
+    const body=document.getElementById('modalBody');
+    if(!body)return;
+    body.innerHTML=`<div class="space-y-4">
+      <div class="rounded-xl border border-purple-200 bg-purple-50 p-4 text-xs text-purple-900">
+        <b>Use this only for imported / historical POs whose remaining quantities are already included in your opening or current physical stock.</b>
+        Marking a PO here does <b>not</b> create any stock movement and does <b>not</b> increase On Hand. It only removes the remaining historical PO quantity from On Order / Incoming / Arrived Pending Receive.
+      </div>
+      <div class="flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between">
+        <label class="flex items-center gap-2 text-xs font-semibold"><input id="histPoSelectAll" type="checkbox" onchange="toggleHistoricalPOSelectAll(this.checked)"> Select all shown</label>
+        <div class="text-[10px] text-gray-400">${rows.length} PO${rows.length===1?'':'s'} with outstanding or reconciled inventory lines</div>
+      </div>
+      <input id="histPoReconNote" class="w-full border rounded-xl px-3 py-2 text-xs" value="Already reflected in opening/current stock" placeholder="Reconciliation note">
+      <div class="max-h-[52vh] overflow-auto border rounded-xl divide-y">
+        ${rows.length?rows.map(x=>{
+          const out=Number(x.outstanding_items||0);
+          const rec=Number(x.reconciled_items||0);
+          const fully=out>0&&rec>=out;
+          return `<label class="flex gap-3 items-start p-3 hover:bg-gray-50 cursor-pointer">
+            <input class="hist-po-check mt-1" type="checkbox" value="${x.supplier_po_id}">
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-2"><b class="text-sm">${esc(x.po_number||'PO')}</b>${fully?'<span class="px-2 py-0.5 rounded-md border border-purple-200 bg-purple-50 text-purple-700 text-[8px] font-bold">RECONCILED</span>':''}</div>
+              <div class="text-[10px] text-gray-500 mt-1">${esc(x.vendor_name||'')} · ${esc(String(x.order_date||''))}</div>
+            </div>
+            <div class="grid grid-cols-3 gap-4 text-right shrink-0">
+              <div><div class="text-[8px] uppercase text-gray-400 font-bold">Outstanding</div><b class="text-xs">${Number(x.outstanding_qty||0).toLocaleString()}</b></div>
+              <div><div class="text-[8px] uppercase text-gray-400 font-bold">Lines</div><b class="text-xs">${out}</b></div>
+              <div><div class="text-[8px] uppercase text-purple-500 font-bold">Reconciled</div><b class="text-xs text-purple-700">${rec}</b></div>
+            </div>
+          </label>`;
+        }).join(''):'<div class="p-10 text-center text-sm text-gray-400">No historical reconciliation candidates.</div>'}
+      </div>
+      <div class="flex flex-wrap justify-end gap-2">
+        <button type="button" onclick="applyHistoricalPOReconciliation(false)" class="px-4 py-2 border rounded-xl text-xs font-semibold">Undo Selected</button>
+        <button type="button" onclick="applyHistoricalPOReconciliation(true)" class="px-4 py-2 bg-[#211d18] text-white rounded-xl text-xs font-semibold">Mark Selected as Opening Stock</button>
+      </div>
+    </div>`;
+  };
+
+  window.toggleHistoricalPOSelectAll=function(checked){
+    document.querySelectorAll('.hist-po-check').forEach(x=>x.checked=!!checked);
+  };
+
+  window.applyHistoricalPOReconciliation=async function(reconciled){
+    if(!isAdminRole())return showToast('Admin access required.','err');
+    const ids=[...document.querySelectorAll('.hist-po-check:checked')].map(x=>x.value).filter(Boolean);
+    if(!ids.length)return showToast('Select at least one Supplier PO.','err');
+    const note=document.getElementById('histPoReconNote')?.value.trim()||null;
+    const msg=reconciled
+      ?'Mark the selected PO remaining quantities as already reflected in opening/current stock? This will NOT add stock.'
+      :'Undo historical stock reconciliation for the selected POs? Their outstanding quantities will return to the PO pipeline.';
+    if(!confirm(msg))return;
+    const r=await db.rpc('set_supplier_po_historical_reconciled',{
+      p_supplier_po_ids:ids,
+      p_reconciled:!!reconciled,
+      p_note:note
+    });
+    if(r.error)return showToast(r.error.message,'err');
+    if(typeof window.invalidateInventoryCache==='function')window.invalidateInventoryCache();
+    if(typeof window.invalidateInventoryTasks==='function')window.invalidateInventoryTasks();
+    showToast((r.data||0)+' PO item'+(Number(r.data||0)===1?'':'s')+(reconciled?' reconciled.':' restored to the PO pipeline.'));
+    await openHistoricalPOReconciliation();
+  };
 
   window.saveSupplierPOItemStatus=async function(itemId,status,selectEl=null){
     if(!isAdminRole())return showToast('Admin access required.','err');
