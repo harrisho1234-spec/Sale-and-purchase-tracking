@@ -203,28 +203,40 @@
   window.refreshAppNotifications=refreshAttention;
 
   window.openAppNotifications=async function(){
-    if(!('Notification' in window)||!('serviceWorker' in navigator)||!('PushManager' in window)){
-      return toast('Push notifications are not supported on this browser.','err');
+    await refreshAttention();
+    const count=attentionCount();
+    const supported=('Notification' in window)&&('serviceWorker' in navigator)&&('PushManager' in window);
+
+    // In-app attention works even when browser/OS push is unavailable or blocked.
+    if(!supported){
+      if(count>0)return openTarget(P.attention.target||'dashboard');
+      return toast('No action items right now. Browser push is not supported on this browser.');
     }
 
     if(Notification.permission==='denied'){
+      if(count>0){
+        toast('Browser notifications are blocked, but your in-app requests are still available.');
+        return openTarget(P.attention.target||'dashboard');
+      }
       return toast('Notifications are blocked. Allow notifications for this site in your browser/app settings.','err');
     }
 
     if(Notification.permission!=='granted'){
       try{
         const sub=await ensureSubscription(true);
-        if(!sub)return toast('Notification permission was not enabled.','err');
-        await refreshAttention();
-        toast('App notifications enabled.');
+        if(sub){
+          await refreshAttention();
+          toast('Browser notifications enabled.');
+        }else{
+          toast('Browser notifications were not enabled. In-app notifications will still work.');
+        }
       }catch(err){
-        toast(err.message||'Could not enable notifications.','err');
+        toast(err.message||'Could not enable browser notifications.','err');
       }
+      if(attentionCount()>0)return openTarget(P.attention.target||'dashboard');
       return;
     }
 
-    await refreshAttention();
-    const count=attentionCount();
     if(count>0){
       await openTarget(P.attention.target||'dashboard');
     }else{
