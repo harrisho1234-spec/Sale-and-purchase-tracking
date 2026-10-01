@@ -9,6 +9,7 @@
     window.navItems=function(){
       const items=previousNavItems.apply(this,arguments)||[];
       if(!isAccountant())return items;
+      if(typeof window.hasAppPermission==='function')return items;
       return items.filter(x=>allowedPages.has(x[0]));
     };
   }
@@ -16,9 +17,14 @@
   const previousGo=window.go;
   if(typeof previousGo==='function'){
     window.go=async function(page){
-      if(isAccountant()&&!allowedPages.has(page)){
-        showToast('Accountant access is limited to Customers, Sales Tracking, Sales Report and Stock reconciliation.','err');
-        return previousGo('dashboard');
+      if(isAccountant()){
+        const blocked=typeof window.canAccessAppPage==='function'
+          ?!window.canAccessAppPage(page)
+          :!allowedPages.has(page);
+        if(blocked){
+          showToast('You do not have access to this area.','err');
+          return previousGo('dashboard');
+        }
       }
       return previousGo.apply(this,arguments);
     };
@@ -27,7 +33,7 @@
   const previousOpenNewOrder=window.openNewOrder;
   if(typeof previousOpenNewOrder==='function'){
     window.openNewOrder=function(){
-      if(isAccountant())return showToast('Accountant cannot create or act as a Sales Rep.','err');
+      if(isAccountant()&&!(typeof window.hasAppPermission==='function'&&window.hasAppPermission('sales_orders.create')))return showToast('You do not have permission to create Sales Orders.','err');
       return previousOpenNewOrder.apply(this,arguments);
     };
   }
@@ -35,7 +41,7 @@
   const previousOpenNewCustomer=window.openNewCustomer;
   if(typeof previousOpenNewCustomer==='function'){
     window.openNewCustomer=function(){
-      if(isAccountant())return showToast('Accountant can view customers and request changes, but cannot create customers.','err');
+      if(isAccountant()&&!(typeof window.hasAppPermission==='function'&&window.hasAppPermission('customers.create')))return showToast('You do not have permission to create customers.','err');
       return previousOpenNewCustomer.apply(this,arguments);
     };
   }
