@@ -544,6 +544,35 @@
     await renderUsers();
   };
 
+  // Keep Create/Edit User role dropdowns aligned with the editable role template names.
+  const previousOpenCreateUser=window.openCreateUser;
+  if(typeof previousOpenCreateUser==='function'){
+    window.openCreateUser=function(){
+      const out=previousOpenCreateUser.apply(this,arguments);
+      const sel=document.getElementById('newUserRole');
+      if(sel&&A.adminSnapshot?.roles?.length){
+        const current=sel.value||'sales';
+        sel.innerHTML=roleOptions(current);
+        sel.value=current;
+      }
+      return out;
+    };
+  }
+
+  const previousOpenEditAppUser=window.openEditAppUser;
+  if(typeof previousOpenEditAppUser==='function'){
+    window.openEditAppUser=function(){
+      const out=previousOpenEditAppUser.apply(this,arguments);
+      const sel=document.getElementById('editAppUserRole');
+      if(sel&&A.adminSnapshot?.roles?.length){
+        const current=sel.value;
+        sel.innerHTML=roleOptions(current);
+        sel.value=current;
+      }
+      return out;
+    };
+  }
+
   // Refresh granular access after a role change made from Users & Access.
   const previousUpdateUserRoleSafe=window.updateUserRoleSafe;
   if(typeof previousUpdateUserRoleSafe==='function'){
@@ -564,4 +593,11 @@
       }else if(tries>100)clearInterval(boot);
     }catch(_){if(tries>100)clearInterval(boot)}
   },100);
+
+  // Permission changes made by Super Admin are picked up by signed-in users without requiring a new login.
+  setInterval(()=>{
+    try{
+      if(window.state&&state.user&&state.profile&&!document.hidden)loadMyAccess(true);
+    }catch(_){}
+  },60000);
 })();
