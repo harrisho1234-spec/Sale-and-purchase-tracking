@@ -427,23 +427,46 @@
       <div class="pw-stat"><div class="pw-stat-label">Inactive</div><div class="pw-stat-value text-gray-400">${inactive}</div></div>
       <div class="pw-stat"><div class="pw-stat-label">Merged</div><div class="pw-stat-value text-purple-600">${merged}</div></div>
     </div>
-    <div class="pw-grid">${rows.length?rows.map(v=>{const mh=activeMergeBySource.get(v.id);const mergeTarget=v.merged_into_vendor_id?vendors.find(x=>x.id===v.merged_into_vendor_id):null;return `<div class="pw-card ${v.merged_into_vendor_id?'opacity-80':''}">
-      <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-        <div class="min-w-0 flex-1">
-          <div class="flex flex-wrap items-center gap-2"><b class="text-base">${esc(v.name)}</b><span class="lr-badge lr-badge-gray">${esc(v.vendor_code)}</span>${v.merged_into_vendor_id?`<span class="px-2 py-1 rounded-lg border border-purple-200 bg-purple-50 text-purple-700 text-[9px] font-bold">MERGED → ${esc(mergeTarget?.name||'Master Vendor')}</span>`:`<span class="lr-badge ${v.active?'lr-badge-green':'lr-badge-gray'}">${v.active?'Active':'Inactive'}</span>`}<span class="lr-badge lr-badge-blue">${esc(v.default_currency||'USD')}</span></div>
-          ${(Array.isArray(v.product_types)&&v.product_types.length)||(Array.isArray(v.styles)&&v.styles.length)?`<div class="flex flex-wrap gap-1.5 mt-2">${(v.product_types||[]).map(x=>`<span class="px-2 py-1 rounded-lg bg-blue-50 border border-blue-100 text-blue-700 text-[9px] font-semibold">${esc(x)}</span>`).join('')}${(v.styles||[]).map(x=>`<span class="px-2 py-1 rounded-lg bg-purple-50 border border-purple-100 text-purple-700 text-[9px] font-semibold">${esc(x)}</span>`).join('')}</div>`:''}
-          <div class="text-xs text-gray-500 mt-2">${esc(contactSummary(v))}</div>
-          <div class="text-[10px] text-gray-400 mt-1">${esc([v.city,v.country].filter(Boolean).join(', ')||v.address||'No address')}</div>
-          <div class="grid md:grid-cols-2 gap-3 mt-4">
-            <div class="rounded-xl bg-gray-50 border p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Purchasing Terms</div><div class="text-xs mt-1">${esc(termsSummary(v))}</div>${v.moq_terms?`<div class="text-[10px] text-gray-500 mt-1">MOQ: ${esc(v.moq_terms)}</div>`:''}</div>
-            <div class="rounded-xl bg-[#fffaf0] border border-amber-100 p-3"><div class="text-[9px] uppercase font-bold text-amber-700">Sales Price Formula</div><div class="text-xs mt-1">${esc(v.sales_price_formula||'No formula saved')}${v.default_markup_percent!=null?`<div class="text-[10px] text-amber-700 mt-1">Default markup: ${Number(v.default_markup_percent).toFixed(2)}%</div>`:''}</div></div>
+    <div class="pw-grid">${rows.length?rows.map(v=>{const mh=activeMergeBySource.get(v.id);const mergeTarget=v.merged_into_vendor_id?vendors.find(x=>x.id===v.merged_into_vendor_id):null;return `<div class="pw-card vi-vendor-card ${v.merged_into_vendor_id?'opacity-80':''}">
+      <div class="vi-vendor-card-grid">
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-1.5">
+            <b class="text-sm leading-tight">${esc(v.name)}</b>
+            <span class="lr-badge lr-badge-gray">${esc(v.vendor_code)}</span>
+            ${v.merged_into_vendor_id?`<span class="px-2 py-0.5 rounded-md border border-purple-200 bg-purple-50 text-purple-700 text-[8px] font-bold">MERGED → ${esc(mergeTarget?.name||'Master Vendor')}</span>`:`<span class="lr-badge ${v.active?'lr-badge-green':'lr-badge-gray'}">${v.active?'Active':'Inactive'}</span>`}
+            <span class="lr-badge lr-badge-blue">${esc(v.default_currency||'USD')}</span>
+          </div>
+
+          <div class="vi-vendor-meta mt-1.5">
+            <span>${esc(contactSummary(v))}</span>
+            <span class="text-gray-300">•</span>
+            <span class="text-gray-400">${esc([v.city,v.country].filter(Boolean).join(', ')||v.address||'No address')}</span>
+          </div>
+
+          ${(Array.isArray(v.product_types)&&v.product_types.length)||(Array.isArray(v.styles)&&v.styles.length)?`<div class="flex flex-wrap gap-1 mt-1.5">${(v.product_types||[]).map(x=>`<span class="vi-mini-tag bg-blue-50 border-blue-100 text-blue-700">${esc(x)}</span>`).join('')}${(v.styles||[]).map(x=>`<span class="vi-mini-tag bg-purple-50 border-purple-100 text-purple-700">${esc(x)}</span>`).join('')}</div>`:''}
+
+          <div class="vi-vendor-compact-info">
+            <div class="vi-compact-block">
+              <span class="vi-compact-label">Purchasing Terms</span>
+              <span class="vi-compact-value">${esc(termsSummary(v))}${v.moq_terms?` <span class="text-gray-400">· MOQ: ${esc(v.moq_terms)}</span>`:''}</span>
+            </div>
+            <div class="vi-compact-block vi-compact-price">
+              <span class="vi-compact-label text-amber-700">Sales Price Formula</span>
+              <span class="vi-compact-value">${esc(v.sales_price_formula||'No formula saved')}${v.default_markup_percent!=null?` <span class="text-amber-700">· Markup ${Number(v.default_markup_percent).toFixed(2)}%</span>`:''}</span>
+            </div>
           </div>
         </div>
-        <div class="lg:w-[170px] shrink-0">
-          <div class="grid grid-cols-2 lg:grid-cols-1 gap-2 text-xs mb-3"><button type="button" onclick="openVendorPOHistory('${v.id}')" class="rounded-lg border p-2 text-left hover:bg-amber-50 hover:border-amber-200 transition"><span class="text-gray-400">POs</span> <b class="float-right text-[#a77d1a]">${poCounts.get(v.id)||0}</b><div class="text-[9px] text-[#a77d1a] mt-1">View history →</div></button><div class="rounded-lg border p-2"><span class="text-gray-400">Products</span> <b class="float-right">${productCounts.get(v.id)||0}</b></div></div>
-          <div class="flex lg:flex-col gap-2">${v.merged_into_vendor_id
-            ?`<button onclick="openEditVendorInfo('${v.id}')" class="flex-1 px-3 py-2 border rounded-lg text-xs font-semibold">View / Edit</button>${mh?`<button onclick="undoVendorInfoMerge('${mh.id}','${esc(v.name)}','${esc(mergeTarget?.name||'Master Vendor')}')" class="flex-1 px-3 py-2 border border-purple-200 bg-purple-50 text-purple-700 rounded-lg text-xs font-semibold">Undo Merge</button>`:''}`
-            :`<button onclick="openEditVendorInfo('${v.id}')" class="flex-1 px-3 py-2 border rounded-lg text-xs font-semibold">Edit</button><button onclick="openMergeVendorInfo('${v.id}')" class="flex-1 px-3 py-2 border border-purple-200 bg-purple-50 text-purple-700 rounded-lg text-xs font-semibold">Merge</button><button onclick="toggleVendorInfoActive('${v.id}',${v.active?'false':'true'})" class="flex-1 px-3 py-2 border rounded-lg text-xs font-semibold ${v.active?'text-gray-600':'text-green-700 bg-green-50'}">${v.active?'Make Inactive':'Activate'}</button>`
+
+        <div class="vi-vendor-side">
+          <div class="grid grid-cols-2 gap-1.5">
+            <button type="button" onclick="openVendorPOHistory('${v.id}')" class="vi-side-stat hover:bg-amber-50 hover:border-amber-200 transition">
+              <span class="text-gray-400">POs</span><b class="text-[#a77d1a]">${poCounts.get(v.id)||0}</b><span class="vi-history-link">History →</span>
+            </button>
+            <div class="vi-side-stat"><span class="text-gray-400">Products</span><b>${productCounts.get(v.id)||0}</b></div>
+          </div>
+          <div class="vi-vendor-actions">${v.merged_into_vendor_id
+            ?`<button onclick="openEditVendorInfo('${v.id}')" class="vi-action-btn">View / Edit</button>${mh?`<button onclick="undoVendorInfoMerge('${mh.id}','${esc(v.name)}','${esc(mergeTarget?.name||'Master Vendor')}')" class="vi-action-btn border-purple-200 bg-purple-50 text-purple-700">Undo Merge</button>`:''}`
+            :`<button onclick="openEditVendorInfo('${v.id}')" class="vi-action-btn">Edit</button><button onclick="openMergeVendorInfo('${v.id}')" class="vi-action-btn border-purple-200 bg-purple-50 text-purple-700">Merge</button><button onclick="toggleVendorInfoActive('${v.id}',${v.active?'false':'true'})" class="vi-action-btn ${v.active?'text-gray-600':'text-green-700 bg-green-50'}">${v.active?'Inactive':'Activate'}</button>`
           }</div>
         </div>
       </div>
@@ -460,9 +483,24 @@
       .pw-stat{background:#fff;border:1px solid #eee8df;border-radius:14px;padding:14px}
       .pw-stat-label{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#a1a1aa;font-weight:800}
       .pw-stat-value{font-size:20px;font-weight:800;margin-top:5px}
-      .pw-grid{display:grid;gap:12px}
-      .pw-card{background:#fff;border:1px solid #ece8e0;border-radius:15px;padding:15px}
-      @media(max-width:700px){.vi-search{max-width:none;width:100%}.vi-toolbar>*{width:100%}}
+      .pw-grid{display:grid;gap:8px}
+      .pw-card{background:#fff;border:1px solid #ece8e0;border-radius:13px;padding:10px 12px}
+      .vi-vendor-card-grid{display:grid;grid-template-columns:minmax(0,1fr) 286px;gap:12px;align-items:start}
+      .vi-vendor-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:10px;color:#71717a;line-height:1.25}
+      .vi-mini-tag{display:inline-flex;padding:2px 6px;border-width:1px;border-radius:6px;font-size:8px;font-weight:700;line-height:1.2}
+      .vi-vendor-compact-info{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;margin-top:7px}
+      .vi-compact-block{border:1px solid #ececec;background:#fafafa;border-radius:9px;padding:6px 8px;min-width:0}
+      .vi-compact-price{background:#fffaf0;border-color:#fde9b3}
+      .vi-compact-label{display:block;font-size:8px;line-height:1;text-transform:uppercase;letter-spacing:.04em;font-weight:800;color:#a1a1aa}
+      .vi-compact-value{display:block;margin-top:3px;font-size:10px;line-height:1.25;color:#3f3f46;overflow-wrap:anywhere}
+      .vi-vendor-side{min-width:0}
+      .vi-side-stat{min-height:42px;border:1px solid #e5e7eb;border-radius:9px;padding:6px 8px;font-size:10px;text-align:left;display:grid;grid-template-columns:1fr auto;gap:2px 8px;align-items:center;background:#fff}
+      .vi-side-stat b{font-size:12px}
+      .vi-history-link{grid-column:1/-1;font-size:8px;color:#a77d1a;line-height:1}
+      .vi-vendor-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-top:6px}
+      .vi-action-btn{min-width:0;padding:6px 7px;border:1px solid #e5e7eb;border-radius:8px;font-size:9px;font-weight:700;line-height:1.15;background:#fff}
+      @media(max-width:1000px){.vi-vendor-card-grid{grid-template-columns:1fr}.vi-vendor-side{display:grid;grid-template-columns:220px minmax(0,1fr);gap:6px}.vi-vendor-actions{margin-top:0}}
+      @media(max-width:700px){.vi-search{max-width:none;width:100%}.vi-toolbar>*{width:100%}.vi-vendor-compact-info{grid-template-columns:1fr}.vi-vendor-side{display:block}.vi-vendor-actions{margin-top:6px}.pw-card{padding:10px}}
     `;
     document.head.appendChild(st);
   }
