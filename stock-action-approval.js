@@ -2,7 +2,7 @@
 // Stock Controller submits OUT / Broken / Transfer / Adjustment- / Customer Delivery / DO Delivery.
 // Admin or Super Admin approval creates the real stock movement; pending requests do not affect stock balance.
 (function(){
-  const A={rows:[],loading:false};
+  const A={rows:[],loading:false,expanded:new Set(),details:new Map()};
   const negativeTypes=['out','broken','transfer','adjustment_out'];
 
   function role(){return String((typeof state!=='undefined'&&state&&state.profile&&state.profile.role)||'')}
@@ -257,27 +257,129 @@
     return A.rows;
   }
 
+  function detailTile(label,value,sub){
+    if(value==null||String(value).trim()==='')return '';
+    return '<div class="rounded-xl border bg-white p-3 min-w-0">'+
+      '<div class="text-[9px] uppercase tracking-wide font-bold text-gray-400">'+esc(label)+'</div>'+
+      '<div class="mt-1 text-xs font-semibold text-gray-800 break-words">'+esc(value)+'</div>'+
+      (sub?'<div class="text-[9px] text-gray-400 mt-1 break-words">'+esc(sub)+'</div>':'')+
+    '</div>';
+  }
+
+  function actionDetailHtml(d,r){
+    d=d||{};
+    const image=d.image_url||'';
+    const route=d.from_location?(d.from_location+(d.to_location?' → '+d.to_location:'')):(d.to_location||'');
+    const reference=d.do_no?('DO '+d.do_no):(d.document_no||d.reference_no||'');
+    const customer=d.customer_name||'';
+    const customerSub=[d.customer_phone,d.customer_address].filter(Boolean).join(' · ');
+    const orderRef=[d.invoice_no,d.sr_no,d.order_no].filter(Boolean).filter(function(v,i,a){return a.indexOf(v)===i}).join(' · ');
+    const dateLabel=d.delivery_date?'Delivery Date':d.movement_date?'Movement Date':'';
+    const dateValue=d.delivery_date||d.movement_date||'';
+    const note=d.note||d.reason||d.delivery_request_note||'';
+    const requesterSub=d.requested_at?dateTime(d.requested_at):'';
+    const reviewed=d.reviewed_by_name?d.reviewed_by_name+(d.reviewed_at?' · '+dateTime(d.reviewed_at):''):'';
+    const productMeta=[d.brand,d.product_class].filter(Boolean).join(' · ');
+
+    return '<div class="rounded-xl border border-gray-200 bg-[#faf9f6] p-4">'+
+      '<div class="grid md:grid-cols-[116px_1fr] gap-4">'+
+        '<div class="w-[116px] h-[116px] rounded-xl overflow-hidden border bg-white">'+
+          (image
+            ?'<img src="'+esc(image)+'" loading="lazy" class="w-full h-full object-cover" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'"><div style="display:none" class="w-full h-full items-center justify-center text-[10px] text-gray-400 bg-gray-100">No Photo</div>'
+            :'<div class="w-full h-full flex items-center justify-center text-[10px] text-gray-400 bg-gray-100">No Photo</div>')+
+        '</div>'+
+        '<div class="min-w-0">'+
+          '<div class="flex flex-wrap items-start justify-between gap-3">'+
+            '<div class="min-w-0"><div class="text-[10px] font-extrabold text-[#a77d1a]">'+esc(d.product_code||r.product_code||'Stock Item')+'</div><div class="text-base font-bold mt-1">'+esc(d.item_name||r.item_name||'Stock Item')+'</div>'+(productMeta?'<div class="text-[10px] text-gray-400 mt-1">'+esc(productMeta)+'</div>':'')+'</div>'+
+            '<span class="px-2 py-1 rounded-lg border text-[9px] font-bold '+statusClass(d.request_status||r.request_status)+'">'+esc(title(d.request_status||r.request_status))+'</span>'+
+          '</div>'+
+          '<div class="grid sm:grid-cols-2 xl:grid-cols-4 gap-2 mt-4">'+
+            detailTile('Requested Qty',qty(d.qty!=null?d.qty:r.qty))+
+            detailTile('Location',route)+
+            detailTile('Reference',reference,orderRef&&orderRef!==reference?orderRef:'')+
+            detailTile(dateLabel,dateValue)+
+            detailTile('Customer',customer,customerSub)+
+            detailTile('Sales Rep',d.sales_rep_name)+
+            detailTile('Requested By',d.requested_by_name||r.requested_by_name,requesterSub)+
+            detailTile('Counterparty',d.counterparty)+
+            detailTile('Reference Type',d.reference_type?title(d.reference_type):'')+
+            detailTile('Movement Type',d.movement_type?title(d.movement_type):'')+
+            detailTile('Reviewed By',reviewed)+
+          '</div>'+
+          (d.delivery_address?'<div class="mt-3 rounded-xl border bg-white p-3 text-xs"><div class="text-[9px] uppercase font-bold text-gray-400">Delivery Address</div><div class="mt-1">'+esc(d.delivery_address)+'</div></div>':'')+
+          (note?'<div class="mt-3 rounded-xl border bg-white p-3 text-xs"><div class="text-[9px] uppercase font-bold text-gray-400">Note / Reason</div><div class="mt-1 whitespace-pre-wrap">'+esc(note)+'</div></div>':'')+
+          (d.reviewer_note?'<div class="mt-3 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800"><b>Reviewer note:</b> '+esc(d.reviewer_note)+'</div>':'')+
+        '</div>'+
+      '</div>'+
+    '</div>';
+  }
+
+  window.toggleStockActionRequestDetails=async function(id,event){
+    if(event&&typeof event.stopPropagation==='function')event.stopPropagation();
+    id=String(id||'');
+    const detail=document.getElementById('stockActionDetail_'+id);
+    const arrow=document.getElementById('stockActionArrow_'+id);
+    if(!detail)return;
+
+    if(A.expanded.has(id)){
+      A.expanded.delete(id);
+      detail.classList.add('hidden');
+      if(arrow)arrow.textContent='⌄';
+      return;
+    }
+
+    A.expanded.add(id);
+    detail.classList.remove('hidden');
+    if(arrow)arrow.textContent='⌃';
+
+    const row=A.rows.find(function(x){return String(x.request_id)===id})||{};
+    if(A.details.has(id)){
+      detail.innerHTML=actionDetailHtml(A.details.get(id),row);
+      return;
+    }
+
+    detail.innerHTML='<div class="rounded-xl border bg-gray-50 p-6 text-center text-xs text-gray-400">Loading request details and product photo...</div>';
+    const res=await db.rpc('get_stock_action_request_detail',{p_request_id:id});
+    if(res.error){
+      detail.innerHTML='<div class="rounded-xl border border-red-200 bg-red-50 p-4 text-xs text-red-600">Could not load request details: '+esc(res.error.message||'Unknown error')+'</div>';
+      return;
+    }
+    if(!res.data){
+      detail.innerHTML='<div class="rounded-xl border p-4 text-xs text-gray-400">Request details are unavailable.</div>';
+      return;
+    }
+    A.details.set(id,res.data);
+    detail.innerHTML=actionDetailHtml(res.data,row);
+  };
+
   function actionRequestCard(r){
     const pending=String(r.request_status||'')==='pending';
     const ref=r.do_no?('DO '+r.do_no):(r.document_no||r.reference_no||'');
     const route=r.from_location?(r.from_location+(r.to_location?' → '+r.to_location:'')):(r.to_location||'');
+    const id=String(r.request_id||'');
+    const expanded=A.expanded.has(id);
+    const cached=A.details.get(id);
     return '<div class="inv-card border-l-4 '+(pending?'border-l-amber-400':r.request_status==='approved'?'border-l-green-500':'border-l-red-400')+'">'+
-      '<div class="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">'+
-        '<div class="min-w-0 flex-1">'+
-          '<div class="flex flex-wrap items-center gap-2">'+
-            '<span class="px-2 py-1 rounded-lg border text-[9px] font-bold '+statusClass(r.request_status)+'">'+esc(title(r.request_status))+'</span>'+
-            '<b>'+esc(actionLabel(r))+'</b>'+
-            (ref?'<span class="text-[10px] text-gray-500">'+esc(ref)+'</span>':'')+
+      '<div onclick="toggleStockActionRequestDetails(\''+id+'\',event)" class="cursor-pointer group">'+
+        '<div class="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">'+
+          '<div class="min-w-0 flex-1">'+
+            '<div class="flex flex-wrap items-center gap-2">'+
+              '<span class="px-2 py-1 rounded-lg border text-[9px] font-bold '+statusClass(r.request_status)+'">'+esc(title(r.request_status))+'</span>'+
+              '<b>'+esc(actionLabel(r))+'</b>'+
+              (ref?'<span class="text-[10px] text-gray-500">'+esc(ref)+'</span>':'')+
+            '</div>'+
+            '<div class="mt-2 text-sm font-semibold">'+esc(r.product_code||'Stock Item')+(r.item_name?' · '+esc(r.item_name):'')+'</div>'+
+            '<div class="mt-1 flex flex-wrap gap-3 text-xs text-gray-600"><span>Qty <b>'+qty(r.qty)+'</b></span>'+(route?'<span>'+esc(route)+'</span>':'')+'</div>'+
+            '<div class="text-[10px] text-gray-400 mt-2">Requested by '+esc(r.requested_by_name||'Stock Controller')+' · '+esc(dateTime(r.requested_at))+'</div>'+
+            (r.reason?'<div class="mt-2 rounded-lg bg-gray-50 border p-2 text-xs"><b>Remark:</b> '+esc(r.reason)+'</div>':'')+
+            (pending?'<div class="mt-2 text-[10px] font-semibold text-amber-700">Pending only — stock balance is unchanged.</div>':'')+
+            (r.reviewer_note?'<div class="mt-2 text-[10px] text-gray-500"><b>Reviewer note:</b> '+esc(r.reviewer_note)+'</div>':'')+
+            '<div class="mt-2 text-[10px] font-semibold text-[#a77d1a] group-hover:underline">Click to '+(expanded?'hide':'view')+' details & product photo <span id="stockActionArrow_'+id+'">'+(expanded?'⌃':'⌄')+'</span></div>'+
           '</div>'+
-          '<div class="mt-2 text-sm font-semibold">'+esc(r.product_code||'Stock Item')+(r.item_name?' · '+esc(r.item_name):'')+'</div>'+
-          '<div class="mt-1 flex flex-wrap gap-3 text-xs text-gray-600"><span>Qty <b>'+qty(r.qty)+'</b></span>'+(route?'<span>'+esc(route)+'</span>':'')+'</div>'+
-          '<div class="text-[10px] text-gray-400 mt-2">Requested by '+esc(r.requested_by_name||'Stock Controller')+' · '+esc(dateTime(r.requested_at))+'</div>'+
-          (r.reason?'<div class="mt-2 rounded-lg bg-gray-50 border p-2 text-xs"><b>Remark:</b> '+esc(r.reason)+'</div>':'')+
-          (pending?'<div class="mt-2 text-[10px] font-semibold text-amber-700">Pending only — stock balance is unchanged.</div>':'')+
-          (r.reviewer_note?'<div class="mt-2 text-[10px] text-gray-500"><b>Reviewer note:</b> '+esc(r.reviewer_note)+'</div>':'')+
+          (canApprove()&&pending?'<div class="flex gap-2 shrink-0"><button onclick="event.stopPropagation();reviewStockActionRequest(\''+id+'\',true)" class="px-3 py-2 rounded-lg bg-green-600 text-white text-xs font-semibold">Approve</button><button onclick="event.stopPropagation();reviewStockActionRequest(\''+id+'\',false)" class="px-3 py-2 rounded-lg border border-red-200 text-red-600 text-xs font-semibold">Reject</button></div>':'')+
         '</div>'+
-        (canApprove()&&pending?'<div class="flex gap-2 shrink-0"><button onclick="reviewStockActionRequest(\''+r.request_id+'\',true)" class="px-3 py-2 rounded-lg bg-green-600 text-white text-xs font-semibold">Approve</button><button onclick="reviewStockActionRequest(\''+r.request_id+'\',false)" class="px-3 py-2 rounded-lg border border-red-200 text-red-600 text-xs font-semibold">Reject</button></div>':'')+
       '</div>'+
+      '<div id="stockActionDetail_'+id+'" class="'+(expanded?'':'hidden ')+'mt-4 pt-4 border-t">'+(expanded?(cached?actionDetailHtml(cached,r):'<div class="rounded-xl border bg-gray-50 p-6 text-center text-xs text-gray-400">Click again if details do not load automatically.</div>'):'')+'</div>'+
     '</div>';
   }
 
