@@ -15,11 +15,22 @@
     }
   };
   window.loadTaxProducts=async function(){
-    T.products=await taxFetchAll('product_catalog','id,code,item_name,active,tax_item,tax_group_or_set,tax_note,tax_cost,tax_sale_price,tax_currency,tax_pricing_note,tax_updated_at,tax_updated_by');
-    T.byId=new Map(T.products.map(p=>[p.id,p]));
+    const products=await taxFetchAll('product_catalog','id,code,item_name,active,tax_item,tax_group_or_set,tax_note,tax_updated_at,tax_updated_by');
+    let pricing=[];
+    if(superAdmin()){
+      try{pricing=await taxFetchAll('product_tax_pricing','product_id,tax_cost,tax_sale_price,tax_currency,tax_pricing_note,updated_at,updated_by','product_id')}
+      catch(err){console.warn('Tax pricing could not be loaded:',err)}
+    }
+    const priceMap=new Map((pricing||[]).map(x=>[String(x.product_id),x]));
+    T.products=products.map(p=>({...p,...(priceMap.get(String(p.id))||{})}));
+    T.byId=new Map(T.products.map(p=>[String(p.id),p]));
     return T.products;
   };
-  window.taxProduct=p=>p&&Object.hasOwn(p,'tax_item')?p:(T.byId.get(p?.product_id||p?.id)||p||{});
+  window.taxProduct=p=>{
+    const key=String(p?.component_product_id||p?.product_id||p?.id||'');
+    const base=T.byId.get(key)||{};
+    return {...base,...(p||{})};
+  };
   window.taxBadge=p=>taxProduct(p).tax_item?'<span class="tax-badge">TAX</span>':'';
   window.taxProductMatches=p=>!T.productOnly||!!taxProduct(p).tax_item;
   window.taxProcurementMatches=p=>!T.procurementOnly||!!taxProduct(p).tax_item;
@@ -42,12 +53,12 @@
         ${superAdmin()?`<button class="px-3 py-2 border rounded-xl text-xs" onclick="openTaxEditor('${p.id||p.product_id}')">Edit Tax Classification & Pricing</button>`:''}
       </div>
       <div class="text-xs mt-3">Tax Item: <b>${p.tax_item?'Yes':'No'}</b> · Group / Set: ${esc(p.tax_group_or_set||'—')}</div>
-      ${p.tax_item?`<div class="grid sm:grid-cols-3 gap-2 mt-3">
+      ${p.tax_item&&superAdmin()?`<div class="grid sm:grid-cols-3 gap-2 mt-3">
         <div class="rounded-xl border bg-white p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Tax Cost</div><div class="font-bold mt-1">${taxMoney(p.tax_cost,cur)}</div></div>
         <div class="rounded-xl border bg-white p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Tax Sale Price</div><div class="font-bold mt-1 text-amber-800">${taxMoney(p.tax_sale_price,cur)}</div></div>
         <div class="rounded-xl border bg-white p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Tax Currency</div><div class="font-bold mt-1">${esc(cur)}</div></div>
       </div>`:''}
-      ${p.tax_pricing_note?`<div class="text-xs mt-3"><b>Tax Pricing Note:</b><div class="mt-1 whitespace-pre-wrap">${esc(p.tax_pricing_note)}</div></div>`:''}
+      ${p.tax_pricing_note&&superAdmin()?`<div class="text-xs mt-3"><b>Tax Pricing Note:</b><div class="mt-1 whitespace-pre-wrap">${esc(p.tax_pricing_note)}</div></div>`:''}
       ${p.tax_note?`<div class="text-xs mt-3"><b>Tax Note:</b><div class="mt-1 whitespace-pre-wrap">${esc(p.tax_note)}</div></div>`:''}
       ${p.tax_updated_at?`<div class="text-[10px] text-gray-500 mt-3">Tax metadata updated ${esc(new Date(p.tax_updated_at).toLocaleString())}</div>`:''}
     </section>`;
@@ -202,7 +213,7 @@
   const oldDetail=window.openProductDetail;
   window.openProductDetail=async function(id){await loadTaxProducts();await oldDetail.apply(this,arguments);const p=T.byId.get(id);if(p)document.getElementById('modalBody')?.insertAdjacentHTML('afterbegin',taxMetadataPanel(p))};
   const oldStockCard=window.openProductStockCard;
-  window.openProductStockCard=async function(id){await oldStockCard.apply(this,arguments);const p=window.inventoryBalanceMap?.get(id);if(p)document.getElementById('modalBody')?.insertAdjacentHTML('afterbegin',taxMetadataPanel(p))};
+  window.openProductStockCard=async function(id){await loadTaxProducts();await oldStockCard.apply(this,arguments);const p=window.inventoryBalanceMap?.get(id);if(p)document.getElementById('modalBody')?.insertAdjacentHTML('afterbegin',taxMetadataPanel(p))};
   window.openProductStockHistory=window.openProductStockCard;
   const oldProc=window.renderProcurementWorkspace;
   window.renderProcurementWorkspace=async function(){await loadTaxProducts();await oldProc.apply(this,arguments);if(['items','needs','ordered'].includes(window.procurementWorkspace?.tab))document.querySelector('.pw-toolbar')?.insertAdjacentHTML('beforeend',taxFilterControl('procurement'))};
