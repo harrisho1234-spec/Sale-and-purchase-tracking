@@ -176,6 +176,8 @@
       selectEl.className=`mt-1 w-full border rounded-xl px-3 py-2 text-xs bg-white ${statusClass(status)}`;
     }
     if(window.documentFlowState)window.documentFlowState.loaded=false;
+    if(typeof window.invalidateInventoryCache==='function')window.invalidateInventoryCache();
+    if(typeof window.invalidateInventoryTasks==='function')window.invalidateInventoryTasks();
     showToast(`Item status updated: ${statusLabel(status)}`);
   };
 
@@ -209,6 +211,8 @@
     const r=await db.from('supplier_po_items').update({procurement_status:status,updated_at:new Date().toISOString()}).eq('supplier_po_id',poId);
     if(r.error)return showToast(r.error.message,'err');
     if(window.documentFlowState)window.documentFlowState.loaded=false;
+    if(typeof window.invalidateInventoryCache==='function')window.invalidateInventoryCache();
+    if(typeof window.invalidateInventoryTasks==='function')window.invalidateInventoryTasks();
     showToast(`All PO items updated: ${statusLabel(status)}`);
     await injectPOItemStatusManager(poId);
   };
