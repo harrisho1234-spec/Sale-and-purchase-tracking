@@ -73,21 +73,25 @@
     form.dataset.approvalPatched='1';
     const original=form.onsubmit;
     const typeEl=document.getElementById('smType');
+    const purposeEl=document.getElementById('smOutPurpose');
     const save=document.getElementById('smSave');
 
     function update(){
       const t=String(typeEl&&typeEl.value||'');
+      const purpose=String(purposeEl&&purposeEl.value||'');
       const needs=negativeTypes.includes(t);
+      const oldNotice=form.querySelector('[data-stock-approval-notice]');
+      if(oldNotice)oldNotice.remove();
       if(needs){
-        approvalNotice(form,title(t));
-        if(save)save.textContent='Submit for Approval';
+        const label=t==='out'&&purpose==='customer_delivery'?'Customer Delivery Stock OUT':title(t);
+        approvalNotice(form,label);
+        if(save)save.textContent=t==='out'&&purpose==='customer_delivery'?'Submit Customer Delivery for Approval':'Submit for Approval';
       }else{
-        const notice=form.querySelector('[data-stock-approval-notice]');
-        if(notice)notice.remove();
         if(save)save.textContent='Save Stock Movement';
       }
     }
     if(typeEl)typeEl.addEventListener('change',function(){setTimeout(update,0)});
+    if(purposeEl)purposeEl.addEventListener('change',function(){setTimeout(update,0)});
     update();
 
     form.onsubmit=async function(e){
@@ -105,6 +109,54 @@
       if(!from)return showToast('Source location is required.','err');
       if(type==='transfer'&&(!to||to===from))return showToast('Transfer requires a different destination location.','err');
 
+      const purpose=type==='out'?String(document.getElementById('smOutPurpose')&&document.getElementById('smOutPurpose').value||''):'';
+      if(type==='out'&&!purpose)return showToast('Choose the Stock OUT purpose first.','err');
+
+      const btn=document.getElementById('smSave');
+      if(type==='out'&&purpose==='customer_delivery'){
+        const itemId=String(document.getElementById('smSalesFulfillmentItem')&&document.getElementById('smSalesFulfillmentItem').value||'');
+        const row=(window._stockOutFulfillmentRows||[]).find(function(x){return String(x.sales_order_item_id)===itemId});
+        if(!row)return showToast('Select the exact Customer Fulfillment item.','err');
+        const statusRows=Array.isArray(row.status_breakdown)?row.status_breakdown:[];
+        const arrived=statusRows.filter(function(x){return String(x&&x.status||'').toLowerCase()==='arrived'}).reduce(function(sum,x){return sum+Number(x&&x.qty||0)},0);
+        const maxQty=Math.min(Number(row.remaining_qty||0),arrived);
+        if(q>maxQty)return showToast('Customer Delivery OUT cannot exceed '+maxQty+' currently Arrived / remaining.','err');
+        const doRows=window._stockOutDoRows||[];
+        const doItem=String(document.getElementById('smDeliveryRequestItem')&&document.getElementById('smDeliveryRequestItem').value||'');
+        if(doRows.length&&!doItem)return showToast('This item has a Delivery Order request. Assign/select the official DO number before Stock OUT.','err');
+        const note=String(document.getElementById('smNote')&&document.getElementById('smNote').value||'').trim()||null;
+        const deliveryDate=(document.getElementById('smDate')&&document.getElementById('smDate').value)||null;
+        const actionType=doItem?'do_delivery':'sales_delivery';
+        const payload=doItem?{
+          delivery_request_item_id:doItem,
+          qty:q,
+          location_id:from,
+          delivery_date:deliveryDate,
+          note:note
+        }:{
+          sales_order_item_id:itemId,
+          qty:q,
+          location_id:from,
+          delivery_date:deliveryDate,
+          note:note
+        };
+        if(btn){btn.disabled=true;btn.textContent='Submitting Customer Delivery...'}
+        try{
+          await submit(actionType,payload,note);
+          closeModal();
+          showToast(doItem?'DO Customer Delivery submitted for approval. Stock has not been deducted yet.':'Customer Delivery submitted for approval. Approval will update Stock and Customer Fulfillment together.');
+          if(typeof window.setInventoryTab==='function')window.setInventoryTab('requests');
+        }catch(err){
+          if(btn){btn.disabled=false;btn.textContent='Submit Customer Delivery for Approval'}
+          showToast(err.message||'Could not submit Customer Delivery approval request.','err');
+        }
+        return;
+      }
+
+      const purposeNote=type==='out'&&purpose
+        ?(purpose==='internal_use'?'Purpose: Internal Use':'Purpose: Other / Manual OUT')
+        :'';
+      const rawNote=String(document.getElementById('smNote')&&document.getElementById('smNote').value||'').trim();
       const payload={
         product_id:productId,
         movement_type:type,
@@ -117,9 +169,8 @@
         reference_item_id:null,
         reference_no:String(document.getElementById('smRef')&&document.getElementById('smRef').value||'').trim()||null,
         counterparty:String(document.getElementById('smParty')&&document.getElementById('smParty').value||'').trim()||null,
-        note:String(document.getElementById('smNote')&&document.getElementById('smNote').value||'').trim()||null
+        note:[purposeNote,rawNote].filter(Boolean).join(' · ')||null
       };
-      const btn=document.getElementById('smSave');
       if(btn){btn.disabled=true;btn.textContent='Submitting...'}
       try{
         await submit('manual_movement',payload,payload.note);
