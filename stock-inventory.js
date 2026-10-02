@@ -1265,9 +1265,10 @@
     const p=m.product_id?inv.balanceMap.get(m.product_id):null;
     const liveId=!m.legacy&&String(m.history_id||'').startsWith('live:')?String(m.history_id).slice(5):'';
     const moveBtn=canOperate()&&m.product_id?`<button onclick="openStockTransfer('${m.product_id}')" class="px-2 py-1.5 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-[9px] font-semibold">Move</button>`:'';
+    const linkFulfillmentBtn=canReconcile()&&liveId&&m.movement_type==='out'?`<button onclick="openLinkExistingStockOutToFulfillment('${liveId}')" class="px-2 py-1.5 border border-green-200 bg-green-50 text-green-700 rounded-lg text-[9px] font-semibold">Link Fulfillment</button>`:'';
     let actions='';
     if(canAdmin()){
-      actions=`<div class="flex gap-1.5 flex-wrap justify-end">${moveBtn}<button onclick="openAdminStockMovementEdit('${esc(m.history_id||'')}')" class="px-2 py-1.5 border rounded-lg text-[9px] font-semibold">Edit</button><button onclick="deleteStockMovementAdmin('${esc(m.history_id||'')}')" class="px-2 py-1.5 border border-red-200 text-red-600 rounded-lg text-[9px] font-semibold">Delete</button></div>`;
+      actions=`<div class="flex gap-1.5 flex-wrap justify-end">${linkFulfillmentBtn}${moveBtn}<button onclick="openAdminStockMovementEdit('${esc(m.history_id||'')}')" class="px-2 py-1.5 border rounded-lg text-[9px] font-semibold">Edit</button><button onclick="deleteStockMovementAdmin('${esc(m.history_id||'')}')" class="px-2 py-1.5 border border-red-200 text-red-600 rounded-lg text-[9px] font-semibold">Delete</button></div>`;
     }else if(isStockController()&&liveId){
       actions=`<div class="flex gap-1.5 flex-wrap justify-end">${moveBtn}<button onclick="openStockMovementEditRequest('${liveId}')" class="px-2 py-1.5 border border-amber-200 bg-amber-50 text-amber-700 rounded-lg text-[9px] font-semibold">Request Edit</button><button onclick="requestStockMovementDelete('${liveId}')" class="px-2 py-1.5 border border-red-200 text-red-600 rounded-lg text-[9px] font-semibold">Request Delete</button></div>`;
     }else if(moveBtn){
@@ -1898,6 +1899,7 @@
     const hidden=document.getElementById('smProductId');if(hidden)hidden.value='';
     const info=document.getElementById('smProductInfo');if(info)info.innerHTML='';
     showStockProductSuggestions(input);
+    if(typeof window.refreshStockOutCustomerOptions==='function')setTimeout(()=>window.refreshStockOutCustomerOptions(),0);
   };
 
   window.chooseStockProduct=function(productId){
@@ -1911,6 +1913,220 @@
       const locs=(p.locations||[]).filter(l=>n(l.qty)>0).map(l=>`<span class="inline-flex px-2 py-1 rounded-lg border bg-gray-50"><b>${esc(l.code)}</b>&nbsp;${q(l.qty)}</span>`).join(' ');
       info.innerHTML=`<div class="mt-2 flex flex-wrap gap-2 text-[10px]"><span>On Hand <b>${q(p.on_hand)}</b></span><span>Reserved <b class="text-amber-600">${q(p.reserved)}</b></span><span>Available <b class="text-green-600">${q(p.available)}</b></span>${locs?`<span class="w-full flex flex-wrap gap-1">${locs}</span>`:''}</div>`;
     }
+    if(typeof window.refreshStockOutCustomerOptions==='function')setTimeout(()=>window.refreshStockOutCustomerOptions(),0);
+  };
+
+  function stockOutArrivedQty(row){
+    const rows=Array.isArray(row?.status_breakdown)?row.status_breakdown:[];
+    return rows.filter(x=>String(x?.status||'').toLowerCase()==='arrived').reduce((sum,x)=>sum+n(x?.qty),0);
+  }
+
+  function stockOutDoItems(req){
+    if(Array.isArray(req?.items))return req.items;
+    try{return JSON.parse(req?.items||'[]')}catch(_){return []}
+  }
+
+  window.refreshStockOutCustomerOptions=async function(){
+    const purpose=document.getElementById('smOutPurpose')?.value||'';
+    const type=document.getElementById('smType')?.value||'';
+    const select=document.getElementById('smSalesFulfillmentItem');
+    const info=document.getElementById('smSalesFulfillmentInfo');
+    if(!select)return;
+    window._stockOutFulfillmentRows=[];
+    window._stockOutDoRows=[];
+    const doWrap=document.getElementById('smDoWrap');
+    if(doWrap)doWrap.classList.add('hidden');
+    if(type!=='out'||purpose!=='customer_delivery'){
+      select.innerHTML='<option value="">Choose a product first</option>';
+      if(info)info.textContent='Select Customer Delivery purpose and a product to load open Sales items.';
+      return;
+    }
+    const productId=String(document.getElementById('smProductId')?.value||'').trim();
+    if(!productId){
+      select.innerHTML='<option value="">Choose a product first</option>';
+      if(info)info.textContent='Choose the product before selecting the customer order.';
+      return;
+    }
+    const p=inv.balanceMap.get(productId)||inv.balances.find(x=>String(x.product_id)===productId);
+    select.innerHTML='<option value="">Loading customer orders...</option>';
+    if(info)info.textContent='Finding open Customer Fulfillment items for this product...';
+    const r=await db.rpc('get_inventory_fulfillment_queue',{p_search:p?.code||null});
+    if(r.error){
+      select.innerHTML='<option value="">Could not load customer orders</option>';
+      if(info)info.textContent=r.error.message||'Could not load Customer Fulfillment.';
+      return;
+    }
+    const rows=(r.data||[]).filter(x=>String(x.product_id)===productId&&n(x.remaining_qty)>0);
+    window._stockOutFulfillmentRows=rows;
+    if(!rows.length){
+      select.innerHTML='<option value="">No open Customer Fulfillment item for this product</option>';
+      if(info)info.textContent='No active Sales Order item is waiting for this product.';
+      return;
+    }
+    select.innerHTML='<option value="">Select customer / order / item</option>'+rows.map(x=>{
+      const arrived=stockOutArrivedQty(x);
+      const ready=!!x.inventory_tracking_enabled&&arrived>0;
+      const reason=!x.inventory_tracking_enabled?' · Not linked to Stock':arrived<=0?' · Not Arrived yet':'';
+      return `<option value="${esc(x.sales_order_item_id)}" ${ready?'':'disabled'}>${esc(x.document_no||'Sales Order')} · ${esc(x.customer_name||'Customer')} · Remaining ${q(x.remaining_qty)} · Arrived ${q(arrived)}${esc(reason)}</option>`;
+    }).join('');
+    if(info)info.innerHTML='<b>Customer Delivery requires a live fulfillment item.</b> Items not linked to Stock or not yet Arrived are shown but cannot be selected.';
+  };
+
+  window.stockOutPurposeChanged=function(){
+    const type=document.getElementById('smType')?.value||'';
+    const purpose=document.getElementById('smOutPurpose')?.value||'';
+    const customerWrap=document.getElementById('smCustomerDeliveryWrap');
+    const show=type==='out'&&purpose==='customer_delivery';
+    if(customerWrap)customerWrap.classList.toggle('hidden',!show);
+    if(!show){
+      const doWrap=document.getElementById('smDoWrap');if(doWrap)doWrap.classList.add('hidden');
+      window._stockOutFulfillmentRows=[];window._stockOutDoRows=[];
+    }else{
+      window.refreshStockOutCustomerOptions();
+    }
+  };
+
+  window.stockOutFulfillmentChanged=async function(){
+    const id=String(document.getElementById('smSalesFulfillmentItem')?.value||'');
+    const row=(window._stockOutFulfillmentRows||[]).find(x=>String(x.sales_order_item_id)===id);
+    const info=document.getElementById('smSalesFulfillmentInfo');
+    const doWrap=document.getElementById('smDoWrap');
+    const doSelect=document.getElementById('smDeliveryRequestItem');
+    const doInfo=document.getElementById('smDoInfo');
+    window._stockOutDoRows=[];
+    if(doWrap)doWrap.classList.add('hidden');
+    if(doSelect)doSelect.innerHTML='<option value="">No DO linked</option>';
+    if(!row){
+      if(info)info.textContent='Select the customer order/item this Stock OUT is for.';
+      return;
+    }
+    const arrived=stockOutArrivedQty(row);
+    const maxQty=Math.min(n(row.remaining_qty),arrived);
+    const qtyEl=document.getElementById('smQty');
+    if(qtyEl){
+      qtyEl.max=String(maxQty);
+      if(n(qtyEl.value)>maxQty)qtyEl.value=String(maxQty);
+    }
+    const ref=document.getElementById('smRef'),refType=document.getElementById('smReferenceType'),refId=document.getElementById('smReferenceId'),party=document.getElementById('smParty');
+    if(ref)ref.value=row.document_no||'';
+    if(refType)refType.value='sales_order';
+    if(refId)refId.value=row.sales_order_id||'';
+    if(party)party.value=row.customer_name||'';
+    if(info)info.innerHTML=`<b>${esc(row.customer_name||'Customer')}</b> · ${esc(row.document_no||'Sales Order')} · Remaining <b>${q(row.remaining_qty)}</b> · Arrived <b>${q(arrived)}</b> · Maximum OUT now <b>${q(maxQty)}</b>`;
+
+    const dr=await db.rpc('get_inventory_do_requests',{p_search:row.document_no||row.customer_name||null});
+    if(dr.error){
+      if(doInfo)doInfo.textContent='Could not check Delivery Order requests: '+(dr.error.message||'Unknown error');
+      return;
+    }
+    const choices=[];
+    (dr.data||[]).forEach(req=>{
+      stockOutDoItems(req).forEach(item=>{
+        if(String(item.sales_order_item_id)===id&&n(item.remaining_qty)>0){
+          choices.push({
+            delivery_request_id:req.delivery_request_id,
+            delivery_request_item_id:item.delivery_request_item_id,
+            do_no:req.do_no||'',
+            request_status:req.request_status||'',
+            remaining_qty:n(item.remaining_qty),
+            requested_delivery_date:req.requested_delivery_date||''
+          });
+        }
+      });
+    });
+    window._stockOutDoRows=choices;
+    if(!choices.length)return;
+    if(doWrap)doWrap.classList.remove('hidden');
+    if(doSelect){
+      doSelect.innerHTML='<option value="">Select Delivery Order</option>'+choices.map(x=>`<option value="${esc(x.delivery_request_item_id)}" ${x.do_no?'':'disabled'}>${x.do_no?'DO '+esc(x.do_no):'DO request — number not assigned'} · Remaining ${q(x.remaining_qty)}</option>`).join('');
+      const first=choices.find(x=>x.do_no);
+      if(first)doSelect.value=first.delivery_request_item_id;
+    }
+    const assigned=choices.filter(x=>x.do_no);
+    if(doInfo)doInfo.innerHTML=assigned.length
+      ?'<b>Delivery Order found.</b> The official DO is selected automatically. The approved OUT will be recorded against that DO.'
+      :'<b>A Delivery Order request exists, but no official DO number is assigned yet.</b> Assign the DO number before Stock OUT.';
+  };
+
+  window.openLinkExistingStockOutToFulfillment=async function(movementId){
+    if(!canReconcile())return showToast('Inventory reconciliation permission required.','err');
+    try{
+      const mr=await db.from('stock_movements').select('id,movement_date,product_id,movement_type,qty,from_location_id,reference_no,counterparty,note,affects_balance,reference_item_id,delivery_request_item_id').eq('id',movementId).maybeSingle();
+      if(mr.error)throw mr.error;
+      const m=mr.data;
+      if(!m||m.movement_type!=='out'||!m.affects_balance)return showToast('Only a posted generic Stock OUT can be linked.','err');
+      if(m.reference_item_id||m.delivery_request_item_id)return showToast('This Stock OUT is already linked to fulfillment.','err');
+      const pr=await db.from('product_catalog').select('id,code,item_name,image_url').eq('id',m.product_id).maybeSingle();
+      if(pr.error)throw pr.error;
+      const product=pr.data||{};
+      const qr=await db.rpc('get_inventory_fulfillment_queue',{p_search:product.code||null});
+      if(qr.error)throw qr.error;
+      const rows=(qr.data||[]).filter(x=>String(x.product_id)===String(m.product_id)&&n(x.remaining_qty)>0);
+      window._linkExistingOutRows=rows;
+      window._linkExistingOutMovement=m;
+      window._linkExistingOutDoRows=[];
+      openModal('Link Existing Stock OUT to Customer Fulfillment',`<form id="linkExistingOutForm" class="space-y-4">
+        <div class="rounded-xl border border-green-200 bg-green-50 p-3 text-xs text-green-800"><b>No stock will be deducted again.</b> This only changes the existing OUT from a generic Stock OUT to a Customer Delivery and connects it to the selected Sales Order item.</div>
+        <div class="rounded-xl border bg-[#fcfbf8] p-4 flex gap-3 items-center">
+          <div class="w-14 h-14 rounded-xl overflow-hidden bg-gray-100 shrink-0">${product.image_url?`<img src="${esc(product.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div>
+          <div><div class="text-[10px] font-bold text-[#a77d1a]">${esc(product.code||'')}</div><div class="font-semibold">${esc(product.item_name||'')}</div><div class="text-xs text-gray-500 mt-1">Existing OUT Qty <b>${q(m.qty)}</b> · ${esc(dateText(m.movement_date))}</div></div>
+        </div>
+        <div><label class="text-xs font-semibold">Customer / Sales Order Item *</label><select id="linkExistingOutSalesItem" onchange="linkExistingOutSalesItemChanged()" required class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="">Select matching customer order</option>${rows.map(x=>`<option value="${esc(x.sales_order_item_id)}" ${n(x.remaining_qty)+0.0001<n(m.qty)?'disabled':''}>${esc(x.document_no||'Sales Order')} · ${esc(x.customer_name||'Customer')} · Remaining ${q(x.remaining_qty)}</option>`).join('')}</select><div id="linkExistingOutSalesInfo" class="text-[10px] text-gray-400 mt-1">${rows.length?'Choose the exact order/item this OUT was delivered for.':'No open fulfillment item matches this product.'}</div></div>
+        <div id="linkExistingOutDoWrap" class="hidden"><label class="text-xs font-semibold">Delivery Order</label><select id="linkExistingOutDoItem" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"></select><div id="linkExistingOutDoInfo" class="text-[10px] text-gray-400 mt-1"></div></div>
+        <div><label class="text-xs font-semibold">Audit Note</label><textarea id="linkExistingOutNote" rows="2" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Optional note about why this OUT is being linked now"></textarea></div>
+        <button id="linkExistingOutSave" ${rows.length?'':'disabled'} class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold disabled:opacity-40">Link to Customer Fulfillment — No Stock Deduction</button>
+      </form>`);
+      document.getElementById('linkExistingOutForm').onsubmit=async e=>{
+        e.preventDefault();
+        const itemId=document.getElementById('linkExistingOutSalesItem')?.value||'';
+        if(!itemId)return showToast('Select the Customer Fulfillment item.','err');
+        const doRows=window._linkExistingOutDoRows||[];
+        const doItem=document.getElementById('linkExistingOutDoItem')?.value||'';
+        if(doRows.length&&!doItem)return showToast('This item has a Delivery Order request. Assign/select its official DO number first.','err');
+        const btn=document.getElementById('linkExistingOutSave');btn.disabled=true;btn.textContent='Linking...';
+        const rr=await db.rpc('link_existing_stock_out_to_fulfillment',{
+          p_movement_id:movementId,
+          p_sales_order_item_id:itemId,
+          p_delivery_request_item_id:doItem||null,
+          p_note:document.getElementById('linkExistingOutNote')?.value.trim()||null
+        });
+        if(rr.error){btn.disabled=false;btn.textContent='Link to Customer Fulfillment — No Stock Deduction';return showToast(rr.error.message,'err')}
+        closeModal();
+        showToast('Existing Stock OUT linked to Customer Fulfillment. Stock was not deducted again.');
+        invalidateInventoryTasks();inv.locations=[];inv.balances=[];
+        await renderStockInventory();
+      };
+    }catch(err){showToast(err.message||'Could not open fulfillment linking.','err')}
+  };
+
+  window.linkExistingOutSalesItemChanged=async function(){
+    const id=document.getElementById('linkExistingOutSalesItem')?.value||'';
+    const row=(window._linkExistingOutRows||[]).find(x=>String(x.sales_order_item_id)===String(id));
+    const info=document.getElementById('linkExistingOutSalesInfo');
+    const wrap=document.getElementById('linkExistingOutDoWrap');
+    const sel=document.getElementById('linkExistingOutDoItem');
+    const doInfo=document.getElementById('linkExistingOutDoInfo');
+    window._linkExistingOutDoRows=[];
+    if(wrap)wrap.classList.add('hidden');
+    if(!row){if(info)info.textContent='Choose the exact order/item this OUT was delivered for.';return}
+    if(info)info.innerHTML=`<b>${esc(row.customer_name||'Customer')}</b> · ${esc(row.document_no||'Sales Order')} · Remaining <b>${q(row.remaining_qty)}</b>`;
+    const dr=await db.rpc('get_inventory_do_requests',{p_search:row.document_no||row.customer_name||null});
+    if(dr.error)return;
+    const choices=[];
+    (dr.data||[]).forEach(req=>stockOutDoItems(req).forEach(item=>{
+      if(String(item.sales_order_item_id)===String(id)&&n(item.remaining_qty)>0){
+        choices.push({delivery_request_item_id:item.delivery_request_item_id,do_no:req.do_no||'',remaining_qty:n(item.remaining_qty)});
+      }
+    }));
+    window._linkExistingOutDoRows=choices;
+    if(!choices.length)return;
+    if(wrap)wrap.classList.remove('hidden');
+    if(sel){
+      sel.innerHTML='<option value="">Select Delivery Order</option>'+choices.map(x=>`<option value="${esc(x.delivery_request_item_id)}" ${x.do_no?'':'disabled'}>${x.do_no?'DO '+esc(x.do_no):'DO request — number not assigned'} · Remaining ${q(x.remaining_qty)}</option>`).join('');
+      const first=choices.find(x=>x.do_no&&n(x.remaining_qty)+0.0001>=n(window._linkExistingOutMovement?.qty));
+      if(first)sel.value=first.delivery_request_item_id;
+    }
+    if(doInfo)doInfo.innerHTML=choices.some(x=>x.do_no)?'<b>Delivery Order found.</b> It will be linked with this existing OUT.':'<b>DO request exists but has no official DO number yet.</b> Assign it before linking.';
   };
 
   let stockRefTimer=null;
@@ -1968,6 +2184,26 @@
           ${[['in','Stock In'],['out','Stock Out'],['return','Customer Return'],['broken','Broken / Damaged'],['transfer','Transfer Location'],['adjustment_in','Adjustment +'],['adjustment_out','Adjustment −']].map(([v,l])=>`<option value="${v}" ${v===defaultType?'selected':''}>${l}</option>`).join('')}
         </select></div>
         <div><label class="text-xs font-semibold">Quantity *</label><input id="smQty" type="number" min="1" step="1" value="1" required class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+        <div id="smOutPurposeWrap" class="hidden md:col-span-2 rounded-xl border border-amber-200 bg-amber-50/50 p-3">
+          <label class="text-xs font-semibold">Stock OUT Purpose *</label>
+          <select id="smOutPurpose" onchange="stockOutPurposeChanged()" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">
+            <option value="">Choose why this stock is leaving...</option>
+            <option value="customer_delivery">Customer Delivery</option>
+            <option value="internal_use">Internal Use</option>
+            <option value="other">Other / Manual OUT</option>
+          </select>
+          <div class="text-[10px] text-amber-800 mt-1"><b>Customer Delivery</b> must be linked to the actual customer Sales Order item so approval updates Customer Fulfillment automatically.</div>
+        </div>
+        <div id="smCustomerDeliveryWrap" class="hidden md:col-span-2 rounded-xl border border-blue-200 bg-blue-50/40 p-3">
+          <label class="text-xs font-semibold">Customer / Sales Order Item *</label>
+          <select id="smSalesFulfillmentItem" onchange="stockOutFulfillmentChanged()" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="">Choose a product first</option></select>
+          <div id="smSalesFulfillmentInfo" class="text-[10px] text-gray-500 mt-1">Select the exact Customer Fulfillment item this Stock OUT is for.</div>
+          <div id="smDoWrap" class="hidden mt-3">
+            <label class="text-xs font-semibold">Delivery Order</label>
+            <select id="smDeliveryRequestItem" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"></select>
+            <div id="smDoInfo" class="text-[10px] text-gray-500 mt-1"></div>
+          </div>
+        </div>
         <div id="smFromWrap"><label class="text-xs font-semibold">Move From / Source Location</label><select id="smFrom" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${locationOptions()}</select></div>
         <div id="smToWrap"><label class="text-xs font-semibold">Move To / Destination Location</label><select id="smTo" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${locationOptions()}</select></div>
         <div><label class="text-xs font-semibold">Date</label><input id="smDate" type="date" value="${new Date().toISOString().slice(0,10)}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
@@ -1988,9 +2224,41 @@
       const p=(selectedProductId&&inv.balanceMap.get(selectedProductId))||findProduct(document.getElementById('smProduct').value);
       if(!p)return showToast('Choose a Product / Code from the suggestion list.','err');
       const qty=stockWholeQtyInput('smQty',false,'Quantity');if(qty==null)return;
-      const btn=document.getElementById('smSave');btn.disabled=true;btn.textContent='Saving...';
+      const movementType=document.getElementById('smType').value;
+      const outPurpose=movementType==='out'?String(document.getElementById('smOutPurpose')?.value||''):'';
+      if(movementType==='out'&&!outPurpose)return showToast('Choose the Stock OUT purpose first.','err');
+      const btn=document.getElementById('smSave');
+
+      if(movementType==='out'&&outPurpose==='customer_delivery'){
+        const itemId=String(document.getElementById('smSalesFulfillmentItem')?.value||'');
+        const row=(window._stockOutFulfillmentRows||[]).find(x=>String(x.sales_order_item_id)===itemId);
+        if(!row)return showToast('Select the exact Customer Fulfillment item.','err');
+        const arrived=stockOutArrivedQty(row);
+        const maxQty=Math.min(n(row.remaining_qty),arrived);
+        if(qty>maxQty)return showToast('Customer Delivery OUT cannot exceed '+q(maxQty)+' currently Arrived / remaining.','err');
+        const loc=String(document.getElementById('smFrom')?.value||'');
+        if(!loc)return showToast('Source location is required.','err');
+        const doRows=window._stockOutDoRows||[];
+        const doItem=String(document.getElementById('smDeliveryRequestItem')?.value||'');
+        if(doRows.length&&!doItem)return showToast('This item has a Delivery Order request. Assign/select the official DO number before Stock OUT.','err');
+        btn.disabled=true;btn.textContent='Saving Customer Delivery...';
+        const note=document.getElementById('smNote').value.trim()||null;
+        const deliveryDate=document.getElementById('smDate').value||null;
+        const r=doItem
+          ?await db.rpc('release_sales_stock_do',{p_delivery_request_item_id:doItem,p_qty:qty,p_location_id:loc,p_delivery_date:deliveryDate,p_note:note})
+          :await db.rpc('release_sales_stock',{p_sales_order_item_id:itemId,p_qty:qty,p_location_id:loc,p_delivery_date:deliveryDate,p_note:note});
+        if(r.error){btn.disabled=false;btn.textContent='Save Stock Movement';return showToast(r.error.message,'err')}
+        closeModal();showToast(doItem?'Customer Delivery Stock OUT saved and linked to the DO.':'Customer Delivery Stock OUT saved and Customer Fulfillment updated.');
+        invalidateInventoryTasks();inv.locations=[];inv.balances=[];await renderStockInventory();return;
+      }
+
+      btn.disabled=true;btn.textContent='Saving...';
+      const purposeNote=movementType==='out'&&outPurpose
+        ?(outPurpose==='internal_use'?'Purpose: Internal Use':'Purpose: Other / Manual OUT')
+        :'';
+      const rawNote=document.getElementById('smNote').value.trim();
       const args={
-        p_product_id:p.product_id,p_movement_type:document.getElementById('smType').value,
+        p_product_id:p.product_id,p_movement_type:movementType,
         p_qty:qty,
         p_from_location_id:document.getElementById('smFrom').value||null,
         p_to_location_id:document.getElementById('smTo').value||null,
@@ -2000,7 +2268,7 @@
         p_reference_item_id:null,
         p_reference_no:document.getElementById('smRef').value.trim()||null,
         p_counterparty:document.getElementById('smParty').value.trim()||null,
-        p_note:document.getElementById('smNote').value.trim()||null
+        p_note:[purposeNote,rawNote].filter(Boolean).join(' · ')||null
       };
       const r=await db.rpc('create_stock_movement',args);
       if(r.error){btn.disabled=false;btn.textContent='Save Stock Movement';return showToast(r.error.message,'err')}
@@ -2018,6 +2286,15 @@
     if(!needTo&&document.getElementById('smTo'))document.getElementById('smTo').value='';
     const ref=document.getElementById('smRef'),box=document.getElementById('smReferenceSuggestions');
     if(ref&&box&&!box.classList.contains('hidden'))showStockReferenceSuggestions(ref);
+    const purposeWrap=document.getElementById('smOutPurposeWrap');
+    const purpose=document.getElementById('smOutPurpose');
+    const isOut=type==='out';
+    if(purposeWrap)purposeWrap.classList.toggle('hidden',!isOut);
+    if(purpose){
+      purpose.required=isOut;
+      if(!isOut)purpose.value='';
+    }
+    if(typeof window.stockOutPurposeChanged==='function')window.stockOutPurposeChanged();
   };
   window.openStockTransfer=function(productId=null){return openStockMovement('transfer',productId)};
 
