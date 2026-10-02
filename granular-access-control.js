@@ -240,6 +240,26 @@
     return (A.adminSnapshot?.overrides||[]).find(o=>String(o.user_id)===String(id))||null;
   }
   function userById(id){return (A.users||[]).find(u=>String(u.user_id)===String(id))||null}
+  function accessRoleKeyForUser(u){return String(u?.access_role_key||u?.role||'')}
+  function roleInputValue(roleKey){
+    const r=roleByKey(roleKey);
+    return r?.display_name||ROLE_LABELS[roleKey]||roleKey||'Sales';
+  }
+  function findRoleFromInput(value){
+    const v=String(value||'').trim().toLowerCase();
+    return (A.adminSnapshot?.roles||[]).find(r=>
+      String(r.role_key||'').toLowerCase()===v||
+      String(r.display_name||'').toLowerCase()===v
+    )||null;
+  }
+  function systemBaseRoleOptions(current){
+    const labels={sales:'Sales',accountant:'Accountant',stock_controller:'Stock Controller',manager:'Manager',admin:'Admin'};
+    return Object.entries(labels).map(([k,v])=>'<option value="'+k+'" '+(k===current?'selected':'')+'>'+v+'</option>').join('');
+  }
+  function roleDatalistHtml(listId){
+    return '<datalist id="'+listId+'">'+(A.adminSnapshot?.roles||[]).map(r=>'<option value="'+escText(r.display_name||r.role_key)+'"></option>').join('')+'</datalist>';
+  }
+
 
   async function loadAdminData(){
     if(!isSuperAdmin())throw new Error('Super Admin only');
@@ -270,11 +290,12 @@
   function usersTabHtml(){
     return '<div class="card rounded-2xl overflow-hidden"><div class="divide-y">'+
       (A.users.length?A.users.map(u=>{
-        const role=roleByKey(u.role);
+        const accessRoleKey=accessRoleKeyForUser(u);
+        const role=roleByKey(accessRoleKey);
         const o=overrideByUser(u.user_id);
         return '<div class="p-4 grid xl:grid-cols-[1.15fr_180px_160px_auto] gap-3 items-center">'+
           '<div><div class="font-semibold">'+escText(u.display_name||u.email||u.user_id)+'</div><div class="text-xs text-gray-400">'+escText(u.email||'')+'</div><div class="mt-2 flex flex-wrap gap-2 items-center">'+userAccessStatus(u)+(o?'<span class="text-[9px] text-gray-400">Overrides '+Object.keys(o.permissions||{}).length+' activities</span>':'')+'</div></div>'+
-          '<div><div class="text-[9px] uppercase font-bold text-gray-400 mb-1">Role Template</div><select onchange="updateUserRoleSafe(\''+u.user_id+'\',this.value)" class="w-full border rounded-lg px-3 py-2 text-sm bg-white">'+roleOptions(u.role)+'</select><div class="text-[9px] text-gray-400 mt-1">'+escText(role?.display_name||ROLE_LABELS[u.role]||u.role)+'</div></div>'+
+          '<div><div class="text-[9px] uppercase font-bold text-gray-400 mb-1">Role Template</div><select onchange="updateUserRoleSafe(\''+u.user_id+'\',this.value)" class="w-full border rounded-lg px-3 py-2 text-sm bg-white">'+roleOptions(accessRoleKey)+'</select><div class="text-[9px] text-gray-400 mt-1">'+escText(role?.display_name||ROLE_LABELS[accessRoleKey]||accessRoleKey)+'</div></div>'+
           '<button onclick="toggleUserActive(\''+u.user_id+'\','+(u.active?'false':'true')+')" class="px-3 py-2 rounded-lg text-xs font-semibold border '+(u.active?'text-green-700 bg-green-50 border-green-200':'text-gray-600 bg-gray-50 border-gray-200')+'">'+(u.active?'Active':'Inactive')+'</button>'+
           '<div class="flex flex-wrap justify-end gap-2">'+
             (u.role!=='super_admin'?'<button onclick="openUserPermissionBuilder(\''+u.user_id+'\')" class="px-3 py-2 rounded-lg text-xs font-semibold border border-blue-200 bg-blue-50 text-blue-700">Permissions</button>':'')+
@@ -289,7 +310,7 @@
 
   function rolesTabHtml(){
     const counts={};
-    A.users.forEach(u=>counts[u.role]=(counts[u.role]||0)+1);
+    A.users.forEach(u=>{const k=accessRoleKeyForUser(u);counts[k]=(counts[k]||0)+1});
     return '<div class="grid md:grid-cols-2 xl:grid-cols-3 gap-4">'+(A.adminSnapshot?.roles||[]).map(r=>{
       const cnt=enabledCount(r.permissions||{});
       const protectedRole=r.role_key==='super_admin';
@@ -478,13 +499,14 @@
     const u=userById(userId);
     if(!u)return showToast('User not found.','err');
     if(u.role==='super_admin')return showToast('Super Admin permissions are protected.','err');
-    const role=roleByKey(u.role);
+    const accessRoleKey=accessRoleKeyForUser(u);
+    const role=roleByKey(accessRoleKey);
     if(!role)return showToast('Role template not found.','err');
     const ov=overrideByUser(userId);
     const base={...(role.permissions||{})};
     const effective={...base,...(ov?.permissions||{})};
     A.builder={
-      type:'user',userId,user:u,roleKey:u.role,roleName:role.display_name||ROLE_LABELS[u.role]||u.role,
+      type:'user',userId,user:u,roleKey:accessRoleKey,roleName:role.display_name||ROLE_LABELS[accessRoleKey]||accessRoleKey,
       basePermissions:base,
       workPermissions:effective,
       baseRestrict:!!role.restrict_assigned_customers,
@@ -545,44 +567,63 @@
     await renderUsers();
   };
 
-  // Keep Create/Edit User role dropdowns aligned with the editable role template names.
+  // Create/Edit User can choose an existing role or type a new custom role name.
+  window.updateCustomRoleBaseVisibility=function(inputId,wrapId){
+    const input=document.getElementById(inputId);
+    const wrap=document.getElementById(wrapId);
+    if(!input||!wrap)return;
+    const existing=findRoleFromInput(input.value);
+    wrap.classList.toggle('hidden',!!existing);
+  };
+
+  function replaceRoleSelectWithTypedInput(selectId,baseSelectId,baseWrapId,currentRoleKey){
+    const old=document.getElementById(selectId);
+    if(!old||!old.parentElement)return;
+    const parent=old.parentElement;
+    const currentRole=roleByKey(currentRoleKey);
+    const listId=selectId+'List';
+    const baseRole=(currentRole?.base_role&&currentRole.base_role!=='super_admin')?currentRole.base_role:'sales';
+    parent.innerHTML=
+      '<label class="text-xs font-semibold text-gray-600">Role</label>'+
+      '<input id="'+selectId+'" list="'+listId+'" value="'+escText(roleInputValue(currentRoleKey))+'" oninput="updateCustomRoleBaseVisibility(\''+selectId+'\',\''+baseWrapId+'\')" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white" placeholder="Choose or type a new role">'+
+      roleDatalistHtml(listId)+
+      '<div class="text-[10px] text-gray-400 mt-1">Choose an existing role, or type a new role name such as <b>Warehouse Assistant</b>.</div>'+
+      '<div id="'+baseWrapId+'" class="hidden mt-3 rounded-xl border border-blue-100 bg-blue-50 p-3">'+
+        '<label class="text-[10px] font-semibold text-blue-800">New role starts from</label>'+
+        '<select id="'+baseSelectId+'" class="mt-1 w-full border rounded-lg px-3 py-2 bg-white text-sm">'+systemBaseRoleOptions(baseRole)+'</select>'+
+        '<div class="text-[9px] text-blue-700 mt-1">The new role copies this base behavior first. You can fine-tune its permissions afterward in Role Templates.</div>'+
+      '</div>';
+    window.updateCustomRoleBaseVisibility(selectId,baseWrapId);
+  }
+
   const previousOpenCreateUser=window.openCreateUser;
   if(typeof previousOpenCreateUser==='function'){
     window.openCreateUser=function(){
       const out=previousOpenCreateUser.apply(this,arguments);
-      const sel=document.getElementById('newUserRole');
-      if(sel&&A.adminSnapshot?.roles?.length){
-        const current=sel.value||'sales';
-        sel.innerHTML=roleOptions(current);
-        sel.value=current;
-      }
+      replaceRoleSelectWithTypedInput('newUserRole','newUserBaseRole','newUserBaseRoleWrap','sales');
       return out;
     };
   }
 
   const previousOpenEditAppUser=window.openEditAppUser;
   if(typeof previousOpenEditAppUser==='function'){
-    window.openEditAppUser=function(){
+    window.openEditAppUser=function(userId){
       const out=previousOpenEditAppUser.apply(this,arguments);
-      const sel=document.getElementById('editAppUserRole');
-      if(sel&&A.adminSnapshot?.roles?.length){
-        const current=sel.value;
-        sel.innerHTML=roleOptions(current);
-        sel.value=current;
-      }
+      const u=userById(userId);
+      replaceRoleSelectWithTypedInput('editAppUserRole','editAppUserBaseRole','editAppUserBaseRoleWrap',accessRoleKeyForUser(u));
       return out;
     };
   }
 
-  // Refresh granular access after a role change made from Users & Access.
-  const previousUpdateUserRoleSafe=window.updateUserRoleSafe;
-  if(typeof previousUpdateUserRoleSafe==='function'){
-    window.updateUserRoleSafe=async function(){
-      const out=await previousUpdateUserRoleSafe.apply(this,arguments);
-      try{await loadAdminData()}catch(_){}
-      return out;
-    };
-  }
+  // Role template changes are applied atomically: custom access role + legacy base role stay aligned.
+  window.updateUserRoleSafe=async function(userId,accessRoleKey){
+    if(!isSuperAdmin())return showToast('Super Admin only','err');
+    const r=await db.rpc('assign_access_role_to_user',{p_user_id:userId,p_access_role_key:accessRoleKey});
+    if(r.error)return showToast(r.error.message||'Could not update role','err');
+    showToast('Role updated');
+    await renderUsers();
+  };
+
 
   let tries=0;
   const boot=setInterval(()=>{
