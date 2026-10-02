@@ -59,7 +59,7 @@
     if(!form||!code||!name||code.dataset.typeaheadReady==='1')return;
     code.dataset.typeaheadReady='1';
     code.autocomplete='off';
-    code.placeholder='Type SKU / code or item name...';
+    code.placeholder='Type Code or item name...';
     code.classList.add('w-full','min-w-0');
 
     let products=[];
@@ -97,7 +97,7 @@
       visible=matches(products,code.value);
       active=-1;
       if(!visible.length){
-        menu.innerHTML='<div class="px-4 py-3 text-xs text-gray-400">No matching product. You can still enter a new SKU manually.</div>';
+        menu.innerHTML='<div class="px-4 py-3 text-xs text-gray-400">No matching product. You can still enter a new Code manually.</div>';
       }else{
         menu.innerHTML=visible.map((p,i)=>`<button type="button" data-po-product-index="${i}" class="w-full text-left px-3 py-2.5 hover:bg-amber-50 border-b last:border-b-0 border-gray-100 flex gap-3 items-center">
           ${photoHtml(p.image_url)}
