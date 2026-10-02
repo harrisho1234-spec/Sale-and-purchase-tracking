@@ -1976,9 +1976,28 @@
     const type=document.getElementById('smType')?.value||'';
     const purpose=document.getElementById('smOutPurpose')?.value||'';
     const customerWrap=document.getElementById('smCustomerDeliveryWrap');
-    const show=type==='out'&&purpose==='customer_delivery';
-    if(customerWrap)customerWrap.classList.toggle('hidden',!show);
-    if(!show){
+    const detailWrap=document.getElementById('smOutPurposeDetailWrap');
+    const detail=document.getElementById('smOutPurposeDetail');
+    const showCustomer=type==='out'&&purpose==='customer_delivery';
+    const showDetail=type==='out'&&!!purpose&&purpose!=='customer_delivery';
+
+    if(customerWrap)customerWrap.classList.toggle('hidden',!showCustomer);
+    if(detailWrap)detailWrap.classList.toggle('hidden',!showDetail);
+
+    if(detail){
+      detail.required=showDetail;
+      if(!showDetail)detail.value='';
+      const placeholders={
+        internal_use:'Department / staff / reason for company use',
+        project_installation:'Project / site / installation purpose',
+        vendor_return:'Vendor name and return reason',
+        showroom_sample:'Showroom / display / sample purpose',
+        other:'Where is the stock going, and why?'
+      };
+      detail.placeholder=placeholders[purpose]||'Describe where the stock is going and why';
+    }
+
+    if(!showCustomer){
       const doWrap=document.getElementById('smDoWrap');if(doWrap)doWrap.classList.add('hidden');
       window._stockOutFulfillmentRows=[];window._stockOutDoRows=[];
     }else{
@@ -2241,14 +2260,22 @@
         </select></div>
         <div><label class="text-xs font-semibold">Quantity *</label><input id="smQty" type="number" min="1" step="1" value="1" required class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
         <div id="smOutPurposeWrap" class="hidden md:col-span-2 rounded-xl border border-amber-200 bg-amber-50/50 p-3">
-          <label class="text-xs font-semibold">Stock OUT Purpose *</label>
+          <label class="text-xs font-semibold">Where is this Stock going? / Purpose *</label>
           <select id="smOutPurpose" onchange="stockOutPurposeChanged()" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">
-            <option value="">Choose why this stock is leaving...</option>
-            <option value="customer_delivery">Customer Delivery</option>
-            <option value="internal_use">Internal Use</option>
-            <option value="other">Other / Manual OUT</option>
+            <option value="">Select destination or purpose...</option>
+            <option value="customer_delivery">Customer Fulfillment / Delivery</option>
+            <option value="internal_use">Internal / Company Use</option>
+            <option value="project_installation">Project / Installation Use</option>
+            <option value="vendor_return">Return to Vendor</option>
+            <option value="showroom_sample">Showroom / Display / Sample Use</option>
+            <option value="other">Other</option>
           </select>
-          <div class="text-[10px] text-amber-800 mt-1"><b>Customer Delivery</b> must be linked to the actual customer Sales Order item so approval updates Customer Fulfillment automatically.</div>
+          <div class="text-[10px] text-amber-800 mt-1">Every Stock OUT must have a destination or purpose. <b>Customer Fulfillment</b> must link to the actual Sales Order item.</div>
+        </div>
+        <div id="smOutPurposeDetailWrap" class="hidden md:col-span-2 rounded-xl border border-gray-200 bg-gray-50/60 p-3">
+          <label class="text-xs font-semibold">Destination / Purpose Details *</label>
+          <input id="smOutPurposeDetail" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white" placeholder="Describe where the stock is going and why">
+          <div class="text-[10px] text-gray-500 mt-1">Required for every non-customer Stock OUT so the approval and movement history clearly show where the stock went.</div>
         </div>
         <div id="smCustomerDeliveryWrap" class="hidden md:col-span-2 rounded-xl border border-blue-200 bg-blue-50/40 p-3">
           <label class="text-xs font-semibold">Customer / Sales Order Item *</label>
@@ -2282,7 +2309,13 @@
       const qty=stockWholeQtyInput('smQty',false,'Quantity');if(qty==null)return;
       const movementType=document.getElementById('smType').value;
       const outPurpose=movementType==='out'?String(document.getElementById('smOutPurpose')?.value||''):'';
-      if(movementType==='out'&&!outPurpose)return showToast('Choose the Stock OUT purpose first.','err');
+      if(movementType==='out'&&!outPurpose)return showToast('Choose where the Stock OUT is going / its purpose first.','err');
+      const outPurposeDetail=movementType==='out'&&outPurpose!=='customer_delivery'
+        ?String(document.getElementById('smOutPurposeDetail')?.value||'').trim()
+        :'';
+      if(movementType==='out'&&outPurpose!=='customer_delivery'&&!outPurposeDetail){
+        return showToast('Enter the destination / purpose details for this Stock OUT.','err');
+      }
       const btn=document.getElementById('smSave');
 
       if(movementType==='out'&&outPurpose==='customer_delivery'){
@@ -2309,8 +2342,15 @@
       }
 
       btn.disabled=true;btn.textContent='Saving...';
+      const purposeLabels={
+        internal_use:'Internal / Company Use',
+        project_installation:'Project / Installation Use',
+        vendor_return:'Return to Vendor',
+        showroom_sample:'Showroom / Display / Sample Use',
+        other:'Other'
+      };
       const purposeNote=movementType==='out'&&outPurpose
-        ?(outPurpose==='internal_use'?'Purpose: Internal Use':'Purpose: Other / Manual OUT')
+        ?'Stock OUT Destination / Purpose: '+(purposeLabels[outPurpose]||titleCase(outPurpose))+(outPurposeDetail?' — '+outPurposeDetail:'')
         :'';
       const rawNote=document.getElementById('smNote').value.trim();
       const args={
