@@ -403,10 +403,13 @@
                 </div>
                 <div class="text-right text-xs"><b>${Number(i.qty||0)} × ${money(i.unit_price,o.currency)}</b><div class="text-gray-400 mt-1">${money(i.line_total,o.currency)}</div></div>
               </div>`).join(''):`<div class="lr-empty">No line-item detail available.</div>`)}
-            ${isSuper()?`
+            ${((['sales','manager','admin','super_admin'].includes(state.profile?.role)&&cleanStatus(o.status)!=='cancelled')||isSuper())?`
               <div class="mt-4 pt-4 border-t flex flex-wrap gap-2 justify-end">
-                <button onclick="openSuperAdminInvoiceEdit(\'${o.id}\')" class="px-3 py-2 border border-[#d8c28a] bg-[#fffaf0] text-[#8a6a1f] rounded-lg text-[10px] font-bold">✎ EDIT INVOICE</button>
-                <button onclick="openSuperAdminInvoiceDelete(\'${o.id}\')" class="px-3 py-2 border border-red-200 bg-red-50 text-red-700 rounded-lg text-[10px] font-bold">DELETE INVOICE</button>
+                ${(['sales','manager','admin','super_admin'].includes(state.profile?.role)&&cleanStatus(o.status)!=='cancelled')
+                  ?`<button onclick="openExistingSalesDoRequest(\'${o.id}\')" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-bold">▣ REQUEST DO</button>`
+                  :''}
+                ${isSuper()?`<button onclick="openSuperAdminInvoiceEdit(\'${o.id}\')" class="px-3 py-2 border border-[#d8c28a] bg-[#fffaf0] text-[#8a6a1f] rounded-lg text-[10px] font-bold">✎ EDIT INVOICE</button>
+                <button onclick="openSuperAdminInvoiceDelete(\'${o.id}\')" class="px-3 py-2 border border-red-200 bg-red-50 text-red-700 rounded-lg text-[10px] font-bold">DELETE INVOICE</button>`:''}
               </div>`:'' }
           </div>`:'' }
       </div>`;
@@ -434,6 +437,139 @@
 function invoiceById(id) {
   return ui.salesOrders.find(o=>o.id===id) || null;
 }
+
+window.existingSalesDoToggle=function(cb){
+  const row=cb?.closest('[data-existing-do-row]');
+  if(!row)return;
+  const input=row.querySelector('.existing-do-qty');
+  if(input){
+    input.disabled=!cb.checked;
+    input.classList.toggle('bg-gray-100',!cb.checked);
+    if(cb.checked){
+      const max=Number(input.dataset.max||0);
+      const current=Number(input.value||0);
+      input.value=String(current>0&&current<=max?current:max);
+      input.focus();
+      input.select?.();
+    }
+  }
+};
+
+window.openExistingSalesDoRequest=async function(orderId){
+  const o=invoiceById(orderId);
+  if(!o)return showToast('Sales Order not found. Refresh and try again.','err');
+  if(!['sales','manager','admin','super_admin'].includes(state.profile?.role)){
+    return showToast('Sales, Manager or Admin access required.','err');
+  }
+  if(cleanStatus(o.status)==='cancelled'){
+    return showToast('Cancelled Sales Order cannot request delivery.','err');
+  }
+
+  try{
+    const sr=await db.rpc('get_sales_order_do_request_status',{p_sales_order_id:orderId});
+    if(sr.error)throw sr.error;
+    const rows=sr.data||[];
+    const availableRows=rows.filter(x=>Number(x.available_do_qty||0)>0);
+
+    const itemHtml=rows.length?rows.map(x=>{
+      const available=Number(x.available_do_qty||0);
+      const sold=Number(x.sold_qty||0);
+      const requested=Number(x.requested_qty||0);
+      const direct=Number(x.direct_delivered_qty||0)+Number(x.historical_delivered_qty||0);
+      const cancelled=Number(x.cancelled_qty||0);
+      const disabled=available<=0;
+      const statusText=disabled?'No Qty Available':'Available '+available;
+      return `<div data-existing-do-row class="rounded-xl border ${disabled?'bg-gray-50':'bg-white'} p-3">
+        <div class="flex gap-3 items-start">
+          <div class="w-14 h-14 rounded-xl overflow-hidden border bg-white shrink-0">${imageHtml(x.image_url||'')}</div>
+          <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap gap-2 items-center">
+              <b class="text-xs text-[#a77d1a]">${esc(x.product_code||'No Code')}</b>
+              <span class="lr-badge ${disabled?'lr-badge-gray':'lr-badge-blue'}">${esc(statusText)}</span>
+            </div>
+            <div class="text-sm font-semibold mt-1">${esc(x.item_name||'Item')}</div>
+            <div class="text-[10px] text-gray-500 mt-1">Sold <b>${sold}</b> · Already DO Requested <b>${requested}</b>${direct>0?` · Already delivered outside DO <b>${direct}</b>`:''}${cancelled>0?` · Cancelled <b>${cancelled}</b>`:''}</div>
+          </div>
+        </div>
+        <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
+          <label class="flex items-center gap-2 text-xs font-semibold ${disabled?'text-gray-400':'text-blue-800 cursor-pointer'}">
+            <input type="checkbox" class="existing-do-check w-4 h-4" onchange="existingSalesDoToggle(this)" ${disabled?'disabled':''}>
+            Request this item
+          </label>
+          <div class="flex items-center gap-2">
+            <span class="text-[10px] text-gray-500">DO Qty</span>
+            <input type="number" min="0.01" step="0.01" value="${available>0?available:0}" data-max="${available}" disabled class="existing-do-qty w-24 border rounded-lg px-2.5 py-2 text-xs bg-gray-100" data-item-id="${esc(x.sales_order_item_id)}">
+          </div>
+        </div>
+      </div>`;
+    }).join(''):'<div class="rounded-xl border bg-gray-50 p-5 text-center text-sm text-gray-400">No physical product items are available on this Sales Order.</div>';
+
+    openModal('Request Delivery Order · '+esc(o.invoice_no||o.order_no||'Sales Order'),`
+      <form id="existingSalesDoForm" class="space-y-4">
+        <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">
+          <b>Create a new DO request from this existing Sales Order.</b> Only quantities not already requested, delivered outside a DO, or cancelled can be requested. Stock will assign the official DO number afterward.
+        </div>
+        <div class="rounded-xl border bg-[#fcfbf8] p-4">
+          <div class="font-bold">${esc(o.invoice_no||o.order_no||'Sales Order')}</div>
+          <div class="text-xs text-gray-500 mt-1">${esc(o.customer_name||'Customer')}${o.customer_phone?' · '+esc(o.customer_phone):''}</div>
+        </div>
+        <div class="space-y-2">${itemHtml}</div>
+        <div class="grid md:grid-cols-2 gap-3 border-t pt-4">
+          <div><label class="text-xs font-semibold">Requested Delivery Date</label><input id="existingDoRequestedDate" type="date" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"></div>
+          <div><label class="text-xs font-semibold">Delivery Address</label><input id="existingDoAddress" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white" placeholder="Optional delivery address"></div>
+          <div class="md:col-span-2"><label class="text-xs font-semibold">Delivery Note / Remark</label><textarea id="existingDoNote" rows="2" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white" placeholder="Preferred time, access instructions, delivery note..."></textarea></div>
+        </div>
+        <button id="existingDoSubmit" ${availableRows.length?'':'disabled'} class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold disabled:opacity-40">Submit DO Request</button>
+      </form>
+    `);
+
+    document.getElementById('existingSalesDoForm').onsubmit=async e=>{
+      e.preventDefault();
+      const selected=[...document.querySelectorAll('[data-existing-do-row]')].map(row=>{
+        const cb=row.querySelector('.existing-do-check');
+        const input=row.querySelector('.existing-do-qty');
+        if(!cb?.checked)return null;
+        return {
+          sales_order_item_id:input?.dataset.itemId||'',
+          qty:Number(input?.value||0),
+          max:Number(input?.dataset.max||0),
+          input
+        };
+      }).filter(Boolean);
+
+      if(!selected.length)return showToast('Select at least one product for the DO request.','err');
+      const bad=selected.find(x=>!x.sales_order_item_id||x.qty<=0||x.qty>x.max+0.0001);
+      if(bad){
+        bad.input?.focus();
+        return showToast('DO Qty must be greater than 0 and cannot exceed the available quantity.','err');
+      }
+
+      const btn=document.getElementById('existingDoSubmit');
+      btn.disabled=true;btn.textContent='Submitting DO Request...';
+
+      const rr=await db.rpc('submit_sales_delivery_request',{
+        p_sales_order_id:orderId,
+        p_requested_delivery_date:document.getElementById('existingDoRequestedDate')?.value||null,
+        p_delivery_address:document.getElementById('existingDoAddress')?.value.trim()||null,
+        p_request_note:document.getElementById('existingDoNote')?.value.trim()||null,
+        p_items:selected.map(x=>({sales_order_item_id:x.sales_order_item_id,qty:x.qty}))
+      });
+
+      if(rr.error){
+        btn.disabled=false;btn.textContent='Submit DO Request';
+        return showToast(rr.error.message,'err');
+      }
+
+      closeModal();
+      showToast('DO request submitted to Stock for '+selected.length+' item'+(selected.length===1?'':'s')+'.');
+      await loadSalesTrackingData();
+      ui.salesExpanded.add(orderId);
+      renderSalesTrackingBody();
+    };
+  }catch(err){
+    showToast(err.message||'Could not prepare the DO request.','err');
+  }
+};
 
 function invoiceAdminStatusOptions(selected) {
   const values=['draft','confirmed','partially_paid','paid','processing','ready','completed','cancelled'];
