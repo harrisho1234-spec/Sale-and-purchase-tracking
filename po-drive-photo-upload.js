@@ -72,7 +72,7 @@
           <div class="flex-1 min-w-0">
             <label class="text-xs font-semibold">Product Photo <span class="text-gray-400 font-normal">(optional)</span></label>
             <input id="poiPhoto" type="file" accept="image/*" class="mt-1 w-full border rounded-lg px-3 py-2 bg-white text-xs">
-            <label class="mt-2 flex items-center gap-2 text-[10px] text-gray-600"><input id="poiPhotoUpdateCatalog" type="checkbox" checked> Also use this as the Product Catalog photo when the SKU matches an existing product.</label>
+            <label class="mt-2 flex items-center gap-2 text-[10px] text-gray-600"><input id="poiPhotoUpdateCatalog" type="checkbox" checked> Also use this as the Product Catalog photo when the Code matches an existing product.</label>
             <div class="text-[10px] text-gray-400 mt-1">The photo is stored in Google Drive, not inside the app database.</div>
           </div>
         </div>`;
