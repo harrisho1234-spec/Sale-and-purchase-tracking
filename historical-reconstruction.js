@@ -6,6 +6,7 @@
   window.historicalReconstructionUI=H;
 
   const role=()=>String(state?.profile?.role||'');
+  const canRepair=()=>typeof window.hasAppPermission==='function'?window.hasAppPermission('inventory.reconcile'):['admin','super_admin'].includes(role());
   const n=v=>Number(v||0);
   const escH=v=>typeof esc==='function'?esc(v==null?'':String(v)):String(v==null?'':v).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   const fmtDate=v=>{
@@ -36,7 +37,7 @@
   }
 
   async function loadPreview(){
-    if(role()!=='super_admin')throw new Error('Super Admin access required.');
+    if(!canRepair())throw new Error('Historical reconciliation permission required.');
     const r=await db.rpc('get_historical_reconstruction_preview',{
       p_type:H.type||null,
       p_classification:H.classification||null,
@@ -66,7 +67,7 @@
   };
 
   window.applyHistoricalReconstructionSafeMatches=async function(){
-    if(role()!=='super_admin'||H.applying)return;
+    if(!canRepair()||H.applying)return;
     const s=H.loaded?.summary||{};
     const count=n(s.safe_rows);
     if(count<=0)return showToast('There are no safe historical matches waiting to apply.');
@@ -92,7 +93,7 @@
   };
 
   window.renderHistoricalReconstructionPanel=async function(){
-    if(role()!=='super_admin')return '<div class="inv-card py-12 text-center text-sm text-gray-400">Super Admin access required.</div>';
+    if(!canRepair())return '<div class="inv-card py-12 text-center text-sm text-gray-400">Historical reconciliation permission required.</div>';
     const d=await loadPreview();
     const cfg=d.config||{},s=d.summary||{},rows=Array.isArray(d.rows)?d.rows:[];
     const safe=n(s.safe_rows);
