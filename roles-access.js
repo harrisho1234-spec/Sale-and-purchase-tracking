@@ -127,7 +127,8 @@ window.saveEditAppUser=async function(e,id){
     user_id:id,
     name:document.getElementById('editAppUserName').value.trim(),
     email:document.getElementById('editAppUserEmail').value.trim(),
-    role:document.getElementById('editAppUserRole').value,
+    role:document.getElementById('editAppUserRole').value.trim(),
+    base_role:document.getElementById('editAppUserBaseRole')?.value||'sales',
     active:document.getElementById('editAppUserActive').checked
   };
   if(!payload.name||!payload.email)return showToast('Name and email are required.','err');
