@@ -581,7 +581,7 @@
       ['delivery','Customer Delivery',inv.taskBadges.delivery||0]
     ];
     t.push(['counts','Stock Count',inv.taskBadges.counts||0],['reports','Reports',0]);
-    if(role()==='super_admin')t.push(['history-reconstruction','History Repair',0]);
+    if(canReconcile())t.push(['history-reconstruction','History Repair',0]);
     if(canAdmin()||isStockController())t.push(['requests',canAdmin()?'Approvals / Requests':'My Requests',inv.taskBadges.requests||0]);
     return t;
   }
