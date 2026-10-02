@@ -2004,6 +2004,9 @@
 
   window.openReleaseSalesStock=async function(itemId){
     if(!canOperate())return;
+    if(typeof window.openStockFulfillmentRelease==='function'){
+      return window.openStockFulfillmentRelease(itemId);
+    }
     await loadCore(true);
     let x=inv.deliveryRows.find(x=>String(x.sales_order_item_id)===String(itemId));
     if(!x){const r=await db.rpc('get_inventory_delivery_queue',{p_search:null});if(r.error)return showToast(r.error.message,'err');inv.deliveryRows=r.data||[];x=inv.deliveryRows.find(x=>String(x.sales_order_item_id)===String(itemId))}
