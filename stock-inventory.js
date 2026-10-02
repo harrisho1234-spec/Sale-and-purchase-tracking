@@ -1100,12 +1100,14 @@
     const taxUnits=inv.tab==='tax'?inv.taxBalances.reduce((sum,p)=>sum+n(p.on_hand),0):0;
     const taxNoStock=inv.tab==='tax'?inv.taxBalances.filter(p=>n(p.on_hand)<=0).length:0;
     const taxHeader=inv.tab==='tax'?`<div class="tax-panel text-sm"><div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3"><div><b>Tax Inventory</b><p class="mt-1 text-xs">Live mirror of tax-tagged products in the shared stock ledger. Selling a Tax Item or a mapped Declared Set component creates an alert; quantities still change only through approved stock tasks.</p></div><div class="text-[10px] text-gray-500">Imported master list: Tax Stock LPHome · 30 Sep 2026</div></div></div>
-      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-        <div class="inv-stat"><div class="inv-stat-label">Tax Codes</div><div class="inv-stat-value">${inv.taxBalances.length.toLocaleString()}</div></div>
+      <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+        <div class="inv-stat"><div class="inv-stat-label">Physical Tax Items</div><div class="inv-stat-value">${inv.taxBalances.length.toLocaleString()}</div></div>
+        <div class="inv-stat"><div class="inv-stat-label">Tax-only Codes / Sets</div><div class="inv-stat-value">${(inv.taxCodes||[]).filter(x=>x.active!==false).length.toLocaleString()}</div></div>
         <div class="inv-stat"><div class="inv-stat-label">Tax Units On Hand</div><div class="inv-stat-value">${q(taxUnits)}</div></div>
         <div class="inv-stat"><div class="inv-stat-label">Tax Items Out of Stock</div><div class="inv-stat-value ${taxNoStock?'text-amber-600':''}">${taxNoStock.toLocaleString()}</div></div>
         <div class="inv-stat"><div class="inv-stat-label">Sold / Action Required</div><div class="inv-stat-value ${inv.taxSaleAlerts.length?'text-red-600':''}">${role()==='super_admin'?inv.taxSaleAlerts.length.toLocaleString():'—'}</div></div>
       </div>
+      ${taxDeclaredCodesHtml()}
       ${taxSaleAlertsHtml()}`:'';
     return `${taxHeader}${inventoryFilterControls('balance')}<div class="card rounded-2xl overflow-hidden">
       <div class="divide-y">${shown.length?shown.map(p=>{const a=inv.agingMap.get(p.product_id),tp=typeof taxProduct==='function'?taxProduct(p):p;return `<div class="p-4 grid xl:grid-cols-[1.45fr_68px_68px_68px_68px_68px_82px_92px_1.15fr_150px] gap-3 items-center ${n(p.on_hand)>0&&n(p.available)<=0?'bg-red-50/30 border-l-4 border-red-300':a?.age_bucket==='365+'?'bg-amber-50/25 border-l-4 border-amber-300':''}">
