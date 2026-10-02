@@ -2395,7 +2395,10 @@
     const alerts=(inv.taxSaleAlerts||[]).map(a=>[
       a.id,a.alert_status,a.qty,a.on_hand,a.available,a.complete_sets,a.set_status,a.image_url||''
     ].join(':')).join('|');
-    return balances+'||'+alerts;
+    const codes=(inv.taxCodes||[]).map(x=>[
+      x.id,x.active,x.on_hand_sets,x.available_sets,x.updated_at
+    ].join(':')).join('|');
+    return balances+'||'+alerts+'||'+codes;
   }
 
   let taxRefreshing=false;
