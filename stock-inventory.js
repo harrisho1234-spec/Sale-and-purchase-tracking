@@ -360,6 +360,132 @@
     inv.taxCodesLoadedAt=0;await loadTaxDeclaredCodes(true);await renderStockInventoryBody();
   };
 
+
+  function safeTaxExportName(v){
+    return String(v||'Tax').trim().replace(/[\\/:*?"<>|]+/g,'-').replace(/\s+/g,'_').slice(0,80)||'Tax';
+  }
+
+  function styleTaxExportSheet(ws,headerRow){
+    headerRow=headerRow||1;
+    const row=ws.getRow(headerRow);
+    row.font={bold:true};
+    row.alignment={vertical:'middle'};
+    row.height=22;
+    ws.views=[{state:'frozen',ySplit:headerRow}];
+    if(ws.columnCount)ws.autoFilter={from:{row:headerRow,column:1},to:{row:headerRow,column:ws.columnCount}};
+    ws.columns.forEach(function(col){
+      let max=String(col.header||'').length;
+      col.eachCell({includeEmpty:true},function(cell){
+        const v=cell.value&&typeof cell.value==='object'&&cell.value.text?cell.value.text:cell.value;
+        max=Math.max(max,String(v==null?'':v).length);
+      });
+      col.width=Math.min(Math.max(max+2,11),42);
+    });
+  }
+
+  async function downloadTaxWorkbook(wb,filename){
+    const buffer=await wb.xlsx.writeBuffer();
+    const blob=new Blob([buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function(){URL.revokeObjectURL(a.href)},1500);
+  }
+
+  window.exportTaxProductsExcel=async function(productId){
+    productId=productId||null;
+    if(!canAdmin())return showToast('Admin access required to export Tax Inventory.','err');
+    if(typeof ExcelJS==='undefined')return showToast('Excel export library is still loading. Refresh once and try again.','err');
+    try{
+      await Promise.all([
+        loadTaxCore(true),
+        typeof window.loadTaxProducts==='function'?window.loadTaxProducts():Promise.resolve([])
+      ]);
+      let rows=(inv.taxBalances||[]).filter(function(p){return !productId||String(p.product_id)===String(productId)});
+      if(!rows.length)return showToast('No Tax Items available to export.','err');
+
+      const wb=new ExcelJS.Workbook();
+      wb.creator="L'Imperial Tax Inventory";
+      wb.created=new Date();
+      const ws=wb.addWorksheet(productId?'Tax Product':'Tax Products');
+      const includePricing=role()==='super_admin';
+      const headers=['Code','Item Name','Brand','Category','On Hand','Reserved','Available','On Order','Incoming','Arrived Pending','Tax Group / Set'];
+      if(includePricing)headers.push('Tax Cost','Tax Sale Price','Tax Currency','Tax Pricing Note');
+      headers.push('Tax Note','Image');
+      ws.addRow(headers);
+
+      rows.sort(function(a,b){return String(a.code||'').localeCompare(String(b.code||''))}).forEach(function(p){
+        const tp=typeof window.taxProduct==='function'?window.taxProduct(p):p;
+        const vals=[p.code||'',p.item_name||'',p.brand||'',p.class||'',n(p.on_hand),n(p.reserved),n(p.available),n(p.on_order),n(p.incoming),n(p.arrived_pending_receive),tp.tax_group_or_set||''];
+        if(includePricing)vals.push(tp.tax_cost==null?'':tp.tax_cost,tp.tax_sale_price==null?'':tp.tax_sale_price,tp.tax_currency||'USD',tp.tax_pricing_note||'');
+        vals.push(tp.tax_note||'',p.image_url?'Open Photo':'');
+        const row=ws.addRow(vals);
+        if(p.image_url){
+          const cell=row.getCell(headers.length);
+          cell.value={text:'Open Photo',hyperlink:p.image_url};
+          cell.font={underline:true};
+        }
+      });
+
+      styleTaxExportSheet(ws,1);
+      const filename=productId?'Tax_Product_'+safeTaxExportName(rows[0]&&rows[0].code)+'.xlsx':'Tax_Products_'+new Date().toISOString().slice(0,10)+'.xlsx';
+      await downloadTaxWorkbook(wb,filename);
+      showToast((productId?'Tax Product':'Tax Items')+' exported to Excel.');
+    }catch(err){showToast(err.message||'Could not export Tax Items.','err')}
+  };
+
+  window.exportTaxCodesExcel=async function(taxCodeId){
+    taxCodeId=taxCodeId||null;
+    if(!canAdmin())return showToast('Admin access required to export Tax Codes / Sets.','err');
+    if(typeof ExcelJS==='undefined')return showToast('Excel export library is still loading. Refresh once and try again.','err');
+    try{
+      await loadTaxDeclaredCodes(true);
+      const sets=(inv.taxCodes||[]).filter(function(x){return !taxCodeId||String(x.id)===String(taxCodeId)});
+      if(!sets.length)return showToast('No Tax Codes / Sets available to export.','err');
+
+      const wb=new ExcelJS.Workbook();
+      wb.creator="L'Imperial Tax Inventory";
+      wb.created=new Date();
+      const includePricing=role()==='super_admin';
+
+      const sws=wb.addWorksheet('Tax Sets');
+      const setHeaders=['Tax Code','Tax Name','Active','Sets On Hand','Available Sets','Component Count'];
+      if(includePricing)setHeaders.push('Tax Cost','Tax Sale Price','Currency','Tax Pricing Note');
+      setHeaders.push('Tax Note');
+      sws.addRow(setHeaders);
+      sets.forEach(function(x){
+        const comps=Array.isArray(x.components)?x.components:[];
+        const vals=[x.code||'',x.name||'',x.active===false?'No':'Yes',n(x.on_hand_sets),n(x.available_sets),comps.length];
+        if(includePricing)vals.push(x.tax_cost==null?'':x.tax_cost,x.tax_sale_price==null?'':x.tax_sale_price,x.tax_currency||'USD',x.tax_pricing_note||'');
+        vals.push(x.tax_note||'');
+        sws.addRow(vals);
+      });
+      styleTaxExportSheet(sws,1);
+
+      const cws=wb.addWorksheet('Components');
+      const compHeaders=['Tax Code','Tax Name','Component Code','Component Name','Brand','Category','Required Qty','On Hand','Reserved','Available','Incoming','Note','Image'];
+      cws.addRow(compHeaders);
+      sets.forEach(function(x){
+        (x.components||[]).forEach(function(p){
+          const row=cws.addRow([x.code||'',x.name||'',p.code||'',p.item_name||'',p.brand||'',p.class||'',n(p.required_qty),n(p.on_hand),n(p.reserved),n(p.available),n(p.incoming),p.note||'',p.image_url?'Open Photo':'']);
+          if(p.image_url){
+            const cell=row.getCell(compHeaders.length);
+            cell.value={text:'Open Photo',hyperlink:p.image_url};
+            cell.font={underline:true};
+          }
+        });
+      });
+      styleTaxExportSheet(cws,1);
+
+      const filename=taxCodeId?'Tax_Set_'+safeTaxExportName((sets[0]&&sets[0].code)||(sets[0]&&sets[0].name))+'.xlsx':'Tax_Sets_'+new Date().toISOString().slice(0,10)+'.xlsx';
+      await downloadTaxWorkbook(wb,filename);
+      showToast((taxCodeId?'Tax Set':'Tax Codes / Sets')+' exported to Excel.');
+    }catch(err){showToast(err.message||'Could not export Tax Codes / Sets.','err')}
+  };
+
   window.acknowledgeTaxSaleAlert=async function(id){
     if(role()!=='super_admin')return showToast('Super Admin only.','err');
     const a=(inv.taxSaleAlerts||[]).find(x=>String(x.id)===String(id));
@@ -1104,7 +1230,7 @@
     const rows=balanceFiltered(),shown=rows.slice(0,inventoryLimit(inv.tab));
     const taxUnits=inv.tab==='tax'?inv.taxBalances.reduce((sum,p)=>sum+n(p.on_hand),0):0;
     const taxNoStock=inv.tab==='tax'?inv.taxBalances.filter(p=>n(p.on_hand)<=0).length:0;
-    const taxHeader=inv.tab==='tax'?`<div class="tax-panel text-sm"><div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3"><div><b>Tax Inventory</b><p class="mt-1 text-xs">Live mirror of tax-tagged products in the shared stock ledger. Selling a Tax Item or a mapped Declared Set component creates an alert; quantities still change only through approved stock tasks.</p></div><div class="text-[10px] text-gray-500">Imported master list: Tax Stock LPHome · 30 Sep 2026</div></div></div>
+    const taxHeader=inv.tab==='tax'?`<div class="tax-panel text-sm"><div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3"><div><b>Tax Inventory</b><p class="mt-1 text-xs">Live mirror of tax-tagged products in the shared stock ledger. Selling a Tax Item or a mapped Declared Set component creates an alert; quantities still change only through approved stock tasks.</p></div><div class="flex items-center gap-2 flex-wrap justify-end">${canAdmin()?'<button onclick="exportTaxProductsExcel()" class="px-3 py-2 rounded-xl border bg-white text-xs font-semibold">Export Tax Items</button>':''}<div class="text-[10px] text-gray-500">Imported master list: Tax Stock LPHome · 30 Sep 2026</div></div></div></div>
       <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
         <div class="inv-stat"><div class="inv-stat-label">Physical Tax Items</div><div class="inv-stat-value">${inv.taxBalances.length.toLocaleString()}</div></div>
         <div class="inv-stat"><div class="inv-stat-label">Tax-only Codes / Sets</div><div class="inv-stat-value">${(inv.taxCodes||[]).filter(x=>x.active!==false).length.toLocaleString()}</div></div>
@@ -1128,7 +1254,7 @@
         <div class="text-xs"><div class="text-gray-400">Arrived</div><b class="text-sm text-purple-600">${q(p.arrived_pending_receive)}</b><div class="text-[8px] text-gray-400">Pending receive</div></div>
         <div class="text-xs"><div class="text-gray-400">Aging</div><span class="inline-flex mt-1 px-2 py-1 rounded-lg border text-[9px] font-bold ${ageBadgeClass(a?.age_bucket||'Unknown')}">${esc(ageLabel(a))}</span>${a?.oldest_remaining_date?`<div class="text-[9px] text-gray-400 mt-1">Since ${esc(dateText(a.oldest_remaining_date))}</div>`:''}</div>
         <div class="text-[10px] text-gray-500">${(p.locations||[]).filter(l=>n(l.qty)!==0).map(l=>`<span class="inline-flex mr-1 mb-1 px-2 py-1 rounded-lg border ${inv.locationFilter&&String(l.location_id)===String(inv.locationFilter)?'bg-blue-50 border-blue-200 text-blue-700':'bg-gray-50'}"><b>${esc(l.code)}</b>&nbsp;${q(l.qty)}</span>`).join('')||'<span class="text-gray-400">No stock location</span>'}</div>
-        <div class="flex flex-wrap gap-1.5 justify-end">${inv.tab==='tax'?`<button onclick="openTaxDeclaredSet('${p.product_id}')" class="px-3 py-2 border border-amber-200 bg-amber-50 text-amber-800 rounded-lg text-[10px] font-semibold">Declared Set</button>`:''}${canOperate()?`<button onclick="openStockTransfer('${p.product_id}')" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-semibold">Move</button>`:''}<button onclick="openProductStockCard('${p.product_id}')" class="px-3 py-2 border rounded-lg text-[10px] font-semibold">Stock Card</button></div>
+        <div class="flex flex-wrap gap-1.5 justify-end">${inv.tab==='tax'?`<button onclick="exportTaxProductsExcel('${p.product_id}')" class="px-3 py-2 border rounded-lg text-[10px] font-semibold">Export</button><button onclick="openTaxDeclaredSet('${p.product_id}')" class="px-3 py-2 border border-amber-200 bg-amber-50 text-amber-800 rounded-lg text-[10px] font-semibold">Declared Set</button>`:''}${canOperate()?`<button onclick="openStockTransfer('${p.product_id}')" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-semibold">Move</button>`:''}<button onclick="openProductStockCard('${p.product_id}')" class="px-3 py-2 border rounded-lg text-[10px] font-semibold">Stock Card</button></div>
       </div>`}).join(''):'<div class="p-10 text-center text-sm text-gray-400">No products match your search / filters.</div>'}</div>
       ${inventoryListControls(inv.tab,rows.length)}
     </div>`;
