@@ -2056,30 +2056,86 @@
       const m=mr.data;
       if(!m||m.movement_type!=='out'||!m.affects_balance)return showToast('Only a posted generic Stock OUT can be linked.','err');
       if(m.reference_item_id||m.delivery_request_item_id)return showToast('This Stock OUT is already linked to fulfillment.','err');
+
       const pr=await db.from('product_catalog').select('id,code,item_name,image_url').eq('id',m.product_id).maybeSingle();
       if(pr.error)throw pr.error;
       const product=pr.data||{};
-      const qr=await db.rpc('get_inventory_fulfillment_queue',{p_search:product.code||null});
+
+      const qr=await db.rpc('get_stock_out_fulfillment_candidates',{
+        p_product_id:m.product_id,
+        p_reference_no:m.reference_no||null,
+        p_counterparty:m.counterparty||null
+      });
       if(qr.error)throw qr.error;
-      const rows=(qr.data||[]).filter(x=>String(x.product_id)===String(m.product_id)&&n(x.remaining_qty)>0);
+
+      const rows=qr.data||[];
+      const selectable=rows.filter(x=>n(x.remaining_qty)+0.0001>=n(m.qty));
+      const exact=rows.filter(x=>!!x.exact_reference);
+      const customerMatches=rows.filter(x=>!!x.customer_match);
       window._linkExistingOutRows=rows;
       window._linkExistingOutMovement=m;
       window._linkExistingOutDoRows=[];
+
+      let matchMessage='';
+      if(selectable.length){
+        const strongest=selectable.find(x=>x.exact_reference)||selectable.find(x=>x.customer_match)||null;
+        matchMessage=strongest
+          ?'<div class="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800"><b>Possible match found.</b> Check the customer, document number and remaining quantity before linking.</div>'
+          :'<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>No exact reference/customer match was found.</b> Same-product open Sales Orders are shown below for manual review.</div>';
+      }else if(rows.length){
+        matchMessage='<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>No selectable fulfillment item is currently available for this OUT.</b> Same-product Sales Orders exist, but they are already fulfilled or do not have enough remaining quantity. The Stock OUT has not been changed.</div>';
+      }else{
+        matchMessage='<div class="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-800"><b>No Sales Order item for this product exists in the app database.</b> This OUT cannot be linked until its matching Sales Order is created/imported into Sales Tracking. The Stock OUT has not been changed.</div>';
+      }
+
+      const refLine=[m.reference_no?'<b>Reference:</b> '+esc(m.reference_no):'',m.counterparty?'<b>Customer:</b> '+esc(m.counterparty):''].filter(Boolean).join(' &nbsp; · &nbsp; ');
+      const missingRef=m.reference_no&&!exact.length
+        ?'<div class="mt-2 text-[10px] text-red-700"><b>'+esc(m.reference_no)+'</b> is not present as a Sales Order reference in the app database for this product.</div>'
+        :'';
+      const customerHint=m.counterparty&&!customerMatches.length
+        ?'<div class="mt-1 text-[10px] text-amber-800">No same-product Sales Order currently matches customer <b>'+esc(m.counterparty)+'</b>.</div>'
+        :'';
+
       openModal('Link Existing Stock OUT to Customer Fulfillment',`<form id="linkExistingOutForm" class="space-y-4">
         <div class="rounded-xl border border-green-200 bg-green-50 p-3 text-xs text-green-800"><b>No stock will be deducted again.</b> This only changes the existing OUT from a generic Stock OUT to a Customer Delivery and connects it to the selected Sales Order item.</div>
         <div class="rounded-xl border bg-[#fcfbf8] p-4 flex gap-3 items-center">
           <div class="w-14 h-14 rounded-xl overflow-hidden bg-gray-100 shrink-0">${product.image_url?`<img src="${esc(product.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div>
-          <div><div class="text-[10px] font-bold text-[#a77d1a]">${esc(product.code||'')}</div><div class="font-semibold">${esc(product.item_name||'')}</div><div class="text-xs text-gray-500 mt-1">Existing OUT Qty <b>${q(m.qty)}</b> · ${esc(dateText(m.movement_date))}</div></div>
+          <div class="min-w-0 flex-1"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(product.code||'')}</div><div class="font-semibold">${esc(product.item_name||'')}</div><div class="text-xs text-gray-500 mt-1">Existing OUT Qty <b>${q(m.qty)}</b> · ${esc(dateText(m.movement_date))}</div>${refLine?`<div class="text-[10px] text-gray-500 mt-2">${refLine}</div>`:''}</div>
         </div>
-        <div><label class="text-xs font-semibold">Customer / Sales Order Item *</label><select id="linkExistingOutSalesItem" onchange="linkExistingOutSalesItemChanged()" required class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="">Select matching customer order</option>${rows.map(x=>`<option value="${esc(x.sales_order_item_id)}" ${n(x.remaining_qty)+0.0001<n(m.qty)?'disabled':''}>${esc(x.document_no||'Sales Order')} · ${esc(x.customer_name||'Customer')} · Remaining ${q(x.remaining_qty)}</option>`).join('')}</select><div id="linkExistingOutSalesInfo" class="text-[10px] text-gray-400 mt-1">${rows.length?'Choose the exact order/item this OUT was delivered for.':'No open fulfillment item matches this product.'}</div></div>
+        ${matchMessage}
+        <div>
+          <label class="text-xs font-semibold">Customer / Sales Order Item *</label>
+          <select id="linkExistingOutSalesItem" onchange="linkExistingOutSalesItemChanged()" required class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">
+            <option value="">Select matching customer order</option>
+            ${rows.map(x=>{
+              const enough=n(x.remaining_qty)+0.0001>=n(m.qty);
+              const tags=[x.exact_reference?'Exact reference':'',x.customer_match?'Customer match':''].filter(Boolean).join(' · ');
+              const state=enough?'Remaining '+q(x.remaining_qty):'Unavailable · Remaining '+q(x.remaining_qty);
+              return `<option value="${esc(x.sales_order_item_id)}" ${enough?'':'disabled'}>${esc(x.document_no||'Sales Order')} · ${esc(x.customer_name||'Customer')} · ${esc(state)}${tags?' · '+esc(tags):''}</option>`;
+            }).join('')}
+          </select>
+          <div id="linkExistingOutSalesInfo" class="text-[10px] text-gray-500 mt-1">
+            ${selectable.length?'Choose the exact order/item this OUT was delivered for. Disabled rows are already fulfilled or do not have enough remaining quantity.':'There is currently no valid Sales Order item that can receive this OUT.'}
+            ${missingRef}${customerHint}
+          </div>
+        </div>
         <div id="linkExistingOutDoWrap" class="hidden"><label class="text-xs font-semibold">Delivery Order</label><select id="linkExistingOutDoItem" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"></select><div id="linkExistingOutDoInfo" class="text-[10px] text-gray-400 mt-1"></div></div>
         <div><label class="text-xs font-semibold">Audit Note</label><textarea id="linkExistingOutNote" rows="2" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Optional note about why this OUT is being linked now"></textarea></div>
-        <button id="linkExistingOutSave" ${rows.length?'':'disabled'} class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold disabled:opacity-40">Link to Customer Fulfillment — No Stock Deduction</button>
+        <button id="linkExistingOutSave" ${selectable.length?'':'disabled'} class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold disabled:opacity-40">Link to Customer Fulfillment — No Stock Deduction</button>
       </form>`);
+
+      const strongest=selectable.find(x=>x.exact_reference)||selectable.find(x=>x.customer_match);
+      if(strongest){
+        const sel=document.getElementById('linkExistingOutSalesItem');
+        if(sel){sel.value=strongest.sales_order_item_id;setTimeout(()=>window.linkExistingOutSalesItemChanged(),0)}
+      }
+
       document.getElementById('linkExistingOutForm').onsubmit=async e=>{
         e.preventDefault();
         const itemId=document.getElementById('linkExistingOutSalesItem')?.value||'';
         if(!itemId)return showToast('Select the Customer Fulfillment item.','err');
+        const chosen=(window._linkExistingOutRows||[]).find(x=>String(x.sales_order_item_id)===String(itemId));
+        if(!chosen||n(chosen.remaining_qty)+0.0001<n(m.qty))return showToast('That Sales Order item does not have enough remaining fulfillment quantity.','err');
         const doRows=window._linkExistingOutDoRows||[];
         const doItem=document.getElementById('linkExistingOutDoItem')?.value||'';
         if(doRows.length&&!doItem)return showToast('This item has a Delivery Order request. Assign/select its official DO number first.','err');
