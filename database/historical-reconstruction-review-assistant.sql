@@ -1142,7 +1142,6 @@ begin
     if v_target_type='sales_delivery' then
       update public.sales_order_items
       set qty=p_new_qty,
-          line_total=greatest((p_new_qty*unit_price)-discount_amount,0),
           updated_at=now()
       where id=p_target_item_id;
     elsif v_target_type='po_receipt' then
