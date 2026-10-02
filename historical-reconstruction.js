@@ -110,7 +110,7 @@
               <button onclick="applyHistoricalReconstructionSafeMatches()" ${safe?'':'disabled'} class="px-3 py-2 rounded-xl bg-[#211d18] text-white text-xs font-semibold disabled:opacity-40">Apply Safe Matches ${safe?'('+safe+')':''}</button>
             </div>
           </div>
-          <div class="mt-3 text-[10px] text-blue-700">Safe auto-match requires exact document/reference + SKU and a quantity that does not exceed the unresolved document quantity. Ambiguous or oversized matches are never auto-applied.</div>
+          <div class="mt-3 text-[10px] text-blue-700">Safe auto-match requires exact document/reference + Code and a quantity that does not exceed the unresolved document quantity. Ambiguous or oversized matches are never auto-applied.</div>
         </div>
 
         <div class="grid sm:grid-cols-2 xl:grid-cols-5 gap-3">
@@ -118,7 +118,7 @@
           ${card('Already Reconciled',s.already_reconciled_rows,'Resolved before reconstruction','border-purple-100 bg-purple-50/20')}
           ${card('Safe Waiting',s.safe_rows,'Can be applied without stock movement','border-blue-100 bg-blue-50/20')}
           ${card('Conflicts',s.conflict_rows,'Needs manual review','border-red-100 bg-red-50/20')}
-          ${card('Unmatched',s.unmatched_rows,'No exact document + SKU match','border-amber-100 bg-amber-50/20')}
+          ${card('Unmatched',s.unmatched_rows,'No exact document + Code match','border-amber-100 bg-amber-50/20')}
         </div>
 
         <div class="rounded-xl border bg-white p-3 flex flex-wrap items-center gap-2">
@@ -136,7 +136,7 @@
             <option value="conflict" ${H.classification==='conflict'?'selected':''}>Conflict / Review</option>
             <option value="unmatched" ${H.classification==='unmatched'?'selected':''}>Unmatched</option>
           </select>
-          <div class="text-[10px] text-gray-400 ml-auto">Showing up to 300 rows. Use the Stock & Inventory search box above to narrow by reference, SKU or customer/vendor.</div>
+          <div class="text-[10px] text-gray-400 ml-auto">Showing up to 300 rows. Use the Stock & Inventory search box above to narrow by reference, Code or customer/vendor.</div>
         </div>
 
         <div class="card rounded-2xl overflow-hidden">
