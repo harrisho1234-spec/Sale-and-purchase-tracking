@@ -868,7 +868,7 @@
     if(!force&&inv.taskLoadedAt&&now-inv.taskLoadedAt<30000)return inv.taskData;
     const [poQ,delQ,countQ,reqQ]=await Promise.all([
       db.rpc('get_inventory_po_receiving_queue',{p_search:null}),
-      db.rpc('get_inventory_delivery_queue',{p_search:null}),
+      db.rpc('get_inventory_fulfillment_queue',{p_search:null}),
       db.from('stock_counts').select('id,status,period_month,location_id,created_at,stock_locations(code,name)').order('period_month',{ascending:false}).limit(500),
       (canAdmin()||isStockController())
         ?db.from('stock_change_requests').select('id,status,requested_by,requested_at').order('requested_at',{ascending:false}).limit(500)
@@ -882,7 +882,7 @@
     const today=new Date().toISOString().slice(0,10);
     const plus7=new Date();plus7.setDate(plus7.getDate()+7);
     const plus7Iso=plus7.toISOString().slice(0,10);
-    const poRows=poQ.data||[],delRows=delQ.data||[],countRows=countQ.data||[],reqRows=reqQ.data||[];
+    const poRows=poQ.data||[],fulfillmentRows=delQ.data||[],delRows=fulfillmentRows.filter(x=>!!x.inventory_tracking_enabled),countRows=countQ.data||[],reqRows=reqQ.data||[];
     const openCounts=countRows.filter(x=>String(x.status||'').toLowerCase()!=='closed');
     const pendingRequests=reqRows.filter(x=>String(x.status||'').toLowerCase()==='pending');
     const duePO=poRows.filter(x=>x.eta&&String(x.eta).slice(0,10)<=plus7Iso);
@@ -896,7 +896,7 @@
       counts:openCounts.length,
       requests:pendingRequests.length
     };
-    inv.taskData={poRows,delRows,countRows,reqRows,openCounts,pendingRequests,duePO,overduePO,aged365,unassigned};
+    inv.taskData={poRows,delRows,fulfillmentRows,countRows,reqRows,openCounts,pendingRequests,duePO,overduePO,aged365,unassigned};
     inv.taskLoadedAt=now;
     return inv.taskData;
   }
@@ -956,7 +956,7 @@
       ['balance','Stock Balance',0],
       ['tax','Tax Inventory',0],
       ['receive','Receive PO',inv.taskBadges.receive||0],
-      ['delivery','Customer Delivery',inv.taskBadges.delivery||0]
+      ['delivery','Customer Fulfillment',inv.taskBadges.delivery||0]
     ];
     t.push(['counts','Stock Count',inv.taskBadges.counts||0],['reports','Reports',0]);
     if(canReconcile())t.push(['history-reconstruction','History Repair',0]);
@@ -1039,7 +1039,7 @@
     </div>
     <div class="grid sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-5">
       <button onclick="setInventoryTab('receive')" class="inv-task-card border-purple-100 bg-purple-50/30"><div class="text-[9px] uppercase font-bold text-gray-400">Arrived Pending Receive</div><div class="text-2xl font-black mt-1">${tasks.poRows.length.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">Only PO items marked Arrived and waiting for warehouse receipt</div></button>
-      <button onclick="setInventoryTab('delivery')" class="inv-task-card border-amber-100 bg-amber-50/30"><div class="text-[9px] uppercase font-bold text-gray-400">Customer Delivery</div><div class="text-2xl font-black mt-1">${tasks.delRows.length.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">Tracked customer item lines waiting for release</div></button>
+      <button onclick="setInventoryTab('delivery')" class="inv-task-card border-amber-100 bg-amber-50/30"><div class="text-[9px] uppercase font-bold text-gray-400">Customer Fulfillment</div><div class="text-2xl font-black mt-1">${tasks.delRows.length.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">Linked customer item lines waiting for fulfillment / release</div></button>
       <button onclick="setInventoryTab('counts')" class="inv-task-card"><div class="text-[9px] uppercase font-bold text-gray-400">Open Stock Counts</div><div class="text-2xl font-black mt-1">${tasks.openCounts.length.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">Draft / submitted counts needing completion or reconciliation</div></button>
       ${(canAdmin()||isStockController())?`<button onclick="setInventoryTab('requests')" class="inv-task-card"><div class="text-[9px] uppercase font-bold text-gray-400">${canAdmin()?'Pending Edit Requests':'My Pending Requests'}</div><div class="text-2xl font-black mt-1">${tasks.pendingRequests.length.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">Movement corrections waiting for action</div></button>`:''}
       <button onclick="openInventoryTask('aged')" class="inv-task-card border-red-100 bg-red-50/20"><div class="text-[9px] uppercase font-bold text-gray-400">Aging 365+ Days</div><div class="text-2xl font-black mt-1">${tasks.aged365.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">Products with old remaining stock</div></button>
