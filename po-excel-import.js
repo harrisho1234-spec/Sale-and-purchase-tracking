@@ -174,7 +174,7 @@
       search.value='';
       if(!name){
         nameInput.classList.add('border-amber-400','bg-amber-50');
-        nameInput.placeholder='Enter item name for this new SKU';
+        nameInput.placeholder='Enter item name for this new Code';
       }
     }
     if(typeof poCreateRecalcRow==='function')poCreateRecalcRow(qty);
@@ -195,7 +195,7 @@
     if(vendors.length>1)throw new Error('This Excel file contains more than one Vendor / Supplier. Please upload one supplier PO per file.');
 
     const itemRows=rows.filter(r=>String(r.code??'').trim());
-    if(!itemRows.length)throw new Error('No item rows with a Code / SKU were found.');
+    if(!itemRows.length)throw new Error('No item rows with a Code were found.');
 
     const products=await productMapForCodes(itemRows.map(r=>String(r.code??'').trim()));
 
@@ -234,7 +234,7 @@
 
     if(status){
       status.className=needsName?'text-[10px] text-amber-700 mt-1':'text-[10px] text-green-700 mt-1';
-      status.innerHTML=`Excel imported: <b>${itemRows.length}</b> item${itemRows.length===1?'':'s'} · <b>${matched}</b> matched to Product Catalog${needsName?` · <b>${needsName}</b> new SKU${needsName===1?' needs':'s need'} an Item Name before saving`:''}.`;
+      status.innerHTML=`Excel imported: <b>${itemRows.length}</b> item${itemRows.length===1?'':'s'} · <b>${matched}</b> matched to Product Catalog${needsName?` · <b>${needsName}</b> new Code${needsName===1?' needs':'s need'} an Item Name before saving`:''}.`;
     }
     showToast(`Excel loaded: ${itemRows.length} PO item${itemRows.length===1?'':'s'} created in the form`);
   }
@@ -264,7 +264,7 @@
     ];
     const sample=[
       'PO-2026-001','Example Supplier',new Date().toISOString().slice(0,10),'USD','', '',
-      'SKU-001',1,0,0,''
+      'Code-001',1,0,0,''
     ];
     const ws=XLSX.utils.aoa_to_sheet([headers,sample]);
     const wb=XLSX.utils.book_new();
