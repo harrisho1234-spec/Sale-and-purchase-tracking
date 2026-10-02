@@ -433,52 +433,146 @@
     el.innerHTML=`Assigned <b>${fmtQty(total)}</b> / ${fmtQty(target)}${ok?' · Ready to save':' · Adjust the quantities above'}`;
   };
 
-  window.openStockFulfillmentRelease=async function(itemId){
-    if(!canOperate())return;
-    try{
-      let x=F.rows.find(r=>String(r.sales_order_item_id)===String(itemId));
-      if(!x){await loadRows('');x=F.rows.find(r=>String(r.sales_order_item_id)===String(itemId))}
-      if(!x)return showToast('Sales item is no longer waiting for fulfillment.','err');
-      if(!x.inventory_tracking_enabled)return linkStockFulfillmentItem(itemId,true);
-      const arrived=statusQty(x,'arrived');
-      if(arrived<=0)return showToast('Mark at least one unit Arrived before releasing stock.','err');
+  window.openStockFulfillmentRelease=async function newRelease(itemId){
+  if(!canOperate())return;
+  try{
+    let x=F.rows.find(r=>String(r.sales_order_item_id)===String(itemId));
+    if(!x){await loadRows('');x=F.rows.find(r=>String(r.sales_order_item_id)===String(itemId))}
+    if(!x)return showToast('Sales item is no longer waiting for fulfillment.','err');
+    if(!x.inventory_tracking_enabled)return linkStockFulfillmentItem(itemId,true);
+    const arrived=statusQty(x,'arrived');
+    if(arrived<=0)return showToast('Mark at least one unit Arrived before releasing stock.','err');
 
-      const br=await db.from('inventory_product_balance').select('*').eq('product_id',x.product_id).maybeSingle();
-      if(br.error)throw br.error;
-      const bal=br.data||{};
-      const locs=(Array.isArray(bal.locations)?bal.locations:[]).filter(l=>n(l.qty)>0);
-      if(!locs.length)return showToast('No physical stock location has quantity available for this product.','err');
-      const maxQty=Math.min(n(x.remaining_qty),arrived);
-      openModal('Release Customer Stock — '+(x.document_no||'Sales Order'),`<form id="stockFulfillmentReleaseForm" class="space-y-4">
-        <div class="rounded-xl border bg-gray-50 p-4"><div class="text-xs text-gray-500">${escHtml(x.customer_name||'')}</div><div class="text-[10px] font-bold text-[#a77d1a] mt-1">${escHtml(x.product_code||'')}</div><div class="font-semibold">${escHtml(x.item_name||'')}</div><div class="text-xs mt-2">Ordered ${fmtQty(x.ordered_qty)} · OUT ${fmtQty(x.released_qty)} · Arrived ${fmtQty(arrived)} · <b>Remaining ${fmtQty(x.remaining_qty)}</b></div></div>
-        <div class="grid md:grid-cols-2 gap-4">
-          <div><label class="text-xs font-semibold">Release Qty *</label><input id="sfReleaseQty" type="number" min="1" max="${maxQty}" step="1" value="${maxQty}" required class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
-          <div><label class="text-xs font-semibold">From Location *</label><select id="sfReleaseLocation" required class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="">Select stock location</option>${locs.map(l=>`<option value="${l.location_id}">${escHtml(l.code||l.name||'Location')} · On Hand ${fmtQty(l.qty)}</option>`).join('')}</select></div>
-          <div><label class="text-xs font-semibold">Delivery Date</label><input id="sfReleaseDate" type="date" value="${new Date().toISOString().slice(0,10)}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
-          <div><label class="text-xs font-semibold">Remark</label><input id="sfReleaseNote" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
-        </div>
-        <button id="sfReleaseSave" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Confirm Stock OUT</button>
-      </form>`);
-      document.getElementById('stockFulfillmentReleaseForm').onsubmit=async e=>{
-        e.preventDefault();
-        const qty=Number(document.getElementById('sfReleaseQty')?.value||0);
-        if(!Number.isInteger(qty)||qty<=0||qty>maxQty)return showToast('Release quantity must be a whole number from 1 to '+fmtQty(maxQty)+'.','err');
+    const br=await db.from('inventory_product_balance').select('*').eq('product_id',x.product_id).maybeSingle();
+    if(br.error)throw br.error;
+    const bal=br.data||{};
+    const locs=(Array.isArray(bal.locations)?bal.locations:[])
+      .filter(l=>n(l.qty)>0)
+      .map(l=>({
+        location_id:String(l.location_id||''),
+        code:String(l.code||l.name||'Location'),
+        qty:n(l.qty)
+      }))
+      .filter(l=>l.location_id&&l.qty>0);
+    if(!locs.length)return showToast('No physical stock location has quantity available for this product.','err');
+
+    const totalStock=locs.reduce((s,l)=>s+n(l.qty),0);
+    const maxQty=Math.min(n(x.remaining_qty),arrived,totalStock);
+    if(maxQty<=0)return showToast('There is no releasable stock quantity available.','err');
+    const multi=locs.length>1;
+
+    function autoSplit(qty){
+      let left=qty;
+      return locs.map(l=>{
+        const take=Math.min(n(l.qty),Math.max(left,0));
+        left-=take;
+        return {...l,release_qty:take};
+      });
+    }
+
+    const initial=autoSplit(maxQty);
+    const locationHtml=multi
+      ?`<div class="md:col-span-2">
+          <div class="flex items-center justify-between gap-3 mb-2">
+            <div><label class="text-xs font-semibold">From Locations *</label><div class="text-[10px] text-gray-400 mt-0.5">Stock is split across ${locs.length} locations. Allocate the release quantity below.</div></div>
+            <div class="text-right text-[10px] text-gray-500">Total On Hand <b>${fmtQty(totalStock)}</b></div>
+          </div>
+          <div class="rounded-xl border overflow-hidden" id="sfAllocationBox">
+            ${initial.map(a=>`<div class="grid grid-cols-[1fr_110px_120px] gap-3 items-center px-3 py-2.5 border-b last:border-b-0 bg-white">
+              <div><b class="text-xs">${escHtml(a.code)}</b><div class="text-[9px] text-gray-400">On Hand ${fmtQty(a.qty)}</div></div>
+              <div class="text-[10px] text-gray-400 text-right">Max ${fmtQty(a.qty)}</div>
+              <input data-stock-release-allocation="1" data-location-id="${escHtml(a.location_id)}" data-location-code="${escHtml(a.code)}" data-on-hand="${a.qty}" type="number" min="0" max="${a.qty}" step="1" value="${a.release_qty}" class="w-full border rounded-lg px-2 py-2 text-xs text-right">
+            </div>`).join('')}
+          </div>
+          <div id="sfAllocationTotal" class="mt-2 rounded-lg border bg-green-50 border-green-200 px-3 py-2 text-[10px] text-green-700">Allocated <b>${fmtQty(maxQty)}</b> / ${fmtQty(maxQty)}</div>
+        </div>`
+      :`<div><label class="text-xs font-semibold">From Location *</label><select id="sfReleaseLocation" required class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="">Select stock location</option>${locs.map(l=>`<option value="${escHtml(l.location_id)}">${escHtml(l.code)} · On Hand ${fmtQty(l.qty)}</option>`).join('')}</select></div>`;
+
+    openModal('Release Customer Stock — '+(x.document_no||'Sales Order'),`<form id="stockFulfillmentReleaseForm" class="space-y-4">
+      <div class="rounded-xl border bg-gray-50 p-4"><div class="text-xs text-gray-500">${escHtml(x.customer_name||'')}</div><div class="text-[10px] font-bold text-[#a77d1a] mt-1">${escHtml(x.product_code||'')}</div><div class="font-semibold">${escHtml(x.item_name||'')}</div><div class="text-xs mt-2">Ordered ${fmtQty(x.ordered_qty)} · OUT ${fmtQty(x.released_qty)} · Arrived ${fmtQty(arrived)} · <b>Remaining ${fmtQty(x.remaining_qty)}</b></div></div>
+      <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">${multi?`This item is stored in more than one location. The app can release it from several locations in one action.`:`Stock will be released from the selected location.`}</div>
+      <div class="grid md:grid-cols-2 gap-4">
+        <div><label class="text-xs font-semibold">Release Qty *</label><input id="sfReleaseQty" type="number" min="1" max="${maxQty}" step="1" value="${maxQty}" required class="mt-1 w-full border rounded-xl px-3 py-2.5"><div class="text-[9px] text-gray-400 mt-1">Maximum now: ${fmtQty(maxQty)} · Total stock across locations: ${fmtQty(totalStock)}</div></div>
+        ${multi?'<div></div>':locationHtml}
+        ${multi?locationHtml:''}
+        <div><label class="text-xs font-semibold">Delivery Date</label><input id="sfReleaseDate" type="date" value="${new Date().toISOString().slice(0,10)}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+        <div><label class="text-xs font-semibold">Remark</label><input id="sfReleaseNote" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
+      </div>
+      <button id="sfReleaseSave" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Confirm Stock OUT</button>
+    </form>`);
+
+    function allocationInputs(){return [...document.querySelectorAll('#stockFulfillmentReleaseForm [data-stock-release-allocation="1"]')]}
+    function updateAllocationTotal(){
+      if(!multi)return;
+      const target=Number(document.getElementById('sfReleaseQty')?.value||0);
+      const total=allocationInputs().reduce((s,el)=>s+Number(el.value||0),0);
+      const el=document.getElementById('sfAllocationTotal');if(!el)return;
+      const ok=Number.isInteger(target)&&target>0&&Math.abs(total-target)<=0.0001;
+      el.className=`mt-2 rounded-lg border px-3 py-2 text-[10px] ${ok?'bg-green-50 border-green-200 text-green-700':'bg-red-50 border-red-200 text-red-700'}`;
+      el.innerHTML=`Allocated <b>${fmtQty(total)}</b> / ${fmtQty(target)}${ok?' · Ready':' · Adjust location quantities'}`;
+    }
+    function rebalance(){
+      if(!multi)return;
+      const target=Number(document.getElementById('sfReleaseQty')?.value||0);
+      if(!Number.isInteger(target)||target<=0)return updateAllocationTotal();
+      let left=target;
+      allocationInputs().forEach(el=>{
+        const cap=Number(el.dataset.onHand||0);
+        const take=Math.min(cap,Math.max(left,0));
+        el.value=String(take);
+        left-=take;
+      });
+      updateAllocationTotal();
+    }
+
+    const qtyEl=document.getElementById('sfReleaseQty');
+    if(qtyEl&&multi)qtyEl.addEventListener('input',rebalance);
+    allocationInputs().forEach(el=>el.addEventListener('input',updateAllocationTotal));
+    updateAllocationTotal();
+
+    document.getElementById('stockFulfillmentReleaseForm').onsubmit=async e=>{
+      e.preventDefault();
+      const qty=Number(document.getElementById('sfReleaseQty')?.value||0);
+      if(!Number.isInteger(qty)||qty<=0||qty>maxQty)return showToast('Release quantity must be a whole number from 1 to '+fmtQty(maxQty)+'.','err');
+
+      let allocations=[];
+      if(multi){
+        allocations=allocationInputs().map(el=>({
+          location_id:String(el.dataset.locationId||''),
+          code:String(el.dataset.locationCode||''),
+          qty:Number(el.value||0),
+          on_hand:Number(el.dataset.onHand||0)
+        })).filter(a=>a.qty>0);
+        if(!allocations.length)return showToast('Allocate the release quantity to at least one stock location.','err');
+        for(const a of allocations){
+          if(!Number.isInteger(a.qty)||a.qty<=0||a.qty>a.on_hand)return showToast('Allocation for '+a.code+' must be a whole number up to '+fmtQty(a.on_hand)+'.','err');
+        }
+        const allocated=allocations.reduce((s,a)=>s+a.qty,0);
+        if(allocated!==qty)return showToast('Allocated quantity ('+fmtQty(allocated)+') must equal Release Qty '+fmtQty(qty)+'.','err');
+      }else{
         const loc=document.getElementById('sfReleaseLocation')?.value;
         if(!loc)return showToast('Select a stock location.','err');
-        const btn=document.getElementById('sfReleaseSave');btn.disabled=true;btn.textContent='Releasing...';
-        const rr=await db.rpc('release_sales_stock',{
-          p_sales_order_item_id:itemId,
-          p_qty:qty,
-          p_location_id:loc,
-          p_delivery_date:document.getElementById('sfReleaseDate')?.value||null,
-          p_note:document.getElementById('sfReleaseNote')?.value.trim()||null
-        });
-        if(rr.error){btn.disabled=false;btn.textContent='Confirm Stock OUT';return showToast(rr.error.message,'err')}
-        closeModal();showToast('Customer stock released. Sales item status updated automatically.');
-        if(window.renderStockInventory)await window.renderStockInventory();else await renderFulfillment();
+        const row=locs.find(l=>l.location_id===loc);
+        if(!row||qty>row.qty)return showToast('Not enough stock at the selected location.','err');
+        allocations=[{location_id:loc,code:row.code,qty:qty,on_hand:row.qty}];
+      }
+
+      const btn=document.getElementById('sfReleaseSave');btn.disabled=true;btn.textContent='Releasing...';
+      const args={
+        p_sales_order_item_id:itemId,
+        p_delivery_date:document.getElementById('sfReleaseDate')?.value||null,
+        p_note:document.getElementById('sfReleaseNote')?.value.trim()||null
       };
-    }catch(err){showToast(err.message||'Could not release customer stock.','err')}
-  };
+      const rr=allocations.length>1
+        ?await db.rpc('release_sales_stock_multi_location',{...args,p_allocations:allocations.map(a=>({location_id:a.location_id,qty:a.qty}))})
+        :await db.rpc('release_sales_stock',{...args,p_qty:qty,p_location_id:allocations[0].location_id});
+      if(rr.error){btn.disabled=false;btn.textContent='Confirm Stock OUT';return showToast(rr.error.message,'err')}
+      closeModal();
+      showToast(allocations.length>1?'Customer stock released from '+allocations.length+' locations. Sales item status updated automatically.':'Customer stock released. Sales item status updated automatically.');
+      if(window.renderStockInventory)await window.renderStockInventory();else await renderFulfillment();
+    };
+  }catch(err){showToast(err.message||'Could not release customer stock.','err')}
+};
 
   const baseBody=window.renderStockInventoryBody;
   if(typeof baseBody==='function'){
