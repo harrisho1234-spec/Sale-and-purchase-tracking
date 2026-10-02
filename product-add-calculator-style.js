@@ -186,7 +186,7 @@
           <div class="pa-details">
             <div class="pa-details-grid">
               <div class="pa-field">
-                <label>Code / SKU</label>
+                <label>Code</label>
                 <input id="paCode" required placeholder="Code">
               </div>
               <div class="pa-field">
