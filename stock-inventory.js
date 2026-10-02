@@ -16,6 +16,10 @@
     taxSaleAlertsLoadedAt:0,
     taxSaleExpanded:new Set(),
     taxSalePanelCollapsed:false,
+    taxCodes:[],
+    taxCodesLoadedAt:0,
+    taxCodePanelCollapsed:false,
+    taxCodeEditor:null,
     declaredSetCatalog:[],
     declaredSetCatalogLoaded:false,
     declaredSetState:null,
@@ -201,6 +205,17 @@
     setTimeout(()=>ensureTaxAgingBackground(),0);
   }
 
+
+  async function loadTaxDeclaredCodes(force=false){
+    if(!canView())throw new Error('Inventory access required.');
+    const now=Date.now();
+    if(!force&&inv.taxCodesLoadedAt&&now-inv.taxCodesLoadedAt<30000)return inv.taxCodes;
+    const r=await db.rpc('get_tax_declared_codes',{p_include_inactive:role()==='super_admin'});
+    if(r.error)throw r.error;
+    inv.taxCodes=Array.isArray(r.data)?r.data:[];
+    inv.taxCodesLoadedAt=now;
+    return inv.taxCodes;
+  }
 
   async function loadTaxSaleAlerts(force=false){
     if(role()!=='super_admin'){
@@ -592,7 +607,7 @@
   window.setInventorySearch=function(v){inv.search=v;window.inventoryReservedOnly=false;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
 
   function invalidateInventoryTasks(){inv.taskLoadedAt=0}
-  window.invalidateInventoryCache=function(){inv.taskLoadedAt=0;inv.locations=[];inv.balances=[];inv.taxBalances=[];inv.taxBalanceMap=new Map();inv.taxLoadedAt=0;inv.taxSaleAlertsLoadedAt=0;inv.declaredSetCatalog=[];inv.declaredSetCatalogLoaded=false;inv.balanceMap=new Map();inv.locationCompanies=[];inv.locationGroups=[];inv.locationMemberships=[];inv.deliveryRows=[];inv.poRows=[];};
+  window.invalidateInventoryCache=function(){inv.taskLoadedAt=0;inv.locations=[];inv.balances=[];inv.taxBalances=[];inv.taxBalanceMap=new Map();inv.taxLoadedAt=0;inv.taxSaleAlertsLoadedAt=0;inv.taxCodes=[];inv.taxCodesLoadedAt=0;inv.declaredSetCatalog=[];inv.declaredSetCatalogLoaded=false;inv.balanceMap=new Map();inv.locationCompanies=[];inv.locationGroups=[];inv.locationMemberships=[];inv.deliveryRows=[];inv.poRows=[];};
 
   async function loadInventoryTasks(force=false){
     const now=Date.now();
@@ -918,7 +933,7 @@
   window.setInventoryLocationFilter=function(v){inv.locationFilter=v||'';window.inventoryReservedOnly=false;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
   window.setInventoryAgeFilter=function(v){inv.ageFilter=v||'';window.inventoryReservedOnly=false;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
   window.setInventoryTaxOnly=function(v){inv.taxOnly=!!v;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
-  window.refreshTaxInventory=async function(){try{await Promise.all([loadTaxCore(true),loadTaxSaleAlerts(true)]);await renderStockInventoryBody()}catch(err){showToast(err.message,'err')}};
+  window.refreshTaxInventory=async function(){try{await Promise.all([loadTaxCore(true),loadTaxSaleAlerts(true),loadTaxDeclaredCodes(true)]);await renderStockInventoryBody()}catch(err){showToast(err.message,'err')}};
   window.clearInventoryFilters=function(){inv.taxOnly=false;inv.companyFilter='';inv.groupFilter='';inv.locationFilter='';inv.ageFilter='';window.inventoryReservedOnly=false;resetInventoryLimit(inv.tab);renderStockInventoryBody()};
   function productPassesInventoryFilters(p){
     if((inv.tab==='tax'||inv.taxOnly)&&!p.tax_item)return false;
