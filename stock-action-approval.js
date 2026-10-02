@@ -170,6 +170,22 @@
         ?'Stock OUT Destination / Purpose: '+(purposeLabels[purpose]||purpose)+(purposeDetail?' — '+purposeDetail:'')
         :'';
       const rawNote=String(document.getElementById('smNote')&&document.getElementById('smNote').value||'').trim();
+
+      if(type==='out'){
+        const refType=String(document.getElementById('smReferenceType')&&document.getElementById('smReferenceType').value||'');
+        const refNo=String(document.getElementById('smRef')&&document.getElementById('smRef').value||'').trim();
+        const party=String(document.getElementById('smParty')&&document.getElementById('smParty').value||'').trim();
+        const check=await db.rpc('stock_out_customer_conflict',{
+          p_reference_type:refType||null,
+          p_reference_no:refNo||null,
+          p_counterparty:party||null
+        });
+        if(check.error)return showToast(check.error.message||'Could not validate Stock OUT destination.','err');
+        if(check.data){
+          return showToast(String(check.data)+' Sales must create the Sales Order first, then Stock can release it from Customer Fulfillment.','err');
+        }
+      }
+
       const payload={
         product_id:productId,
         movement_type:type,
