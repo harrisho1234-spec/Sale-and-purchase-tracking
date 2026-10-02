@@ -321,7 +321,9 @@
   function actionDetailHtml(d,r){
     d=d||{};
     const image=d.image_url||'';
-    const route=d.from_location?(d.from_location+(d.to_location?' → '+d.to_location:'')):(d.to_location||'');
+    const allocs=Array.isArray(d.payload&&d.payload.allocations)?d.payload.allocations:[];
+    const multiRoute=allocs.length?allocs.map(function(a){return String(a.code||'Location')+' × '+qty(a.qty)}).join(' · '):'';
+    const route=multiRoute||(d.from_location?(d.from_location+(d.to_location?' → '+d.to_location:'')):(d.to_location||''));
     const reference=d.do_no?('DO '+d.do_no):(d.document_no||d.reference_no||'');
     const customer=d.customer_name||'';
     const customerSub=[d.customer_phone,d.customer_address].filter(Boolean).join(' · ');
@@ -407,7 +409,9 @@
   function actionRequestCard(r){
     const pending=String(r.request_status||'')==='pending';
     const ref=r.do_no?('DO '+r.do_no):(r.document_no||r.reference_no||'');
-    const route=r.from_location?(r.from_location+(r.to_location?' → '+r.to_location:'')):(r.to_location||'');
+    const rowAllocs=Array.isArray(r.payload&&r.payload.allocations)?r.payload.allocations:[];
+    const multiRoute=rowAllocs.length?rowAllocs.map(function(a){return String(a.code||'Location')+' × '+qty(a.qty)}).join(' · '):'';
+    const route=multiRoute||(r.from_location?(r.from_location+(r.to_location?' → '+r.to_location:'')):(r.to_location||''));
     const id=String(r.request_id||'');
     const expanded=A.expanded.has(id);
     const cached=A.details.get(id);
