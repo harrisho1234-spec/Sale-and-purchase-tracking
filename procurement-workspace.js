@@ -340,24 +340,26 @@
     if(r.error)throw r.error;
     const all=r.data||[];
     const q=norm(pw.search);
-    const rows=all.filter(taxProcurementMatches).filter(i=>{
+    const live=all.filter(taxProcurementMatches);
+    const rows=live.filter(i=>{
       const stage=orderedStage(i.item_status||i.po_status);
       if(pw.orderedStatus!=='all'&&stage!==pw.orderedStatus)return false;
       if(!q)return true;
       const allocations=Array.isArray(i.allocations)?i.allocations:[];
       const hay=[
         i.po_number,i.po_pending_reference,i.vendor_name,i.product_code,i.item_name,i.brand,i.product_class,
+        orderedStageLabel(i.item_status||i.po_status),
         ...allocations.flatMap(a=>[a.customer_name,a.customer_code,a.order_ref,a.sales_rep_name])
       ].filter(Boolean).join(' ').toLowerCase();
       return hay.includes(q);
     });
 
     const totals={
-      all:all.length,
-      placed:all.filter(i=>orderedStage(i.item_status||i.po_status)==='placed').length,
-      production:all.filter(i=>orderedStage(i.item_status||i.po_status)==='production').length,
-      shipping:all.filter(i=>orderedStage(i.item_status||i.po_status)==='shipping').length,
-      completed:all.filter(i=>orderedStage(i.item_status||i.po_status)==='completed').length
+      all:live.length,
+      placed:live.filter(i=>orderedStage(i.item_status||i.po_status)==='placed').length,
+      production:live.filter(i=>orderedStage(i.item_status||i.po_status)==='production').length,
+      shipping:live.filter(i=>orderedStage(i.item_status||i.po_status)==='shipping').length,
+      completed:live.filter(i=>orderedStage(i.item_status||i.po_status)==='completed').length
     };
     const chips=[
       ['all','All',totals.all],['placed','Ordered',totals.placed],['production','Production',totals.production],
@@ -378,6 +380,10 @@
       const allocated=items.reduce((a,x)=>a+Number(x.allocated_qty||0),0);
       const stock=items.reduce((a,x)=>a+Number(x.unallocated_qty||0),0);
       const po=poLabel(p);
+      const groupStages=[...new Set(items.map(i=>orderedStage(i.item_status||i.po_status)))];
+      const groupStage=groupStages.length===1?groupStages[0]:'mixed';
+      const groupStageLabel=groupStage==='mixed'?'Mixed':orderedStageLabel(groupStage);
+      const groupStageBadge=groupStage==='mixed'?'lr-badge-gray':procOrderedStatusBadge(groupStage);
       const details=items.map(i=>{
         const allocations=Array.isArray(i.allocations)?i.allocations:[];
         const allocationRows=allocations.map(a=>'<div class="flex items-center justify-between gap-3 py-1 border-b last:border-0"><div class="min-w-0"><div class="text-[11px] font-semibold truncate">'+esc(a.customer_name||'Customer')+'</div><div class="pw-mini truncate">'+esc(a.order_ref||'Sales Order')+(a.sales_rep_name?' · '+esc(a.sales_rep_name):'')+'</div></div><b class="text-[11px] whitespace-nowrap">'+orderedQty(a.qty_allocated)+' pcs</b></div>').join('');
@@ -394,7 +400,7 @@
 
       return '<div class="pw-card p-0 overflow-hidden">'+
         '<button type="button" onclick="toggleProcOrderedPO(\''+esc(key)+'\')" class="w-full text-left p-4 flex items-start justify-between gap-3 hover:bg-amber-50/30">'+
-          '<div class="min-w-0"><div class="flex flex-wrap items-center gap-2"><b class="text-base">'+esc(po)+'</b><span class="lr-badge '+procOrderedStatusBadge(p.po_status)+'">'+esc(orderedStageLabel(p.po_status))+'</span><span class="lr-badge lr-badge-gray">'+items.length+' item line'+(items.length===1?'':'s')+'</span><span class="lr-badge lr-badge-gray">Total Qty '+orderedQty(qty)+'</span><span class="lr-badge lr-badge-blue">Allocated '+orderedQty(allocated)+'</span>'+(stock>0?'<span class="lr-badge lr-badge-gray">Stock '+orderedQty(stock)+'</span>':'')+'</div>'+
+          '<div class="min-w-0"><div class="flex flex-wrap items-center gap-2"><b class="text-base">'+esc(po)+'</b><span class="lr-badge '+groupStageBadge+'">'+esc(groupStageLabel)+'</span><span class="lr-badge lr-badge-gray">'+items.length+' item line'+(items.length===1?'':'s')+'</span><span class="lr-badge lr-badge-gray">Total Qty '+orderedQty(qty)+'</span><span class="lr-badge lr-badge-blue">Allocated '+orderedQty(allocated)+'</span>'+(stock>0?'<span class="lr-badge lr-badge-gray">Stock '+orderedQty(stock)+'</span>':'')+'</div>'+
           '<div class="text-xs mt-2"><span class="text-gray-400">Supplier:</span> <b>'+esc(p.vendor_name||'-')+'</b></div><div class="pw-mini mt-1">Ordered '+esc(fmtDate(p.order_date))+' · ETA '+esc(fmtDate(p.estimated_arrival))+'</div></div>'+
           '<span class="text-[10px] text-gray-400 whitespace-nowrap">'+(open?'Hide items':'View items')+'</span>'+
         '</button>'+
@@ -407,7 +413,28 @@
       '<div class="grid gap-3">'+(cards||'<div class="card rounded-xl p-8 text-center text-gray-400">No PO ordered items match this filter.</div>')+'</div>';
   }
 
-  window.saveProcShipping=async function(id){const status=document.getElementById('status-'+id)?.value,eta=document.getElementById('eta-'+id)?.value||null;const patch={status,estimated_arrival:eta};if(['arrived','delivered'].includes(status))patch.actual_arrival=new Date().toISOString().slice(0,10);const r=await db.from('supplier_pos').update(patch).eq('id',id);if(r.error)return showToast(r.error.message,'err');if(window.documentFlowState)window.documentFlowState.loaded=false;if(typeof window.invalidateInventoryCache==='function')window.invalidateInventoryCache();if(typeof window.invalidateInventoryTasks==='function')window.invalidateInventoryTasks();showToast('Shipping / ETA updated');await load();await renderProcurementWorkspace()};
+  window.saveProcShipping=async function(id){
+    const status=document.getElementById('status-'+id)?.value,eta=document.getElementById('eta-'+id)?.value||null;
+    const patch={status,estimated_arrival:eta};
+    if(['arrived','delivered'].includes(status))patch.actual_arrival=new Date().toISOString().slice(0,10);
+    const r=await db.from('supplier_pos').update(patch).eq('id',id);
+    if(r.error)return showToast(r.error.message,'err');
+
+    // A PO-level status update is a deliberate whole-PO action, so keep live item statuses
+    // aligned. Historical/Reconciled item lines stay untouched and remain outside the live list.
+    const ir=await db.from('supplier_po_items')
+      .update({procurement_status:status,updated_at:new Date().toISOString()})
+      .eq('supplier_po_id',id)
+      .eq('historical_stock_reconciled',false);
+    if(ir.error)return showToast(ir.error.message,'err');
+
+    if(window.documentFlowState)window.documentFlowState.loaded=false;
+    if(typeof window.invalidateInventoryCache==='function')window.invalidateInventoryCache();
+    if(typeof window.invalidateInventoryTasks==='function')window.invalidateInventoryTasks();
+    showToast('Shipping / ETA updated');
+    await load();
+    await renderProcurementWorkspace();
+  };
 
   window.renderProcurementWorkspace=async function(){
     inject();requireAdmin();
