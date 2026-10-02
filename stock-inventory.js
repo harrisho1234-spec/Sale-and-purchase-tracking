@@ -251,6 +251,7 @@
     html+='<div class="px-4 py-3 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3'+(inv.taxCodePanelCollapsed?'':' border-b border-amber-100')+'">';
     html+='<button type="button" onclick="toggleTaxCodePanel()" class="flex-1 text-left flex items-start gap-3"><span class="mt-0.5 text-amber-700">'+(inv.taxCodePanelCollapsed?'▸':'▾')+'</span><span><span class="font-bold text-sm text-amber-900">Tax Codes / Sets</span><span class="block text-[10px] text-amber-800 mt-1">Tax-only Codes are declarations, not physical stock items. Their Qty is calculated from the component Codes and Required Qty underneath.</span></span></button>';
     html+='<div class="flex items-center gap-2"><span class="px-2.5 py-1.5 rounded-lg border border-amber-200 bg-white text-[10px] font-bold text-amber-800">'+(inv.taxCodes||[]).filter(function(x){return x.active!==false}).length+' active</span>';
+    if(canAdmin())html+='<button onclick="exportTaxCodesExcel()" class="px-3 py-2 rounded-xl border bg-white text-xs font-semibold">Export Sets</button>';
     if(role()==='super_admin')html+='<button onclick="openTaxCodeEditor()" class="px-3 py-2 rounded-xl bg-[#211d18] text-white text-xs font-semibold">+ Create Tax Code / Set</button>';
     html+='</div></div>';
     if(!inv.taxCodePanelCollapsed){
@@ -266,12 +267,17 @@
           html+='<div class="font-bold text-base mt-1">'+esc(x.name||'Tax Set')+'</div><div class="text-[10px] text-gray-400 mt-1">'+comps.length+' component'+(comps.length===1?'':'s')+' · no separate physical stock</div></div>';
           html+='<div class="grid grid-cols-2 gap-2"><div class="rounded-xl border bg-gray-50 px-3 py-2 text-center"><div class="text-[8px] uppercase font-bold text-gray-400">Sets On Hand</div><div class="text-lg font-black">'+q(x.on_hand_sets)+'</div></div><div class="rounded-xl border bg-green-50 px-3 py-2 text-center"><div class="text-[8px] uppercase font-bold text-green-700">Available Qty</div><div class="text-lg font-black text-green-700">'+q(x.available_sets)+'</div></div></div></div>';
           if(role()==='super_admin')html+='<div class="mt-3 flex flex-wrap gap-2 text-[10px]"><span class="px-2 py-1 rounded-lg border bg-amber-50"><b>Tax Cost:</b> '+(x.tax_cost==null?'—':money(n(x.tax_cost),x.tax_currency||'USD'))+'</span><span class="px-2 py-1 rounded-lg border bg-amber-50"><b>Tax Sale:</b> '+(x.tax_sale_price==null?'—':money(n(x.tax_sale_price),x.tax_currency||'USD'))+'</span></div>';
-          html+='<div class="mt-3 flex flex-wrap gap-1.5">';
-          comps.slice(0,8).forEach(function(p){html+='<span class="inline-flex px-2 py-1 rounded-lg border bg-gray-50 text-[9px]"><b>'+esc(p.code||'')+'</b>&nbsp;×&nbsp;'+q(p.required_qty)+'</span>'});
-          if(comps.length>8)html+='<span class="text-[9px] text-gray-400">+'+(comps.length-8)+' more</span>';
+          html+='<div class="mt-3 grid sm:grid-cols-2 gap-2">';
+          comps.slice(0,8).forEach(function(p){
+            html+='<div class="flex items-center gap-2 rounded-xl border bg-gray-50 p-2 min-w-0">'
+              +'<div class="w-10 h-10 rounded-lg overflow-hidden border bg-white shrink-0">'+(p.image_url?'<img loading="lazy" decoding="async" src="'+esc(p.image_url)+'" class="w-full h-full object-cover" alt="">':'<div class="w-full h-full flex items-center justify-center text-[7px] text-gray-400">No Photo</div>')+'</div>'
+              +'<div class="min-w-0 flex-1"><div class="text-[9px] font-bold text-[#a77d1a] truncate">'+esc(p.code||'')+'</div><div class="text-[10px] font-semibold truncate">'+esc(p.item_name||'')+'</div><div class="text-[9px] text-gray-400">Required × '+q(p.required_qty)+' · Available '+q(p.available)+'</div></div>'
+              +'</div>';
+          });
+          if(comps.length>8)html+='<div class="text-[9px] text-gray-400 flex items-center">+'+(comps.length-8)+' more components</div>';
           html+='</div>';
           if(x.tax_note)html+='<div class="mt-2 text-[10px] text-gray-500">'+esc(x.tax_note)+'</div>';
-          if(role()==='super_admin')html+='<div class="mt-3 flex justify-end gap-2"><button onclick="openTaxCodeEditor(\''+x.id+'\')" class="px-3 py-2 border rounded-lg text-[10px] font-semibold">Edit</button><button onclick="setTaxCodeActive(\''+x.id+'\','+(x.active===false?'true':'false')+')" class="px-3 py-2 border '+(x.active===false?'border-green-200 text-green-700':'border-red-200 text-red-600')+' rounded-lg text-[10px] font-semibold">'+(x.active===false?'Reactivate':'Deactivate')+'</button></div>';
+          if(canAdmin())html+='<div class="mt-3 flex justify-end gap-2 flex-wrap"><button onclick="exportTaxCodesExcel(\''+x.id+'\')" class="px-3 py-2 border rounded-lg text-[10px] font-semibold">Export</button>'+(role()==='super_admin'?'<button onclick="openTaxCodeEditor(\''+x.id+'\')" class="px-3 py-2 border rounded-lg text-[10px] font-semibold">Edit</button><button onclick="setTaxCodeActive(\''+x.id+'\','+(x.active===false?'true':'false')+')" class="px-3 py-2 border '+(x.active===false?'border-green-200 text-green-700':'border-red-200 text-red-600')+' rounded-lg text-[10px] font-semibold">'+(x.active===false?'Reactivate':'Deactivate')+'</button>':'')+'</div>';
           html+='</div>';
         });
         html+='</div>';
@@ -298,7 +304,7 @@
     html+='<div class="rounded-2xl border overflow-hidden"><div class="px-4 py-3 bg-gray-50 border-b"><b class="text-sm">Components</b><div class="text-[10px] text-gray-400">One Tax Code can contain one or many physical products.</div></div><div class="divide-y">';
     if(!e.components.length)html+='<div class="p-8 text-center text-sm text-gray-400">Add at least one product Code and Required Qty.</div>';
     e.components.forEach(function(p,i){
-      html+='<div class="p-4 grid lg:grid-cols-[1.4fr_120px_1fr_90px] gap-3 items-center"><div><div class="text-[10px] font-bold text-[#a77d1a]">'+esc(p.code||'')+'</div><div class="font-semibold text-sm">'+esc(p.item_name||'')+'</div><div class="text-[9px] text-gray-400">On hand '+q(p.on_hand)+' · Available '+q(p.available)+'</div></div><input type="number" min="0.0001" step="0.01" value="'+esc(p.required_qty)+'" oninput="taxCodeEditorComponentField('+i+',\'required_qty\',this.value)" class="border rounded-lg px-2 py-1.5 text-xs"><input value="'+esc(p.note||'')+'" oninput="taxCodeEditorComponentField('+i+',\'note\',this.value)" class="border rounded-lg px-2 py-1.5 text-xs" placeholder="Note"><button onclick="removeTaxCodeEditorComponent('+i+')" class="px-2.5 py-2 border border-red-200 text-red-600 rounded-lg text-[10px] font-semibold">Remove</button></div>';
+      html+='<div class="p-4 grid lg:grid-cols-[58px_1.25fr_120px_1fr_90px] gap-3 items-center">'        +'<div class="w-14 h-14 rounded-xl overflow-hidden border bg-gray-50">'+(p.image_url?'<img loading="lazy" decoding="async" src="'+esc(p.image_url)+'" class="w-full h-full object-cover" alt="">':'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>')+'</div>'        +'<div><div class="text-[10px] font-bold text-[#a77d1a]">'+esc(p.code||'')+'</div><div class="font-semibold text-sm">'+esc(p.item_name||'')+'</div><div class="text-[9px] text-gray-400">On hand '+q(p.on_hand)+' · Available '+q(p.available)+'</div></div>'        +'<input type="number" min="0.0001" step="0.01" value="'+esc(p.required_qty)+'" oninput="taxCodeEditorComponentField('+i+',\'required_qty\',this.value)" class="border rounded-lg px-2 py-1.5 text-xs">'        +'<input value="'+esc(p.note||'')+'" oninput="taxCodeEditorComponentField('+i+',\'note\',this.value)" class="border rounded-lg px-2 py-1.5 text-xs" placeholder="Note">'        +'<button onclick="removeTaxCodeEditorComponent('+i+')" class="px-2.5 py-2 border border-red-200 text-red-600 rounded-lg text-[10px] font-semibold">Remove</button></div>';
     });
     html+='</div></div><div class="flex justify-end gap-2"><button onclick="closeModal()" class="px-4 py-2.5 border rounded-xl text-xs font-semibold">Cancel</button><button onclick="saveTaxCodeEditor()" class="px-5 py-2.5 rounded-xl bg-[#211d18] text-white text-xs font-semibold">Save Tax Code / Set</button></div></div>';
     body.innerHTML=html;
@@ -326,7 +332,7 @@
     if(!p)return showToast('Choose a valid product Code.','err');
     if(qty<=0)return showToast('Required Qty must be greater than 0.','err');
     if(e.components.some(function(x){return String(x.product_id)===String(p.product_id)}))return showToast('This product is already added.','err');
-    e.components.push({product_id:p.product_id,code:p.code,item_name:p.item_name,on_hand:p.on_hand,available:p.available,required_qty:qty,note:note});
+    e.components.push({product_id:p.product_id,code:p.code,item_name:p.item_name,brand:p.brand,class:p.class,image_url:p.image_url||'',on_hand:p.on_hand,available:p.available,required_qty:qty,note:note});
     renderTaxCodeEditor();
   };
   window.removeTaxCodeEditorComponent=function(i){if(inv.taxCodeEditor){inv.taxCodeEditor.components.splice(i,1);renderTaxCodeEditor()}};
