@@ -110,7 +110,13 @@
       if(type==='transfer'&&(!to||to===from))return showToast('Transfer requires a different destination location.','err');
 
       const purpose=type==='out'?String(document.getElementById('smOutPurpose')&&document.getElementById('smOutPurpose').value||''):'';
-      if(type==='out'&&!purpose)return showToast('Choose the Stock OUT purpose first.','err');
+      if(type==='out'&&!purpose)return showToast('Choose where the Stock OUT is going / its purpose first.','err');
+      const purposeDetail=type==='out'&&purpose!=='customer_delivery'
+        ?String(document.getElementById('smOutPurposeDetail')&&document.getElementById('smOutPurposeDetail').value||'').trim()
+        :'';
+      if(type==='out'&&purpose!=='customer_delivery'&&!purposeDetail){
+        return showToast('Enter the destination / purpose details for this Stock OUT.','err');
+      }
 
       const btn=document.getElementById('smSave');
       if(type==='out'&&purpose==='customer_delivery'){
@@ -153,8 +159,15 @@
         return;
       }
 
+      const purposeLabels={
+        internal_use:'Internal / Company Use',
+        project_installation:'Project / Installation Use',
+        vendor_return:'Return to Vendor',
+        showroom_sample:'Showroom / Display / Sample Use',
+        other:'Other'
+      };
       const purposeNote=type==='out'&&purpose
-        ?(purpose==='internal_use'?'Purpose: Internal Use':'Purpose: Other / Manual OUT')
+        ?'Stock OUT Destination / Purpose: '+(purposeLabels[purpose]||purpose)+(purposeDetail?' — '+purposeDetail:'')
         :'';
       const rawNote=String(document.getElementById('smNote')&&document.getElementById('smNote').value||'').trim();
       const payload={
