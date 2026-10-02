@@ -61,7 +61,8 @@
     {
       id:'products',label:'Products',icon:'◇',
       activities:[
-        {key:'products.view',label:'View products',description:'View product catalog, normal sale price and stock summary.',view:true},
+        {key:'products.view',label:'View products',description:'View product catalog and stock summary.',view:true},
+        {key:'products.sales_price_view',label:'View Sales Price',description:'Show the normal product Sales Price. Does not grant cost, landed cost, margin or Tax pricing access.'},
         {key:'products.create',label:'Create products',description:'Add products to the catalog.'},
         {key:'products.edit',label:'Edit products',description:'Edit product information.'},
         {key:'products.delete',label:'Delete products',description:'Delete products where allowed.'},
@@ -142,10 +143,10 @@
   };
 
   const ROLE_FALLBACK={
-    sales:new Set(['customers.view','customers.create','customers.edit','sales_orders.view','sales_orders.create','sales_orders.edit','sales_orders.print','tracking.view','tracking.edit','payments.view','returns.view','returns.create','products.view','reports.view']),
-    accountant:new Set(['customers.view','sales_orders.view','tracking.view','payments.view','payments.create','payments.edit','returns.view','products.view','inventory.view','inventory.reports','reports.view','reports.export','finance.ar_view','finance.cost_margin_view','finance.payment_records']),
+    sales:new Set(['customers.view','customers.create','customers.edit','sales_orders.view','sales_orders.create','sales_orders.edit','sales_orders.print','tracking.view','tracking.edit','payments.view','returns.view','returns.create','products.view','products.sales_price_view','reports.view']),
+    accountant:new Set(['customers.view','sales_orders.view','tracking.view','payments.view','payments.create','payments.edit','returns.view','products.view','products.sales_price_view','inventory.view','inventory.reports','reports.view','reports.export','finance.ar_view','finance.cost_margin_view','finance.payment_records']),
     stock_controller:new Set(['products.view','inventory.view','inventory.operate','inventory.transfer','inventory.count','inventory.reports','procurement.view','procurement.po_receive']),
-    manager:new Set(['customers.view','customers.create','customers.edit','sales_orders.view','sales_orders.create','sales_orders.edit','sales_orders.print','sales_orders.export','sales.view_all','tracking.view','tracking.edit','payments.view','payments.create','payments.edit','returns.view','returns.create','returns.edit','products.view','inventory.view','inventory.reports','reports.view','reports.export','finance.ar_view','approvals.view','approvals.manage','sales_access.manage']),
+    manager:new Set(['customers.view','customers.create','customers.edit','sales_orders.view','sales_orders.create','sales_orders.edit','sales_orders.print','sales_orders.export','sales.view_all','tracking.view','tracking.edit','payments.view','payments.create','payments.edit','returns.view','returns.create','returns.edit','products.view','products.sales_price_view','inventory.view','inventory.reports','reports.view','reports.export','finance.ar_view','approvals.view','approvals.manage','sales_access.manage']),
     admin:new Set(AREAS.flatMap(a=>a.activities.map(x=>x.key)).filter(k=>!['users.manage','products.tax_manage','activity_logs.view'].includes(k))),
     super_admin:new Set(AREAS.flatMap(a=>a.activities.map(x=>x.key)))
   };
