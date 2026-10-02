@@ -314,7 +314,7 @@
       <div class="rounded-2xl border bg-[#fcfbf8] p-4">
         <div class="flex flex-col md:flex-row md:items-center gap-4">
           <div class="w-20 h-20 rounded-xl overflow-hidden border bg-white shrink-0">${p.image_url?`<img loading="lazy" decoding="async" src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[9px] text-gray-400">No Photo</div>'}</div>
-          <div class="min-w-0 flex-1"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code||'')}${taxBadge(p)}</div><div class="font-bold text-lg">${esc(p.item_name||'Declared Tax Item')}</div><div class="text-xs text-gray-400 mt-1">Declared parent · Physical inventory remains on the component SKUs below.</div></div>
+          <div class="min-w-0 flex-1"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code||'')}${taxBadge(p)}</div><div class="font-bold text-lg">${esc(p.item_name||'Declared Tax Item')}</div><div class="text-xs text-gray-400 mt-1">Declared parent · Physical inventory remains on the component Codes below.</div></div>
           <div class="grid grid-cols-2 gap-2 text-center">
             <div class="rounded-xl border bg-white px-4 py-3"><div class="text-[9px] uppercase font-bold text-gray-400">Sets On Hand</div><div class="text-xl font-black">${rows.length?q(onHandSets):'—'}</div></div>
             <div class="rounded-xl border bg-white px-4 py-3"><div class="text-[9px] uppercase font-bold text-gray-400">Sets Available</div><div class="text-xl font-black text-green-700">${rows.length?q(availableSets):'—'}</div></div>
@@ -326,9 +326,9 @@
 
       ${role()==='super_admin'?`<div class="rounded-2xl border p-4">
         <div class="font-bold text-sm">Add Existing Product to This Declared Set</div>
-        <div class="text-[10px] text-gray-400 mt-1">A component keeps its own SKU, stock and locations. One component SKU can belong to one primary Declared Tax Item.</div>
+        <div class="text-[10px] text-gray-400 mt-1">A component keeps its own Code, stock and locations. One component Code can belong to one primary Declared Tax Item.</div>
         <div class="grid lg:grid-cols-[1fr_110px_1fr_120px] gap-2 mt-3">
-          <div class="relative"><input id="taxSetComponentSearch" oninput="showTaxDeclaredComponentSuggestions(this)" class="w-full border rounded-xl px-3 py-2 text-xs" placeholder="Search SKU, product or brand..."><input id="taxSetComponentId" type="hidden"><div id="taxSetComponentSuggestions" class="absolute left-0 right-0 top-full mt-1 z-30 bg-white border rounded-xl shadow-xl max-h-64 overflow-auto hidden"></div></div>
+          <div class="relative"><input id="taxSetComponentSearch" oninput="showTaxDeclaredComponentSuggestions(this)" class="w-full border rounded-xl px-3 py-2 text-xs" placeholder="Search Code, product or brand..."><input id="taxSetComponentId" type="hidden"><div id="taxSetComponentSuggestions" class="absolute left-0 right-0 top-full mt-1 z-30 bg-white border rounded-xl shadow-xl max-h-64 overflow-auto hidden"></div></div>
           <input id="taxSetRequiredQty" type="number" min="0.0001" step="0.01" value="1" class="border rounded-xl px-3 py-2 text-xs" placeholder="Required qty">
           <input id="taxSetComponentNote" class="border rounded-xl px-3 py-2 text-xs" placeholder="Optional note">
           <button onclick="addTaxDeclaredComponent()" class="px-3 py-2 rounded-xl bg-[#211d18] text-white text-xs font-semibold">Add Component</button>
@@ -616,7 +616,7 @@
 
   window.openInventoryProductFinder=async function(){
     await loadCore();
-    openModal('Find Product',`<div><label class="text-xs font-semibold">SKU / Product / Brand</label><div class="relative"><input id="invFindProduct" autocomplete="off" onfocus="showInventoryFinderSuggestions(this)" oninput="showInventoryFinderSuggestions(this)" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Type SKU, item name or brand..."><div id="invFindSuggestions" class="absolute z-[150] left-0 right-0 mt-1 max-h-80 overflow-y-auto bg-white border rounded-xl shadow-xl"></div></div></div>`);
+    openModal('Find Product',`<div><label class="text-xs font-semibold">Code / Product / Brand</label><div class="relative"><input id="invFindProduct" autocomplete="off" onfocus="showInventoryFinderSuggestions(this)" oninput="showInventoryFinderSuggestions(this)" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Type Code, item name or brand..."><div id="invFindSuggestions" class="absolute z-[150] left-0 right-0 mt-1 max-h-80 overflow-y-auto bg-white border rounded-xl shadow-xl"></div></div></div>`);
     setTimeout(()=>document.getElementById('invFindProduct')?.focus(),50);
   };
   window.showInventoryFinderSuggestions=function(input){
@@ -649,7 +649,7 @@
       <div class="inv-stat"><div class="inv-stat-label">On Order</div><div class="inv-stat-value text-amber-700">${q(onOrder)}</div><div class="text-[9px] text-gray-400 mt-1">Ordered / Production / Ready</div></div>
       <div class="inv-stat"><div class="inv-stat-label">Incoming</div><div class="inv-stat-value text-blue-600">${q(incoming)}</div><div class="text-[9px] text-gray-400 mt-1">Shipping only</div></div>
       <div class="inv-stat"><div class="inv-stat-label">Arrived Pending Receive</div><div class="inv-stat-value text-purple-600">${q(arrivedPending)}</div></div>
-      <div class="inv-stat"><div class="inv-stat-label">SKUs In Stock</div><div class="inv-stat-value">${stocked.toLocaleString()}</div></div>
+      <div class="inv-stat"><div class="inv-stat-label">Codes In Stock</div><div class="inv-stat-value">${stocked.toLocaleString()}</div></div>
       <div class="inv-stat"><div class="inv-stat-label">Fully Reserved</div><div class="inv-stat-value ${noAvail?'text-red-500':''}">${noAvail.toLocaleString()}</div></div>
     </div>
 
@@ -667,7 +667,7 @@
       <button onclick="openInventoryTask('aged')" class="inv-task-card border-red-100 bg-red-50/20"><div class="text-[9px] uppercase font-bold text-gray-400">Aging 365+ Days</div><div class="text-2xl font-black mt-1">${tasks.aged365.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">Products with old remaining stock</div></button>
       <button onclick="openInventoryTask('unassigned')" class="inv-task-card border-amber-100 bg-amber-50/20"><div class="text-[9px] uppercase font-bold text-gray-400">Unassigned Location</div><div class="text-2xl font-black mt-1">${tasks.unassigned.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">Products still sitting in UNASSIGNED / review</div></button>
       <button onclick="openInventoryTask('reserved')" class="inv-task-card"><div class="text-[9px] uppercase font-bold text-gray-400">Fully Reserved</div><div class="text-2xl font-black mt-1">${noAvail.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">On-hand products with no available quantity</div></button>
-      <button onclick="openInventoryProductFinder()" class="inv-task-card"><div class="text-[9px] uppercase font-bold text-gray-400">Find Product</div><div class="text-2xl font-black mt-1">${stocked.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">Open a Stock Card by SKU, product or brand</div></button>
+      <button onclick="openInventoryProductFinder()" class="inv-task-card"><div class="text-[9px] uppercase font-bold text-gray-400">Find Product</div><div class="text-2xl font-black mt-1">${stocked.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">Open a Stock Card by Code, product or brand</div></button>
     </div>
 
     <div class="grid xl:grid-cols-[1.2fr_.8fr] gap-4">
@@ -854,7 +854,7 @@
     const taxNoStock=inv.tab==='tax'?inv.taxBalances.filter(p=>n(p.on_hand)<=0).length:0;
     const taxHeader=inv.tab==='tax'?`<div class="tax-panel text-sm"><div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3"><div><b>Tax Inventory</b><p class="mt-1 text-xs">Live mirror of tax-tagged products in the shared stock ledger. Selling a Tax Item or a mapped Declared Set component creates an alert; quantities still change only through approved stock tasks.</p></div><div class="text-[10px] text-gray-500">Imported master list: Tax Stock LPHome · 30 Sep 2026</div></div></div>
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-        <div class="inv-stat"><div class="inv-stat-label">Tax SKUs</div><div class="inv-stat-value">${inv.taxBalances.length.toLocaleString()}</div></div>
+        <div class="inv-stat"><div class="inv-stat-label">Tax Codes</div><div class="inv-stat-value">${inv.taxBalances.length.toLocaleString()}</div></div>
         <div class="inv-stat"><div class="inv-stat-label">Tax Units On Hand</div><div class="inv-stat-value">${q(taxUnits)}</div></div>
         <div class="inv-stat"><div class="inv-stat-label">Tax Items Out of Stock</div><div class="inv-stat-value ${taxNoStock?'text-amber-600':''}">${taxNoStock.toLocaleString()}</div></div>
         <div class="inv-stat"><div class="inv-stat-label">Sold / Action Required</div><div class="inv-stat-value ${inv.taxSaleAlerts.length?'text-red-600':''}">${role()==='super_admin'?inv.taxSaleAlerts.length.toLocaleString():'—'}</div></div>
@@ -1460,7 +1460,7 @@
     if(inv.tab==='tax')await loadTaxCore();
     else{await loadCore();await loadInventoryTasks()}
     if(!tabs().some(x=>x[0]===inv.tab))inv.tab='dashboard';
-    const searchPlaceholder=inv.tab==='receive'?'Search PO, vendor, SKU...':inv.tab==='delivery'?'Search invoice, customer, SKU...':inv.tab==='history-reconstruction'?'Search historical reference, customer/vendor, SKU...':'Search SKU, item, brand, location, reference...';
+    const searchPlaceholder=inv.tab==='receive'?'Search PO, vendor, Code...':inv.tab==='delivery'?'Search invoice, customer, Code...':inv.tab==='history-reconstruction'?'Search historical reference, customer/vendor, Code...':'Search Code, item, brand, location, reference...';
     document.getElementById('content').innerHTML=`<div class="max-w-[1550px] mx-auto">
       <div class="inv-tabs">${tabs().map(([v,l,b])=>`<button class="inv-tab ${inv.tab===v?'active':''}" onclick="setInventoryTab('${v}')">${l}${b?`<span class="inv-tab-badge">${Number(b).toLocaleString()}</span>`:''}</button>`).join('')}</div>
       <div class="inv-toolbar">
@@ -1582,7 +1582,7 @@
     await loadCore(true);
     openModal('New Stock Movement',`<form id="stockMovementForm" class="space-y-4">
       <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">All stock changes are recorded in the inventory ledger. OUT/Broken/Transfer cannot reduce a location below zero.</div>
-      <div><label class="text-xs font-semibold">Product / SKU *</label><div class="relative"><input id="smProduct" autocomplete="off" required onfocus="showStockProductSuggestions(this)" oninput="stockProductInputChanged(this)" onblur="setTimeout(()=>document.getElementById('smProductSuggestions')?.classList.add('hidden'),150)" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white" placeholder="Type product code or item name..."><input id="smProductId" type="hidden"><div id="smProductSuggestions" class="hidden absolute z-[140] left-0 right-0 top-full mt-1 max-h-72 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-xl"></div></div><div id="smProductInfo"></div></div>
+      <div><label class="text-xs font-semibold">Product / Code *</label><div class="relative"><input id="smProduct" autocomplete="off" required onfocus="showStockProductSuggestions(this)" oninput="stockProductInputChanged(this)" onblur="setTimeout(()=>document.getElementById('smProductSuggestions')?.classList.add('hidden'),150)" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white" placeholder="Type product code or item name..."><input id="smProductId" type="hidden"><div id="smProductSuggestions" class="hidden absolute z-[140] left-0 right-0 top-full mt-1 max-h-72 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-xl"></div></div><div id="smProductInfo"></div></div>
       <div class="grid md:grid-cols-2 gap-4">
         <div><label class="text-xs font-semibold">Movement Type</label><select id="smType" onchange="stockMovementTypeChanged()" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">
           ${[['in','Stock In'],['out','Stock Out'],['return','Customer Return'],['broken','Broken / Damaged'],['transfer','Transfer Location'],['adjustment_in','Adjustment +'],['adjustment_out','Adjustment −']].map(([v,l])=>`<option value="${v}" ${v===defaultType?'selected':''}>${l}</option>`).join('')}
@@ -1606,7 +1606,7 @@
       e.preventDefault();
       const selectedProductId=document.getElementById('smProductId').value;
       const p=(selectedProductId&&inv.balanceMap.get(selectedProductId))||findProduct(document.getElementById('smProduct').value);
-      if(!p)return showToast('Choose a Product / SKU from the suggestion list.','err');
+      if(!p)return showToast('Choose a Product / Code from the suggestion list.','err');
       const qty=stockWholeQtyInput('smQty',false,'Quantity');if(qty==null)return;
       const btn=document.getElementById('smSave');btn.disabled=true;btn.textContent='Saving...';
       const args={
@@ -1920,7 +1920,7 @@
     await loadCore();
     openModal('Add Item to Stock Count',`<div class="space-y-4">
       <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800"><b>Use this when the product is physically found at this location but was not already listed.</b> This includes products where the system quantity is currently 0.</div>
-      <div><label class="text-xs font-semibold">Product / SKU</label><div class="relative"><input id="scAddProductSearch" autocomplete="off" oninput="showStockCountAddSuggestions(this,'${countId}')" onfocus="showStockCountAddSuggestions(this,'${countId}')" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Type product code or item name..."><div id="scAddProductSuggestions" class="absolute z-[150] left-0 right-0 top-full mt-1 max-h-80 overflow-y-auto bg-white border rounded-xl shadow-xl"></div></div></div>
+      <div><label class="text-xs font-semibold">Product / Code</label><div class="relative"><input id="scAddProductSearch" autocomplete="off" oninput="showStockCountAddSuggestions(this,'${countId}')" onfocus="showStockCountAddSuggestions(this,'${countId}')" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Type product code or item name..."><div id="scAddProductSuggestions" class="absolute z-[150] left-0 right-0 top-full mt-1 max-h-80 overflow-y-auto bg-white border rounded-xl shadow-xl"></div></div></div>
       <div class="text-[10px] text-gray-400">After adding it, enter the Physical Qty and save it like the other count rows.</div>
     </div>`);
     setTimeout(()=>document.getElementById('scAddProductSearch')?.focus(),50);
@@ -1965,7 +1965,7 @@
       </div>
       <div class="rounded-xl border bg-[#fcfbf8] p-3">
         <div class="flex flex-col lg:flex-row lg:items-center gap-3">
-          <input id="stockCountSearch" oninput="filterStockCountRows()" class="border rounded-xl px-3 py-2 text-xs flex-1" placeholder="Search SKU, item name or brand...">
+          <input id="stockCountSearch" oninput="filterStockCountRows()" class="border rounded-xl px-3 py-2 text-xs flex-1" placeholder="Search Code, item name or brand...">
           <select id="stockCountTypeFilter" onchange="filterStockCountRows()" class="border rounded-xl px-3 py-2 text-xs bg-white lg:w-[190px]">
             <option value="">All Product Types (${rows.length})</option>
             ${productTypes.map(type=>`<option value="${esc(type)}">${esc(type)} (${typeCounts.get(type)||0})</option>`).join('')}
