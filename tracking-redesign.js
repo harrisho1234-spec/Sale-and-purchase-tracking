@@ -459,7 +459,7 @@ function invoiceAdminItemEditor(item, currency) {
           ${returnLocked?`<span class="lr-badge lr-badge-amber">Return/CN Locked</span>`:''}
         </div>
         <div class="text-xs text-gray-600 mt-1">${esc(item.item_name_snapshot||item.product_catalog?.item_name||'Item')}</div>
-        <div class="text-[10px] text-gray-400 mt-1">Product/SKU is fixed here to protect PO, delivery and return links.</div>
+        <div class="text-[10px] text-gray-400 mt-1">Product/Code is fixed here to protect PO, delivery and return links.</div>
       </div>
       <div class="text-xs font-bold">${money(item.line_total,currency)}</div>
     </div>
@@ -778,7 +778,7 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
         </div>
 
         <div class="relative mb-3">
-          <input class="lr-input pl-10" value="${esc(ui.salesSearch)}" oninput="setSalesSearch(this.value)" placeholder="Search Invoice, Customer, Item Name, SKU...">
+          <input class="lr-input pl-10" value="${esc(ui.salesSearch)}" oninput="setSalesSearch(this.value)" placeholder="Search Invoice, Customer, Item Name, Code...">
           <span class="absolute left-3 top-2.5 text-gray-400">⌕</span>
         </div>
 
@@ -1231,7 +1231,7 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
         ).map(([v,l])=>`<button class="lr-tab ${ui.trackingTab===v?'active':''}" onclick="setTrackingTab('${v}')">${l}</button>`).join('')}
       </div>
       <div class="relative mb-5">
-        <input class="lr-input pl-10" value="${esc(ui.trackingSearch)}" oninput="setTrackingSearch(this.value)" placeholder="${ui.trackingTab==='po_items'?'Search PO, customer, supplier, item, brand, SKU...':'Search Order, Client, Item, Brand, SKU...'}">
+        <input class="lr-input pl-10" value="${esc(ui.trackingSearch)}" oninput="setTrackingSearch(this.value)" placeholder="${ui.trackingTab==='po_items'?'Search PO, customer, supplier, item, brand, Code...':'Search Order, Client, Item, Brand, Code...'}">
         <span class="absolute left-3 top-2.5 text-gray-400">⌕</span>
       </div>
       ${body}`;
