@@ -67,7 +67,7 @@
             :`<form id="addPOItemForm" class="grid md:grid-cols-12 gap-3 bg-gray-50 rounded-xl p-4">
               <div class="md:col-span-5 min-w-0">
                 <label class="text-[10px] font-semibold text-gray-500">Product Code / Item</label>
-                <input id="poiCode" required class="mt-1 w-full min-w-0 border rounded-lg px-3 py-2 bg-white" placeholder="Type SKU / code or item name...">
+                <input id="poiCode" required class="mt-1 w-full min-w-0 border rounded-lg px-3 py-2 bg-white" placeholder="Type Code or item name...">
               </div>
               <div class="md:col-span-4 min-w-0">
                 <label class="text-[10px] font-semibold text-gray-500">Item Name</label>
