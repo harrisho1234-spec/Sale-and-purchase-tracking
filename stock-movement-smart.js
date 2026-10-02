@@ -1,4 +1,4 @@
-// Smart stock movement UX: source locations and quantity follow the selected SKU's real location balance.
+// Smart stock movement UX: source locations and quantity follow the selected Code's real location balance.
 (function(){
   const S={
     balance:null,
@@ -84,7 +84,7 @@
     const prev=sel.value;
     const rows=sourceRows();
     if(!document.getElementById('smProductId')?.value){
-      sel.innerHTML='<option value="">Choose Product / SKU first</option>';
+      sel.innerHTML='<option value="">Choose Product / Code first</option>';
       sel.value='';
       return rows;
     }
@@ -128,13 +128,13 @@
     const row=rows.find(x=>x.location_id===source);
     if(!rows.length){
       if(qtyInput){qtyInput.value='';qtyInput.disabled=true;qtyInput.removeAttribute('max')}
-      if(help)help.innerHTML='<span class="text-red-600 font-semibold">This SKU has no stock in any location.</span>';
-      setSaveState(false,'No quantity can be moved because this SKU has no source-location stock.');
+      if(help)help.innerHTML='<span class="text-red-600 font-semibold">This Code has no stock in any location.</span>';
+      setSaveState(false,'No quantity can be moved because this Code has no source-location stock.');
       return;
     }
     if(!source||!row){
       if(qtyInput){qtyInput.disabled=true;qtyInput.removeAttribute('max')}
-      if(help)help.textContent=rows.length===1?'1 stocked location available.':'Choose one of the '+rows.length+' locations that actually holds this SKU.';
+      if(help)help.textContent=rows.length===1?'1 stocked location available.':'Choose one of the '+rows.length+' locations that actually holds this Code.';
       setSaveState(false,'Select a source location to set the allowed quantity.');
       return;
     }
