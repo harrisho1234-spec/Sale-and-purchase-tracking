@@ -80,7 +80,7 @@ async function openEditProduct(id){
   try{adminDetail=await getProductAdminDetail(id)}catch(err){return showToast(err.message,'err')}
 
   openModal('Edit Product',`<form id="editProductForm" class="grid md:grid-cols-2 gap-4">
-    <div><label class="text-xs font-semibold">Code / SKU</label><input id="epCode" value="${esc(p.code)}" required class="mt-1 w-full border rounded-xl px-3 py-2"></div>
+    <div><label class="text-xs font-semibold">Code</label><input id="epCode" value="${esc(p.code)}" required class="mt-1 w-full border rounded-xl px-3 py-2"></div>
     <div><label class="text-xs font-semibold">Item Name</label><input id="epName" value="${esc(p.item_name)}" required class="mt-1 w-full border rounded-xl px-3 py-2"></div>
     <div><label class="text-xs font-semibold">Brand</label><input id="epBrand" value="${esc(p.brand||'')}" class="mt-1 w-full border rounded-xl px-3 py-2"></div>
     <div><label class="text-xs font-semibold">Class</label><input id="epClass" value="${esc(p.class||'')}" class="mt-1 w-full border rounded-xl px-3 py-2"></div>
@@ -110,7 +110,7 @@ async function openEditProduct(id){
 function openNewProduct(){
   if(!isAdmin())return;
   openModal('Add Product',`<form id="productForm" class="grid md:grid-cols-2 gap-4">
-    <input name="code" required class="border rounded-xl px-3 py-2" placeholder="Code / SKU"><input name="item_name" required class="border rounded-xl px-3 py-2" placeholder="Item name">
+    <input name="code" required class="border rounded-xl px-3 py-2" placeholder="Code"><input name="item_name" required class="border rounded-xl px-3 py-2" placeholder="Item name">
     <input name="brand" class="border rounded-xl px-3 py-2" placeholder="Brand"><input name="class" class="border rounded-xl px-3 py-2" placeholder="Class">
     <input name="sales_price" type="number" min="0" step="0.01" class="border rounded-xl px-3 py-2" placeholder="Sales price"><input name="stock_qty" type="number" min="0" step="0.01" class="border rounded-xl px-3 py-2" placeholder="Stock quantity">
     <input name="location" class="border rounded-xl px-3 py-2" placeholder="Location"><input name="currency" value="USD" class="border rounded-xl px-3 py-2" placeholder="Currency">
