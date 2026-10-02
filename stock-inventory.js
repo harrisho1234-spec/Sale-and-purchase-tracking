@@ -232,6 +232,129 @@
     return inv.taxSaleAlerts;
   }
 
+
+  window.toggleTaxCodePanel=function(){
+    inv.taxCodePanelCollapsed=!inv.taxCodePanelCollapsed;
+    renderStockInventoryBody();
+  };
+
+  function taxDeclaredCodesHtml(){
+    if(inv.tab!=='tax')return '';
+    const search=String(inv.search||'').trim().toLowerCase();
+    const rows=(inv.taxCodes||[]).filter(function(x){
+      if(!search)return true;
+      const parts=[x.code,x.name,x.tax_note,x.tax_pricing_note];
+      (x.components||[]).forEach(function(p){parts.push(p.code,p.item_name,p.brand,p.class)});
+      return parts.filter(Boolean).join(' ').toLowerCase().includes(search);
+    });
+    let html='<div class="mb-4 rounded-2xl border border-amber-200 bg-amber-50/20 overflow-hidden">';
+    html+='<div class="px-4 py-3 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3'+(inv.taxCodePanelCollapsed?'':' border-b border-amber-100')+'">';
+    html+='<button type="button" onclick="toggleTaxCodePanel()" class="flex-1 text-left flex items-start gap-3"><span class="mt-0.5 text-amber-700">'+(inv.taxCodePanelCollapsed?'▸':'▾')+'</span><span><span class="font-bold text-sm text-amber-900">Tax Codes / Sets</span><span class="block text-[10px] text-amber-800 mt-1">Tax-only Codes are declarations, not physical stock items. Their Qty is calculated from the component Codes and Required Qty underneath.</span></span></button>';
+    html+='<div class="flex items-center gap-2"><span class="px-2.5 py-1.5 rounded-lg border border-amber-200 bg-white text-[10px] font-bold text-amber-800">'+(inv.taxCodes||[]).filter(function(x){return x.active!==false}).length+' active</span>';
+    if(role()==='super_admin')html+='<button onclick="openTaxCodeEditor()" class="px-3 py-2 rounded-xl bg-[#211d18] text-white text-xs font-semibold">+ Create Tax Code / Set</button>';
+    html+='</div></div>';
+    if(!inv.taxCodePanelCollapsed){
+      html+='<div class="p-3">';
+      if(!rows.length)html+='<div class="py-8 text-center text-sm text-gray-400">No Tax Codes / Sets yet. Create one and add physical product Codes with their Required Qty.</div>';
+      else{
+        html+='<div class="grid xl:grid-cols-2 gap-3">';
+        rows.forEach(function(x){
+          const comps=Array.isArray(x.components)?x.components:[];
+          html+='<div class="rounded-2xl border bg-white p-4'+(x.active===false?' opacity-60':'')+'">';
+          html+='<div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3"><div class="min-w-0">';
+          html+='<div class="flex flex-wrap items-center gap-2"><span class="text-[10px] font-black text-[#a77d1a]">'+esc(x.code||'')+'</span><span class="px-2 py-0.5 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 text-[8px] font-bold">TAX-ONLY CODE</span>'+(x.active===false?'<span class="px-2 py-0.5 rounded-lg border text-[8px] font-bold text-gray-500">INACTIVE</span>':'')+'</div>';
+          html+='<div class="font-bold text-base mt-1">'+esc(x.name||'Tax Set')+'</div><div class="text-[10px] text-gray-400 mt-1">'+comps.length+' component'+(comps.length===1?'':'s')+' · no separate physical stock</div></div>';
+          html+='<div class="grid grid-cols-2 gap-2"><div class="rounded-xl border bg-gray-50 px-3 py-2 text-center"><div class="text-[8px] uppercase font-bold text-gray-400">Sets On Hand</div><div class="text-lg font-black">'+q(x.on_hand_sets)+'</div></div><div class="rounded-xl border bg-green-50 px-3 py-2 text-center"><div class="text-[8px] uppercase font-bold text-green-700">Available Qty</div><div class="text-lg font-black text-green-700">'+q(x.available_sets)+'</div></div></div></div>';
+          if(role()==='super_admin')html+='<div class="mt-3 flex flex-wrap gap-2 text-[10px]"><span class="px-2 py-1 rounded-lg border bg-amber-50"><b>Tax Cost:</b> '+(x.tax_cost==null?'—':money(n(x.tax_cost),x.tax_currency||'USD'))+'</span><span class="px-2 py-1 rounded-lg border bg-amber-50"><b>Tax Sale:</b> '+(x.tax_sale_price==null?'—':money(n(x.tax_sale_price),x.tax_currency||'USD'))+'</span></div>';
+          html+='<div class="mt-3 flex flex-wrap gap-1.5">';
+          comps.slice(0,8).forEach(function(p){html+='<span class="inline-flex px-2 py-1 rounded-lg border bg-gray-50 text-[9px]"><b>'+esc(p.code||'')+'</b>&nbsp;×&nbsp;'+q(p.required_qty)+'</span>'});
+          if(comps.length>8)html+='<span class="text-[9px] text-gray-400">+'+(comps.length-8)+' more</span>';
+          html+='</div>';
+          if(x.tax_note)html+='<div class="mt-2 text-[10px] text-gray-500">'+esc(x.tax_note)+'</div>';
+          if(role()==='super_admin')html+='<div class="mt-3 flex justify-end gap-2"><button onclick="openTaxCodeEditor(\''+x.id+'\')" class="px-3 py-2 border rounded-lg text-[10px] font-semibold">Edit</button><button onclick="setTaxCodeActive(\''+x.id+'\','+(x.active===false?'true':'false')+')" class="px-3 py-2 border '+(x.active===false?'border-green-200 text-green-700':'border-red-200 text-red-600')+' rounded-lg text-[10px] font-semibold">'+(x.active===false?'Reactivate':'Deactivate')+'</button></div>';
+          html+='</div>';
+        });
+        html+='</div>';
+      }
+      html+='</div>';
+    }
+    html+='</div>';
+    return html;
+  }
+
+  function renderTaxCodeEditor(){
+    const e=inv.taxCodeEditor,body=document.getElementById('modalBody');
+    if(!e||!body)return;
+    let html='<div class="space-y-4"><div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[10px] text-amber-900"><b>Tax-only Code:</b> this does not create a physical product or Stock IN / OUT. Available Qty is calculated from the products below.</div>';
+    html+='<div class="grid md:grid-cols-2 gap-3">';
+    html+='<div><label class="text-xs font-semibold">Tax Code *</label><input value="'+esc(e.code||'')+'" oninput="taxCodeEditorField(\'code\',this.value)" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="TAX-VENUS-01"></div>';
+    html+='<div><label class="text-xs font-semibold">Tax Name *</label><input value="'+esc(e.name||'')+'" oninput="taxCodeEditorField(\'name\',this.value)" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Venus Mirror Set"></div>';
+    html+='<div><label class="text-xs font-semibold">Tax Cost</label><input type="number" min="0" step="0.01" value="'+esc(e.tax_cost??'')+'" oninput="taxCodeEditorField(\'tax_cost\',this.value)" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Optional"></div>';
+    html+='<div><label class="text-xs font-semibold">Tax Sale Price</label><input type="number" min="0" step="0.01" value="'+esc(e.tax_sale_price??'')+'" oninput="taxCodeEditorField(\'tax_sale_price\',this.value)" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Optional"></div>';
+    html+='<div><label class="text-xs font-semibold">Tax Currency</label><select onchange="taxCodeEditorField(\'tax_currency\',this.value)" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option '+(e.tax_currency==='USD'?'selected':'')+'>USD</option><option '+(e.tax_currency==='EUR'?'selected':'')+'>EUR</option><option '+(e.tax_currency==='CNY'?'selected':'')+'>CNY</option><option '+(e.tax_currency==='GBP'?'selected':'')+'>GBP</option></select></div>';
+    html+='<div><label class="text-xs font-semibold">Tax Pricing Note</label><input value="'+esc(e.tax_pricing_note||'')+'" oninput="taxCodeEditorField(\'tax_pricing_note\',this.value)" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Optional"></div></div>';
+    html+='<div><label class="text-xs font-semibold">Tax Note</label><textarea oninput="taxCodeEditorField(\'tax_note\',this.value)" class="mt-1 w-full border rounded-xl px-3 py-2.5 min-h-[70px]">'+esc(e.tax_note||'')+'</textarea></div>';
+    html+='<div class="rounded-2xl border p-4"><div class="font-bold text-sm">Add Product Code + Required Qty</div><div class="grid lg:grid-cols-[1fr_110px_1fr_120px] gap-2 mt-3"><input id="taxCodeProductInput" list="taxCodeProductList" class="border rounded-xl px-3 py-2 text-xs" placeholder="Search Code or product"><datalist id="taxCodeProductList">'+productOptions()+'</datalist><input id="taxCodeRequiredQty" type="number" min="0.0001" step="0.01" value="1" class="border rounded-xl px-3 py-2 text-xs"><input id="taxCodeComponentNote" class="border rounded-xl px-3 py-2 text-xs" placeholder="Optional note"><button onclick="addTaxCodeEditorComponent()" class="px-3 py-2 rounded-xl bg-[#211d18] text-white text-xs font-semibold">Add</button></div></div>';
+    html+='<div class="rounded-2xl border overflow-hidden"><div class="px-4 py-3 bg-gray-50 border-b"><b class="text-sm">Components</b><div class="text-[10px] text-gray-400">One Tax Code can contain one or many physical products.</div></div><div class="divide-y">';
+    if(!e.components.length)html+='<div class="p-8 text-center text-sm text-gray-400">Add at least one product Code and Required Qty.</div>';
+    e.components.forEach(function(p,i){
+      html+='<div class="p-4 grid lg:grid-cols-[1.4fr_120px_1fr_90px] gap-3 items-center"><div><div class="text-[10px] font-bold text-[#a77d1a]">'+esc(p.code||'')+'</div><div class="font-semibold text-sm">'+esc(p.item_name||'')+'</div><div class="text-[9px] text-gray-400">On hand '+q(p.on_hand)+' · Available '+q(p.available)+'</div></div><input type="number" min="0.0001" step="0.01" value="'+esc(p.required_qty)+'" oninput="taxCodeEditorComponentField('+i+',\'required_qty\',this.value)" class="border rounded-lg px-2 py-1.5 text-xs"><input value="'+esc(p.note||'')+'" oninput="taxCodeEditorComponentField('+i+',\'note\',this.value)" class="border rounded-lg px-2 py-1.5 text-xs" placeholder="Note"><button onclick="removeTaxCodeEditorComponent('+i+')" class="px-2.5 py-2 border border-red-200 text-red-600 rounded-lg text-[10px] font-semibold">Remove</button></div>';
+    });
+    html+='</div></div><div class="flex justify-end gap-2"><button onclick="closeModal()" class="px-4 py-2.5 border rounded-xl text-xs font-semibold">Cancel</button><button onclick="saveTaxCodeEditor()" class="px-5 py-2.5 rounded-xl bg-[#211d18] text-white text-xs font-semibold">Save Tax Code / Set</button></div></div>';
+    body.innerHTML=html;
+  }
+
+  window.taxCodeEditorField=function(field,value){if(inv.taxCodeEditor)inv.taxCodeEditor[field]=value};
+  window.taxCodeEditorComponentField=function(i,field,value){if(inv.taxCodeEditor&&inv.taxCodeEditor.components[i])inv.taxCodeEditor.components[i][field]=value};
+
+  window.openTaxCodeEditor=async function(id){
+    if(role()!=='super_admin')return showToast('Super Admin only.','err');
+    try{
+      await Promise.all([loadTaxDeclaredCodes(true),loadCore()]);
+      const row=id?(inv.taxCodes||[]).find(function(x){return String(x.id)===String(id)}):null;
+      inv.taxCodeEditor={id:row?.id||null,code:row?.code||'',name:row?.name||'',tax_cost:row?.tax_cost??'',tax_sale_price:row?.tax_sale_price??'',tax_currency:row?.tax_currency||'USD',tax_note:row?.tax_note||'',tax_pricing_note:row?.tax_pricing_note||'',components:(row?.components||[]).map(function(p){return Object.assign({},p,{note:p.note||''})})};
+      openModal(row?'Edit Tax Code / Set':'Create Tax Code / Set','');
+      const shell=document.querySelector('#modal > div');if(shell)shell.style.maxWidth='1050px';
+      renderTaxCodeEditor();
+    }catch(err){showToast(err.message||'Could not open Tax Code editor.','err')}
+  };
+
+  window.addTaxCodeEditorComponent=function(){
+    const e=inv.taxCodeEditor;if(!e)return;
+    const p=findProduct(document.getElementById('taxCodeProductInput')?.value||'');
+    const qty=n(document.getElementById('taxCodeRequiredQty')?.value);
+    const note=document.getElementById('taxCodeComponentNote')?.value.trim()||'';
+    if(!p)return showToast('Choose a valid product Code.','err');
+    if(qty<=0)return showToast('Required Qty must be greater than 0.','err');
+    if(e.components.some(function(x){return String(x.product_id)===String(p.product_id)}))return showToast('This product is already added.','err');
+    e.components.push({product_id:p.product_id,code:p.code,item_name:p.item_name,on_hand:p.on_hand,available:p.available,required_qty:qty,note:note});
+    renderTaxCodeEditor();
+  };
+  window.removeTaxCodeEditorComponent=function(i){if(inv.taxCodeEditor){inv.taxCodeEditor.components.splice(i,1);renderTaxCodeEditor()}};
+
+  window.saveTaxCodeEditor=async function(){
+    const e=inv.taxCodeEditor;if(!e||role()!=='super_admin')return;
+    const code=String(e.code||'').trim(),name=String(e.name||'').trim();
+    if(!code||!name)return showToast('Tax Code and Tax Name are required.','err');
+    if(!e.components.length)return showToast('Add at least one physical product component.','err');
+    const components=e.components.map(function(p){return {product_id:p.product_id,required_qty:Number(p.required_qty),note:String(p.note||'').trim()||null}});
+    if(components.some(function(p){return !Number.isFinite(p.required_qty)||p.required_qty<=0}))return showToast('Every Required Qty must be greater than 0.','err');
+    const numOrNull=function(v){return String(v??'').trim()===''?null:Number(v)};
+    const r=await db.rpc('save_tax_declared_code',{p_id:e.id||null,p_code:code,p_name:name,p_tax_cost:numOrNull(e.tax_cost),p_tax_sale_price:numOrNull(e.tax_sale_price),p_tax_currency:e.tax_currency||'USD',p_tax_note:String(e.tax_note||'').trim()||null,p_tax_pricing_note:String(e.tax_pricing_note||'').trim()||null,p_components:components});
+    if(r.error)return showToast(r.error.message,'err');
+    inv.taxCodeEditor=null;closeModal();inv.taxCodesLoadedAt=0;await loadTaxDeclaredCodes(true);await renderStockInventoryBody();
+    showToast('Tax Code / Set saved. Physical stock was not changed.');
+  };
+
+  window.setTaxCodeActive=async function(id,active){
+    if(role()!=='super_admin')return;
+    const row=(inv.taxCodes||[]).find(function(x){return String(x.id)===String(id)});if(!row)return;
+    if(!confirm((active?'Reactivate ':'Deactivate ')+(row.code||'this Tax Code')+'?\n\nPhysical inventory will not change.'))return;
+    const r=await db.rpc('set_tax_declared_code_active',{p_id:id,p_active:!!active});
+    if(r.error)return showToast(r.error.message,'err');
+    inv.taxCodesLoadedAt=0;await loadTaxDeclaredCodes(true);await renderStockInventoryBody();
+  };
+
   window.acknowledgeTaxSaleAlert=async function(id){
     if(role()!=='super_admin')return showToast('Super Admin only.','err');
     const a=(inv.taxSaleAlerts||[]).find(x=>String(x.id)===String(id));
