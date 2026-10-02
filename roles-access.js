@@ -101,14 +101,17 @@ renderUsers=async function(){
             <div class="text-xs text-gray-400">${esc(u.email||'')}</div>
             ${u.user_id===state.user.id?'<div class="text-[9px] text-[#b3871e] font-bold mt-1">YOUR ACCOUNT</div>':''}
           </div>
-          <select onchange="updateUserRoleSafe('${u.user_id}',this.value)" class="border rounded-lg px-3 py-2 text-sm bg-white">
-            <option value="sales" ${u.role==='sales'?'selected':''}>Sales</option>
-            <option value="accountant" ${u.role==='accountant'?'selected':''}>Accountant</option>
-            <option value="stock_controller" ${u.role==='stock_controller'?'selected':''}>Stock Controller</option>
-            <option value="manager" ${u.role==='manager'?'selected':''}>Manager</option>
-            <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option>
-            <option value="super_admin" ${u.role==='super_admin'?'selected':''}>Super Admin</option>
-          </select>
+          <div>
+            <input
+              id="quickUserRole_${u.user_id}"
+              list="quickUserRoleList_${u.user_id}"
+              value="${esc(accessRoleDisplay(u.access_role_key||u.role))}"
+              onchange="updateUserRoleSafe('${u.user_id}',this.value,'${u.role}')"
+              class="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+              placeholder="Choose or type role">
+            ${accessRoleDatalist('quickUserRoleList_'+u.user_id)}
+            <div class="text-[9px] text-gray-400 mt-1">Choose or type a custom role</div>
+          </div>
           <button onclick="toggleUserActive('${u.user_id}',${u.active?'false':'true'})" class="px-3 py-2 rounded-lg text-xs font-semibold border ${u.active?'text-green-700 bg-green-50 border-green-200':'text-gray-600 bg-gray-50 border-gray-200'}">${u.active?'Active':'Inactive'}</button>
           <div class="flex flex-wrap justify-end gap-2">
             <button onclick="openEditAppUser('${u.user_id}')" class="px-3 py-2 rounded-lg text-xs font-semibold border bg-white text-gray-700">Edit User</button>
@@ -274,10 +277,36 @@ openCreateUser=function(){
   document.getElementById('createUserForm').onsubmit=saveNewUser;
 };
 
-async function updateUserRoleSafe(id,role){
-  if(id===state.user.id&&role!=='super_admin'){await go('users');return showToast('You cannot demote your own Super Admin account.','err')}
-  const {error}=await db.from('app_users').update({role}).eq('user_id',id);
-  if(error){showToast(error.message,'err');await go('users')}else{showToast('Role updated');await go('users')}
+async function updateUserRoleSafe(id,roleName,baseRole){
+  if(!isSuper())return showToast('Super Admin only','err');
+  const typed=String(roleName||'').trim();
+  if(!typed){await go('users');return showToast('Role cannot be blank.','err')}
+  const u=(window._usersAccessRows||[]).find(x=>x.user_id===id);
+  if(!u){await go('users');return showToast('User not found. Refresh Users & Access.','err')}
+  const normalized=typed.toLowerCase().replace(/\s+/g,'_');
+  if(id===state.user.id&&!['super_admin','super admin'].includes(normalized)){
+    await go('users');
+    return showToast('You cannot demote your own Super Admin account.','err');
+  }
+  try{
+    const {data,error}=await db.functions.invoke('manage-app-user',{body:{
+      action:'update_user',
+      user_id:id,
+      name:u.display_name||u.email||'User',
+      email:u.email||'',
+      role:typed,
+      base_role:baseRole||u.role||'sales',
+      active:u.active!==false
+    }});
+    if(error)throw error;
+    if(data?.error)throw new Error(data.error);
+    if(id===state.user.id){await loadProfile();showApp()}
+    showToast('Role updated');
+    await go('users');
+  }catch(err){
+    showToast(err.message||'Could not update role','err');
+    await go('users');
+  }
 }
 
 async function deleteAppUser(id,name){
