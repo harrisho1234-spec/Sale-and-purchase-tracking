@@ -1095,7 +1095,7 @@
   }
 
   async function renderBalance(){
-    if(inv.tab==='tax')await Promise.all([loadTaxCore(),loadTaxSaleAlerts(),typeof loadTaxProducts==='function'?loadTaxProducts():Promise.resolve([])]);else await loadCore();
+    if(inv.tab==='tax')await Promise.all([loadTaxCore(),loadTaxSaleAlerts(),loadTaxDeclaredCodes(),typeof loadTaxProducts==='function'?loadTaxProducts():Promise.resolve([])]);else await loadCore();
     const rows=balanceFiltered(),shown=rows.slice(0,inventoryLimit(inv.tab));
     const taxUnits=inv.tab==='tax'?inv.taxBalances.reduce((sum,p)=>sum+n(p.on_hand),0):0;
     const taxNoStock=inv.tab==='tax'?inv.taxBalances.filter(p=>n(p.on_hand)<=0).length:0;
@@ -2402,7 +2402,7 @@
     taxRefreshing=true;
     try{
       const before=taxLiveSignature();
-      await Promise.all([loadTaxCore(true),loadTaxSaleAlerts(true)]);
+      await Promise.all([loadTaxCore(true),loadTaxSaleAlerts(true),loadTaxDeclaredCodes(true)]);
       const after=taxLiveSignature();
       // Keep polling in the background, but do not redraw the whole Tax screen
       // unless something visible actually changed. This prevents thumbnail/list flicker.
