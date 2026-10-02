@@ -314,7 +314,6 @@
       const row=id?(inv.taxCodes||[]).find(function(x){return String(x.id)===String(id)}):null;
       inv.taxCodeEditor={id:row?.id||null,code:row?.code||'',name:row?.name||'',tax_cost:row?.tax_cost??'',tax_sale_price:row?.tax_sale_price??'',tax_currency:row?.tax_currency||'USD',tax_note:row?.tax_note||'',tax_pricing_note:row?.tax_pricing_note||'',components:(row?.components||[]).map(function(p){return Object.assign({},p,{note:p.note||''})})};
       openModal(row?'Edit Tax Code / Set':'Create Tax Code / Set','');
-      const shell=document.querySelector('#modal > div');if(shell)shell.style.maxWidth='1050px';
       renderTaxCodeEditor();
     }catch(err){showToast(err.message||'Could not open Tax Code editor.','err')}
   };
