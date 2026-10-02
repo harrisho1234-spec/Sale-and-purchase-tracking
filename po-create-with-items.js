@@ -101,8 +101,8 @@
             <input class="po-shipping mt-1 w-full border rounded-xl px-3 py-2.5" type="number" min="0" step="0.01" value="0" oninput="poCreateRecalcRow(this)">
           </div>
           <div class="md:col-span-1 xl:col-span-2">
-            <label class="text-[10px] uppercase font-bold text-gray-400">Product Code / SKU</label>
-            <input class="po-code mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="SKU / Code" oninput="poCreateManualCode(this)">
+            <label class="text-[10px] uppercase font-bold text-gray-400">Product Code</label>
+            <input class="po-code mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Code" oninput="poCreateManualCode(this)">
           </div>
           <div class="md:col-span-1 xl:col-span-3">
             <label class="text-[10px] uppercase font-bold text-gray-400">Item Name</label>
@@ -122,7 +122,7 @@
         </div>
         <div class="space-y-2 text-[10px] text-gray-600">
           <label class="flex items-center gap-2"><input type="checkbox" class="po-update-photo" checked> Use uploaded photo as Product Catalog photo too.</label>
-          <div class="rounded-lg border border-blue-100 bg-blue-50 px-2.5 py-2 text-blue-700"><b>New SKU:</b> it will automatically become an active Product and queue to the <b>App Products</b> sheet.</div>
+          <div class="rounded-lg border border-blue-100 bg-blue-50 px-2.5 py-2 text-blue-700"><b>New Code:</b> it will automatically become an active Product and queue to the <b>App Products</b> sheet.</div>
         </div>
       </div>
     </div>`;
@@ -328,7 +328,7 @@
         </div>
 
         <div class="border-t pt-5">
-          <div class="flex items-center justify-between gap-3 mb-3"><div><h4 class="font-bold">PO Items / Products</h4><p class="text-xs text-gray-400">Add the products on this supplier PO now. You can search existing products or enter a new SKU.</p></div><button type="button" onclick="poCreateAddItem()" class="px-3 py-2 border rounded-xl text-xs font-semibold">+ Add Item</button></div>
+          <div class="flex items-center justify-between gap-3 mb-3"><div><h4 class="font-bold">PO Items / Products</h4><p class="text-xs text-gray-400">Add the products on this supplier PO now. You can search existing products or enter a new Code.</p></div><button type="button" onclick="poCreateAddItem()" class="px-3 py-2 border rounded-xl text-xs font-semibold">+ Add Item</button></div>
           <datalist id="poCreateProductList">${options}</datalist>
           <div id="poCreateItems" class="grid gap-3"></div>
           <button type="button" onclick="poCreateAddItem()" class="mt-3 w-full border border-dashed border-[#d8c28a] bg-[#fffdf7] text-[#8a6818] rounded-xl px-4 py-3 text-sm font-semibold">+ Add Another Item</button>
