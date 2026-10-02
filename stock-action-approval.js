@@ -98,7 +98,7 @@
       }
       e.preventDefault();
       const productId=String(document.getElementById('smProductId')&&document.getElementById('smProductId').value||'').trim();
-      if(!productId)return showToast('Choose a Product / SKU from the suggestion list.','err');
+      if(!productId)return showToast('Choose a Product / Code from the suggestion list.','err');
       const q=wholeNumber('smQty','Quantity');if(q==null)return;
       const from=String(document.getElementById('smFrom')&&document.getElementById('smFrom').value||'').trim();
       const to=String(document.getElementById('smTo')&&document.getElementById('smTo').value||'').trim();
