@@ -14,6 +14,7 @@
     taxAgingLoaded:false,
     taxSaleAlerts:[],
     taxSaleAlertsLoadedAt:0,
+    taxSaleExpanded:new Set(),
     declaredSetCatalog:[],
     declaredSetCatalogLoaded:false,
     declaredSetState:null,
@@ -219,6 +220,7 @@
     if(role()!=='super_admin')return showToast('Super Admin only.','err');
     const r=await db.rpc('acknowledge_tax_sale_alert',{p_alert_id:id});
     if(r.error)return showToast(r.error.message,'err');
+    inv.taxSaleExpanded.delete(String(id));
     inv.taxSaleAlertsLoadedAt=0;
     await loadTaxSaleAlerts(true);
     await renderStockInventoryBody();
@@ -244,6 +246,81 @@
     }).join('')+'</div>';
   }
 
+  window.toggleTaxSaleAlertDetails=function(id){
+    const key=String(id);
+    if(inv.taxSaleExpanded.has(key))inv.taxSaleExpanded.delete(key);
+    else inv.taxSaleExpanded.add(key);
+    renderStockInventoryBody();
+  };
+
+  function taxAlertMoney(v,currency='USD'){
+    if(v==null||v==='')return '—';
+    const x=Number(v);
+    if(!Number.isFinite(x))return esc(String(v));
+    const cur=String(currency||'USD').toUpperCase();
+    try{return new Intl.NumberFormat(undefined,{style:'currency',currency:cur,maximumFractionDigits:2}).format(x)}
+    catch(_){return cur+' '+x.toLocaleString(undefined,{maximumFractionDigits:2})}
+  }
+
+  function taxAlertLocationsHtml(a){
+    const rows=Array.isArray(a.locations)?a.locations:[];
+    if(!rows.length)return '<div class="text-[10px] text-gray-400">No location breakdown recorded.</div>';
+    return '<div class="flex flex-wrap gap-1.5">'+rows.map(l=>{
+      const name=l.location_code||l.code||l.location_name||l.name||'Location';
+      const qty=l.on_hand??l.qty??l.quantity??l.balance??'—';
+      return '<span class="inline-flex px-2 py-1 rounded-lg border bg-white text-[9px]"><b>'+esc(name)+'</b>&nbsp;'+esc(qty)+'</span>';
+    }).join('')+'</div>';
+  }
+
+  function taxSaleAlertDetailsHtml(a){
+    const isSet=a.alert_type==='declared_set';
+    const components=Array.isArray(a.components)?a.components:[];
+    return `<div class="px-4 pb-4 bg-white/80">
+      <div class="ml-0 lg:ml-[84px] rounded-xl border border-red-100 bg-[#fffdfc] p-4 grid xl:grid-cols-[1.2fr_1fr_1fr] gap-4">
+        <div>
+          <div class="text-[9px] uppercase font-bold text-gray-400">Product / Tax Details</div>
+          <div class="mt-2 flex gap-3">
+            <div class="w-20 h-20 rounded-xl overflow-hidden border bg-white shrink-0">${a.image_url?`<img loading="lazy" decoding="async" src="${esc(a.image_url)}" class="w-full h-full object-cover" alt="">`:'<div class="w-full h-full flex items-center justify-center text-[9px] text-gray-400">No Photo</div>'}</div>
+            <div class="min-w-0">
+              <div class="text-[10px] font-bold text-[#a77d1a]">Code: ${esc(a.code||'—')}</div>
+              <div class="font-semibold text-sm mt-1">${esc(a.item_name||'Tax Item')}</div>
+              <div class="text-[10px] text-gray-500 mt-1">${[a.brand,a.product_class].filter(Boolean).map(esc).join(' · ')||'Brand / category not recorded'}</div>
+              <div class="text-[10px] text-gray-500 mt-1">Tax Group / Set: <b>${esc(a.tax_group_or_set||'—')}</b></div>
+            </div>
+          </div>
+          ${a.tax_note?`<div class="mt-3 rounded-lg border bg-white p-2 text-[10px]"><b>Tax Note:</b> ${esc(a.tax_note)}</div>`:''}
+        </div>
+
+        <div>
+          <div class="text-[9px] uppercase font-bold text-gray-400">Sale Details</div>
+          <div class="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-[10px]">
+            <div><span class="text-gray-400">Document</span><div class="font-semibold">${esc(a.invoice_no||a.order_no||'Sales Order')}</div></div>
+            <div><span class="text-gray-400">Order Date</span><div class="font-semibold">${esc(dateText(a.order_date))}</div></div>
+            <div><span class="text-gray-400">Customer</span><div class="font-semibold">${esc(a.customer_name||'Customer')}</div></div>
+            <div><span class="text-gray-400">Sales Rep</span><div class="font-semibold">${esc(a.sales_rep_name||'Not recorded')}</div></div>
+            <div><span class="text-gray-400">Sold Qty</span><div class="font-semibold text-red-600">${q(a.qty)}</div></div>
+            <div><span class="text-gray-400">Recorded</span><div class="font-semibold">${a.sold_at?esc(new Date(a.sold_at).toLocaleString()):'—'}</div></div>
+            <div><span class="text-gray-400">On Hand</span><div class="font-semibold">${q(a.on_hand)}</div></div>
+            <div><span class="text-gray-400">Available</span><div class="font-semibold">${q(a.available)}</div></div>
+          </div>
+          <div class="mt-3"><div class="text-[9px] uppercase font-bold text-gray-400 mb-1.5">Stock Locations</div>${taxAlertLocationsHtml(a)}</div>
+        </div>
+
+        <div>
+          <div class="text-[9px] uppercase font-bold text-gray-400">Tax Pricing & Set Review</div>
+          <div class="mt-2 grid grid-cols-2 gap-2">
+            <div class="rounded-lg border bg-white p-2"><div class="text-[9px] text-gray-400">Tax Cost</div><div class="text-xs font-bold">${taxAlertMoney(a.tax_cost,a.tax_currency)}</div></div>
+            <div class="rounded-lg border bg-white p-2"><div class="text-[9px] text-gray-400">Tax Sale Price</div><div class="text-xs font-bold text-amber-800">${taxAlertMoney(a.tax_sale_price,a.tax_currency)}</div></div>
+            <div class="rounded-lg border bg-white p-2"><div class="text-[9px] text-gray-400">Normal Sale Price</div><div class="text-xs font-bold">${taxAlertMoney(a.normal_sales_price,a.normal_currency)}</div></div>
+            <div class="rounded-lg border bg-white p-2"><div class="text-[9px] text-gray-400">${isSet?'Complete Sets':'Alert Type'}</div><div class="text-xs font-bold">${isSet?q(a.complete_sets):'Direct Tax Item'}</div></div>
+          </div>
+          ${a.tax_pricing_note?`<div class="mt-2 rounded-lg border bg-white p-2 text-[10px]"><b>Pricing Note:</b> ${esc(a.tax_pricing_note)}</div>`:''}
+          ${isSet&&components.length?`<div class="mt-3"><div class="text-[9px] uppercase font-bold text-gray-400 mb-1.5">Declared Set Components</div><div class="space-y-1">${components.map(c=>`<div class="flex justify-between gap-3 rounded-lg border bg-white px-2 py-1.5 text-[10px]"><div><b>${esc(c.code||'')}</b> ${esc(c.item_name||'')}</div><div>Sold ${q(c.sold_qty)} / Required ${q(c.required_qty)}</div></div>`).join('')}</div></div>`:''}
+        </div>
+      </div>
+    </div>`;
+  }
+
   function taxSaleAlertsHtml(){
     if(role()!=='super_admin')return '';
     const rows=inv.taxSaleAlerts||[];
@@ -252,21 +329,32 @@
     }
     return `<div class="mb-4 rounded-2xl border border-red-200 bg-red-50/30 overflow-hidden">
       <div class="px-4 py-3 border-b border-red-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <div><div class="font-bold text-sm text-red-800">Tax Sale · Action Required</div><div class="text-[10px] text-red-600 mt-1">Direct Tax Items and Declared Sets are monitored here. These alerts never deduct stock; approved delivery / stock tasks remain the only posting path.</div></div>
+        <div><div class="font-bold text-sm text-red-800">Tax Sale · Action Required</div><div class="text-[10px] text-red-600 mt-1">Direct Tax Items and Declared Sets are monitored here. Click an alert to review details. These alerts never deduct stock; approved delivery / stock tasks remain the only posting path.</div></div>
         <span class="inline-flex min-w-[28px] h-7 px-2 rounded-full bg-red-600 text-white text-xs font-bold items-center justify-center">${rows.length}</span>
       </div>
       <div class="divide-y divide-red-100">
-        ${rows.slice(0,12).map(a=>`<div class="p-4 grid lg:grid-cols-[1.45fr_1.2fr_110px_120px] gap-3 items-center bg-white/80">
-          <div class="min-w-0">
-            <div class="flex flex-wrap gap-2 items-center"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(a.code||'')}${taxBadge({tax_item:true})}</div>${taxSaleStatusBadge(a)}</div>
-            <div class="font-semibold text-sm truncate mt-1">${esc(a.item_name||'Tax Item')}</div>
-            <div class="text-[10px] text-gray-400 mt-1">${esc(a.invoice_no||a.order_no||'Sales Order')} · ${esc(dateText(a.order_date))}</div>
-            ${taxSaleComponentsHtml(a)}
-          </div>
-          <div class="min-w-0"><div class="text-xs font-semibold truncate">${esc(a.customer_name||'Customer')}</div><div class="text-[10px] text-gray-400 truncate">${a.sales_rep_name?'Sales: '+esc(a.sales_rep_name):'Sales rep not recorded'}</div><div class="text-[10px] text-gray-400 mt-1">${esc(new Date(a.sold_at).toLocaleString())}</div></div>
-          <div class="text-xs">${a.alert_type==='declared_set'?'<div class="text-gray-400">Complete Sets</div><b class="text-base '+(n(a.complete_sets)>0?'text-green-700':'text-amber-700')+'">'+q(a.complete_sets)+'</b><div class="text-[9px] text-gray-400">Component qty '+q(a.qty)+'</div>':'<div class="text-gray-400">Sold</div><b class="text-base text-red-600">'+q(a.qty)+'</b><div class="text-[9px] text-gray-400">On hand '+q(a.on_hand)+'</div>'}</div>
-          <div class="text-right"><button onclick="acknowledgeTaxSaleAlert('${a.id}')" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-[10px] font-semibold">Acknowledge</button></div>
-        </div>`).join('')}
+        ${rows.slice(0,12).map(a=>{
+          const expanded=inv.taxSaleExpanded.has(String(a.id));
+          return `<div class="bg-white/80">
+            <div onclick="toggleTaxSaleAlertDetails('${a.id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleTaxSaleAlertDetails('${a.id}')}" class="p-4 grid lg:grid-cols-[68px_1.45fr_1.2fr_110px_140px] gap-3 items-center cursor-pointer hover:bg-red-50/30 transition-colors">
+              <div class="w-14 h-14 rounded-xl overflow-hidden border bg-white shrink-0">${a.image_url?`<img loading="lazy" decoding="async" src="${esc(a.image_url)}" class="w-full h-full object-cover" alt="">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div>
+              <div class="min-w-0">
+                <div class="flex flex-wrap gap-2 items-center"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(a.code||'')}${taxBadge({tax_item:true})}</div>${taxSaleStatusBadge(a)}</div>
+                <div class="font-semibold text-sm truncate mt-1">${esc(a.item_name||'Tax Item')}</div>
+                <div class="text-[10px] text-gray-400 mt-1">${esc(a.invoice_no||a.order_no||'Sales Order')} · ${esc(dateText(a.order_date))}</div>
+                ${taxSaleComponentsHtml(a)}
+              </div>
+              <div class="min-w-0"><div class="text-xs font-semibold truncate">${esc(a.customer_name||'Customer')}</div><div class="text-[10px] text-gray-400 truncate">${a.sales_rep_name?'Sales: '+esc(a.sales_rep_name):'Sales rep not recorded'}</div><div class="text-[10px] text-gray-400 mt-1">${esc(new Date(a.sold_at).toLocaleString())}</div></div>
+              <div class="text-xs">${a.alert_type==='declared_set'?'<div class="text-gray-400">Complete Sets</div><b class="text-base '+(n(a.complete_sets)>0?'text-green-700':'text-amber-700')+'">'+q(a.complete_sets)+'</b><div class="text-[9px] text-gray-400">Component qty '+q(a.qty)+'</div>':'<div class="text-gray-400">Sold</div><b class="text-base text-red-600">'+q(a.qty)+'</b><div class="text-[9px] text-gray-400">On hand '+q(a.on_hand)+'</div>'}</div>
+              <div class="flex items-center justify-end gap-2">
+                <span class="text-[9px] text-gray-400">${expanded?'Hide details':'View details'}</span>
+                <span class="text-gray-400 text-sm">${expanded?'▴':'▾'}</span>
+                <button onclick="event.stopPropagation();acknowledgeTaxSaleAlert('${a.id}')" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-[10px] font-semibold">Acknowledge</button>
+              </div>
+            </div>
+            ${expanded?taxSaleAlertDetailsHtml(a):''}
+          </div>`;
+        }).join('')}
       </div>
       ${rows.length>12?`<div class="px-4 py-3 text-center text-[10px] text-red-600">Showing 12 of ${rows.length} open Tax sale alerts.</div>`:''}
     </div>`;
