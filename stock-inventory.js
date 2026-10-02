@@ -15,6 +15,7 @@
     taxSaleAlerts:[],
     taxSaleAlertsLoadedAt:0,
     taxSaleExpanded:new Set(),
+    taxSalePanelCollapsed:false,
     declaredSetCatalog:[],
     declaredSetCatalogLoaded:false,
     declaredSetState:null,
@@ -218,14 +219,23 @@
 
   window.acknowledgeTaxSaleAlert=async function(id){
     if(role()!=='super_admin')return showToast('Super Admin only.','err');
+    const a=(inv.taxSaleAlerts||[]).find(x=>String(x.id)===String(id));
+    const label=[a?.invoice_no||a?.order_no,a?.code,a?.item_name].filter(Boolean).join(' · ');
+    const ok=confirm(
+      'Acknowledge this Tax sale alert'+(label?' — '+label:'')+'?\n\n'+
+      'This only marks the alert as reviewed and removes it from the open alert list.\n'+
+      'It does NOT change stock, Tax Inventory quantity, the Sales Order / invoice, or the sale record.'
+    );
+    if(!ok)return;
     const r=await db.rpc('acknowledge_tax_sale_alert',{p_alert_id:id});
     if(r.error)return showToast(r.error.message,'err');
+    if(r.data!==true)return showToast('This Tax sale alert was already acknowledged or is no longer open.');
     inv.taxSaleExpanded.delete(String(id));
     inv.taxSaleAlertsLoadedAt=0;
     await loadTaxSaleAlerts(true);
     await renderStockInventoryBody();
     if(typeof window.refreshAppNotifications==='function')window.refreshAppNotifications();
-    showToast('Tax sale alert acknowledged.');
+    showToast('Tax sale alert acknowledged. No stock or sales data was changed.');
   };
 
   function taxSaleStatusBadge(a){
@@ -245,6 +255,11 @@
       return '<span class="inline-flex px-2 py-1 rounded-lg border text-[9px] '+(met?'bg-green-50 border-green-200 text-green-700':'bg-amber-50 border-amber-200 text-amber-700')+'"><b>'+esc(c.code||'')+'</b>&nbsp;'+q(sold)+' / '+q(req)+'</span>';
     }).join('')+'</div>';
   }
+
+  window.toggleTaxSaleAlertPanel=function(){
+    inv.taxSalePanelCollapsed=!inv.taxSalePanelCollapsed;
+    renderStockInventoryBody();
+  };
 
   window.toggleTaxSaleAlertDetails=function(id){
     const key=String(id);
@@ -328,11 +343,17 @@
       return '<div class="mb-4 rounded-2xl border border-green-100 bg-green-50/30 p-4"><div class="font-bold text-sm text-green-800">Tax Sales Alerts</div><div class="text-xs text-green-700 mt-1">No unreviewed Tax Item or Declared Set sales.</div></div>';
     }
     return `<div class="mb-4 rounded-2xl border border-red-200 bg-red-50/30 overflow-hidden">
-      <div class="px-4 py-3 border-b border-red-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <div><div class="font-bold text-sm text-red-800">Tax Sale · Action Required</div><div class="text-[10px] text-red-600 mt-1">Direct Tax Items and Declared Sets are monitored here. Click an alert to review details. These alerts never deduct stock; approved delivery / stock tasks remain the only posting path.</div></div>
-        <span class="inline-flex min-w-[28px] h-7 px-2 rounded-full bg-red-600 text-white text-xs font-bold items-center justify-center">${rows.length}</span>
+      <div class="px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ${inv.taxSalePanelCollapsed?'':'border-b border-red-100'}">
+        <button type="button" onclick="toggleTaxSaleAlertPanel()" class="flex-1 text-left flex items-start gap-3 group">
+          <span class="mt-0.5 text-red-500 text-sm">${inv.taxSalePanelCollapsed?'▸':'▾'}</span>
+          <span><span class="font-bold text-sm text-red-800">Tax Sale · Action Required</span><span class="block text-[10px] text-red-600 mt-1">Direct Tax Items and Declared Sets are monitored here. ${inv.taxSalePanelCollapsed?'Click to show alerts.':'Click an alert to review details.'} These alerts never deduct stock; approved delivery / stock tasks remain the only posting path.</span></span>
+        </button>
+        <div class="flex items-center gap-2 shrink-0">
+          <span class="text-[9px] text-red-600 font-semibold">${inv.taxSalePanelCollapsed?'Show alerts':'Collapse'}</span>
+          <span class="inline-flex min-w-[28px] h-7 px-2 rounded-full bg-red-600 text-white text-xs font-bold items-center justify-center">${rows.length}</span>
+        </div>
       </div>
-      <div class="divide-y divide-red-100">
+      ${inv.taxSalePanelCollapsed?'':`<div class="divide-y divide-red-100">
         ${rows.slice(0,12).map(a=>{
           const expanded=inv.taxSaleExpanded.has(String(a.id));
           return `<div class="bg-white/80">
@@ -356,7 +377,7 @@
           </div>`;
         }).join('')}
       </div>
-      ${rows.length>12?`<div class="px-4 py-3 text-center text-[10px] text-red-600">Showing 12 of ${rows.length} open Tax sale alerts.</div>`:''}
+      ${rows.length>12?`<div class="px-4 py-3 text-center text-[10px] text-red-600">Showing 12 of ${rows.length} open Tax sale alerts.</div>`:''}`}
     </div>`;
   }
 
