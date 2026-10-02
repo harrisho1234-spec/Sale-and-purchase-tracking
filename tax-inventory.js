@@ -124,17 +124,17 @@
       if(c==='"'){
         if(quoted&&text[i+1]==='"'){cell+='"';i++}
         else if(quoted||cell==='')quoted=!quoted;
-        else throw new Error('Invalid quote in SKU input.');
+        else throw new Error('Invalid quote in Code input.');
       }else if(c===delimiter&&!quoted){row.push(cell);cell=''}
       else if((c==='\n'||c==='\r')&&!quoted){if(c==='\r'&&text[i+1]==='\n')i++;row.push(cell);if(row.some(x=>x.trim()))rows.push(row);row=[];cell=''}
       else cell+=c;
     }
-    if(quoted)throw new Error('Unclosed quote in SKU input.');
+    if(quoted)throw new Error('Unclosed quote in Code input.');
     row.push(cell);if(row.some(x=>x.trim()))rows.push(row);
     if(rows.length&&['sku','code','product code','product_code'].includes(norm(rows[0][0])))rows.shift();
     if(rows.length>500)throw new Error('Use at most 500 rows per batch.');
     return rows.map((r,i)=>{
-      if(r.length>7)throw new Error(`Row ${i+1}: expected SKU, group/set, tax cost, tax sale price, currency, pricing note, tax note.`);
+      if(r.length>7)throw new Error(`Row ${i+1}: expected Code, group/set, tax cost, tax sale price, currency, pricing note, tax note.`);
       const result={code:String(r[0]||'').trim()};
       if(r.length>1)result.tax_group_or_set=String(r[1]||'').trim()||null;
       if(r.length>2){
@@ -170,7 +170,7 @@
   window.openBulkTaxTagging=async function(){
     if(!superAdmin())return showToast('Super Admin only.','err');
     T.preview=[];
-    openModal('Bulk Tax Tagging',`<div class="space-y-4"><p class="text-sm">Paste one SKU per line, or upload CSV / TSV / TXT. Optional columns: <b>SKU, group/set, tax cost, tax sale price, currency, pricing note, tax note</b>. Omitted columns keep existing values; empty supplied columns clear them. Matching ignores case and surrounding spaces.</p><label class="block text-sm">Upload codes<input id="taxUpload" type="file" accept=".csv,.tsv,.txt" class="block mt-2"></label><label class="block text-sm">SKU / product codes<textarea id="taxPaste" rows="7" class="w-full border rounded-xl p-3 mt-2" placeholder="SKU,group/set,tax cost,tax sale price,currency,pricing note,tax note"></textarea></label><label class="flex gap-2"><input id="taxBulkFlag" type="checkbox" checked>Mark selected products as Tax Items (uncheck to remove classification)</label><button id="taxPreviewButton" onclick="previewTaxTagging()" class="px-4 py-2 border rounded-xl">Preview Matches</button><div id="taxPreview" aria-live="polite"></div></div>`);
+    openModal('Bulk Tax Tagging',`<div class="space-y-4"><p class="text-sm">Paste one Code per line, or upload CSV / TSV / TXT. Optional columns: <b>Code, group/set, tax cost, tax sale price, currency, pricing note, tax note</b>. Omitted columns keep existing values; empty supplied columns clear them. Matching ignores case and surrounding spaces.</p><label class="block text-sm">Upload codes<input id="taxUpload" type="file" accept=".csv,.tsv,.txt" class="block mt-2"></label><label class="block text-sm">Code / product codes<textarea id="taxPaste" rows="7" class="w-full border rounded-xl p-3 mt-2" placeholder="Code,group/set,tax cost,tax sale price,currency,pricing note,tax note"></textarea></label><label class="flex gap-2"><input id="taxBulkFlag" type="checkbox" checked>Mark selected products as Tax Items (uncheck to remove classification)</label><button id="taxPreviewButton" onclick="previewTaxTagging()" class="px-4 py-2 border rounded-xl">Preview Matches</button><div id="taxPreview" aria-live="polite"></div></div>`);
     const invalidate=()=>{T.preview=[];document.getElementById('taxPreview').innerHTML=''};
     document.getElementById('taxPaste').oninput=invalidate;
     document.getElementById('taxBulkFlag').onchange=invalidate;
@@ -184,12 +184,12 @@
     T.preview=[];document.getElementById('taxPreview').innerHTML='Loading preview…';
     try{
       const source=document.getElementById('taxPaste').value,flag=document.getElementById('taxBulkFlag').checked;
-      const rows=parseTaxCodes(source);if(!rows.length)throw new Error('Enter at least one SKU.');
+      const rows=parseTaxCodes(source);if(!rows.length)throw new Error('Enter at least one Code.');
       await loadTaxProducts();
       if(document.getElementById('taxPaste')?.value!==source||document.getElementById('taxBulkFlag')?.checked!==flag)return;
       T.preview=matchTaxCodes(rows,T.products).map(r=>({...r,tax_item:flag}));
       const matched=T.preview.filter(r=>r.product).length;
-      document.getElementById('taxPreview').innerHTML=`<p class="text-sm mb-2"><b>${matched} matched</b> · ${rows.length-matched} unmatched / ambiguous / duplicate. Only checked matches will be updated.</p><div class="max-h-80 overflow-auto"><table class="tax-table"><thead><tr><th>Select</th><th>SKU / Product</th><th>Status</th><th>Tax Item</th><th>Group / Set</th><th>Tax Cost</th><th>Tax Sale</th><th>Currency</th><th>Pricing Note</th><th>Tax Note</th></tr></thead><tbody>${T.preview.map((r,i)=>`<tr><td><input type="checkbox" data-tax-index="${i}" ${r.product?'checked':'disabled'} aria-label="Select ${esc(r.code)}"></td><td>${esc(r.code)}<br>${esc(r.product?.item_name||'')}${r.product?.active===false?' (inactive)':''}</td><td>${esc(r.status)}</td><td>${r.product?(r.product.tax_item?'Yes':'No')+' → '+(flag?'Yes':'No'):'—'}</td><td>${esc(r.product?.tax_group_or_set||'—')} → ${esc(Object.hasOwn(r,'tax_group_or_set')?(r.tax_group_or_set||'—'):(r.product?.tax_group_or_set||'—'))}</td><td>${taxMoney(r.product?.tax_cost,r.product?.tax_currency)} → ${Object.hasOwn(r,'tax_cost')?taxMoney(r.tax_cost,Object.hasOwn(r,'tax_currency')?r.tax_currency:r.product?.tax_currency):taxMoney(r.product?.tax_cost,r.product?.tax_currency)}</td><td>${taxMoney(r.product?.tax_sale_price,r.product?.tax_currency)} → ${Object.hasOwn(r,'tax_sale_price')?taxMoney(r.tax_sale_price,Object.hasOwn(r,'tax_currency')?r.tax_currency:r.product?.tax_currency):taxMoney(r.product?.tax_sale_price,r.product?.tax_currency)}</td><td>${esc(r.product?.tax_currency||'USD')} → ${esc(Object.hasOwn(r,'tax_currency')?(r.tax_currency||'USD'):(r.product?.tax_currency||'USD'))}</td><td>${esc(r.product?.tax_pricing_note||'—')} → ${esc(Object.hasOwn(r,'tax_pricing_note')?(r.tax_pricing_note||'—'):(r.product?.tax_pricing_note||'—'))}</td><td>${esc(r.product?.tax_note||'—')} → ${esc(Object.hasOwn(r,'tax_note')?(r.tax_note||'—'):(r.product?.tax_note||'—'))}</td></tr>`).join('')}</tbody></table></div><button id="taxApply" onclick="applyTaxTagging()" ${matched?'':'disabled'} class="mt-4 px-4 py-3 bg-[#211d18] text-white rounded-xl disabled:opacity-40">Apply Selected Products</button>`;
+      document.getElementById('taxPreview').innerHTML=`<p class="text-sm mb-2"><b>${matched} matched</b> · ${rows.length-matched} unmatched / ambiguous / duplicate. Only checked matches will be updated.</p><div class="max-h-80 overflow-auto"><table class="tax-table"><thead><tr><th>Select</th><th>Code / Product</th><th>Status</th><th>Tax Item</th><th>Group / Set</th><th>Tax Cost</th><th>Tax Sale</th><th>Currency</th><th>Pricing Note</th><th>Tax Note</th></tr></thead><tbody>${T.preview.map((r,i)=>`<tr><td><input type="checkbox" data-tax-index="${i}" ${r.product?'checked':'disabled'} aria-label="Select ${esc(r.code)}"></td><td>${esc(r.code)}<br>${esc(r.product?.item_name||'')}${r.product?.active===false?' (inactive)':''}</td><td>${esc(r.status)}</td><td>${r.product?(r.product.tax_item?'Yes':'No')+' → '+(flag?'Yes':'No'):'—'}</td><td>${esc(r.product?.tax_group_or_set||'—')} → ${esc(Object.hasOwn(r,'tax_group_or_set')?(r.tax_group_or_set||'—'):(r.product?.tax_group_or_set||'—'))}</td><td>${taxMoney(r.product?.tax_cost,r.product?.tax_currency)} → ${Object.hasOwn(r,'tax_cost')?taxMoney(r.tax_cost,Object.hasOwn(r,'tax_currency')?r.tax_currency:r.product?.tax_currency):taxMoney(r.product?.tax_cost,r.product?.tax_currency)}</td><td>${taxMoney(r.product?.tax_sale_price,r.product?.tax_currency)} → ${Object.hasOwn(r,'tax_sale_price')?taxMoney(r.tax_sale_price,Object.hasOwn(r,'tax_currency')?r.tax_currency:r.product?.tax_currency):taxMoney(r.product?.tax_sale_price,r.product?.tax_currency)}</td><td>${esc(r.product?.tax_currency||'USD')} → ${esc(Object.hasOwn(r,'tax_currency')?(r.tax_currency||'USD'):(r.product?.tax_currency||'USD'))}</td><td>${esc(r.product?.tax_pricing_note||'—')} → ${esc(Object.hasOwn(r,'tax_pricing_note')?(r.tax_pricing_note||'—'):(r.product?.tax_pricing_note||'—'))}</td><td>${esc(r.product?.tax_note||'—')} → ${esc(Object.hasOwn(r,'tax_note')?(r.tax_note||'—'):(r.product?.tax_note||'—'))}</td></tr>`).join('')}</tbody></table></div><button id="taxApply" onclick="applyTaxTagging()" ${matched?'':'disabled'} class="mt-4 px-4 py-3 bg-[#211d18] text-white rounded-xl disabled:opacity-40">Apply Selected Products</button>`;
     }catch(err){document.getElementById('taxPreview').textContent=err.message}finally{button.disabled=false}
   };
   window.applyTaxTagging=async function(){
