@@ -7,6 +7,32 @@ function canManageSalesAccess(){
     :['super_admin','admin','manager'].includes(state.profile?.role)
 }
 
+function accessRoleRows(){
+  const rows=window.granularAccessState?.adminSnapshot?.roles;
+  if(Array.isArray(rows)&&rows.length)return rows.filter(r=>r.active!==false);
+  return [
+    {role_key:'sales',display_name:'Sales',base_role:'sales'},
+    {role_key:'accountant',display_name:'Accountant',base_role:'accountant'},
+    {role_key:'stock_controller',display_name:'Stock Controller',base_role:'stock_controller'},
+    {role_key:'manager',display_name:'Manager',base_role:'manager'},
+    {role_key:'admin',display_name:'Admin',base_role:'admin'},
+    {role_key:'super_admin',display_name:'Super Admin',base_role:'super_admin'}
+  ];
+}
+function accessRoleDisplay(roleKey){
+  const key=String(roleKey||'');
+  const row=accessRoleRows().find(r=>String(r.role_key)===key);
+  return row?.display_name||({sales:'Sales',accountant:'Accountant',stock_controller:'Stock Controller',manager:'Manager',admin:'Admin',super_admin:'Super Admin'}[key])||key||'Sales';
+}
+function accessRoleDatalist(listId){
+  return '<datalist id="'+listId+'">'+accessRoleRows().map(r=>'<option value="'+esc(r.display_name||r.role_key)+'"></option>').join('')+'</datalist>';
+}
+function baseAccessTemplateOptions(current){
+  const labels={sales:'Sales',accountant:'Accountant',stock_controller:'Stock Controller',manager:'Manager',admin:'Admin'};
+  const cur=String(current||'sales');
+  return Object.entries(labels).map(([k,v])=>'<option value="'+k+'" '+(k===cur?'selected':'')+'>'+v+'</option>').join('');
+}
+
 navItems=function(){
   const base=[
     ['dashboard','Dashboard','▦'],
@@ -102,14 +128,17 @@ window.openEditAppUser=function(id){
     <div class="grid md:grid-cols-2 gap-4">
       <div><label class="text-xs font-semibold text-gray-600">Name</label><input id="editAppUserName" required value="${esc(u.display_name||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
       <div><label class="text-xs font-semibold text-gray-600">Login Email</label><input id="editAppUserEmail" type="email" required value="${esc(u.email||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
-      <div><label class="text-xs font-semibold text-gray-600">Role</label><select id="editAppUserRole" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">
-        <option value="sales" ${u.role==='sales'?'selected':''}>Sales</option>
-        <option value="accountant" ${u.role==='accountant'?'selected':''}>Accountant</option>
-        <option value="stock_controller" ${u.role==='stock_controller'?'selected':''}>Stock Controller</option>
-        <option value="manager" ${u.role==='manager'?'selected':''}>Manager</option>
-        <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option>
-        <option value="super_admin" ${u.role==='super_admin'?'selected':''}>Super Admin</option>
-      </select></div>
+      <div>
+        <label class="text-xs font-semibold text-gray-600">Role / Job Title</label>
+        <input id="editAppUserRole" list="editAppUserRoleList" value="${esc(accessRoleDisplay(u.access_role_key||u.role))}" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white" placeholder="Choose or type a role">
+        ${accessRoleDatalist('editAppUserRoleList')}
+        <div class="text-[10px] text-gray-400 mt-1">Choose an existing role or type a new one, e.g. Warehouse Assistant.</div>
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-gray-600">Access Template</label>
+        <select id="editAppUserBaseRole" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${baseAccessTemplateOptions(u.role)}</select>
+        <div class="text-[10px] text-gray-400 mt-1">Used only when creating a new typed role. Existing roles keep their saved permissions.</div>
+      </div>
       <div class="flex items-end"><label class="w-full flex items-center gap-2 border rounded-xl px-3 py-3 text-sm"><input id="editAppUserActive" type="checkbox" ${u.active?'checked':''} class="w-4 h-4"><span>Active user</span></label></div>
     </div>
     ${id===state.user.id?'<div class="rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs text-amber-800">Your own Super Admin role and active status are protected from accidental removal.</div>':''}
@@ -226,10 +255,20 @@ openCreateUser=function(){
       <div><label class="text-xs font-semibold text-gray-600">Name</label><input id="newUserName" required class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Staff name"></div>
       <div><label class="text-xs font-semibold text-gray-600">Email</label><input id="newUserEmail" type="email" required class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="staff@company.com"></div>
       <div><label class="text-xs font-semibold text-gray-600">Password</label><input id="newUserPassword" type="password" minlength="8" required class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Minimum 8 characters"></div>
-      <div><label class="text-xs font-semibold text-gray-600">Role</label><select id="newUserRole" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="sales">Sales</option><option value="accountant">Accountant</option><option value="stock_controller">Stock Controller</option><option value="manager">Manager</option><option value="admin">Admin</option><option value="super_admin">Super Admin</option></select></div>
+      <div>
+        <label class="text-xs font-semibold text-gray-600">Role / Job Title</label>
+        <input id="newUserRole" list="newUserRoleList" value="Sales" required class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white" placeholder="Choose or type a role">
+        ${accessRoleDatalist('newUserRoleList')}
+        <div class="text-[10px] text-gray-400 mt-1">You can type a new role, e.g. Warehouse Assistant, Technician or Sales Coordinator.</div>
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-gray-600">Access Template</label>
+        <select id="newUserBaseRole" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${baseAccessTemplateOptions('sales')}</select>
+        <div class="text-[10px] text-gray-400 mt-1">For a new role, choose which access pattern it starts from. You can fine-tune it later in Permissions.</div>
+      </div>
     </div>
     <label class="flex items-center gap-2 text-sm"><input id="newUserActive" type="checkbox" checked class="w-4 h-4"><span>Active user</span></label>
-    <div class="bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-amber-800">If the email already exists, the existing login is updated and the selected role is applied.</div>
+    <div class="bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-amber-800">If you type a new role name, the system creates that role from the selected Access Template. You can then customize its permissions. If the email already exists, the existing login is updated.</div>
     <button id="createUserSubmitBtn" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Create / Update User</button>
   </form>`);
   document.getElementById('createUserForm').onsubmit=saveNewUser;
