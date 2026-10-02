@@ -133,6 +133,45 @@
     };
   }
 
+  function readSalesReleaseAllocation(form,ids,totalQty){
+    const nodes=[].slice.call(form.querySelectorAll('[data-stock-release-allocation="1"]'));
+    if(nodes.length){
+      const allocations=nodes.map(function(el){
+        return {
+          location_id:String(el.dataset.locationId||'').trim(),
+          code:String(el.dataset.locationCode||'').trim(),
+          qty:Number(el.value||0),
+          on_hand:Number(el.dataset.onHand||0)
+        };
+      }).filter(function(a){return a.qty>0});
+
+      if(!allocations.length){
+        showToast('Allocate the release quantity to at least one stock location.','err');
+        return null;
+      }
+      let sum=0;
+      for(const a of allocations){
+        if(!a.location_id||!Number.isInteger(a.qty)||a.qty<=0||a.qty>a.on_hand){
+          showToast('Invalid allocation for '+(a.code||'stock location')+'.','err');
+          return null;
+        }
+        sum+=a.qty;
+      }
+      if(sum!==totalQty){
+        showToast('Allocated quantity ('+sum+') must equal Release Qty '+totalQty+'.','err');
+        return null;
+      }
+      return allocations;
+    }
+
+    const loc=String(document.getElementById(ids.location)&&document.getElementById(ids.location).value||'').trim();
+    if(!loc){
+      showToast('Select a stock location.','err');
+      return null;
+    }
+    return [{location_id:loc,qty:totalQty}];
+  }
+
   function patchSalesReleaseForm(itemId,formId,ids){
     if(!isStockController())return;
     const form=document.getElementById(formId);
@@ -144,20 +183,32 @@
     form.onsubmit=async function(e){
       e.preventDefault();
       const q=wholeNumber(ids.qty,'Release Qty');if(q==null)return;
-      const loc=String(document.getElementById(ids.location)&&document.getElementById(ids.location).value||'').trim();
-      if(!loc)return showToast('Select a stock location.','err');
+      const allocations=readSalesReleaseAllocation(form,ids,q);if(!allocations)return;
+      const deliveryDate=(document.getElementById(ids.date)&&document.getElementById(ids.date).value)||null;
+      const note=String(document.getElementById(ids.note)&&document.getElementById(ids.note).value||'').trim()||null;
       const payload={
         sales_order_item_id:itemId,
         qty:q,
-        location_id:loc,
-        delivery_date:(document.getElementById(ids.date)&&document.getElementById(ids.date).value)||null,
-        note:String(document.getElementById(ids.note)&&document.getElementById(ids.note).value||'').trim()||null
+        location_id:allocations.length===1?allocations[0].location_id:null,
+        allocations:allocations.length>1?allocations.map(function(a){return {location_id:a.location_id,qty:a.qty}}):null,
+        delivery_date:deliveryDate,
+        note:note
       };
       if(btn){btn.disabled=true;btn.textContent='Submitting...'}
       try{
-        await submit('sales_delivery',payload,payload.note);
+        if(allocations.length>1){
+          const mr=await db.rpc('submit_sales_stock_multi_location_request',{
+            p_sales_order_item_id:itemId,
+            p_allocations:allocations.map(function(a){return {location_id:a.location_id,qty:a.qty}}),
+            p_delivery_date:deliveryDate,
+            p_note:note
+          });
+          if(mr.error)throw mr.error;
+        }else{
+          await submit('sales_delivery',payload,note);
+        }
         closeModal();
-        showToast('Stock OUT submitted for approval. Stock has not been deducted yet.');
+        showToast(allocations.length>1?'Multi-location Stock OUT submitted for approval. Stock has not been deducted yet.':'Stock OUT submitted for approval. Stock has not been deducted yet.');
         if(typeof window.setInventoryTab==='function')window.setInventoryTab('requests');
       }catch(err){
         if(btn){btn.disabled=false;btn.textContent='Submit Stock OUT for Approval'}
