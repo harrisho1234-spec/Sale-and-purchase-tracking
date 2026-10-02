@@ -986,7 +986,7 @@
       ${btn('Customer Return','Return stock back into a location',"openStockMovement('return')",'bg-green-50/40 border-green-100')}
       ${btn('Broken / Damaged','Record damaged stock and reduce a location',"openStockMovement('broken')",'bg-amber-50/40 border-amber-100')}
       ${btn('Stock IN','Manual stock addition into a location',"openStockMovement('in')",'bg-green-50/40 border-green-100')}
-      ${btn('Customer Delivery','Release tracked customer stock orders',"quickInventoryGo('delivery')")}
+      ${btn('Customer Fulfillment','Review and release tracked customer stock orders',"quickInventoryGo('delivery')")}
       ${btn('Start Stock Count','Start a monthly physical count for a location',"quickInventoryGo('counts',true)")}
       ${btn('Find Product','Search a product and open its Stock Card',"openInventoryProductFinder()")}
     </div>`);
