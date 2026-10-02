@@ -167,12 +167,12 @@
       if(!po.items.length)errors.push(`${po.po_number}: no item rows found.`);
 
       for(const item of po.items){
-        if(!item.code)errors.push(`${po.po_number}, Excel row ${item._row}: Code / SKU is missing.`);
+        if(!item.code)errors.push(`${po.po_number}, Excel row ${item._row}: Code is missing.`);
         if(!(item.qty>0))errors.push(`${po.po_number}, ${item.code||'item'}: QTY must be greater than zero.`);
         if(item.unit_cost<0||item.shipping_cost<0)errors.push(`${po.po_number}, ${item.code||'item'}: cost/shipping cannot be negative.`);
         const known=bulkState.knownProducts.get(norm(item.code));
-        if(!known&&!item.item_name)errors.push(`${po.po_number}, ${item.code}: new SKU needs an Item Name column/value.`);
-        if(!known&&item.item_name)warnings.push(`${po.po_number}, ${item.code}: new SKU "${item.item_name}".`);
+        if(!known&&!item.item_name)errors.push(`${po.po_number}, ${item.code}: new Code needs an Item Name column/value.`);
+        if(!known&&item.item_name)warnings.push(`${po.po_number}, ${item.code}: new Code "${item.item_name}".`);
         if(known&&!item.item_name)item.item_name=known.item_name||'';
       }
     }
@@ -186,7 +186,7 @@
 
   function previewHTML(){
     const errorBox=bulkState.errors.length?`<div class="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700"><b>Fix before importing:</b><div class="mt-2 space-y-1">${bulkState.errors.slice(0,12).map(x=>`<div>• ${esc(x)}</div>`).join('')}${bulkState.errors.length>12?`<div>• + ${bulkState.errors.length-12} more</div>`:''}</div></div>`:'';
-    const warnBox=!bulkState.errors.length&&bulkState.warnings.length?`<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800"><b>New SKUs detected:</b> ${bulkState.warnings.length}. If "Add new SKUs" is checked, they will be added to Product Catalog.</div>`:'';
+    const warnBox=!bulkState.errors.length&&bulkState.warnings.length?`<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800"><b>New Codes detected:</b> ${bulkState.warnings.length}. If "Add new Codes" is checked, they will be added to Product Catalog.</div>`:'';
 
     return `
       <div class="space-y-4">
@@ -265,11 +265,11 @@
           <button type="button" onclick="downloadBulkPOExcelTemplate()" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-xs font-semibold">Download Bulk Template</button>
         </div>
         <input type="file" accept=".xlsx,.xls,.csv" onchange="bulkPOFileChanged(this)" class="w-full border rounded-xl px-3 py-2 bg-white">
-        <div id="bulkPOFileStatus" class="text-[10px] text-gray-400 mt-1">Required: Official PO Number, Vendor / Supplier, Order Date, Currency, Code, QTY, Unit Cost, Shipping / Unit (USD). The PO Currency applies to Unit Cost only; Shipping is always USD. Item Name is only required for a new SKU.</div>
+        <div id="bulkPOFileStatus" class="text-[10px] text-gray-400 mt-1">Required: Official PO Number, Vendor / Supplier, Order Date, Currency, Code, QTY, Unit Cost, Shipping / Unit (USD). The PO Currency applies to Unit Cost only; Shipping is always USD. Item Name is only required for a new Code.</div>
       </div>
 
       <div class="rounded-xl border border-green-100 bg-green-50 p-3 text-xs text-green-800">
-        <b>New SKUs automatically become Products.</b><br><span class="text-green-700/80">Each new code is created as an active Product and queued to the <b>App Products</b> sheet. Existing codes are matched automatically.</span>
+        <b>New Codes automatically become Products.</b><br><span class="text-green-700/80">Each new code is created as an active Product and queued to the <b>App Products</b> sheet. Existing codes are matched automatically.</span>
       </div>
 
       <div id="bulkPOPreview"><div class="rounded-xl border border-dashed p-8 text-center text-sm text-gray-400">Choose an Excel file to preview the POs before importing.</div></div>
@@ -323,10 +323,10 @@
     if(!window.XLSX)return showToast('Excel template tool is still loading. Refresh and try again.','err');
     const rows=[
       ['Official PO Number','Vendor / Supplier','Order Date','Currency','Shipping Agent','ETA','Code','QTY','Unit Cost','Shipping / Unit (USD)','Item Name'],
-      ['PO-2026-001','Supplier A','2026-09-24','USD','Agent A','2026-11-15','SKU-001',2,100,10,''],
-      ['', '', '', '', '', '', 'SKU-002',1,250,15,''],
-      ['PO-2026-002','Supplier B','2026-09-24','USD','','2026-12-01','NEW-SKU-01',3,80,8,'New Product Name'],
-      ['', '', '', '', '', '', 'SKU-003',2,120,12,'']
+      ['PO-2026-001','Supplier A','2026-09-24','USD','Agent A','2026-11-15','Code-001',2,100,10,''],
+      ['', '', '', '', '', '', 'Code-002',1,250,15,''],
+      ['PO-2026-002','Supplier B','2026-09-24','USD','','2026-12-01','NEW-Code-01',3,80,8,'New Product Name'],
+      ['', '', '', '', '', '', 'Code-003',2,120,12,'']
     ];
     const ws=XLSX.utils.aoa_to_sheet(rows);
     ws['!cols']=[18,22,14,10,18,14,18,9,12,16,24].map(w=>({wch:w}));
