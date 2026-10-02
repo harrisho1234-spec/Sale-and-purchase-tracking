@@ -189,7 +189,7 @@ sales_rows as (
       when coalesce(t.grouped_qty,0)<=coalesce(s.remaining_qty,0) then 'safe'
       else 'conflict'
     end classification,
-    'exact reference + SKU'::text match_method
+    'exact reference + Code'::text match_method
   from sales_h h
   join sales_h_stats s on s.legacy_history_id=h.id
   left join sales_target_totals t on t.item_id=s.item_id
@@ -274,7 +274,7 @@ po_rows as (
       when coalesce(t.grouped_qty,0)<=coalesce(s.remaining_qty,0) then 'safe'
       else 'conflict'
     end classification,
-    'exact reference + SKU'::text match_method
+    'exact reference + Code'::text match_method
   from po_h h
   join po_h_stats s on s.legacy_history_id=h.id
   left join po_target_totals t on t.item_id=s.item_id
@@ -351,7 +351,7 @@ return_rows as (
       when coalesce(t.grouped_qty,0)<=coalesce(s.remaining_qty,0) then 'safe'
       else 'conflict'
     end classification,
-    'exact reference + SKU'::text match_method
+    'exact reference + Code'::text match_method
   from return_h h
   join return_h_stats s on s.legacy_history_id=h.id
   left join return_target_totals t on t.item_id=s.item_id
