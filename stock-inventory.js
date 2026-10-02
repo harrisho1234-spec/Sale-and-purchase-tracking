@@ -2227,11 +2227,34 @@
     return window.renderProducts();
   };
 
+  function taxLiveSignature(){
+    const balances=(inv.taxBalances||[]).map(p=>[
+      p.product_id,p.on_hand,p.available,p.reserved,p.on_order,p.incoming,p.arrived_pending_receive
+    ].join(':')).join('|');
+    const alerts=(inv.taxSaleAlerts||[]).map(a=>[
+      a.id,a.alert_status,a.qty,a.on_hand,a.available,a.complete_sets,a.set_status,a.image_url||''
+    ].join(':')).join('|');
+    return balances+'||'+alerts;
+  }
+
   let taxRefreshing=false;
   setInterval(async()=>{
     if(taxRefreshing||state.page!=='stock-inventory'||inv.tab!=='tax'||document.hidden||!document.getElementById('modal')?.classList.contains('hidden'))return;
     taxRefreshing=true;
-    try{await Promise.all([loadTaxCore(true),loadTaxSaleAlerts(true)]);await renderStockInventoryBody()}catch(err){showToast('Tax Inventory refresh failed: '+err.message,'err')}finally{taxRefreshing=false}
+    try{
+      const before=taxLiveSignature();
+      await Promise.all([loadTaxCore(true),loadTaxSaleAlerts(true)]);
+      const after=taxLiveSignature();
+      // Keep polling in the background, but do not redraw the whole Tax screen
+      // unless something visible actually changed. This prevents thumbnail/list flicker.
+      if(before!==after){
+        const y=window.scrollY;
+        await renderStockInventoryBody();
+        requestAnimationFrame(()=>window.scrollTo({top:y,left:0,behavior:'auto'}));
+      }
+    }catch(err){
+      console.warn('Tax Inventory background refresh failed:',err);
+    }finally{taxRefreshing=false}
   },30000);
   // Navigation / permissions.
   const previousNavItems=window.navItems;
