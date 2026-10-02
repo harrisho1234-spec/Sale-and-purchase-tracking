@@ -50,7 +50,7 @@
       <div class="po-item-edit hidden mt-3 rounded-xl border border-amber-100 bg-amber-50/40 p-3">
         <div class="grid md:grid-cols-12 gap-2">
           <div class="md:col-span-3">
-            <label class="text-[9px] font-semibold text-gray-500">SKU / Code</label>
+            <label class="text-[9px] font-semibold text-gray-500">Code</label>
             <input class="pei-code mt-1 w-full border rounded-lg px-2 py-2 bg-white disabled:bg-gray-100" value="${esc(i.product_code_snapshot||'')}" ${linked?'disabled':''}>
           </div>
           <div class="md:col-span-4">
@@ -70,7 +70,7 @@
             <input class="pei-shipping mt-1 w-full border rounded-lg px-2 py-2 bg-white" type="number" min="0" step="0.01" value="${n(i.shipping_cost)}">
           </div>
         </div>
-        ${linked?'<div class="mt-2 text-[9px] text-blue-700">This item is linked to an SR item. SKU, item name and quantity are locked; costing and position can still be changed.</div>':''}
+        ${linked?'<div class="mt-2 text-[9px] text-blue-700">This item is linked to an SR item. Code, item name and quantity are locked; costing and position can still be changed.</div>':''}
         <div class="mt-3 flex justify-between gap-2 flex-wrap">
           <button type="button" onclick="deletePOItem('${i.id}')" ${linked?'disabled':''} class="px-3 py-2 border border-red-200 bg-red-50 text-red-600 rounded-lg text-xs font-semibold disabled:opacity-35 disabled:cursor-not-allowed">${linked?'Linked to SR — cannot delete':'Delete Item'}</button>
           <div class="flex gap-2">
@@ -133,7 +133,7 @@
       code=row.querySelector('.pei-code').value.trim();
       name=row.querySelector('.pei-name').value.trim();
       qty=n(row.querySelector('.pei-qty').value);
-      if(!code||!name)return showToast('SKU / code and item name are required.','err');
+      if(!code||!name)return showToast('Code and item name are required.','err');
       if(qty<=0)return showToast('Quantity must be greater than zero.','err');
       const p=await db.from('product_catalog').select('id').eq('code',code).maybeSingle();
       if(p.error)return showToast(p.error.message,'err');
