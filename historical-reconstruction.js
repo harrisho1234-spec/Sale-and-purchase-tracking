@@ -227,8 +227,9 @@
           <div class="mt-3 text-[10px] text-blue-700">Safe auto-match requires exact document/reference + Code and a quantity that does not exceed the unresolved document quantity. Ambiguous or oversized matches are never auto-applied.</div>
         </div>
 
-        <div class="grid sm:grid-cols-2 xl:grid-cols-5 gap-3">
+        <div class="grid sm:grid-cols-2 xl:grid-cols-6 gap-3">
           ${card('Applied',s.applied_rows,'Historical rows already linked','border-green-100 bg-green-50/20')}
+          ${card('Resolved Review',s.resolved_rows,'Manually reviewed decisions','border-emerald-100 bg-emerald-50/20')}
           ${card('Already Reconciled',s.already_reconciled_rows,'Resolved before reconstruction','border-purple-100 bg-purple-50/20')}
           ${card('Safe Waiting',s.safe_rows,'Can be applied without stock movement','border-blue-100 bg-blue-50/20')}
           ${card('Conflicts',s.conflict_rows,'Needs manual review','border-red-100 bg-red-50/20')}
@@ -245,6 +246,7 @@
           <select onchange="setHistoricalReconstructionClass(this.value)" class="border rounded-xl px-3 py-2 bg-white text-xs">
             <option value="" ${!H.classification?'selected':''}>All Results</option>
             <option value="applied" ${H.classification==='applied'?'selected':''}>Applied</option>
+            <option value="resolved" ${H.classification==='resolved'?'selected':''}>Resolved Review</option>
             <option value="already_reconciled" ${H.classification==='already_reconciled'?'selected':''}>Already Reconciled</option>
             <option value="safe" ${H.classification==='safe'?'selected':''}>Safe Waiting</option>
             <option value="conflict" ${H.classification==='conflict'?'selected':''}>Conflict / Review</option>
@@ -265,7 +267,7 @@
                 <div class="min-w-0"><div class="font-semibold truncate">${escH(x.reference_no||'No reference')}</div><div class="text-[10px] text-gray-500 truncate">${escH(x.counterparty||'')}</div><div class="text-[9px] font-bold text-[#a77d1a] mt-1">${escH(x.product_code||'')}</div></div>
                 <div class="min-w-0"><div class="font-semibold truncate">${escH(x.target_document_no||'—')}</div><div class="text-[10px] text-gray-500 truncate">${escH(x.target_party||'')}</div><div class="text-[9px] text-gray-400 mt-1">Target ${x.target_qty==null?'—':escH(x.target_qty)} · Remaining ${x.target_remaining_qty==null?'—':escH(x.target_remaining_qty)}</div></div>
                 <div><b class="text-base">${escH(x.legacy_qty)}</b><div class="text-[9px] text-gray-400">history qty</div></div>
-                <div>${classBadge(x.classification)}<div class="text-[9px] text-gray-400 mt-1">${escH(x.match_method||'')}</div>${n(x.candidate_count)>1?'<div class="text-[9px] text-red-500 mt-1">'+n(x.candidate_count)+' possible lines</div>':''}</div>
+                <div>${rowReviewCell(x)}</div>
               </div>`).join(''):'<div class="py-12 text-center text-sm text-gray-400">No historical rows match this filter.</div>'}
           </div>
         </div>
