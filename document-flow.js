@@ -370,7 +370,7 @@
       btn.classList.add('opacity-50','cursor-not-allowed');
       if(hint){
         hint.className='md:col-span-3 text-[10px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2';
-        hint.textContent='No available Supplier PO item matches '+(s?.product_code_snapshot||'this SR item')+'. Only the same Product / SKU can be linked.';
+        hint.textContent='No available Supplier PO item matches '+(s?.product_code_snapshot||'this SR item')+'. Only the same Product / Code can be linked.';
       }
       return;
     }
@@ -412,7 +412,7 @@
     try{
       const d=await loadLinkModalData(orderId);window._dfLinkData=d;const poMap=new Map(d.po.map(p=>[p.id,p]));
       openModal('Link Supplier PO Items to SR',`<div class="space-y-5">
-        <div class="rounded-xl bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800">Select the SR item first. The Supplier PO dropdown will show <b>only matching Product / SKU items</b> with remaining quantity available.</div>
+        <div class="rounded-xl bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800">Select the SR item first. The Supplier PO dropdown will show <b>only matching Product / Code items</b> with remaining quantity available.</div>
         <form id="linkPOForm" class="grid md:grid-cols-3 gap-3">
           <select id="linkSalesItem" onchange="refreshLinkPOItemChoices()" class="border rounded-xl px-3 py-2">${d.sales.map(i=>`<option value="${i.id}">${esc(i.product_code_snapshot||'No Code')} · ${esc(i.item_name_snapshot||'Item')} · Qty ${Number(i.qty||0)} · Remaining ${Number(salesLinkRemaining(i,d))}</option>`).join('')}</select>
           <select id="linkPOItem" onchange="refreshLinkPOQty()" class="border rounded-xl px-3 py-2"></select>
@@ -476,7 +476,7 @@
       if(stockControllerTrackingRole()&&ui.trackingTab==='flow')ui.trackingTab='po_items';
       if(salesTimelineOnly()&&ui.trackingTab==='flow')ui.trackingTab='timeline';
       if(ui.trackingTab==='flow'){
-        const root=document.getElementById('orderTrackingRoot');if(!root)return;root.innerHTML=`${typeof managerRepBanner==='function'&&managerRepActive()?managerRepBanner():''}<div class="lr-tabs mb-4"><button class="lr-tab" onclick="setTrackingTab('timeline')">Status Timeline</button><button class="lr-tab" onclick="setTrackingTab('eta')">ETA Schedule</button><button class="lr-tab" onclick="setTrackingTab('orders')">Orders</button><button class="lr-tab" onclick="setTrackingTab('items')">Items</button><button class="lr-tab active" onclick="setTrackingTab('flow')">PO → SR → TK/RK</button></div><div class="relative mb-5"><input class="lr-input pl-10" value="${esc(ui.trackingSearch||'')}" oninput="setTrackingSearch(this.value)" placeholder="Search PO, SR, TK/RK, client, item, SKU..."><span class="absolute left-3 top-2.5 text-gray-400">⌕</span></div>${flowTrackingHtml()}`;return;
+        const root=document.getElementById('orderTrackingRoot');if(!root)return;root.innerHTML=`${typeof managerRepBanner==='function'&&managerRepActive()?managerRepBanner():''}<div class="lr-tabs mb-4"><button class="lr-tab" onclick="setTrackingTab('timeline')">Status Timeline</button><button class="lr-tab" onclick="setTrackingTab('eta')">ETA Schedule</button><button class="lr-tab" onclick="setTrackingTab('orders')">Orders</button><button class="lr-tab" onclick="setTrackingTab('items')">Items</button><button class="lr-tab active" onclick="setTrackingTab('flow')">PO → SR → TK/RK</button></div><div class="relative mb-5"><input class="lr-input pl-10" value="${esc(ui.trackingSearch||'')}" oninput="setTrackingSearch(this.value)" placeholder="Search PO, SR, TK/RK, client, item, Code..."><span class="absolute left-3 top-2.5 text-gray-400">⌕</span></div>${flowTrackingHtml()}`;return;
       }
       baseTrackingBody();
       if(salesTimelineOnly()||stockControllerTrackingRole())return;
