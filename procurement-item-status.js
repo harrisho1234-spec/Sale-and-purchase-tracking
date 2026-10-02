@@ -93,7 +93,7 @@
         <div class="pw-stat"><div class="pw-stat-label">Arrived / Closed</div><div class="pw-stat-value text-green-700">${arrived}</div></div>
         <div class="pw-stat"><div class="pw-stat-label">Historical Reconciled</div><div class="pw-stat-value text-purple-700">${reconciled}</div></div>
       </div>
-      <div class="pw-toolbar"><input class="pw-search" value="${esc(pw.search)}" oninput="setProcurementSearch(this.value)" placeholder="Search PO, supplier, SKU, item, status..."><button onclick="openHistoricalPOReconciliation()" class="px-4 py-2 border border-purple-200 bg-purple-50 text-purple-700 rounded-xl text-xs font-semibold">Historical Stock Reconciliation</button></div>
+      <div class="pw-toolbar"><input class="pw-search" value="${esc(pw.search)}" oninput="setProcurementSearch(this.value)" placeholder="Search PO, supplier, Code, item, status..."><button onclick="openHistoricalPOReconciliation()" class="px-4 py-2 border border-purple-200 bg-purple-50 text-purple-700 rounded-xl text-xs font-semibold">Historical Stock Reconciliation</button></div>
       <div class="rounded-xl border bg-white p-3 mb-3 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
         <div class="flex flex-wrap items-center gap-3">
           <label class="inline-flex items-center gap-2 text-xs font-semibold cursor-pointer"><input type="checkbox" onchange="toggleSelectAllPOItems(this.checked)" ${allSelected?'checked':''}> Select All ${rows.length}</label>
