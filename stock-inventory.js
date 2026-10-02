@@ -2268,9 +2268,9 @@
             <option value="project_installation">Project / Installation Use</option>
             <option value="vendor_return">Return to Vendor</option>
             <option value="showroom_sample">Showroom / Display / Sample Use</option>
-            <option value="other">Other</option>
+            <option value="other">Other (non-customer only)</option>
           </select>
-          <div class="text-[10px] text-amber-800 mt-1">Every Stock OUT must have a destination or purpose. <b>Customer Fulfillment</b> must link to the actual Sales Order item.</div>
+          <div class="text-[10px] text-amber-800 mt-1">Every Stock OUT must have a destination or purpose. <b>If this stock is for any customer, Sales must create the Sales Order first.</b> Then use Customer Fulfillment / Delivery. Do not use another purpose to bypass the Sales Order.</div>
         </div>
         <div id="smOutPurposeDetailWrap" class="hidden md:col-span-2 rounded-xl border border-gray-200 bg-gray-50/60 p-3">
           <label class="text-xs font-semibold">Destination / Purpose Details *</label>
@@ -2353,6 +2353,26 @@
         ?'Stock OUT Destination / Purpose: '+(purposeLabels[outPurpose]||titleCase(outPurpose))+(outPurposeDetail?' — '+outPurposeDetail:'')
         :'';
       const rawNote=document.getElementById('smNote').value.trim();
+
+      if(movementType==='out'){
+        const refType=String(document.getElementById('smReferenceType')?.value||'');
+        const refNo=String(document.getElementById('smRef')?.value||'').trim();
+        const party=String(document.getElementById('smParty')?.value||'').trim();
+        const check=await db.rpc('stock_out_customer_conflict',{
+          p_reference_type:refType||null,
+          p_reference_no:refNo||null,
+          p_counterparty:party||null
+        });
+        if(check.error){
+          btn.disabled=false;btn.textContent='Save Stock Movement';
+          return showToast(check.error.message||'Could not validate Stock OUT destination.','err');
+        }
+        if(check.data){
+          btn.disabled=false;btn.textContent='Save Stock Movement';
+          return showToast(String(check.data)+' Sales must create the Sales Order first, then release it from Customer Fulfillment.','err');
+        }
+      }
+
       const args={
         p_product_id:p.product_id,p_movement_type:movementType,
         p_qty:qty,
