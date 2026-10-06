@@ -10,6 +10,7 @@
     salesClass: 'all',
     salesRep: 'all',
     salesCustomer: 'all',
+    salesBusiness: 'all',
     salesSort: 'newest',
     salesExpanded: new Set(),
     salesOrders: [],
@@ -298,17 +299,36 @@
     return true;
   }
 
+  function salesBusinessCode(o){
+    const doc=String(o.sales_invoice_no||o.invoice_no||o.order_no||'').toUpperCase();
+    const type=String(o.sales_invoice_type||'').toUpperCase();
+    if(type==='RK'||doc.startsWith('RK'))return 'RK';
+    if(type==='TK'||doc.startsWith('TK'))return 'TK';
+    return 'OTHER';
+  }
+
+  function orderMatchesBusinessFilter(o){
+    const filter=ui.salesBusiness||'all';
+    if(filter==='all')return true;
+    if(filter==='PJ')return String(o.sales_category||'standard')==='project';
+    if(filter==='RK'||filter==='TK')return salesBusinessCode(o)===filter;
+    if(filter==='OTHER')return salesBusinessCode(o)==='OTHER';
+    return true;
+  }
+
   function filteredSalesOrders() {
     const q = ui.salesSearch.toLowerCase().trim();
     let list = ui.salesOrders.filter(o=>{
       if(!withinDateFilter(o.order_date,ui.salesDate)) return false;
       if(ui.salesRep!=='all' && repName(o)!==ui.salesRep) return false;
       if(ui.salesCustomer!=='all' && o.customer_id!==ui.salesCustomer) return false;
+      if(!orderMatchesBusinessFilter(o)) return false;
       if(ui.salesClass!=='all' && !(o.items||[]).some(i=>i.product_catalog?.class===ui.salesClass)) return false;
       if(!orderMatchesStatus(o)) return false;
       if(q){
         const hay = [
           o.order_no,o.invoice_no,o.customer_name,o.customer_code,o.customer_phone,o.status,o.order_type,
+          salesBusinessCode(o),o.sales_category==='project'?'Project PJ':'Standard',
           ...(o.items||[]).flatMap(i=>[
             i.product_code_snapshot,i.item_name_snapshot,i.product_catalog?.brand,i.product_catalog?.class
           ])
@@ -919,7 +939,7 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
           <span class="absolute left-3 top-2.5 text-gray-400">⌕</span>
         </div>
 
-        <div class="grid sm:grid-cols-2 xl:grid-cols-5 gap-2 mb-3">
+        <div class="grid sm:grid-cols-2 xl:grid-cols-6 gap-2 mb-3">
           <select class="lr-select" onchange="setSalesFilter('salesDate',this.value)">
             <option value="all" ${ui.salesDate==='all'?'selected':''}>All Dates</option>
             <option value="this_month" ${ui.salesDate==='this_month'?'selected':''}>This Month</option>
@@ -927,6 +947,13 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
             <option value="30" ${ui.salesDate==='30'?'selected':''}>Last 30 Days</option>
             <option value="90" ${ui.salesDate==='90'?'selected':''}>Last 90 Days</option>
             <option value="year" ${ui.salesDate==='year'?'selected':''}>This Year</option>
+          </select>
+          <select class="lr-select" onchange="setSalesFilter('salesBusiness',this.value)">
+            <option value="all" ${ui.salesBusiness==='all'?'selected':''}>All TK / RK / PJ</option>
+            <option value="RK" ${ui.salesBusiness==='RK'?'selected':''}>LP Home (RK)</option>
+            <option value="TK" ${ui.salesBusiness==='TK'?'selected':''}>L'Imperial Luxury (TK)</option>
+            <option value="PJ" ${ui.salesBusiness==='PJ'?'selected':''}>Project (PJ)</option>
+            <option value="OTHER" ${ui.salesBusiness==='OTHER'?'selected':''}>Pre-Order / Other</option>
           </select>
           <select class="lr-select" onchange="setSalesFilter('salesClass',this.value)">
             <option value="all">All Classes</option>
@@ -981,9 +1008,9 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
   window.exportSalesTrackingCsv = function() {
     const rows=filteredSalesOrders();
     const csv=[
-      ['Invoice/Order','Customer','Sales Rep','Date','Type','Status','Total','Paid','Balance'],
+      ['Invoice/Order','Business','Category','Customer','Sales Rep','Date','Type','Status','Total','Paid','Balance'],
       ...rows.map(o=>[
-        o.invoice_no||o.order_no||'',o.customer_name||'',repName(o),o.order_date||'',o.order_type||'',o.status||'',
+        o.invoice_no||o.order_no||'',salesBusinessCode(o),o.sales_category==='project'?'Project (PJ)':'Standard',o.customer_name||'',repName(o),o.order_date||'',o.order_type||'',o.status||'',
         Number(o.order_total||0),Number(o.amount_paid||0),Number(o.balance_due||0)
       ])
     ].map(r=>r.map(v=>`"${String(v??'').replaceAll('"','""')}"`).join(',')).join('\n');
