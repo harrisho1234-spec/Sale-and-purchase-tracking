@@ -362,6 +362,7 @@
               <div class="flex flex-wrap items-center gap-2">
                 <button onclick="toggleSalesInvoice('${o.id}')" class="font-extrabold text-[14px] hover:text-[#b3871e]">${esc(o.invoice_no||o.order_no||'Order')}</button>
                 ${salesStatusBadge(o)}
+                ${o.sales_category==='project'?'<span class="lr-badge lr-badge-blue">PJ · Project</span>':''}
                 ${items.some(i=>Number(returnInfo(i)?.qty_returned||0)>0)?`<span class="lr-badge lr-badge-amber">↩ Return Recorded</span>`:''}
                 ${repName(o)?`<span class="lr-badge lr-badge-gray">▣ ${esc(repName(o))}</span>`:''}
               </div>
@@ -389,7 +390,7 @@
             <div class="grid sm:grid-cols-4 gap-3 mb-3 text-xs">
               <div><span class="text-gray-400">Order:</span><br><b>${esc(o.order_no||'-')}</b></div>
               <div><span class="text-gray-400">Date:</span><br><b>${esc(formatDate(o.order_date))}</b></div>
-              <div><span class="text-gray-400">Type:</span><br><b>${esc(titleCase(o.order_type||'-'))}</b></div>
+              <div><span class="text-gray-400">Type:</span><br><b>${esc(titleCase(o.order_type||'-'))}${o.sales_category==='project'?' · Project (PJ)':''}</b></div>
               <div><span class="text-gray-400">Total:</span><br><b>${money(o.order_total,o.currency)}</b></div>
             </div>
             ${(items.length?items.map(i=>`
