@@ -1,4 +1,4 @@
-// Duplicate TK/RK/PJ/SR guard + safe merge into an existing document.
+// Duplicate TK/RK/SR guard + safe merge into an existing document.
 // Loaded after sales-customer-typeahead.js so it can watch the searchable customer selector too.
 (function(){
   const baseOpenNewOrder=window.openNewOrder;
