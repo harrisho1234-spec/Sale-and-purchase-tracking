@@ -130,7 +130,7 @@
                 <div class="grid md:grid-cols-[1fr_auto] gap-3 items-start">
                   <div class="min-w-0">
                     <div class="flex flex-wrap items-center gap-2"><b>${esc(docNo(o))}</b>${statusBadge(o)}</div>
-                    <div class="text-[11px] text-gray-400 mt-1">${esc(fmtDate(o.order_date))} · ${isPre(o)?'Pre-Order / SR':'Stock Sale / TK-RK'}</div>
+                    <div class="text-[11px] text-gray-400 mt-1">${esc(fmtDate(o.order_date))} · ${isPre(o)?'Pre-Order / SR':'Stock Sale / TK-RK-PJ'}</div>
                     <div class="text-[11px] text-gray-500 mt-2 truncate">${itemSummary(o)}</div>
                   </div>
                   <div class="grid grid-cols-3 gap-4 text-right text-xs min-w-[270px]">
