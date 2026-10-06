@@ -1,4 +1,4 @@
-// L'Imperial document flow: PO -> SR -> TK/RK
+// L'Imperial document flow: PO -> SR -> TK/RK/PJ
 // Loaded after tracking-redesign.js. Keeps the existing UI and adds business-document workflow.
 
 (function(){
@@ -76,13 +76,13 @@
         stepHtml('Shipping',shipping,production&&!shipping),
         stepHtml('Arrived',arrived,shipping&&!arrived),
         stepHtml('Invoice Requested',requested,arrived&&!requested),
-        stepHtml('TK/RK Issued',issued,requested&&!issued,o.sales_invoice_no||''),
+        stepHtml('TK/RK/PJ Issued',issued,requested&&!issued,o.sales_invoice_no||''),
         stepHtml('Paid',settled,issued&&!settled),
         stepHtml('Delivered',delivered,settled&&!delivered)
       ].join('');
     }else{
       steps=[
-        stepHtml('TK/RK Issued',!!o.sales_invoice_no,false,o.sales_invoice_no||o.invoice_no||o.order_no||''),
+        stepHtml('TK/RK/PJ Issued',!!o.sales_invoice_no,false,o.sales_invoice_no||o.invoice_no||o.order_no||''),
         stepHtml('Paid',settled,!settled),
         stepHtml('Arrived',(o.items||[]).some(i=>['arrived','ready','delivered'].includes(norm(i.fulfillment_status))),false),
         stepHtml('Delivered',delivered,settled&&!delivered)
@@ -92,8 +92,8 @@
     const poBadges=pos.length?pos.map(p=>`<span class="lr-badge lr-badge-blue">${esc(p.no)} · ${esc(titleCase(p.status||'placed'))}${p.eta?' · '+esc(fmtDate(p.eta)):''}</span>`).join(' '):'<span class="text-[10px] text-gray-400">No supplier PO linked yet.</span>';
     const controls=[`<button onclick="openDocumentFlowDetails('${o.id}')" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">View Details</button>`];
     if(pre&&isAdminRole())controls.push(`<button onclick="openLinkPOItems('${o.id}')" class="px-3 py-2 rounded-lg border text-xs font-semibold">Link PO Items</button>`);
-    if(pre&&!issued&&arrived&&canRequestInvoice()&&o.invoice_request_status!=='requested')controls.push(`<button onclick="openInvoiceRequest('${o.id}')" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs font-semibold">Request TK/RK</button>`);
-    if(pre&&!issued&&isAdminRole()&&(requested||arrived))controls.push(`<button onclick="openIssueFinalInvoice('${o.id}')" class="px-3 py-2 rounded-lg bg-[#b38b2e] text-white text-xs font-semibold">Issue TK/RK</button>`);
+    if(pre&&!issued&&arrived&&canRequestInvoice()&&o.invoice_request_status!=='requested')controls.push(`<button onclick="openInvoiceRequest('${o.id}')" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs font-semibold">Request TK/RK/PJ</button>`);
+    if(pre&&!issued&&isAdminRole()&&(requested||arrived))controls.push(`<button onclick="openIssueFinalInvoice('${o.id}')" class="px-3 py-2 rounded-lg bg-[#b38b2e] text-white text-xs font-semibold">Issue TK/RK/PJ</button>`);
 
     return `<div class="mb-4 rounded-2xl border border-[#eee7d9] bg-[#fffdf8] p-4">
       <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-3"><div><div class="text-[10px] uppercase tracking-wider font-extrabold text-[#a77d1a]">Document Flow</div><div class="font-bold mt-1">${esc(docLabel(o))}</div></div><div class="flex flex-wrap gap-2">${controls.join('')}</div></div>
@@ -239,7 +239,7 @@
               </div>
               <div class="flex flex-wrap gap-2">
                 <span class="lr-badge lr-badge-amber">${esc(o.sr_no||o.order_no||'SR')}</span>
-                ${finalNo?`<span class="lr-badge lr-badge-green">${esc(finalNo)}</span>`:'<span class="lr-badge lr-badge-gray">TK/RK Pending</span>'}
+                ${finalNo?`<span class="lr-badge lr-badge-green">${esc(finalNo)}</span>`:'<span class="lr-badge lr-badge-gray">TK/RK/PJ Pending</span>'}
               </div>
             </div>
 
@@ -280,7 +280,7 @@
               <div class="text-[10px] text-gray-500 mt-2">Created ${esc(fmtDate(o.order_date))}</div>
             </div>
             <div class="rounded-xl border p-4">
-              <div class="text-[9px] uppercase font-bold text-gray-400">Final TK / RK</div>
+              <div class="text-[9px] uppercase font-bold text-gray-400">Final TK / RK / PJ</div>
               <div class="font-bold mt-1">${esc(finalNo||'Pending')}</div>
               <div class="text-[10px] text-gray-500 mt-2">${o.invoice_issued_at?'Issued '+esc(fmtDate(String(o.invoice_issued_at).slice(0,10))):invoiceRequested?'Invoice requested':'Not issued yet'}</div>
             </div>
@@ -305,12 +305,12 @@
   };
 
   window.openInvoiceRequest=function(orderId){
-    openModal('Request Final TK/RK Invoice',`<form id="invoiceRequestForm" class="space-y-4"><div class="rounded-xl bg-amber-50 border border-amber-100 p-3 text-xs text-amber-800">This marks the arrived SR as ready for Accounting to issue the final TK or RK invoice.</div><div><label class="text-xs font-semibold">Note to Accounting</label><textarea id="invoiceRequestNote" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Optional note"></textarea></div><button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Send Invoice Request</button></form>`);
+    openModal('Request Final TK/RK/PJ Invoice',`<form id="invoiceRequestForm" class="space-y-4"><div class="rounded-xl bg-amber-50 border border-amber-100 p-3 text-xs text-amber-800">This marks the arrived SR as ready for Accounting to issue the final TK, RK or PJ invoice.</div><div><label class="text-xs font-semibold">Note to Accounting</label><textarea id="invoiceRequestNote" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Optional note"></textarea></div><button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Send Invoice Request</button></form>`);
     document.getElementById('invoiceRequestForm').onsubmit=async e=>{e.preventDefault();const note=document.getElementById('invoiceRequestNote').value.trim()||null;const {error}=await db.rpc('request_sales_invoice',{p_order_id:orderId,p_note:note});if(error)return showToast(error.message,'err');closeModal();showToast('Invoice request sent to Accounting');df.loaded=false;await go('sales-orders')};
   };
 
   window.openIssueFinalInvoice=function(orderId){
-    openModal('Issue Final TK / RK',`<form id="issueInvoiceForm" class="grid md:grid-cols-2 gap-4"><div><label class="text-xs font-semibold">Invoice Type</label><select id="finalInvoiceType" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"><option value="TK">TK</option><option value="RK">RK</option></select></div><div><label class="text-xs font-semibold">Invoice Number</label><input id="finalInvoiceNo" required class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Example: TK2609-010"></div><div class="md:col-span-2"><label class="text-xs font-semibold">Accounting Note</label><textarea id="finalInvoiceNote" class="mt-1 w-full border rounded-xl px-3 py-2"></textarea></div><button class="md:col-span-2 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Issue Invoice</button></form>`);
+    openModal('Issue Final TK / RK / PJ / PJ',`<form id="issueInvoiceForm" class="grid md:grid-cols-2 gap-4"><div><label class="text-xs font-semibold">Invoice Type</label><select id="finalInvoiceType" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"><option value="TK">TK</option><option value="RK">RK</option><option value="PJ">PJ — Project</option></select></div><div><label class="text-xs font-semibold">Invoice Number</label><input id="finalInvoiceNo" required class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Example: TK2610-010, RK2610-010 or PJ2610-010"></div><div class="md:col-span-2"><label class="text-xs font-semibold">Accounting Note</label><textarea id="finalInvoiceNote" class="mt-1 w-full border rounded-xl px-3 py-2"></textarea></div><button class="md:col-span-2 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Issue Invoice</button></form>`);
     document.getElementById('issueInvoiceForm').onsubmit=async e=>{e.preventDefault();const type=document.getElementById('finalInvoiceType').value,no=document.getElementById('finalInvoiceNo').value.trim(),note=document.getElementById('finalInvoiceNote').value.trim()||null;const {error}=await db.rpc('issue_sales_invoice',{p_order_id:orderId,p_invoice_type:type,p_invoice_no:no,p_note:note});if(error)return showToast(error.message,'err');closeModal();showToast(`${type} invoice issued`);df.loaded=false;await go('sales-orders')};
   };
 
@@ -466,7 +466,7 @@
   function flowTrackingHtml(){
     const ui=window.trackingRedesign||{};const q=String(ui.trackingSearch||'').toLowerCase();
     const orders=(ui.trackingOrders||[]).map(o=>({...o,...(df.orderMeta.get(o.id)||{})})).filter(o=>!q||[o.order_no,o.sr_no,o.sales_invoice_no,o.customer_name,...(o.items||[]).flatMap(i=>[i.product_code_snapshot,i.item_name_snapshot])].filter(Boolean).join(' ').toLowerCase().includes(q));
-    return `<div class="grid gap-3">${orders.map(o=>{const pre=isPre(o),pos=uniquePOs(o);return `<div class="lr-panel p-4"><div class="flex flex-col lg:flex-row lg:items-center gap-3"><div class="flex-1"><div class="text-[10px] uppercase font-bold text-gray-400">${pre?'Pre-Order Flow':'Stock Sale Flow'}</div><div class="font-bold mt-1">${esc(o.customer_name||'Customer')}</div></div><div class="flex items-center gap-2 overflow-x-auto pb-1">${pre?`<span class="lr-badge lr-badge-blue">${esc(pos.map(p=>p.no).join(', ')||'PO Pending')}</span><span>→</span><span class="lr-badge lr-badge-amber">${esc(o.sr_no||o.order_no||'SR')}</span><span>→</span><span class="lr-badge ${o.sales_invoice_no?'lr-badge-green':'lr-badge-gray'}">${esc(o.sales_invoice_no||'TK/RK Pending')}</span>`:`<span class="lr-badge lr-badge-gray">Stock</span><span>→</span><span class="lr-badge lr-badge-green">${esc(o.sales_invoice_no||o.invoice_no||o.order_no||'TK/RK')}</span>`}</div></div>${pre?`<div class="mt-3">${flowPanel(o)}</div>`:''}</div>`}).join('')||'<div class="lr-panel lr-empty">No document flows found.</div>'}</div>`;
+    return `<div class="grid gap-3">${orders.map(o=>{const pre=isPre(o),pos=uniquePOs(o);return `<div class="lr-panel p-4"><div class="flex flex-col lg:flex-row lg:items-center gap-3"><div class="flex-1"><div class="text-[10px] uppercase font-bold text-gray-400">${pre?'Pre-Order Flow':'Stock Sale Flow'}</div><div class="font-bold mt-1">${esc(o.customer_name||'Customer')}</div></div><div class="flex items-center gap-2 overflow-x-auto pb-1">${pre?`<span class="lr-badge lr-badge-blue">${esc(pos.map(p=>p.no).join(', ')||'PO Pending')}</span><span>→</span><span class="lr-badge lr-badge-amber">${esc(o.sr_no||o.order_no||'SR')}</span><span>→</span><span class="lr-badge ${o.sales_invoice_no?'lr-badge-green':'lr-badge-gray'}">${esc(o.sales_invoice_no||'TK/RK/PJ Pending')}</span>`:`<span class="lr-badge lr-badge-gray">Stock</span><span>→</span><span class="lr-badge lr-badge-green">${esc(o.sales_invoice_no||o.invoice_no||o.order_no||'TK/RK')}</span>`}</div></div>${pre?`<div class="mt-3">${flowPanel(o)}</div>`:''}</div>`}).join('')||'<div class="lr-panel lr-empty">No document flows found.</div>'}</div>`;
   }
 
   const baseTrackingBody=window.renderOrderTrackingBody;
@@ -476,11 +476,11 @@
       if(stockControllerTrackingRole()&&ui.trackingTab==='flow')ui.trackingTab='po_items';
       if(salesTimelineOnly()&&ui.trackingTab==='flow')ui.trackingTab='timeline';
       if(ui.trackingTab==='flow'){
-        const root=document.getElementById('orderTrackingRoot');if(!root)return;root.innerHTML=`${typeof managerRepBanner==='function'&&managerRepActive()?managerRepBanner():''}<div class="lr-tabs mb-4"><button class="lr-tab" onclick="setTrackingTab('timeline')">Status Timeline</button><button class="lr-tab" onclick="setTrackingTab('eta')">ETA Schedule</button><button class="lr-tab" onclick="setTrackingTab('orders')">Orders</button><button class="lr-tab" onclick="setTrackingTab('items')">Items</button><button class="lr-tab active" onclick="setTrackingTab('flow')">PO → SR → TK/RK</button></div><div class="relative mb-5"><input class="lr-input pl-10" value="${esc(ui.trackingSearch||'')}" oninput="setTrackingSearch(this.value)" placeholder="Search PO, SR, TK/RK, client, item, Code..."><span class="absolute left-3 top-2.5 text-gray-400">⌕</span></div>${flowTrackingHtml()}`;return;
+        const root=document.getElementById('orderTrackingRoot');if(!root)return;root.innerHTML=`${typeof managerRepBanner==='function'&&managerRepActive()?managerRepBanner():''}<div class="lr-tabs mb-4"><button class="lr-tab" onclick="setTrackingTab('timeline')">Status Timeline</button><button class="lr-tab" onclick="setTrackingTab('eta')">ETA Schedule</button><button class="lr-tab" onclick="setTrackingTab('orders')">Orders</button><button class="lr-tab" onclick="setTrackingTab('items')">Items</button><button class="lr-tab active" onclick="setTrackingTab('flow')">PO → SR → TK/RK/PJ</button></div><div class="relative mb-5"><input class="lr-input pl-10" value="${esc(ui.trackingSearch||'')}" oninput="setTrackingSearch(this.value)" placeholder="Search PO, SR, TK/RK/PJ, client, item, Code..."><span class="absolute left-3 top-2.5 text-gray-400">⌕</span></div>${flowTrackingHtml()}`;return;
       }
       baseTrackingBody();
       if(salesTimelineOnly()||stockControllerTrackingRole())return;
-      const tabs=document.querySelector('#orderTrackingRoot .lr-tabs');if(tabs&&!tabs.querySelector('[data-flow-tab]')){const b=document.createElement('button');b.dataset.flowTab='1';b.className='lr-tab';b.textContent='PO → SR → TK/RK';b.onclick=()=>setTrackingTab('flow');tabs.appendChild(b)}
+      const tabs=document.querySelector('#orderTrackingRoot .lr-tabs');if(tabs&&!tabs.querySelector('[data-flow-tab]')){const b=document.createElement('button');b.dataset.flowTab='1';b.className='lr-tab';b.textContent='PO → SR → TK/RK/PJ';b.onclick=()=>setTrackingTab('flow');tabs.appendChild(b)}
     };
   }
   const baseSetTrackingTab=window.setTrackingTab;
@@ -514,7 +514,7 @@
         ...refsForOrder(o).flatMap(r=>[r.po_number,r.po_status])
       ].filter(Boolean).join(' ').toLowerCase().includes(q));
 
-    return `<div class="rounded-xl bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800 mb-4"><b>PO → SR → TK/RK</b> is managed under Procurement. Link matching Supplier PO items to each SR, follow production/shipping/arrival, then continue to the final TK/RK invoice.</div>
+    return `<div class="rounded-xl bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800 mb-4"><b>PO → SR → TK/RK/PJ</b> is managed under Procurement. Link matching Supplier PO items to each SR, follow production/shipping/arrival, then continue to the final TK/RK invoice.</div>
       <div class="grid gap-4">${orders.length?orders.map(o=>`<div class="pw-card">
         <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-3">
           <div><div class="text-[10px] uppercase font-bold text-gray-400">Customer / SR</div><div class="font-bold mt-1">${esc(o.customer_name||'Customer')} · ${esc(o.sr_no||o.order_no||'SR')}</div></div>
@@ -523,7 +523,7 @@
             <span>→</span>
             <span class="lr-badge lr-badge-amber">${esc(o.sr_no||o.order_no||'SR')}</span>
             <span>→</span>
-            <span class="lr-badge ${o.sales_invoice_no?'lr-badge-green':'lr-badge-gray'}">${esc(o.sales_invoice_no||'TK/RK Pending')}</span>
+            <span class="lr-badge ${o.sales_invoice_no?'lr-badge-green':'lr-badge-gray'}">${esc(o.sales_invoice_no||'TK/RK/PJ Pending')}</span>
           </div>
         </div>
         ${flowPanel(o)}
