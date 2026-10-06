@@ -91,7 +91,7 @@
     const flow=currentFlow();
     const invoiceType=document.getElementById('salesInvoiceType')?.value||'TK';
     const docNo=normalizeDoc(flow,invoiceType,document.getElementById('salesDocumentNo')?.value||'');
-    if(!docNo)return showToast(flow==='pre_order'?'Enter the SR number.':'Enter the TK/RK invoice number.','err');
+    if(!docNo)return showToast(flow==='pre_order'?'Enter the SR number.':'Enter the TK/RK/PJ invoice number.','err');
     if(flow==='pre_order'&&!docNo.startsWith('SR'))return showToast('Pre-order document number must begin with SR.','err');
     if(flow==='stock_sale'&&!docNo.startsWith(invoiceType))return showToast(`Invoice number must begin with ${invoiceType}.`,'err');
 
@@ -123,7 +123,7 @@
     };
 
     const {data:so,error}=await db.from('sales_orders').insert(order).select().single();
-    if(error){const msg=String(error.message||'');return showToast(msg.toLowerCase().includes('duplicate')?'That SR/TK/RK number already exists.':msg,'err')}
+    if(error){const msg=String(error.message||'');return showToast(msg.toLowerCase().includes('duplicate')?'That SR/TK/RK/PJ number already exists.':msg,'err')}
 
     const items=itemRows.map(r=>{
       const lineKind=r.querySelector('.line-kind')?.value||'product';
