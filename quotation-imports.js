@@ -269,6 +269,16 @@
     if(doc)doc.focus();
   };
 
+  const baseCloseModal=window.closeModal;
+  if(typeof baseCloseModal==='function'){
+    window.closeModal=function(){
+      // If a quotation conversion form is abandoned, clear its context so a later
+      // unrelated Sales Order can never mark the old quotation as converted.
+      if(activeConversionId && document.getElementById('orderForm')) activeConversionId=null;
+      return baseCloseModal.apply(this,arguments);
+    };
+  }
+
   const previousAfterCreate=window.afterSalesOrderCreated;
   window.afterSalesOrderCreated=async function(so,meta){
     if(typeof previousAfterCreate==='function')await previousAfterCreate(so,meta);
