@@ -189,12 +189,19 @@
     const row=r.data;const s=quoteSummary(row);
     const canCreate=typeof window.hasAppPermission!=='function'||window.hasAppPermission('sales_orders.create');
     const linked=(state.customers||[]).find(c=>String(c.id)===String(row.customer_id));
+    let convertedOrderNo='';
+    if(row.converted_sales_order_id){
+      const linkedOrder=await db.from('sales_orders').select('order_no').eq('id',row.converted_sales_order_id).maybeSingle();
+      if(!linkedOrder.error)convertedOrderNo=String(linkedOrder.data?.order_no||'');
+    }
     const lines=s.lines.map((l,i)=>'<div class="grid grid-cols-[1fr_70px_95px_95px] gap-2 items-center py-2 border-b last:border-b-0"><div class="min-w-0"><div class="text-xs font-semibold truncate">'+esc(l.code||l.name||('Line '+(i+1)))+'</div><div class="text-[10px] text-gray-500 truncate">'+esc(l.name||'')+(l.sourceSetName?' · Set: '+esc(l.sourceSetName):'')+'</div></div><div class="text-xs text-right">'+l.qty+'</div><div class="text-xs text-right">'+money(l.unitPrice,'USD')+'</div><div class="text-xs text-right">'+money(Math.max(l.qty*l.unitPrice-l.discountAmount,0),'USD')+'</div></div>').join('');
     openModal('Imported Quotation',
       '<div class="space-y-5"><div class="rounded-xl border bg-gray-50 p-4"><div class="flex flex-wrap items-center gap-2">'+badge(row.status)+'<b>'+esc(row.source_quote_no||row.source_name||row.source_record_id)+'</b></div>'+
       '<div class="text-xs text-gray-600 mt-2">'+esc(s.customerName||'No customer')+(s.customerPhone?' · '+esc(s.customerPhone):'')+'</div>'+
       (s.customerAddress?'<div class="text-[10px] text-gray-400 mt-1">'+esc(s.customerAddress)+'</div>':'')+
-      (s.salesperson?'<div class="text-[10px] text-gray-400 mt-1">Showroom salesperson: '+esc(s.salesperson)+'</div>':'')+'</div>'+
+      (s.salesperson?'<div class="text-[10px] text-gray-400 mt-1">Showroom salesperson: '+esc(s.salesperson)+'</div>':'')+
+      (row.converted_sales_order_id?'<div class="mt-3 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-[10px] text-green-800">Converted to official Sales Order'+(convertedOrderNo?' <b>'+esc(convertedOrderNo)+'</b>':'')+'.'+(convertedOrderNo?' <button type="button" onclick="closeModal();openDashboardSalesOrder(\''+row.converted_sales_order_id+'\')" class="underline font-semibold ml-1">Open order</button>':'')+'</div>':'')+
+      '<div class="text-[9px] text-gray-400 mt-2">Source ID: '+esc(row.source_record_id)+'</div></div>'+
       '<div><div class="flex items-center justify-between mb-2"><b class="text-sm">Quoted items</b><span class="text-xs font-bold">'+money(s.total,'USD')+'</span></div>'+
       '<div class="rounded-xl border overflow-hidden"><div class="grid grid-cols-[1fr_70px_95px_95px] gap-2 bg-gray-50 px-3 py-2 text-[9px] uppercase font-bold text-gray-400"><div>Item</div><div class="text-right">Qty</div><div class="text-right">Price</div><div class="text-right">Net</div></div><div class="px-3">'+(lines||'<div class="p-4 text-xs text-gray-400">No items in this quotation.</div>')+'</div></div>'+
       (s.orderDiscount>0?'<div class="text-[10px] text-right text-gray-500 mt-2">Quotation-level discount carried to Sales Order: '+money(s.orderDiscount,'USD')+'</div>':'')+'</div>'+
@@ -324,7 +331,12 @@
       await go('quotation-imports');
       showToast(row.status==='ready'?'Quotation imported and customer matched.':'Quotation imported. Link the customer before conversion.');
       setTimeout(()=>{try{reviewImportedQuotation(row.id)}catch(_){}},150);
-    }catch(err){console.error('Showroom quotation import failed:',err);showToast(err.message||'Could not import showroom quotation.','err')}
+    }catch(err){
+      console.error('Showroom quotation import failed:',err);
+      // Stop automatic retry loops. The user can send the quotation again from the showroom after fixing the issue.
+      history.replaceState(null,'',location.pathname+location.search);
+      showToast(err.message||'Could not import showroom quotation.','err');
+    }
     finally{handoffBusy=false}
   }
   if(String(location.hash||'').includes('showroom-quote=')){
