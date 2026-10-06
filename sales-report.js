@@ -29,6 +29,7 @@
   function reportBusinessLabel(){
     if(reportState.business==='RK')return 'LP Home (RK)';
     if(reportState.business==='TK')return "L'Imperial Luxury (TK)";
+    if(reportState.business==='PJ')return 'Project (PJ)';
     if(reportState.business==='OTHER')return 'Pre-Order / Other';
     if(reportState.business==='RKTK')return 'RK + TK Combined';
     return 'All Business';
@@ -187,10 +188,11 @@
     const map=new Map([
       ['RK',{label:'LP Home (RK)',actual:0,collection:0,confirmed:0,returns:0,qty:0,lines:0}],
       ['TK',{label:"L'Imperial Luxury (TK)",actual:0,collection:0,confirmed:0,returns:0,qty:0,lines:0}],
+      ['PJ',{label:'Project (PJ)',actual:0,collection:0,confirmed:0,returns:0,qty:0,lines:0}],
       ['OTHER',{label:'Pre-Order / Other',actual:0,collection:0,confirmed:0,returns:0,qty:0,lines:0}]
     ]);
     (reportState.rows||[]).filter(r=>rowInReportScope(r,false)).forEach(r=>{
-      const key=['RK','TK'].includes(String(r.business_code||''))?String(r.business_code):'OTHER';
+      const key=['RK','TK','PJ'].includes(String(r.business_code||''))?String(r.business_code):'OTHER';
       const x=map.get(key);
       x.actual+=n(r.actual_sales);x.collection+=n(r.collection_value);x.confirmed+=n(r.confirmed_sales);x.returns+=n(r.return_value);x.lines+=1;
     });
@@ -299,6 +301,7 @@
               <option value="RKTK" ${reportState.business==='RKTK'?'selected':''}>RK + TK Combined</option>
               <option value="RK" ${reportState.business==='RK'?'selected':''}>LP Home (RK)</option>
               <option value="TK" ${reportState.business==='TK'?'selected':''}>L'Imperial Luxury (TK)</option>
+              <option value="PJ" ${reportState.business==='PJ'?'selected':''}>Project (PJ)</option>
               <option value="OTHER" ${reportState.business==='OTHER'?'selected':''}>Pre-Order / Other</option>
             </select>
             ${canChooseReportReps()?`<div class="relative">
@@ -351,14 +354,14 @@
       </div>
 
       <div class="grid xl:grid-cols-[.8fr_1.2fr] gap-4 mt-4">
-        ${dimensionBarCard('Sales by Business','RK = LP Home · TK = L\'Imperial Luxury',businessRows)}
+        ${dimensionBarCard('Sales by Business','RK = LP Home · TK = L\'Imperial Luxury · PJ = Project',businessRows)}
         <div class="card rounded-2xl p-4">
           <div class="flex items-start justify-between gap-3 mb-4">
-            <div><h4 class="font-bold">Business Unit Summary</h4><div class="text-[10px] text-gray-400 mt-1">Uses the invoice/document prefix to classify RK and TK.</div></div>
+            <div><h4 class="font-bold">Business Unit Summary</h4><div class="text-[10px] text-gray-400 mt-1">Uses the invoice/document prefix to classify RK, TK and PJ.</div></div>
             <div class="text-[10px] text-gray-400">${esc(reportBusinessLabel())}</div>
           </div>
           <div class="grid sm:grid-cols-2 gap-3">
-            ${['RK','TK'].map(code=>{
+            ${['RK','TK','PJ'].map(code=>{
               const x=businessRows.find(b=>b.label.includes('('+code+')'))||{label:code,actual:0,collection:0,confirmed:0,returns:0,lines:0};
               return `<div class="rounded-xl border bg-[#faf9f6] p-4"><div class="text-[10px] uppercase font-bold text-gray-400">${esc(x.label)}</div><div class="text-2xl font-bold mt-1">${money(x.actual)}</div><div class="text-[10px] text-gray-400 mt-1">Collection ${money(x.collection)} · Confirmed ${money(x.confirmed)} · Returns −${money(x.returns)}</div></div>`;
             }).join('')}
@@ -385,12 +388,12 @@
   window.renderReports=async function(){
     if(!['sales','manager','accountant','admin','super_admin'].includes(state.profile?.role||''))throw new Error('Sales Report access required');
     document.getElementById('pageTitle').textContent='Report';
-    document.getElementById('pageSubtitle').textContent='Sales by period, RK/TK business, Sales Rep, brand and product line';
+    document.getElementById('pageSubtitle').textContent='Sales by period, RK/TK/PJ category, Sales Rep, brand and product line';
     document.getElementById('content').innerHTML='<div id="salesReportRoot"><div class="py-20 text-center text-gray-400">Loading sales report...</div></div>';
 
     const [summaryRes,itemRes]=await Promise.all([
-      db.rpc('get_sales_report_rows_v3'),
-      db.rpc('get_sales_report_item_rows_v3')
+      db.rpc('get_sales_report_rows_v4'),
+      db.rpc('get_sales_report_item_rows_v4')
     ]);
     if(summaryRes.error)throw summaryRes.error;
     if(itemRes.error)throw itemRes.error;
@@ -416,7 +419,7 @@
     renderSalesReportBody();
   };
   window.setSalesReportBusiness=function(v){
-    reportState.business=['RKTK','RK','TK','OTHER'].includes(v)?v:'all';
+    reportState.business=['RKTK','RK','TK','PJ','OTHER'].includes(v)?v:'all';
     reportState.repMenuOpen=false;
     reportState.periodMenuOpen=false;
     renderSalesReportBody();
