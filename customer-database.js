@@ -168,7 +168,7 @@
     return `<div class="card rounded-2xl p-4 mb-4">
       <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
         <div class="flex flex-col sm:flex-row flex-wrap gap-2 flex-1">
-          <input value="${esc(leadState.search)}" oninput="setLeadSearch(this.value)" class="border rounded-xl px-4 py-2.5 bg-white w-full sm:max-w-[320px]" placeholder="Search customer, phone, interest, note...">
+          <input id="leadSearchInput" value="${esc(leadState.search)}" oninput="setLeadSearch(this.value)" autocomplete="off" class="border rounded-xl px-4 py-2.5 bg-white w-full sm:max-w-[320px]" placeholder="Search customer, phone, interest, note...">
           <select onchange="setLeadBusiness(this.value)" class="border rounded-xl bg-white px-3 py-2.5 text-sm">
             <option value="all">All Business</option><option value="RK" ${leadState.business==='RK'?'selected':''}>LP Home · RK</option><option value="TK" ${leadState.business==='TK'?'selected':''}>L'Imperial Luxury · TK</option><option value="UNASSIGNED" ${leadState.business==='UNASSIGNED'?'selected':''}>Unassigned</option>
           </select>
@@ -878,7 +878,21 @@
     };
   };
 
-  window.setLeadSearch=function(v){leadState.search=v;leadState.page=1;renderLeadBody()};
+  window.setLeadSearch=function(v){
+    const current=document.getElementById('leadSearchInput');
+    const start=current?.selectionStart??String(v||'').length;
+    const end=current?.selectionEnd??start;
+
+    leadState.search=v;
+    leadState.page=1;
+    renderLeadBody();
+
+    const next=document.getElementById('leadSearchInput');
+    if(next){
+      try{next.focus({preventScroll:true})}catch(_){next.focus()}
+      try{next.setSelectionRange(start,end)}catch(_){}
+    }
+  };
   window.setLeadStage=function(v){leadState.stage=v;leadState.page=1;renderLeadBody()};
   window.setLeadBusiness=function(v){leadState.business=v;leadState.page=1;renderLeadBody()};
   window.setLeadFollowup=function(v){leadState.followup=v;leadState.page=1;renderLeadBody()};
