@@ -215,14 +215,58 @@ function openModal(title,body){
 }
 function closeModal(){document.getElementById('modal').classList.add('hidden')}
 
-// Shared modal close behavior: click/tap the dimmed backdrop or press Escape.
-// Clicks inside the white modal card do not close it.
+// Shared modal close behavior: genuine click/tap on the dimmed backdrop or Escape.
+// IMPORTANT: dragging from inside the modal to select text/fields can end over the
+// backdrop and browsers may synthesize a click there. Only close when the pointer
+// BOTH starts and ends on the backdrop with negligible movement.
 const sharedModal=document.getElementById('modal');
 if(sharedModal&&!sharedModal.dataset.outsideCloseBound){
   sharedModal.dataset.outsideCloseBound='1';
-  sharedModal.addEventListener('click',e=>{
-    if(e.target===sharedModal)closeModal();
+
+  let modalBackdropPointer=null;
+  let modalBackdropClickAllowed=false;
+  const MODAL_BACKDROP_DRAG_TOLERANCE=6;
+
+  sharedModal.addEventListener('pointerdown',e=>{
+    modalBackdropClickAllowed=false;
+    modalBackdropPointer={
+      pointerId:e.pointerId,
+      startedOnBackdrop:e.target===sharedModal,
+      x:e.clientX,
+      y:e.clientY
+    };
   });
+
+  sharedModal.addEventListener('pointerup',e=>{
+    const p=modalBackdropPointer;
+    modalBackdropPointer=null;
+    if(!p||p.pointerId!==e.pointerId)return;
+
+    const dx=e.clientX-p.x;
+    const dy=e.clientY-p.y;
+    const moved=Math.hypot(dx,dy);
+
+    modalBackdropClickAllowed=
+      p.startedOnBackdrop &&
+      e.target===sharedModal &&
+      moved<=MODAL_BACKDROP_DRAG_TOLERANCE;
+  });
+
+  sharedModal.addEventListener('pointercancel',()=>{
+    modalBackdropPointer=null;
+    modalBackdropClickAllowed=false;
+  });
+
+  sharedModal.addEventListener('click',e=>{
+    if(e.target!==sharedModal)return;
+
+    const selection=window.getSelection?.();
+    const hasSelection=!!selection&&String(selection).length>0;
+
+    if(modalBackdropClickAllowed&&!hasSelection)closeModal();
+    modalBackdropClickAllowed=false;
+  });
+
   document.addEventListener('keydown',e=>{
     if(e.key==='Escape'&&!sharedModal.classList.contains('hidden'))closeModal();
   });
