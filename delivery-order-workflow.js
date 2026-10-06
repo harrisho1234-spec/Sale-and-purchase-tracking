@@ -25,6 +25,7 @@
   }
   function role(){return String((typeof state!=='undefined'&&state&&state.profile&&state.profile.role)||'')}
   function canOperate(){return ['stock_controller','admin','super_admin'].includes(role())}
+  function canEditDoNumber(){return ['admin','super_admin'].includes(role())}
   function deliveryActive(){
     const btn=[].slice.call(document.querySelectorAll('.inv-tab')).find(function(b){
       return String(b.getAttribute('onclick')||'').includes("setInventoryTab('delivery')");
@@ -119,7 +120,7 @@
         '<div>'+
           '<div class="flex flex-wrap items-center gap-2"><b class="text-sm">'+esc(req.document_no||'Sales Order')+'</b>'+
             '<span class="px-2 py-0.5 rounded-full border text-[9px] font-bold '+requestStatusClass(req.request_status)+'">'+esc(title(req.request_status||'requested'))+'</span>'+
-            (hasDo?'<span class="px-2 py-0.5 rounded-full border border-purple-200 bg-purple-50 text-purple-700 text-[9px] font-bold">DO '+esc(req.do_no)+'</span>':'')+
+            (hasDo?'<span class="px-2 py-0.5 rounded-full border border-purple-200 bg-purple-50 text-purple-700 text-[9px] font-bold">'+esc(req.do_no)+'</span>':'')+
           '</div>'+
           '<div class="text-xs text-gray-600 mt-1">'+esc(req.customer_name||'')+(req.sales_rep_name?' · '+esc(req.sales_rep_name):'')+'</div>'+
           '<div class="text-[10px] text-gray-400 mt-1">Requested '+dateText(req.requested_at)+(req.requested_delivery_date?' · Delivery '+dateText(req.requested_delivery_date):'')+'</div>'+
@@ -128,7 +129,7 @@
         '</div>'+
         '<div class="flex flex-wrap items-center gap-3 xl:justify-end">'+
           '<div class="text-right text-xs"><div class="text-gray-400">Requested / OUT</div><b>'+qty(req.total_requested_qty)+' / '+qty(req.total_delivered_qty)+'</b></div>'+
-          (canOperate()?'<button onclick="assignDeliveryOrderNo(\''+esc(req.delivery_request_id)+'\')" class="px-3 py-2 rounded-lg border '+(hasDo?'border-purple-200 bg-purple-50 text-purple-700':'border-[#d8c28a] bg-[#fffaf0] text-[#8a6a1f]')+' text-[10px] font-bold">'+(hasDo?'Change DO No.':'Assign DO No.')+'</button>':'')+
+          (canEditDoNumber()?'<button onclick="assignDeliveryOrderNo(\''+esc(req.delivery_request_id)+'\')" class="px-3 py-2 rounded-lg border '+(hasDo?'border-purple-200 bg-purple-50 text-purple-700':'border-[#d8c28a] bg-[#fffaf0] text-[#8a6a1f]')+' text-[10px] font-bold">'+(hasDo?'Correct DO No.':'Assign Missing DO No.')+'</button>':'')+
         '</div>'+
       '</div>'+
       '<div class="divide-y">'+itemHtml+'</div>'+
@@ -144,7 +145,7 @@
       let cards='';
       rows.forEach(function(r){cards+=requestCard(r)});
       el.innerHTML=navHtml(rows.length,history.length)+
-        '<div class="rounded-xl border border-amber-100 bg-amber-50/40 p-3 mb-3 text-xs text-amber-900"><b>DO workflow:</b> assign the official DO number to the delivery batch first. Stock OUT from this section records that DO number with the movement automatically.</div>'+
+        '<div class="rounded-xl border border-amber-100 bg-amber-50/40 p-3 mb-3 text-xs text-amber-900"><b>DO workflow:</b> the official DO number is generated automatically when Sales submits the request (DOYYMM-001, resetting each month). Stock OUT from this section records that number with the movement. Only Admin/Super Admin can correct an unused number.</div>'+
         '<div class="grid gap-3">'+(cards||'<div class="inv-card py-12 text-center text-sm text-gray-400">No open DO requests match this search.</div>')+'</div>';
     }catch(err){
       el.innerHTML='<div class="inv-card text-red-600">Error loading DO requests: '+esc(err.message||'Unknown error')+'</div>';
@@ -185,25 +186,25 @@
   window.showDeliveryHistory=function(){window.setStockDeliveryView('history')};
 
   window.assignDeliveryOrderNo=async function(requestId){
-    if(!canOperate())return;
+    if(!canEditDoNumber())return showToast('Admin / Super Admin access required to correct DO numbers.','err');
     const req=D.requests.find(function(x){return String(x.delivery_request_id)===String(requestId)});
     if(!req)return showToast('DO request not found. Refresh and try again.','err');
 
-    openModal((req.do_no?'Update':'Assign')+' Delivery Order Number',
+    openModal((req.do_no?'Correct':'Assign Missing')+' Delivery Order Number',
       '<form id="assignDeliveryOrderForm" class="space-y-4">'+
-        '<div class="rounded-xl border bg-[#fcfbf8] p-4"><div class="font-bold">'+esc(req.document_no||'Sales Order')+'</div><div class="text-xs text-gray-500 mt-1">'+esc(req.customer_name||'')+'</div><div class="text-[10px] text-gray-400 mt-1">This number belongs to the whole delivery batch and will follow every Stock OUT in this DO.</div></div>'+
-        '<div><label class="text-xs font-semibold">Official DO Number *</label><input id="deliveryOrderNoInput" value="'+esc(req.do_no||'')+'" required class="mt-1 w-full border rounded-xl px-3 py-3 uppercase" placeholder="Example: DO-2610-025"></div>'+
-        '<button id="deliveryOrderNoSave" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save DO Number</button>'+
+        '<div class="rounded-xl border bg-[#fcfbf8] p-4"><div class="font-bold">'+esc(req.document_no||'Sales Order')+'</div><div class="text-xs text-gray-500 mt-1">'+esc(req.customer_name||'')+'</div><div class="text-[10px] text-gray-400 mt-1">Automatically generated as DOYYMM-NNN for the month of request. Admin corrections are allowed only before any Stock OUT has been released.</div></div>'+
+        '<div><label class="text-xs font-semibold">Official DO Number *</label><input id="deliveryOrderNoInput" value="'+esc(req.do_no||'')+'" required class="mt-1 w-full border rounded-xl px-3 py-3 uppercase" placeholder="Example: DO2610-001"></div>'+
+        '<button id="deliveryOrderNoSave" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save DO Correction</button>'+
       '</form>'
     );
 
     document.getElementById('assignDeliveryOrderForm').onsubmit=async function(e){
       e.preventDefault();
       const no=String(document.getElementById('deliveryOrderNoInput').value||'').trim().toUpperCase();
-      if(!no)return showToast('DO number is required.','err');
+      if(!/^DO[0-9]{2}(0[1-9]|1[0-2])-[0-9]{3,}$/.test(no))return showToast('Use format DOYYMM-NNN, such as DO2610-001.','err');
       const btn=document.getElementById('deliveryOrderNoSave');btn.disabled=true;btn.textContent='Saving...';
       const r=await db.rpc('assign_delivery_order_no',{p_delivery_request_id:requestId,p_do_no:no});
-      if(r.error){btn.disabled=false;btn.textContent='Save DO Number';return showToast(r.error.message,'err')}
+      if(r.error){btn.disabled=false;btn.textContent='Save DO Correction';return showToast(r.error.message,'err')}
       closeModal();showToast('DO '+no+' assigned to this delivery batch.');
       if(typeof window.renderStockInventory==='function')await window.renderStockInventory();
     };
