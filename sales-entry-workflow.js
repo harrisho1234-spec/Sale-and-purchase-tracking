@@ -1,4 +1,4 @@
-// Sales entry workflow: Stock Sale (TK/RK/PJ) or Pre-Order (SR), with deposit by % or amount.
+// Sales entry workflow: TK/RK invoices or SR pre-orders, with optional Project (PJ) category.
 // Loaded last so it safely overrides the older generic Sales Order form.
 
 (function(){
@@ -157,7 +157,7 @@
     const flowHint=document.getElementById('salesFlowHint');
     if(flowHint) flowHint.innerHTML=flow==='pre_order'
       ? '<b>Pre-Order:</b> enter the SR number. Procurement can later link supplier PO items to these SR items.'
-      : '<b>Stock Sale:</b> enter the official TK, RK or PJ invoice number. PJ is the Project sales category and does not create a new stock location.';
+      : '<b>Stock Sale:</b> enter the official TK or RK invoice number. Use <b>Category: Project (PJ)</b> when the sale belongs to a project.';
   };
 
   window.updateSalesDocumentFields=function(){
@@ -166,7 +166,7 @@
     const docLabel=document.getElementById('salesDocumentLabel');
     const doc=document.getElementById('salesDocumentNo');
     if(typeWrap) typeWrap.style.display=flow==='stock_sale'?'block':'none';
-    if(docLabel) docLabel.textContent=flow==='pre_order'?'SR Number':'TK / RK / PJ Invoice Number';
+    if(docLabel) docLabel.textContent=flow==='pre_order'?'SR Number':'TK / RK Invoice Number';
     if(doc) doc.placeholder=flow==='pre_order'?'Example: SR-2026-001':'Example: TK2609-001 or RK2609-001';
     const type=flow==='pre_order'?'pre_order':'stock';
     lineRows().forEach(r=>{const s=r.querySelector('.source-type');if(s)s.value=type});
@@ -384,9 +384,10 @@
         <div class="rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs text-amber-900" id="salesFlowHint"><b>Stock Sale:</b> enter the official TK or RK invoice number for the stock sale.</div>
         <div class="grid md:grid-cols-2 gap-3">
           <div><label class="text-xs font-semibold">Customer</label><select id="orderCustomer" onchange="updateSalesCustomerReviewHint()" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white">${state.customers.map(c=>`<option value="${c.id}">${esc(c.name)}${c.review_status==='pending'?' · Pending Review':''}</option>`).join('')}</select><div id="salesCustomerReviewHint" class="hidden"></div></div>
-          <div><label class="text-xs font-semibold">Sale Type</label><select id="salesFlowType" onchange="updateSalesDocumentFields()" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"><option value="stock_sale">Stock Sale — TK / RK / PJ</option><option value="pre_order">Pre-Order — SR</option></select></div>
-          <div id="invoiceTypeWrap"><label class="text-xs font-semibold">Invoice Type</label><select id="salesInvoiceType" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"><option value="TK">TK</option><option value="RK">RK</option><option value="PJ">PJ — Project</option></select></div>
-          <div><label id="salesDocumentLabel" class="text-xs font-semibold">TK / RK / PJ Invoice Number</label><input id="salesDocumentNo" required class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Example: TK2610-001, RK2610-001 or PJ2610-001"></div>
+          <div><label class="text-xs font-semibold">Sale Type</label><select id="salesFlowType" onchange="updateSalesDocumentFields()" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"><option value="stock_sale">Stock Sale — TK / RK</option><option value="pre_order">Pre-Order — SR</option></select></div>
+          <div id="invoiceTypeWrap"><label class="text-xs font-semibold">Invoice Type</label><select id="salesInvoiceType" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"><option value="TK">TK</option><option value="RK">RK</option></select></div>
+          <div><label class="text-xs font-semibold">Category</label><select id="salesCategory" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"><option value="standard">Standard</option><option value="project">Project (PJ)</option></select><div class="text-[10px] text-gray-400 mt-1">PJ is a category only. The invoice number still remains TK or RK.</div></div>
+          <div><label id="salesDocumentLabel" class="text-xs font-semibold">TK / RK Invoice Number</label><input id="salesDocumentNo" required class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Example: TK2610-001 or RK2610-001"></div>
           <div><label class="text-xs font-semibold">Order Date</label><input id="orderDate" type="date" value="${new Date().toISOString().slice(0,10)}" class="mt-1 w-full border rounded-xl px-3 py-2"></div>
           <div><label class="text-xs font-semibold">Sales Rep</label><input disabled value="${esc(effectiveSalesRepName())}" class="mt-1 w-full border rounded-xl px-3 py-2 bg-gray-50 text-gray-500"></div>
         </div>
@@ -442,7 +443,7 @@
     const flow=currentFlow();
     const invoiceType=document.getElementById('salesInvoiceType')?.value||'TK';
     const docNo=normalizeDoc(flow,invoiceType,document.getElementById('salesDocumentNo').value);
-    if(!docNo) return showToast(flow==='pre_order'?'Enter the SR number.':'Enter the TK/RK/PJ invoice number.','err');
+    if(!docNo) return showToast(flow==='pre_order'?'Enter the SR number.':'Enter the TK/RK invoice number.','err');
     if(flow==='pre_order' && !docNo.startsWith('SR')) return showToast('Pre-order document number must begin with SR.','err');
     if(flow==='stock_sale' && !docNo.startsWith(invoiceType)) return showToast(`Invoice number must begin with ${invoiceType}.`,'err');
 
@@ -473,10 +474,10 @@
     const selectedCustomerId=document.getElementById('orderCustomer').value;
     const selectedCustomer=(state.customers||[]).find(c=>String(c.id)===String(selectedCustomerId));
     const customerReviewPending=selectedCustomer?.review_status==='pending';
-    const order={customer_id:selectedCustomerId,sales_rep_id:repId,sales_rep_name_snapshot:repName||null,order_date:orderDate,order_type:flow==='pre_order'?'pre_order':'in_stock',sales_flow_type:flow,status:'confirmed',currency:'USD',order_discount:calc.orderDiscount,notes:document.getElementById('orderNotes').value.trim()||null,created_by:state.user.id,order_no:docNo,invoice_no:flow==='stock_sale'?docNo:null,sr_no:flow==='pre_order'?docNo:null,sales_invoice_no:flow==='stock_sale'?docNo:null,sales_invoice_type:flow==='stock_sale'?invoiceType:null,invoice_request_status:flow==='stock_sale'?'not_needed':'not_requested',deposit_input_type:calc.depositMode,deposit_input_value:calc.depositValue};
+    const order={customer_id:selectedCustomerId,sales_rep_id:repId,sales_rep_name_snapshot:repName||null,order_date:orderDate,order_type:flow==='pre_order'?'pre_order':'in_stock',sales_flow_type:flow,status:'confirmed',currency:'USD',order_discount:calc.orderDiscount,notes:document.getElementById('orderNotes').value.trim()||null,sales_category:document.getElementById('salesCategory')?.value||'standard',created_by:state.user.id,order_no:docNo,invoice_no:flow==='stock_sale'?docNo:null,sr_no:flow==='pre_order'?docNo:null,sales_invoice_no:flow==='stock_sale'?docNo:null,sales_invoice_type:flow==='stock_sale'?invoiceType:null,invoice_request_status:flow==='stock_sale'?'not_needed':'not_requested',deposit_input_type:calc.depositMode,deposit_input_value:calc.depositValue};
 
     const {data:so,error}=await db.from('sales_orders').insert(order).select().single();
-    if(error){const msg=String(error.message||'');return showToast(msg.toLowerCase().includes('duplicate')?'That SR/TK/RK/PJ number already exists.':msg,'err');}
+    if(error){const msg=String(error.message||'');return showToast(msg.toLowerCase().includes('duplicate')?'That SR/TK/RK number already exists.':msg,'err');}
 
     const items=rows.map((r,idx)=>{const lineKind=r.querySelector('.line-kind')?.value||'product';return {sales_order_id:so.id,line_position:idx+1,line_kind:lineKind,product_id:lineKind==='service'?null:(r.querySelector('.product-id').value||null),product_code_snapshot:r.querySelector('.product-code').value,item_name_snapshot:r.querySelector('.product-name').value,image_url_snapshot:lineKind==='service'?null:(r.querySelector('.product-image').value||null),product_class_snapshot:r.querySelector('.product-class')?.value||null,product_type_snapshot:r.querySelector('.product-type')?.value||null,qty:Number(r.querySelector('.qty').value),unit_price:Number(r.querySelector('.unit-price').value),discount_amount:Number(r.querySelector('.line-discount').value||0),source_type:flow==='pre_order'?'pre_order':'stock',fulfillment_status:lineKind==='service'?'arrived':(flow==='pre_order'?'ordered':'arrived')}});
     const invalid=items.some(i=>(i.line_kind!=='service'&&!i.product_id)||!i.product_code_snapshot||!i.item_name_snapshot||i.qty<=0||i.unit_price<0||i.discount_amount<0);
