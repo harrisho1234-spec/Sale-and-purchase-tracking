@@ -528,7 +528,7 @@ window.openExistingSalesDoRequest=async function(orderId){
     openModal('Request Delivery Order · '+esc(o.invoice_no||o.order_no||'Sales Order'),`
       <form id="existingSalesDoForm" class="space-y-4">
         <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">
-          <b>Create a new DO request from this existing Sales Order.</b> Only quantities not already requested, delivered outside a DO, or cancelled can be requested. Stock will assign the official DO number afterward.
+          <b>Create a new DO request from this existing Sales Order.</b> Only quantities not already requested, delivered outside a DO, or cancelled can be requested. The system generates an official DO number immediately (DOYYMM-NNN). Stock can use it when preparing the release.
         </div>
         <div class="rounded-xl border bg-[#fcfbf8] p-4">
           <div class="font-bold">${esc(o.invoice_no||o.order_no||'Sales Order')}</div>
@@ -581,8 +581,14 @@ window.openExistingSalesDoRequest=async function(orderId){
         return showToast(rr.error.message,'err');
       }
 
+      // Get the official number generated server-side in the same DO request.
+      let assignedNo='';
+      try{
+        const lookup=await db.rpc('get_delivery_order_number',{p_delivery_request_id:rr.data});
+        if(!lookup.error)assignedNo=String(lookup.data||'');
+      }catch(_){}
       closeModal();
-      showToast('DO request submitted to Stock for '+selected.length+' item'+(selected.length===1?'':'s')+'.');
+      showToast((assignedNo?'DO '+assignedNo+' created. ':'DO request created. ')+'Sent to Stock for '+selected.length+' item'+(selected.length===1?'':'s')+'.');
       await loadSalesTrackingData();
       ui.salesExpanded.add(orderId);
       renderSalesTrackingBody();
