@@ -533,6 +533,14 @@
     if(managerContextActive() && typeof recordManagerRepAction==='function'){
       await recordManagerRepAction('create_sales_order','sales_order',so.id,{document_no:docNo,flow_type:flow,deposit_amount:calc.depositAmount});
     }
+    if(typeof window.afterSalesOrderCreated==='function'){
+      try{
+        await window.afterSalesOrderCreated(so,{document_no:docNo,flow_type:flow,invoice_type:flow==='stock_sale'?invoiceType:null,deposit_amount:calc.depositAmount});
+      }catch(hookErr){
+        console.warn('Post Sales Order hook failed:',hookErr);
+        showToast('Sales Order created, but its source quotation status could not be updated.','err');
+      }
+    }
     if(window.documentFlowState) window.documentFlowState.loaded=false;
     closeModal();
     showToast((flow==='pre_order'?`Pre-order ${docNo} created`:`${invoiceType} invoice ${docNo} created`)
