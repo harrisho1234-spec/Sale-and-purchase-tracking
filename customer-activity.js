@@ -421,8 +421,8 @@ ${activityAllowed()?`          <select onchange="setActivityStatus(this.value)" 
       <div><label class="text-xs font-semibold">Follow-up Date</label><input id="activityFollowUp" type="date" value="${esc(row?.follow_up_date||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
       <div class="md:col-span-2"><label class="text-xs font-semibold">Remark</label><textarea id="activityRemark" rows="3" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Customer request / follow-up note...">${esc(row?.remark||'')}</textarea></div>
       <div class="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-700">${isOnline
-        ?'Type the customer name to search existing registered customers/CRM leads. Existing ownership is locked. An unassigned lead can be claimed only with a valid phone number that is not already owned by another Sales Rep.'
-        :'Type the customer name to search existing registered customers/CRM leads. Existing ownership is locked. An unassigned visitor can be claimed only with a valid phone number that is not already owned by another Sales Rep.'}</div>
+        ?'Type the customer name to search existing registered customers/CRM leads. If the customer already belongs to another Sales Rep, you may still record the inquiry; ownership stays with the original Sales Rep. An unassigned lead can be claimed only with a valid phone number.'
+        :'Type the customer name to search existing registered customers/CRM leads. If the customer already belongs to another Sales Rep, you may still record the showroom visit; ownership stays with the original Sales Rep. An unassigned visitor can be claimed only with a valid phone number.'}</div>
       <button class="md:col-span-2 bg-[#211d18] text-white rounded-xl py-3 font-semibold">${row?'Save Changes':'Save '+esc(activityTypeLabel(activityState.type))}</button>
     </form>`;
   }
@@ -780,7 +780,12 @@ ${activityAllowed()?`          <select onchange="setActivityStatus(this.value)" 
     if(!hint)return;
     if(sel?.dataset.ownerLocked==='1'){
       hint.className='text-[9px] text-amber-700 mt-1 font-semibold';
-      hint.textContent='Existing ownership is locked. Showroom/Online cannot transfer this customer to another Sales Rep.';
+      const ownerName=activitySelectedIdentity?.assigned_sales_name||'the original Sales Rep';
+      const isOtherOwner=activitySelectedIdentity?.assigned_sales_id
+        &&String(activitySelectedIdentity.assigned_sales_id)!==String(state.user?.id||'');
+      hint.textContent=isOtherOwner
+        ?'You can save this '+(activityState.type==='showroom_visit'?'showroom visit':'inquiry')+'. Customer ownership will remain with '+ownerName+'.'
+        :'Existing ownership is locked to '+ownerName+'. Saving this record will not change ownership.';
     }else if(salesId&&!activityHasContactNumber()){
       hint.className='text-[9px] text-red-600 mt-1 font-semibold';
       hint.textContent='Enter a valid contact phone number before claiming this customer.';
