@@ -8,7 +8,7 @@
     const type=document.getElementById('editInvoiceType');
     if(doc&&type){
       const v=String(doc.value||'').trim().toUpperCase();
-      type.value=v.startsWith('RK')?'RK':'TK';
+      type.value=v.startsWith('RK')?'RK':v.startsWith('PJ')?'PJ':'TK';
     }
     return out;
   };
