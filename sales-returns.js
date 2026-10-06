@@ -1,5 +1,5 @@
 // Customer return / Credit Note (CN) workflow.
-// Keeps the original TK/RK/PJ/SR and payments intact; a CN records returned items separately.
+// Keeps the original TK/RK/SR and payments intact; a CN records returned items separately.
 (function(){
   function role(){return state.profile?.role||''}
   function allowed(){return ['sales','manager','admin','super_admin'].includes(role())}
@@ -103,7 +103,7 @@
       <div><label class="text-xs font-semibold">Return Date</label><input id="returnDate" type="date" value="${today()}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
       <div class="md:col-span-2 relative">
         <label class="text-xs font-semibold">Start With Invoice / Customer</label>
-        <input id="returnOrderSearch" autocomplete="off" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white" placeholder="Type TK / RK / PJ / SR number or customer name..." onfocus="showReturnOrderSuggestions(this.value)" oninput="returnOrderSearchChanged(this.value)">
+        <input id="returnOrderSearch" autocomplete="off" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white" placeholder="Type TK / RK / SR number or customer name..." onfocus="showReturnOrderSuggestions(this.value)" oninput="returnOrderSearchChanged(this.value)">
         <input id="returnOrder" type="hidden">
         <div id="returnOrderSuggestions" class="hidden absolute z-[120] left-0 right-0 top-full mt-1 max-h-72 overflow-y-auto bg-white border rounded-xl shadow-xl"></div>
         <div class="text-[10px] text-gray-400 mt-1">Choose one invoice first. You can then add more invoices belonging to the same customer.</div>
