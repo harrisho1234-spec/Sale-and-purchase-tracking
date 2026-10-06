@@ -187,6 +187,7 @@
     await loadOrderData();
     const r=await db.from(TABLE).select('*').eq('id',id).single();if(r.error)return showToast(r.error.message,'err');
     const row=r.data;const s=quoteSummary(row);
+    const canCreate=typeof window.hasAppPermission!=='function'||window.hasAppPermission('sales_orders.create');
     const linked=(state.customers||[]).find(c=>String(c.id)===String(row.customer_id));
     const lines=s.lines.map((l,i)=>'<div class="grid grid-cols-[1fr_70px_95px_95px] gap-2 items-center py-2 border-b last:border-b-0"><div class="min-w-0"><div class="text-xs font-semibold truncate">'+esc(l.code||l.name||('Line '+(i+1)))+'</div><div class="text-[10px] text-gray-500 truncate">'+esc(l.name||'')+(l.sourceSetName?' · Set: '+esc(l.sourceSetName):'')+'</div></div><div class="text-xs text-right">'+l.qty+'</div><div class="text-xs text-right">'+money(l.unitPrice,'USD')+'</div><div class="text-xs text-right">'+money(Math.max(l.qty*l.unitPrice-l.discountAmount,0),'USD')+'</div></div>').join('');
     openModal('Imported Quotation',
@@ -199,12 +200,14 @@
       (s.orderDiscount>0?'<div class="text-[10px] text-right text-gray-500 mt-2">Quotation-level discount carried to Sales Order: '+money(s.orderDiscount,'USD')+'</div>':'')+'</div>'+
       '<div class="rounded-xl border p-4"><label class="text-xs font-semibold">Existing Customer</label><select id="importQuoteCustomer" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">'+customerOptions(row.customer_id)+'</select>'+
       '<div class="text-[10px] mt-2 '+(linked?'text-green-700':'text-amber-700')+'">'+(linked?'Linked to '+esc(linked.name)+'.':'Conversion is blocked until an existing customer is linked.')+'</div>'+
-      '<div class="flex flex-wrap gap-2 mt-3"><button onclick="saveImportedQuotationCustomer(\''+row.id+'\')" class="px-4 py-2.5 rounded-xl bg-[#17324d] text-white text-xs font-semibold">Save Customer Match</button><button onclick="closeModal();go(\'customers\')" class="px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold">Open Customers</button></div></div>'+
+      '<div class="flex flex-wrap gap-2 mt-3"><button '+(!canCreate?'disabled':'')+' onclick="saveImportedQuotationCustomer(\''+row.id+'\')" class="px-4 py-2.5 rounded-xl text-xs font-semibold '+(!canCreate?'bg-gray-200 text-gray-400 cursor-not-allowed':'bg-[#17324d] text-white')+'">'+(canCreate?'Save Customer Match':'View Only')+'</button><button onclick="closeModal();go(\'customers\')" class="px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold">Open Customers</button></div></div>'+
       '<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>Official Sales Order rule:</b> conversion opens your normal Sales Order form. You must choose TK or RK and enter its official number; the existing duplicate, product, payment, DO, and role validations still run.</div>'+
-      '<button '+(!row.customer_id||row.status==='converted'?'disabled':'')+' onclick="convertImportedQuotation(\''+row.id+'\')" class="w-full rounded-xl py-3 font-semibold '+(!row.customer_id||row.status==='converted'?'bg-gray-200 text-gray-400 cursor-not-allowed':'bg-[#211d18] text-white')+'">'+(row.status==='converted'?'Already Converted':'Convert to Official Sales Order')+'</button></div>'
+      (!canCreate?'<div class="rounded-xl border bg-gray-50 p-3 text-xs text-gray-600">Your current role can review this quotation but cannot create Sales Orders.</div>':'')+
+      '<button '+(!canCreate||!row.customer_id||row.status==='converted'?'disabled':'')+' onclick="convertImportedQuotation(\''+row.id+'\')" class="w-full rounded-xl py-3 font-semibold '+(!canCreate||!row.customer_id||row.status==='converted'?'bg-gray-200 text-gray-400 cursor-not-allowed':'bg-[#211d18] text-white')+'">'+(row.status==='converted'?'Already Converted':(!canCreate?'View Only':'Convert to Official Sales Order'))+'</button></div>'
     );
   };
   window.saveImportedQuotationCustomer=async function(id){
+    if(typeof window.hasAppPermission==='function'&&!window.hasAppPermission('sales_orders.create'))return showToast('Your role cannot create Sales Orders.','err');
     const customerId=document.getElementById('importQuoteCustomer')?.value||null;
     if(!customerId)return showToast('Select an existing customer first. If the customer does not exist, create/link it in Customers.','err');
     const r=await db.from(TABLE).update({customer_id:customerId,status:'ready',updated_at:new Date().toISOString()}).eq('id',id).select().single();
@@ -232,6 +235,7 @@
     row.querySelector('.qty').value=String(line.qty);row.querySelector('.unit-price').value=String(line.unitPrice);row.querySelector('.line-discount').value=String(line.discountAmount);row.dataset.discountBasis='amount';
   }
   window.convertImportedQuotation=async function(id){
+    if(typeof window.hasAppPermission==='function'&&!window.hasAppPermission('sales_orders.create'))return showToast('Your role cannot create Sales Orders.','err');
     await loadOrderData();
     const r=await db.from(TABLE).select('*').eq('id',id).single();if(r.error)return showToast(r.error.message,'err');
     const draft=r.data;
