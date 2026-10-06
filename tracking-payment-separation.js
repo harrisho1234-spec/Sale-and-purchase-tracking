@@ -16,7 +16,7 @@
 
   // ---------------------------------------------------------
   // ORDER TRACKING = SR / PRE-ORDER FULFILLMENT ONLY.
-  // Stock-sale TK/RK stays in Sales Tracking.
+  // Stock-sale TK/RK/PJ stays in Sales Tracking.
   // ---------------------------------------------------------
   const baseOrderTrackingBody=window.renderOrderTrackingBody;
   if(typeof baseOrderTrackingBody==='function'){
@@ -30,7 +30,7 @@
       if(root&&!document.getElementById('orderTrackingScopeNotice')){
         root.insertAdjacentHTML('afterbegin',`
           <div id="orderTrackingScopeNotice" class="mb-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-800">
-            <b>Order Tracking is for SR / Pre-Order fulfillment.</b> Production, shipping, ETA, arrival and delivery are tracked here. TK/RK stock sales remain in <b>Sales Tracking</b>.
+            <b>Order Tracking is for SR / Pre-Order fulfillment.</b> Production, shipping, ETA, arrival and delivery are tracked here. TK/RK/PJ stock sales remain in <b>Sales Tracking</b>.
           </div>`);
       }
       return r;
