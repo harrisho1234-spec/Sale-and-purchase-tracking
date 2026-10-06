@@ -10,7 +10,8 @@
     selectedMonths:null,
     selectedQuarters:null,
     periodMenuOpen:false,
-    business:'all'
+    business:'all',
+    category:'all'
   };
 
   function n(v){const x=Number(v||0);return Number.isFinite(x)?x:0}
@@ -29,10 +30,14 @@
   function reportBusinessLabel(){
     if(reportState.business==='RK')return 'LP Home (RK)';
     if(reportState.business==='TK')return "L'Imperial Luxury (TK)";
-    if(reportState.business==='PJ')return 'Project (PJ)';
     if(reportState.business==='OTHER')return 'Pre-Order / Other';
     if(reportState.business==='RKTK')return 'RK + TK Combined';
     return 'All Business';
+  }
+  function reportCategoryLabel(){
+    if(reportState.category==='project')return 'Project (PJ)';
+    if(reportState.category==='standard')return 'Standard';
+    return 'All Categories';
   }
   function rowInReportScope(r,includeBusiness=true){
     const scopeId=reportScopeUserId();
@@ -42,6 +47,10 @@
       const code=String(r.business_code||'OTHER');
       if(reportState.business==='RKTK'&&!['RK','TK'].includes(code))return false;
       if(reportState.business!=='RKTK'&&code!==reportState.business)return false;
+    }
+    if(reportState.category!=='all'){
+      const category=String(r.sales_category||'standard');
+      if(category!==reportState.category)return false;
     }
     if(reportState.view!=='year'&&reportState.year&&yearOf(r.order_date)!==Number(reportState.year))return false;
     if(reportState.view==='month'&&reportState.selectedMonths!==null){
@@ -188,11 +197,10 @@
     const map=new Map([
       ['RK',{label:'LP Home (RK)',actual:0,collection:0,confirmed:0,returns:0,qty:0,lines:0}],
       ['TK',{label:"L'Imperial Luxury (TK)",actual:0,collection:0,confirmed:0,returns:0,qty:0,lines:0}],
-      ['PJ',{label:'Project (PJ)',actual:0,collection:0,confirmed:0,returns:0,qty:0,lines:0}],
       ['OTHER',{label:'Pre-Order / Other',actual:0,collection:0,confirmed:0,returns:0,qty:0,lines:0}]
     ]);
     (reportState.rows||[]).filter(r=>rowInReportScope(r,false)).forEach(r=>{
-      const key=['RK','TK','PJ'].includes(String(r.business_code||''))?String(r.business_code):'OTHER';
+      const key=['RK','TK'].includes(String(r.business_code||''))?String(r.business_code):'OTHER';
       const x=map.get(key);
       x.actual+=n(r.actual_sales);x.collection+=n(r.collection_value);x.confirmed+=n(r.confirmed_sales);x.returns+=n(r.return_value);x.lines+=1;
     });
@@ -301,8 +309,12 @@
               <option value="RKTK" ${reportState.business==='RKTK'?'selected':''}>RK + TK Combined</option>
               <option value="RK" ${reportState.business==='RK'?'selected':''}>LP Home (RK)</option>
               <option value="TK" ${reportState.business==='TK'?'selected':''}>L'Imperial Luxury (TK)</option>
-              <option value="PJ" ${reportState.business==='PJ'?'selected':''}>Project (PJ)</option>
               <option value="OTHER" ${reportState.business==='OTHER'?'selected':''}>Pre-Order / Other</option>
+            </select>
+            <select id="salesReportCategory" onchange="setSalesReportCategory(this.value)" class="border rounded-xl bg-white px-3 py-2.5 text-sm min-w-[160px]">
+              <option value="all" ${reportState.category==='all'?'selected':''}>All Categories</option>
+              <option value="standard" ${reportState.category==='standard'?'selected':''}>Standard</option>
+              <option value="project" ${reportState.category==='project'?'selected':''}>Project (PJ)</option>
             </select>
             ${canChooseReportReps()?`<div class="relative">
               <button type="button" onclick="toggleSalesReportRepMenu()" class="min-w-[190px] flex items-center justify-between gap-3 border rounded-xl bg-white px-3 py-2.5 text-sm">
@@ -330,7 +342,7 @@
 
       <div class="grid xl:grid-cols-[1.2fr_.8fr] gap-4">
         <div class="card rounded-2xl p-4">
-          <div class="flex items-center justify-between gap-3 mb-4"><div><h4 class="font-bold">Sales by ${reportState.view==='month'?'Month':reportState.view==='quarter'?'Quarter':'Year'}</h4><div class="text-[10px] text-gray-400 mt-1">${reportState.view==='year'?'All available years':esc(String(reportState.year||''))+(periodSelectionLabel()?' · '+esc(periodSelectionLabel()):'')} · ${esc(reportBusinessLabel())}</div></div><div class="text-xs text-gray-400">${esc(selectedRepLabel())}</div></div>
+          <div class="flex items-center justify-between gap-3 mb-4"><div><h4 class="font-bold">Sales by ${reportState.view==='month'?'Month':reportState.view==='quarter'?'Quarter':'Year'}</h4><div class="text-[10px] text-gray-400 mt-1">${reportState.view==='year'?'All available years':esc(String(reportState.year||''))+(periodSelectionLabel()?' · '+esc(periodSelectionLabel()):'')} · ${esc(reportBusinessLabel())} · ${esc(reportCategoryLabel())}</div></div><div class="text-xs text-gray-400">${esc(selectedRepLabel())}</div></div>
           <div class="space-y-3">
             ${buckets.length?buckets.map(b=>{
               const width=max>0?Math.max((b.actual/max)*100,b.actual>0?2:0):0;
@@ -354,14 +366,14 @@
       </div>
 
       <div class="grid xl:grid-cols-[.8fr_1.2fr] gap-4 mt-4">
-        ${dimensionBarCard('Sales by Business','RK = LP Home · TK = L\'Imperial Luxury · PJ = Project',businessRows)}
+        ${dimensionBarCard('Sales by Business','RK = LP Home · TK = L\'Imperial Luxury',businessRows)}
         <div class="card rounded-2xl p-4">
           <div class="flex items-start justify-between gap-3 mb-4">
-            <div><h4 class="font-bold">Business Unit Summary</h4><div class="text-[10px] text-gray-400 mt-1">Uses the invoice/document prefix to classify RK, TK and PJ.</div></div>
+            <div><h4 class="font-bold">Business Unit Summary</h4><div class="text-[10px] text-gray-400 mt-1">Uses the invoice/document prefix to classify RK and TK. Project (PJ) is tracked separately as a category.</div></div>
             <div class="text-[10px] text-gray-400">${esc(reportBusinessLabel())}</div>
           </div>
           <div class="grid sm:grid-cols-2 gap-3">
-            ${['RK','TK','PJ'].map(code=>{
+            ${['RK','TK'].map(code=>{
               const x=businessRows.find(b=>b.label.includes('('+code+')'))||{label:code,actual:0,collection:0,confirmed:0,returns:0,lines:0};
               return `<div class="rounded-xl border bg-[#faf9f6] p-4"><div class="text-[10px] uppercase font-bold text-gray-400">${esc(x.label)}</div><div class="text-2xl font-bold mt-1">${money(x.actual)}</div><div class="text-[10px] text-gray-400 mt-1">Collection ${money(x.collection)} · Confirmed ${money(x.confirmed)} · Returns −${money(x.returns)}</div></div>`;
             }).join('')}
@@ -388,12 +400,12 @@
   window.renderReports=async function(){
     if(!['sales','manager','accountant','admin','super_admin'].includes(state.profile?.role||''))throw new Error('Sales Report access required');
     document.getElementById('pageTitle').textContent='Report';
-    document.getElementById('pageSubtitle').textContent='Sales by period, RK/TK/PJ category, Sales Rep, brand and product line';
+    document.getElementById('pageSubtitle').textContent='Sales by period, RK/TK business, Project category, Sales Rep, brand and product line';
     document.getElementById('content').innerHTML='<div id="salesReportRoot"><div class="py-20 text-center text-gray-400">Loading sales report...</div></div>';
 
     const [summaryRes,itemRes]=await Promise.all([
-      db.rpc('get_sales_report_rows_v4'),
-      db.rpc('get_sales_report_item_rows_v4')
+      db.rpc('get_sales_report_rows_v5'),
+      db.rpc('get_sales_report_item_rows_v5')
     ]);
     if(summaryRes.error)throw summaryRes.error;
     if(itemRes.error)throw itemRes.error;
@@ -419,7 +431,13 @@
     renderSalesReportBody();
   };
   window.setSalesReportBusiness=function(v){
-    reportState.business=['RKTK','RK','TK','PJ','OTHER'].includes(v)?v:'all';
+    reportState.business=['RKTK','RK','TK','OTHER'].includes(v)?v:'all';
+    reportState.repMenuOpen=false;
+    reportState.periodMenuOpen=false;
+    renderSalesReportBody();
+  };
+  window.setSalesReportCategory=function(v){
+    reportState.category=['standard','project'].includes(v)?v:'all';
     reportState.repMenuOpen=false;
     reportState.periodMenuOpen=false;
     renderSalesReportBody();
