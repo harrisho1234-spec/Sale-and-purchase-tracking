@@ -10,7 +10,6 @@
   function round2(v){return Math.round((Number(v||0)+Number.EPSILON)*100)/100}
   function num(v,fallback=0){const n=Number(v);return Number.isFinite(n)?n:fallback}
   function clampPct(v){return Math.max(0,Math.min(100,num(v,0)))}
-  function normalizePhone(v){return String(v||'').replace(/\D/g,'')}
   function lower(v){return String(v||'').trim().toLowerCase()}
   function actualPrice(item){
     const a=Number(item?.actualSalesPrice);if(Number.isFinite(a))return a;
@@ -115,13 +114,6 @@
     });
   }
   async function loadOrderData(){if(typeof ensureOrderFormData==='function')await ensureOrderFormData()}
-  function findCustomer(summary){
-    const customers=state.customers||[];const phone=normalizePhone(summary.customerPhone);
-    if(phone){const exact=customers.filter(c=>normalizePhone(c.phone)===phone);if(exact.length===1)return exact[0]}
-    const name=lower(summary.customerName);
-    if(name){const exact=customers.filter(c=>lower(c.name)===name);if(exact.length===1)return exact[0]}
-    return null;
-  }
   async function importSavedRecord(recordId){
     const id=String(recordId||'').trim();if(!id)throw new Error('Missing showroom quotation ID.');
     const existing=await db.from(TABLE).select('*').eq('source_system',SOURCE_SYSTEM).eq('source_record_id',id).maybeSingle();
@@ -129,14 +121,15 @@
     if(existing.data)return existing.data;
     const record=await jsonpRecord(id);if(!record)throw new Error('The saved showroom quotation could not be found.');
     const sourceState=parseState(record);const summary=quoteSummary(record);
-    await loadOrderData();const customer=findCustomer(summary);
     const row={
       source_system:SOURCE_SYSTEM,source_record_id:id,source_name:String(record.name||'Saved quotation').trim(),
       source_saved_at:record.savedAt||null,source_document_type:String(sourceState.documentType||'quotation'),
       source_quote_no:summary.quoteNo||null,source_salesperson:summary.salesperson||null,source_payload:sourceState,
+      // limperial-showroom is public/shared. These customer fields are reference hints only.
+      // Never infer the official CRM customer or Sales Rep ownership from them.
       customer_name:summary.customerName||null,customer_phone:summary.customerPhone||null,
-      customer_address:summary.customerAddress||null,customer_id:customer?.id||null,
-      status:customer?'ready':'imported_draft',imported_by:state.user.id
+      customer_address:summary.customerAddress||null,customer_id:null,
+      status:'imported_draft',imported_by:state.user.id
     };
     const inserted=await db.from(TABLE).insert(row).select().single();
     if(inserted.error){
@@ -172,11 +165,11 @@
         '<div class="flex flex-wrap items-center gap-2">'+badge(row.status)+'<div class="font-bold text-base truncate">'+esc(sourceLabel)+'</div></div>'+
         '<div class="text-xs text-gray-500 mt-2">'+esc(s.customerName||'No customer name')+(s.customerPhone?' · '+esc(s.customerPhone):'')+'</div>'+
         '<div class="text-[10px] text-gray-400 mt-1">'+itemCount+' quoted item'+(itemCount===1?'':'s')+' · '+money(s.total,'USD')+' · Imported '+esc(fmtDate(row.imported_at))+'</div>'+
-        '<div class="text-[10px] mt-2 '+(customer?'text-green-700':'text-amber-700')+'">'+(customer?'Matched customer: <b>'+esc(customer.name)+'</b>':'No existing customer linked yet. Create/link the customer before conversion.')+'</div></div>'+
+        '<div class="text-[10px] mt-2 '+(customer?'text-green-700':'text-amber-700')+'">'+(customer?'Matched customer: <b>'+esc(customer.name)+'</b>':'No official CRM customer linked yet. The showroom details are reference only; select the customer manually before conversion.')+'</div></div>'+
         '<div class="flex gap-2 shrink-0"><button onclick="reviewImportedQuotation(\''+row.id+'\')" class="px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold">'+(row.status==='converted'?'View':'Review / Convert')+'</button></div></div></div>';
     }).join('');
     document.getElementById('content').innerHTML=
-      '<div class="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-5"><div><h3 class="font-bold text-lg">Imported Quotations</h3><p class="text-xs text-gray-500 mt-1">Saved quotations from limperial-showroom stay as drafts here until customer matching and the official TK/RK Sales Order are completed.</p></div><button onclick="refreshCurrentPage()" class="px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold">Refresh</button></div>'+
+      '<div class="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-5"><div><h3 class="font-bold text-lg">Imported Quotations</h3><p class="text-xs text-gray-500 mt-1">Public/shared quotations from limperial-showroom stay as drafts here until a logged-in user manually links the official CRM customer and completes the TK/RK Sales Order.</p></div><button onclick="refreshCurrentPage()" class="px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold">Refresh</button></div>'+
       '<div class="grid grid-cols-3 gap-2 mb-5"><div class="card rounded-xl p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Customer Needed</div><div class="text-xl font-bold mt-1">'+draft+'</div></div><div class="card rounded-xl p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Ready</div><div class="text-xl font-bold mt-1">'+ready+'</div></div><div class="card rounded-xl p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Converted</div><div class="text-xl font-bold mt-1">'+converted+'</div></div></div>'+
       '<div class="space-y-3">'+(html||'<div class="card rounded-2xl p-10 text-center text-sm text-gray-400">No showroom quotations imported yet.</div>')+'</div>';
   };
@@ -196,18 +189,20 @@
     }
     const lines=s.lines.map((l,i)=>'<div class="grid grid-cols-[1fr_70px_95px_95px] gap-2 items-center py-2 border-b last:border-b-0"><div class="min-w-0"><div class="text-xs font-semibold truncate">'+esc(l.code||l.name||('Line '+(i+1)))+'</div><div class="text-[10px] text-gray-500 truncate">'+esc(l.name||'')+(l.sourceSetName?' · Set: '+esc(l.sourceSetName):'')+'</div></div><div class="text-xs text-right">'+l.qty+'</div><div class="text-xs text-right">'+money(l.unitPrice,'USD')+'</div><div class="text-xs text-right">'+money(Math.max(l.qty*l.unitPrice-l.discountAmount,0),'USD')+'</div></div>').join('');
     openModal('Imported Quotation',
-      '<div class="space-y-5"><div class="rounded-xl border bg-gray-50 p-4"><div class="flex flex-wrap items-center gap-2">'+badge(row.status)+'<b>'+esc(row.source_quote_no||row.source_name||row.source_record_id)+'</b></div>'+
-      '<div class="text-xs text-gray-600 mt-2">'+esc(s.customerName||'No customer')+(s.customerPhone?' · '+esc(s.customerPhone):'')+'</div>'+
-      (s.customerAddress?'<div class="text-[10px] text-gray-400 mt-1">'+esc(s.customerAddress)+'</div>':'')+
-      (s.salesperson?'<div class="text-[10px] text-gray-400 mt-1">Showroom salesperson: '+esc(s.salesperson)+'</div>':'')+
+      '<div class="space-y-5"><div class="rounded-xl border bg-gray-50 p-4"><div class="flex flex-wrap items-center gap-2">'+badge(row.status)+'<span class="px-2 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold">PUBLIC / SHARED SHOWROOM</span><b>'+esc(row.source_quote_no||row.source_name||row.source_record_id)+'</b></div>'+
+      '<div class="mt-3 text-[10px] uppercase tracking-wide font-bold text-gray-400">Showroom information · reference only</div>'+
+      '<div class="text-xs text-gray-700 mt-1"><b>Entered customer:</b> '+esc(s.customerName||'Not entered')+(s.customerPhone?' · '+esc(s.customerPhone):'')+'</div>'+
+      (s.customerAddress?'<div class="text-[10px] text-gray-500 mt-1"><b>Entered address:</b> '+esc(s.customerAddress)+'</div>':'')+
+      (s.salesperson?'<div class="text-[10px] text-gray-500 mt-1"><b>Showroom salesperson text:</b> '+esc(s.salesperson)+' · reference only, does not assign ownership</div>':'')+
       (row.converted_sales_order_id?'<div class="mt-3 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-[10px] text-green-800">Converted to official Sales Order'+(convertedOrderNo?' <b>'+esc(convertedOrderNo)+'</b>':'')+'.'+(convertedOrderNo?' <button type="button" onclick="closeModal();openDashboardSalesOrder(\''+row.converted_sales_order_id+'\')" class="underline font-semibold ml-1">Open order</button>':'')+'</div>':'')+
       '<div class="text-[9px] text-gray-400 mt-2">Source ID: '+esc(row.source_record_id)+'</div></div>'+
       '<div><div class="flex items-center justify-between mb-2"><b class="text-sm">Quoted items</b><span class="text-xs font-bold">'+money(s.total,'USD')+'</span></div>'+
       '<div class="rounded-xl border overflow-hidden"><div class="grid grid-cols-[1fr_70px_95px_95px] gap-2 bg-gray-50 px-3 py-2 text-[9px] uppercase font-bold text-gray-400"><div>Item</div><div class="text-right">Qty</div><div class="text-right">Price</div><div class="text-right">Net</div></div><div class="px-3">'+(lines||'<div class="p-4 text-xs text-gray-400">No items in this quotation.</div>')+'</div></div>'+
       (s.orderDiscount>0?'<div class="text-[10px] text-right text-gray-500 mt-2">Quotation-level discount carried to Sales Order: '+money(s.orderDiscount,'USD')+'</div>':'')+'</div>'+
-      '<div class="rounded-xl border p-4"><label class="text-xs font-semibold">Existing Customer</label><select id="importQuoteCustomer" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">'+customerOptions(row.customer_id)+'</select>'+
-      '<div class="text-[10px] mt-2 '+(linked?'text-green-700':'text-amber-700')+'">'+(linked?'Linked to '+esc(linked.name)+'.':'Conversion is blocked until an existing customer is linked.')+'</div>'+
-      '<div class="flex flex-wrap gap-2 mt-3"><button '+(!canCreate?'disabled':'')+' onclick="saveImportedQuotationCustomer(\''+row.id+'\')" class="px-4 py-2.5 rounded-xl text-xs font-semibold '+(!canCreate?'bg-gray-200 text-gray-400 cursor-not-allowed':'bg-[#17324d] text-white')+'">'+(canCreate?'Save Customer Match':'View Only')+'</button><button onclick="closeModal();go(\'customers\')" class="px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold">Open Customers</button></div></div>'+
+      '<div class="rounded-xl border border-blue-100 bg-blue-50/30 p-4"><div class="text-[10px] uppercase tracking-wide font-bold text-blue-700">Official Customer · CRM</div><label class="text-xs font-semibold block mt-2">Select the official customer manually</label><select id="importQuoteCustomer" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">'+customerOptions(row.customer_id)+'</select>'+
+      '<div class="text-[10px] mt-2 '+(linked?'text-green-700':'text-amber-700')+'">'+(linked?'Official CRM customer: <b>'+esc(linked.name)+'</b>.':'No official customer linked. We do not auto-match public showroom names or phone numbers.')+'</div>'+
+      '<div class="text-[10px] text-gray-500 mt-1">If the customer does not exist yet, create/link the customer in the normal Customer workflow, then return here and select it.</div>'+
+      '<div class="flex flex-wrap gap-2 mt-3"><button '+(!canCreate?'disabled':'')+' onclick="saveImportedQuotationCustomer(\''+row.id+'\')" class="px-4 py-2.5 rounded-xl text-xs font-semibold '+(!canCreate?'bg-gray-200 text-gray-400 cursor-not-allowed':'bg-[#17324d] text-white')+'">'+(canCreate?'Link Official Customer':'View Only')+'</button><button onclick="closeModal();go(\'customers\')" class="px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold">Create / Find Customer</button></div></div>'+
       '<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>Official Sales Order rule:</b> conversion opens your normal Sales Order form. You must choose TK or RK and enter its official number; the existing duplicate, product, payment, DO, and role validations still run.</div>'+
       (!canCreate?'<div class="rounded-xl border bg-gray-50 p-3 text-xs text-gray-600">Your current role can review this quotation but cannot create Sales Orders.</div>':'')+
       '<button '+(!canCreate||!row.customer_id||row.status==='converted'?'disabled':'')+' onclick="convertImportedQuotation(\''+row.id+'\')" class="w-full rounded-xl py-3 font-semibold '+(!canCreate||!row.customer_id||row.status==='converted'?'bg-gray-200 text-gray-400 cursor-not-allowed':'bg-[#211d18] text-white')+'">'+(row.status==='converted'?'Already Converted':(!canCreate?'View Only':'Convert to Official Sales Order'))+'</button></div>'
@@ -216,10 +211,10 @@
   window.saveImportedQuotationCustomer=async function(id){
     if(typeof window.hasAppPermission==='function'&&!window.hasAppPermission('sales_orders.create'))return showToast('Your role cannot create Sales Orders.','err');
     const customerId=document.getElementById('importQuoteCustomer')?.value||null;
-    if(!customerId)return showToast('Select an existing customer first. If the customer does not exist, create/link it in Customers.','err');
+    if(!customerId)return showToast('Select the official CRM customer first. If the customer does not exist, create/link it in Customers and then return here.','err');
     const r=await db.from(TABLE).update({customer_id:customerId,status:'ready',updated_at:new Date().toISOString()}).eq('id',id).select().single();
     if(r.error)return showToast(r.error.message,'err');
-    showToast('Customer linked. This quotation is ready for conversion.');await reviewImportedQuotation(id);
+    showToast('Official CRM customer linked. This quotation is ready for conversion.');await reviewImportedQuotation(id);
   };
   function fillProductRow(row,line,product){
     row.querySelector('.product-id').value=product?.id||'';
@@ -329,7 +324,7 @@
       const row=await importSavedRecord(recordId);
       history.replaceState(null,'',location.pathname+location.search);
       await go('quotation-imports');
-      showToast(row.status==='ready'?'Quotation imported and customer matched.':'Quotation imported. Link the customer before conversion.');
+      showToast(row.status==='converted'?'Quotation already converted.':(row.status==='ready'?'Quotation opened with its previously linked official customer.':'Public showroom quotation imported. Select the official CRM customer before conversion.'));
       setTimeout(()=>{try{reviewImportedQuotation(row.id)}catch(_){}},150);
     }catch(err){
       console.error('Showroom quotation import failed:',err);
