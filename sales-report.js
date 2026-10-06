@@ -10,8 +10,7 @@
     selectedMonths:null,
     selectedQuarters:null,
     periodMenuOpen:false,
-    business:'all',
-    category:'all'
+    business:'all'
   };
 
   function n(v){const x=Number(v||0);return Number.isFinite(x)?x:0}
@@ -30,27 +29,21 @@
   function reportBusinessLabel(){
     if(reportState.business==='RK')return 'LP Home (RK)';
     if(reportState.business==='TK')return "L'Imperial Luxury (TK)";
+    if(reportState.business==='PJ')return 'Project (PJ)';
     if(reportState.business==='OTHER')return 'Pre-Order / Other';
     if(reportState.business==='RKTK')return 'RK + TK Combined';
-    return 'All Business';
-  }
-  function reportCategoryLabel(){
-    if(reportState.category==='project')return 'Project (PJ)';
-    if(reportState.category==='standard')return 'Standard';
-    return 'All Categories';
+    return 'All Business / Category';
   }
   function rowInReportScope(r,includeBusiness=true){
     const scopeId=reportScopeUserId();
     if(scopeId&&r.sales_rep_id!==scopeId)return false;
     if(canChooseReportReps()&&!repSelected(repKey(r)))return false;
-    if(includeBusiness&&reportState.business!=='all'){
+    if(reportState.business==='PJ'){
+      if(String(r.sales_category||'standard')!=='project')return false;
+    }else if(includeBusiness&&reportState.business!=='all'){
       const code=String(r.business_code||'OTHER');
       if(reportState.business==='RKTK'&&!['RK','TK'].includes(code))return false;
       if(reportState.business!=='RKTK'&&code!==reportState.business)return false;
-    }
-    if(reportState.category!=='all'){
-      const category=String(r.sales_category||'standard');
-      if(category!==reportState.category)return false;
     }
     if(reportState.view!=='year'&&reportState.year&&yearOf(r.order_date)!==Number(reportState.year))return false;
     if(reportState.view==='month'&&reportState.selectedMonths!==null){
@@ -304,17 +297,13 @@
               </button>
               ${periodFilterMenu()}
             </div>`:''}
-            <select id="salesReportBusiness" onchange="setSalesReportBusiness(this.value)" class="border rounded-xl bg-white px-3 py-2.5 text-sm min-w-[180px]">
-              <option value="all" ${reportState.business==='all'?'selected':''}>All Business</option>
+            <select id="salesReportBusiness" onchange="setSalesReportBusiness(this.value)" class="border rounded-xl bg-white px-3 py-2.5 text-sm min-w-[190px]">
+              <option value="all" ${reportState.business==='all'?'selected':''}>All TK / RK / PJ</option>
               <option value="RKTK" ${reportState.business==='RKTK'?'selected':''}>RK + TK Combined</option>
               <option value="RK" ${reportState.business==='RK'?'selected':''}>LP Home (RK)</option>
               <option value="TK" ${reportState.business==='TK'?'selected':''}>L'Imperial Luxury (TK)</option>
+              <option value="PJ" ${reportState.business==='PJ'?'selected':''}>Project (PJ)</option>
               <option value="OTHER" ${reportState.business==='OTHER'?'selected':''}>Pre-Order / Other</option>
-            </select>
-            <select id="salesReportCategory" onchange="setSalesReportCategory(this.value)" class="border rounded-xl bg-white px-3 py-2.5 text-sm min-w-[160px]">
-              <option value="all" ${reportState.category==='all'?'selected':''}>All Categories</option>
-              <option value="standard" ${reportState.category==='standard'?'selected':''}>Standard</option>
-              <option value="project" ${reportState.category==='project'?'selected':''}>Project (PJ)</option>
             </select>
             ${canChooseReportReps()?`<div class="relative">
               <button type="button" onclick="toggleSalesReportRepMenu()" class="min-w-[190px] flex items-center justify-between gap-3 border rounded-xl bg-white px-3 py-2.5 text-sm">
@@ -342,7 +331,7 @@
 
       <div class="grid xl:grid-cols-[1.2fr_.8fr] gap-4">
         <div class="card rounded-2xl p-4">
-          <div class="flex items-center justify-between gap-3 mb-4"><div><h4 class="font-bold">Sales by ${reportState.view==='month'?'Month':reportState.view==='quarter'?'Quarter':'Year'}</h4><div class="text-[10px] text-gray-400 mt-1">${reportState.view==='year'?'All available years':esc(String(reportState.year||''))+(periodSelectionLabel()?' · '+esc(periodSelectionLabel()):'')} · ${esc(reportBusinessLabel())} · ${esc(reportCategoryLabel())}</div></div><div class="text-xs text-gray-400">${esc(selectedRepLabel())}</div></div>
+          <div class="flex items-center justify-between gap-3 mb-4"><div><h4 class="font-bold">Sales by ${reportState.view==='month'?'Month':reportState.view==='quarter'?'Quarter':'Year'}</h4><div class="text-[10px] text-gray-400 mt-1">${reportState.view==='year'?'All available years':esc(String(reportState.year||''))+(periodSelectionLabel()?' · '+esc(periodSelectionLabel()):'')} · ${esc(reportBusinessLabel())}</div></div><div class="text-xs text-gray-400">${esc(selectedRepLabel())}</div></div>
           <div class="space-y-3">
             ${buckets.length?buckets.map(b=>{
               const width=max>0?Math.max((b.actual/max)*100,b.actual>0?2:0):0;
@@ -431,13 +420,7 @@
     renderSalesReportBody();
   };
   window.setSalesReportBusiness=function(v){
-    reportState.business=['RKTK','RK','TK','OTHER'].includes(v)?v:'all';
-    reportState.repMenuOpen=false;
-    reportState.periodMenuOpen=false;
-    renderSalesReportBody();
-  };
-  window.setSalesReportCategory=function(v){
-    reportState.category=['standard','project'].includes(v)?v:'all';
+    reportState.business=['RKTK','RK','TK','PJ','OTHER'].includes(v)?v:'all';
     reportState.repMenuOpen=false;
     reportState.periodMenuOpen=false;
     renderSalesReportBody();
