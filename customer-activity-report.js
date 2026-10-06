@@ -48,13 +48,17 @@
     return name?'n:'+name+'|'+String(r.business_code||''):'r:'+r.id;
   }
   function activityScopeUserId(){
+    // Showroom and Online reports are shared operational reports for every
+    // non-accountant role. Only explicit manager "act as rep" modes scope them
+    // to one salesperson.
     if(typeof managerRepActive==='function'&&managerRepActive())return managerRepId();
     if(typeof managerTestActive==='function'&&managerTestActive())return state.managerRepContext?.user_id||null;
-    if(['sales','manager'].includes(role()))return state.user?.id||null;
     return null;
   }
   function canChooseActivityReps(){
-    return !activityScopeUserId()&&['admin','super_admin'].includes(role());
+    // Manager/Admin/Super Admin may drill into individual reps. Sales sees the
+    // shared totals without being forced into a self-only filter.
+    return !activityScopeUserId()&&['manager','admin','super_admin'].includes(role());
   }
   function unifiedTabs(active){
     const tabs=[
