@@ -43,7 +43,7 @@
       const [rr,er,mr]=await Promise.all([
         db.rpc('get_visible_sales_procurement_refs'),
         db.from('sales_document_events').select('*').order('created_at',{ascending:true}),
-        db.from('sales_orders').select('id,order_no,invoice_no,sales_flow_type,sr_no,sales_invoice_no,sales_invoice_type,invoice_request_status,invoice_requested_at,invoice_issued_at')
+        db.from('sales_orders').select('id,order_no,invoice_no,sales_flow_type,sr_no,sales_invoice_no,sales_invoice_type,sales_category,invoice_request_status,invoice_requested_at,invoice_issued_at')
       ]);
       if(rr.error)console.warn('PO reference load:',rr.error.message);
       if(er.error)console.warn('Document event load:',er.error.message);
@@ -310,8 +310,26 @@
   };
 
   window.openIssueFinalInvoice=function(orderId){
-    openModal('Issue Final TK / RK',`<form id="issueInvoiceForm" class="grid md:grid-cols-2 gap-4"><div><label class="text-xs font-semibold">Invoice Type</label><select id="finalInvoiceType" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"><option value="TK">TK</option><option value="RK">RK</option></select></div><div><label class="text-xs font-semibold">Invoice Number</label><input id="finalInvoiceNo" required class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Example: TK2610-010 or RK2610-010"></div><div class="md:col-span-2"><label class="text-xs font-semibold">Accounting Note</label><textarea id="finalInvoiceNote" class="mt-1 w-full border rounded-xl px-3 py-2"></textarea></div><button class="md:col-span-2 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Issue Invoice</button></form>`);
-    document.getElementById('issueInvoiceForm').onsubmit=async e=>{e.preventDefault();const type=document.getElementById('finalInvoiceType').value,no=document.getElementById('finalInvoiceNo').value.trim(),note=document.getElementById('finalInvoiceNote').value.trim()||null;const {error}=await db.rpc('issue_sales_invoice',{p_order_id:orderId,p_invoice_type:type,p_invoice_no:no,p_note:note});if(error)return showToast(error.message,'err');closeModal();showToast(`${type} invoice issued`);df.loaded=false;await go('sales-orders')};
+    const meta=df.orderMeta.get(orderId)||{};
+    const category=meta.sales_category==='project'?'project':'standard';
+    openModal('Issue Final TK / RK',`<form id="issueInvoiceForm" class="grid md:grid-cols-2 gap-4">
+      <div><label class="text-xs font-semibold">Invoice Type</label><select id="finalInvoiceType" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"><option value="TK">TK</option><option value="RK">RK</option></select></div>
+      <div><label class="text-xs font-semibold">Category</label><select id="finalSalesCategory" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white"><option value="standard" ${category==='standard'?'selected':''}>Standard</option><option value="project" ${category==='project'?'selected':''}>Project (PJ)</option></select><div class="text-[9px] text-gray-400 mt-1">Project is a category only. The invoice number remains TK or RK.</div></div>
+      <div><label class="text-xs font-semibold">Invoice Number</label><input id="finalInvoiceNo" required class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Example: TK2610-010 or RK2610-010"></div>
+      <div><label class="text-xs font-semibold">Accounting Note</label><textarea id="finalInvoiceNote" class="mt-1 w-full border rounded-xl px-3 py-2"></textarea></div>
+      <button class="md:col-span-2 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Issue Invoice</button>
+    </form>`);
+    document.getElementById('issueInvoiceForm').onsubmit=async e=>{
+      e.preventDefault();
+      const type=document.getElementById('finalInvoiceType').value;
+      const category=document.getElementById('finalSalesCategory').value||'standard';
+      const no=document.getElementById('finalInvoiceNo').value.trim();
+      const note=document.getElementById('finalInvoiceNote').value.trim()||null;
+      const {error}=await db.rpc('issue_sales_invoice_v2',{p_order_id:orderId,p_invoice_type:type,p_invoice_no:no,p_sales_category:category,p_note:note});
+      if(error)return showToast(error.message,'err');
+      closeModal();showToast(`${type} invoice issued${category==='project'?' · Project (PJ)':''}`);
+      df.loaded=false;await go('sales-orders');
+    };
   };
 
   function normLinkCode(v){
