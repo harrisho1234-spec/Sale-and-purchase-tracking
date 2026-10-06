@@ -486,6 +486,7 @@
     const {data:insertedItems,error:itemErr}=await db.from('sales_order_items').insert(items).select('id,line_position');
     if(itemErr){await db.from('sales_orders').delete().eq('id',so.id);return showToast(itemErr.message,'err');}
 
+    let generatedDoNo='';
     if(doSelections.length){
       const idByPosition=new Map((insertedItems||[]).map(x=>[Number(x.line_position),x.id]));
       const requestItems=doSelections.map(x=>({sales_order_item_id:idByPosition.get(Number(x.line_position)),qty:x.qty}));
@@ -504,6 +505,11 @@
         await db.from('sales_orders').delete().eq('id',so.id);
         return showToast(doReq.error.message,'err');
       }
+      // The database allocates the official monthly DO number on request creation.
+      try{
+        const lookup=await db.rpc('get_delivery_order_number',{p_delivery_request_id:doReq.data});
+        if(!lookup.error)generatedDoNo=String(lookup.data||'');
+      }catch(_){}
     }
 
     if(calc.depositAmount>0){
@@ -532,7 +538,7 @@
     showToast((flow==='pre_order'?`Pre-order ${docNo} created`:`${invoiceType} invoice ${docNo} created`)
       +(customerReviewPending?' · Customer review pending':'')
       +(state.profile?.role==='sales'&&calc.depositAmount>0?' · Deposit pending approval':'')
-      +(doSelections.length?' · DO requested for '+doSelections.length+' item'+(doSelections.length===1?'':'s'):''));
+      +(doSelections.length?' · '+(generatedDoNo?'DO '+generatedDoNo+' generated':'DO created')+' for '+doSelections.length+' item'+(doSelections.length===1?'':'s'):''));
     await go('sales-orders');
   };
 
