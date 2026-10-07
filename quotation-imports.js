@@ -180,7 +180,7 @@
   };
   async function getRegistryRows(){
     const r=await db.from(REGISTRY_TABLE)
-      .select('id,quote_no,source_record_id,source_name,issue_date,saved_at,customer_name,customer_phone,salesperson,amount,confirmed_at')
+      .select('id,quote_no,quote_month,sequence_no,source_record_id,source_name,issue_date,saved_at,customer_name,customer_phone,salesperson,amount,confirmed_at')
       .order('issue_date',{ascending:false})
       .order('sequence_no',{ascending:false});
     if(r.error)throw r.error;
@@ -341,14 +341,14 @@
       }
       const name=record.source_quote_no||record.source_name||'this quotation';
       const message=record.status==='converted'
-        ? 'Delete imported quotation "'+name+'"?\n\nThis removes the imported record and its link to the official Sales Order. The official Sales Order itself is NOT deleted.'
-        : 'Delete imported quotation "'+name+'"?\n\nThis removes it from Imported Quotes. The saved quotation in the public showroom is NOT deleted.';
+        ? 'Delete imported quotation "'+name+'"?\n\nThis removes the imported conversion record and its link to the official Sales Order. The official Sales Order and permanent Quotation History record are NOT deleted.'
+        : 'Delete imported quotation "'+name+'"?\n\nThis removes it from the Imported Queue. The permanent Quotation History and showroom saved quotation are NOT deleted.';
       if(!window.confirm(message))return;
       const removed=await db.from(TABLE).delete().eq('id',id).select('id');
       if(removed.error)throw removed.error;
       if(!removed.data?.length)throw new Error('Delete was not permitted, or this imported quotation no longer exists.');
       closeModal();
-      showToast('Imported quotation deleted. The showroom quotation and official Sales Orders remain unchanged.');
+      showToast('Imported queue record deleted. Permanent Quotation History, showroom quotation, and official Sales Orders remain unchanged.');
       if(state.page==='quotation-imports')await renderImportedQuotations();
     }catch(err){
       console.error('Imported quotation deletion failed:',err);
