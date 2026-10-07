@@ -192,7 +192,7 @@
   };
   async function getRegistryRows(){
     const r=await db.from(REGISTRY_TABLE)
-      .select('id,quote_no,quote_month,sequence_no,source_record_id,source_name,issue_date,saved_at,customer_name,customer_phone,salesperson,amount,confirmed_at')
+      .select('id,quote_no,quote_prefix,quote_month,sequence_no,source_record_id,source_name,issue_date,saved_at,customer_name,customer_phone,salesperson,amount,confirmed_at,source_payload')
       .order('issue_date',{ascending:false})
       .order('sequence_no',{ascending:false});
     if(r.error)throw r.error;
