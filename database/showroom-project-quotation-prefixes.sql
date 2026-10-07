@@ -219,15 +219,27 @@ language sql
 stable
 security definer
 set search_path=''
-as $$
-  select distinct btrim(u.display_name), u.role
-  from public.app_users u
-  where u.active is true
-    and u.role in ('sales','manager','admin','super_admin')
-    and u.display_name is not null
-    and btrim(u.display_name)<>''
-  order by 1;
-$$;
+as $
+  select x.display_name, 'sales'::text as role
+  from (
+    values
+      (1, 'Ouk Nary'),
+      (2, 'Hout Pichbopha'),
+      (3, 'Keom Nalis'),
+      (4, 'Pay Pheara'),
+      (5, 'Rithy Sotheary')
+  ) as x(sort_order, display_name)
+  where exists (
+    select 1
+    from public.app_users u
+    where u.active is true
+      and (
+        btrim(u.display_name)=x.display_name
+        or (x.display_name='Keom Nalis' and btrim(u.display_name)='Koem Nalis')
+      )
+  )
+  order by x.sort_order;
+$;
 
 revoke execute on function public.list_showroom_salespeople() from public;
 grant execute on function public.list_showroom_salespeople() to anon,authenticated;
