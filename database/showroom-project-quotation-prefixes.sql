@@ -225,7 +225,7 @@ as $
     values
       (1, 'Ouk Nary'),
       (2, 'Hout Pichbopha'),
-      (3, 'Keom Nalis'),
+      (3, 'Koem Nalis'),
       (4, 'Pay Pheara'),
       (5, 'Rithy Sotheary')
   ) as x(sort_order, display_name)
@@ -235,7 +235,6 @@ as $
     where u.active is true
       and (
         btrim(u.display_name)=x.display_name
-        or (x.display_name='Keom Nalis' and btrim(u.display_name)='Koem Nalis')
       )
   )
   order by x.sort_order;
