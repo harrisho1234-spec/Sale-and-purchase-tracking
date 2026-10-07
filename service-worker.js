@@ -1,4 +1,4 @@
-const PWA_VERSION = '20261007-quotation-history-2';
+const PWA_VERSION = '20261007-quotation-history-3';
 const APP_ROOT = '/Sale-and-purchase-tracking/';
 const ATTENTION_TAG = 'limperial-action-items';
 
