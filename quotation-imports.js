@@ -431,7 +431,26 @@
     }
   };
   async function renderQuotationHistoryPage(){
-    const [historyRows,imports]=await Promise.all([getRegistryRows(),getRows()]);
+    let [historyRows,imports]=await Promise.all([getRegistryRows(),getRows()]);
+
+    // One lightweight V4 list sync keeps Quotation History current and also
+    // recovers revisions that were saved before revision-history storage existed.
+    try{
+      if(await syncRegistryRevisionsFromV4(historyRows))historyRows=await getRegistryRows();
+    }catch(err){
+      console.warn('Quotation history V4 sync skipped:',err?.message||err);
+    }
+
+    let revisionMeta=[];
+    if(historyRows.length){
+      const rr=await db.from(REVISION_TABLE)
+        .select('quotation_id,revision_no')
+        .in('quotation_id',historyRows.map(x=>x.id));
+      if(!rr.error)revisionMeta=rr.data||[];
+    }
+    const revisionCountByQuote=new Map();
+    revisionMeta.forEach(x=>revisionCountByQuote.set(String(x.quotation_id),(revisionCountByQuote.get(String(x.quotation_id))||0)+1));
+
     const importBySource=new Map(imports.map(row=>[String(row.source_record_id||''),row]));
     const converted=historyRows.filter(row=>importBySource.get(String(row.source_record_id||''))?.status==='converted').length;
     const imported=historyRows.filter(row=>importBySource.has(String(row.source_record_id||''))).length;
@@ -440,7 +459,7 @@
     const html=historyRows.map(row=>{
       const importRow=importBySource.get(String(row.source_record_id||''))||null;
       return '<div class="card rounded-2xl p-4 border border-[#ece6dc]"><div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">'+
-        '<div class="min-w-0"><div class="flex flex-wrap items-center gap-2">'+historyStatus(importRow)+'<span class="px-2 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold">'+quotationKind(row.quote_no).toUpperCase()+'</span><div class="font-bold text-base">'+esc(quotationDisplay(row.quote_no,row.source_payload))+'</div></div>'+
+        '<div class="min-w-0"><div class="flex flex-wrap items-center gap-2">'+historyStatus(importRow)+'<span class="px-2 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold">'+quotationKind(row.quote_no).toUpperCase()+'</span><div class="font-bold text-base">'+esc(quotationDisplay(row.quote_no,row.source_payload))+'</div><span class="px-2 py-1 rounded-full bg-gray-50 border text-[9px] font-bold text-gray-500">'+(revisionCountByQuote.get(String(row.id))||1)+' version'+((revisionCountByQuote.get(String(row.id))||1)===1?'':'s')+'</span></div>'+
         '<div class="text-xs text-gray-600 mt-2">'+esc(row.customer_name||'No customer name')+(row.customer_phone?' · '+esc(row.customer_phone):'')+'</div>'+
         '<div class="text-[10px] text-gray-400 mt-1">Issue '+esc(row.issue_date||'')+(row.salesperson?' · '+esc(row.salesperson):'')+' · '+money(row.amount||0,'USD')+'</div>'+
         '<div class="text-[10px] text-gray-400 mt-1">'+esc(row.source_name||'Saved quotation')+'</div></div>'+
@@ -450,7 +469,7 @@
         '</div></div></div>';
     }).join('');
     document.getElementById('content').innerHTML=
-      '<div class="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-3"><div><h3 class="font-bold text-lg">Quotation History</h3><p class="text-xs text-gray-500 mt-1">Permanent V4 quotation register. S numbers are Showroom quotations; P numbers are Project quotations.</p></div><button onclick="refreshCurrentPage()" class="px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold">Refresh</button></div>'+
+      '<div class="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-3"><div><h3 class="font-bold text-lg">Quotation History</h3><p class="text-xs text-gray-500 mt-1">Permanent V4 quotation register with preserved Original / Rev 1 / Rev 2 snapshots. S numbers are Showroom quotations; P numbers are Project quotations.</p></div><button onclick="refreshCurrentPage()" class="px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold">Refresh</button></div>'+
       quotationTabs()+
       '<div class="grid grid-cols-3 gap-2 mb-5"><div class="card rounded-xl p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Total Quotations</div><div class="text-xl font-bold mt-1">'+historyRows.length+'</div></div><div class="card rounded-xl p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Imported</div><div class="text-xl font-bold mt-1">'+imported+'</div></div><div class="card rounded-xl p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Converted</div><div class="text-xl font-bold mt-1">'+converted+'</div></div></div>'+
       '<div class="space-y-3">'+(html||'<div class="card rounded-2xl p-10 text-center text-sm text-gray-400">No permanent showroom quotations yet.</div>')+'</div>';
