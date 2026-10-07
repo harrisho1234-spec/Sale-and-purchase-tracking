@@ -326,23 +326,80 @@
       setTimeout(()=>reviewImportedQuotation(row.id),100);
     }catch(err){showToast(err.message||'Could not import quotation.','err')}
   };
-  window.reviewQuotationHistory=async function(id){
-    const r=await db.from(REGISTRY_TABLE).select('*').eq('id',id).single();
+  function quotationSnapshotLines(summary){
+    return summary.lines.map((l,i)=>'<div class="grid grid-cols-[1fr_70px_95px_95px] gap-2 items-center py-2 border-b last:border-b-0"><div class="min-w-0"><div class="text-xs font-semibold truncate">'+esc(l.code||l.name||('Line '+(i+1)))+'</div><div class="text-[10px] text-gray-500 truncate">'+esc(l.name||'')+'</div></div><div class="text-xs text-right">'+l.qty+'</div><div class="text-xs text-right">'+money(l.unitPrice,'USD')+'</div><div class="text-xs text-right">'+money(Math.max(l.qty*l.unitPrice-l.discountAmount,0),'USD')+'</div></div>').join('');
+  }
+
+  function revisionTimelineButtons(quotationId,revisions,currentRevision){
+    if(!revisions.length)return '<div class="text-xs text-gray-400">No revision snapshots recorded yet.</div>';
+    return '<div class="flex flex-wrap gap-2">'+revisions.slice().sort((a,b)=>a.revision_no-b.revision_no).map(r=>{
+      const active=Number(r.revision_no)===Number(currentRevision);
+      return '<button type="button" onclick="reviewQuotationRevision(\''+quotationId+'\','+Number(r.revision_no)+')" class="px-3 py-2 rounded-lg border text-xs font-semibold '+(active?'bg-[#211d18] text-white border-[#211d18]':'bg-white text-gray-700')+'">'+revisionLabel(r.revision_no)+'</button>';
+    }).join('')+'</div>';
+  }
+
+  window.reviewQuotationRevision=async function(quotationId,revisionNo){
+    const [q,r]=await Promise.all([
+      db.from(REGISTRY_TABLE).select('*').eq('id',quotationId).single(),
+      db.from(REVISION_TABLE).select('*').eq('quotation_id',quotationId).eq('revision_no',revisionNo).single()
+    ]);
+    if(q.error)return showToast(q.error.message,'err');
     if(r.error)return showToast(r.error.message,'err');
-    const row=r.data,s=quoteSummary(row);
-    const imported=await db.from(TABLE).select('id,status,converted_sales_order_id').eq('source_record_id',row.source_record_id).maybeSingle();
+    const row=q.data,rev=r.data,s=quoteSummary({source_payload:rev.source_payload,customer_name:rev.customer_name,customer_phone:rev.customer_phone});
+    const lines=quotationSnapshotLines(s);
+    openModal('Quotation Revision',
+      '<div class="space-y-4">'+
+      '<div class="rounded-xl border bg-gray-50 p-4"><div class="flex flex-wrap gap-2 items-center"><span class="px-2 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold">'+quotationKind(row.quote_no).toUpperCase()+'</span><b class="text-base">'+esc(row.quote_no+' · '+revisionLabel(rev.revision_no))+'</b></div>'+
+      '<div class="mt-2 text-xs text-gray-700"><b>Customer:</b> '+esc(rev.customer_name||s.customerName||'Not entered')+(rev.customer_phone?' · '+esc(rev.customer_phone):'')+'</div>'+
+      '<div class="mt-1 text-[10px] text-gray-500"><b>Salesperson:</b> '+esc(rev.salesperson||s.salesperson||'Not entered')+' · <b>Saved:</b> '+esc(fmtDate(rev.saved_at))+'</div>'+
+      '<div class="mt-1 text-[10px] text-gray-400">This is a preserved snapshot and cannot be edited.</div></div>'+
+      '<div><div class="flex items-center justify-between mb-2"><b class="text-sm">'+esc(revisionLabel(rev.revision_no))+' snapshot</b><span class="text-xs font-bold">'+money(rev.amount??s.total,'USD')+'</span></div>'+
+      '<div class="rounded-xl border overflow-hidden"><div class="grid grid-cols-[1fr_70px_95px_95px] gap-2 bg-gray-50 px-3 py-2 text-[9px] uppercase font-bold text-gray-400"><div>Item</div><div class="text-right">Qty</div><div class="text-right">Price</div><div class="text-right">Net</div></div><div class="px-3">'+(lines||'<div class="p-4 text-xs text-gray-400">No item snapshot available.</div>')+'</div></div></div>'+
+      '<button type="button" onclick="reviewQuotationHistory(\''+quotationId+'\')" class="px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold">Back to Current Quotation</button>'+
+      '</div>'
+    );
+  };
+
+  window.reviewQuotationHistory=async function(id){
+    let r=await db.from(REGISTRY_TABLE).select('*').eq('id',id).single();
+    if(r.error)return showToast(r.error.message,'err');
+    let row=r.data;
+
+    // Recover a revision that was saved in V4 before revision-history storage was enabled.
+    // This is also a lightweight safety sync for the currently opened quotation.
+    try{
+      const latest=await jsonpRecord(row.source_record_id);
+      if(latest&&await confirmRegistryRevision(row,latest)){
+        r=await db.from(REGISTRY_TABLE).select('*').eq('id',id).single();
+        if(!r.error)row=r.data;
+      }
+    }catch(err){
+      console.warn('Could not refresh quotation revision from V4:',err?.message||err);
+    }
+
+    const [revisionsResult,imported]=await Promise.all([
+      db.from(REVISION_TABLE).select('*').eq('quotation_id',id).order('revision_no',{ascending:false}),
+      db.from(TABLE).select('id,status,converted_sales_order_id').eq('source_record_id',row.source_record_id).maybeSingle()
+    ]);
+    if(revisionsResult.error)return showToast(revisionsResult.error.message,'err');
+    const revisions=revisionsResult.data||[];
     const importRow=imported.data||null;
-    const lines=s.lines.map((l,i)=>'<div class="grid grid-cols-[1fr_70px_95px_95px] gap-2 items-center py-2 border-b last:border-b-0"><div class="min-w-0"><div class="text-xs font-semibold truncate">'+esc(l.code||l.name||('Line '+(i+1)))+'</div><div class="text-[10px] text-gray-500 truncate">'+esc(l.name||'')+'</div></div><div class="text-xs text-right">'+l.qty+'</div><div class="text-xs text-right">'+money(l.unitPrice,'USD')+'</div><div class="text-xs text-right">'+money(Math.max(l.qty*l.unitPrice-l.discountAmount,0),'USD')+'</div></div>').join('');
+    const summary=quoteSummary(row);
+    const lines=quotationSnapshotLines(summary);
+    const currentRevision=Math.max(0,Number(row.current_revision)||quotationRevision(row.source_payload));
+    const versionCount=revisions.length||1;
+
     openModal('Quotation History',
       '<div class="space-y-4">'+
-      '<div class="rounded-xl border bg-gray-50 p-4"><div class="flex flex-wrap gap-2 items-center">'+historyStatus(importRow)+'<span class="px-2 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold">'+quotationKind(row.quote_no).toUpperCase()+'</span><b class="text-base">'+esc(quotationDisplay(row.quote_no,row.source_payload))+'</b></div>'+
-      '<div class="mt-2 text-xs text-gray-700"><b>Customer:</b> '+esc(row.customer_name||s.customerName||'Not entered')+(row.customer_phone?' · '+esc(row.customer_phone):'')+'</div>'+
-      '<div class="mt-1 text-[10px] text-gray-500"><b>Salesperson:</b> '+esc(row.salesperson||s.salesperson||'Not entered')+' · <b>Issue date:</b> '+esc(row.issue_date||'')+'</div>'+
+      '<div class="rounded-xl border bg-gray-50 p-4"><div class="flex flex-wrap gap-2 items-center">'+historyStatus(importRow)+'<span class="px-2 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold">'+quotationKind(row.quote_no).toUpperCase()+'</span><b class="text-base">'+esc(quotationDisplay(row.quote_no,row.source_payload))+'</b><span class="px-2 py-1 rounded-full bg-white border text-[10px] font-bold text-gray-600">'+versionCount+' version'+(versionCount===1?'':'s')+'</span></div>'+
+      '<div class="mt-2 text-xs text-gray-700"><b>Customer:</b> '+esc(row.customer_name||summary.customerName||'Not entered')+(row.customer_phone?' · '+esc(row.customer_phone):'')+'</div>'+
+      '<div class="mt-1 text-[10px] text-gray-500"><b>Salesperson:</b> '+esc(row.salesperson||summary.salesperson||'Not entered')+' · <b>Issue date:</b> '+esc(row.issue_date||'')+'</div>'+
       '<div class="mt-1 text-[10px] text-gray-400">Source ID: '+esc(row.source_record_id)+'</div></div>'+
-      '<div><div class="flex items-center justify-between mb-2"><b class="text-sm">Original quotation snapshot</b><span class="text-xs font-bold">'+money(row.amount??s.total,'USD')+'</span></div>'+
+      '<div class="rounded-xl border p-3"><div class="text-[10px] uppercase tracking-wide font-bold text-gray-400 mb-2">Revision History</div>'+revisionTimelineButtons(row.id,revisions,currentRevision)+'</div>'+
+      '<div><div class="flex items-center justify-between mb-2"><b class="text-sm">Current quotation snapshot · '+esc(revisionLabel(currentRevision))+'</b><span class="text-xs font-bold">'+money(row.amount??summary.total,'USD')+'</span></div>'+
       '<div class="rounded-xl border overflow-hidden"><div class="grid grid-cols-[1fr_70px_95px_95px] gap-2 bg-gray-50 px-3 py-2 text-[9px] uppercase font-bold text-gray-400"><div>Item</div><div class="text-right">Qty</div><div class="text-right">Price</div><div class="text-right">Net</div></div><div class="px-3">'+(lines||'<div class="p-4 text-xs text-gray-400">No item snapshot available.</div>')+'</div></div></div>'+
       '<div class="flex flex-wrap gap-2">'+
-      (importRow?'<button type="button" onclick="closeModal();reviewImportedQuotation(\''+importRow.id+'\')" class="px-4 py-2.5 rounded-xl bg-[#211d18] text-white text-xs font-semibold">Open Imported Record</button>':'<button type="button" onclick="closeModal();importQuotationFromHistory(\''+esc(row.source_record_id)+'\')" class="px-4 py-2.5 rounded-xl bg-[#211d18] text-white text-xs font-semibold">Import to Sales Queue</button>')+
+      (importRow?'<button type="button" onclick="closeModal();reviewImportedQuotation(\''+importRow.id+'\')" class="px-4 py-2.5 rounded-xl bg-[#211d18] text-white text-xs font-semibold">Open Imported Record</button>':'<button type="button" onclick="closeModal();importQuotationFromHistory(\''+esc(row.source_record_id)+'\')" class="px-4 py-2.5 rounded-xl bg-[#211d18] text-white text-xs font-semibold">Import Latest to Sales Queue</button>')+
       (canDeleteImportedQuotation()?'<button type="button" onclick="closeModal();deleteQuotationHistory(\''+row.id+'\',\''+esc(row.source_record_id)+'\',\''+esc(row.quote_no)+'\')" class="px-4 py-2.5 rounded-xl border border-red-200 bg-white text-red-700 text-xs font-semibold">Delete Quotation</button>':'')+
       '</div></div>'
     );
