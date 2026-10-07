@@ -135,6 +135,10 @@
     }
   }
 
+  // Shared with Edit Product so existing product photos can be replaced
+  // using the same authenticated Google Drive upload workflow as Add Product.
+  window.uploadProductDrivePhoto=uploadProductPhoto;
+
   function recalc(){
     const cost=Number(document.getElementById('paCost')?.value||0);
     const shipping=Number(document.getElementById('paShipping')?.value||0);
