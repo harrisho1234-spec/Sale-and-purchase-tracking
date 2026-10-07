@@ -18,6 +18,18 @@
   function num(v,fallback=0){const n=Number(v);return Number.isFinite(n)?n:fallback}
   function clampPct(v){return Math.max(0,Math.min(100,num(v,0)))}
   function lower(v){return String(v||'').trim().toLowerCase()}
+  function quotationKind(no){
+    return String(no||'').trim().toUpperCase().startsWith('P-')?'Project':'Showroom';
+  }
+  function quotationRevision(sourceState){
+    const n=Number(sourceState?.quotationRevision||0);
+    return Number.isFinite(n)&&n>0?Math.floor(n):0;
+  }
+  function quotationDisplay(no,sourceState){
+    const base=String(no||'').trim();
+    const rev=quotationRevision(sourceState);
+    return base&&rev>0?base+' · Rev '+rev:base;
+  }
   function actualPrice(item){
     const a=Number(item?.actualSalesPrice);if(Number.isFinite(a))return a;
     const b=Number(item?.price);if(Number.isFinite(b))return b;
@@ -232,7 +244,7 @@
     const lines=s.lines.map((l,i)=>'<div class="grid grid-cols-[1fr_70px_95px_95px] gap-2 items-center py-2 border-b last:border-b-0"><div class="min-w-0"><div class="text-xs font-semibold truncate">'+esc(l.code||l.name||('Line '+(i+1)))+'</div><div class="text-[10px] text-gray-500 truncate">'+esc(l.name||'')+'</div></div><div class="text-xs text-right">'+l.qty+'</div><div class="text-xs text-right">'+money(l.unitPrice,'USD')+'</div><div class="text-xs text-right">'+money(Math.max(l.qty*l.unitPrice-l.discountAmount,0),'USD')+'</div></div>').join('');
     openModal('Quotation History',
       '<div class="space-y-4">'+
-      '<div class="rounded-xl border bg-gray-50 p-4"><div class="flex flex-wrap gap-2 items-center">'+historyStatus(importRow)+'<b class="text-base">'+esc(row.quote_no)+'</b></div>'+
+      '<div class="rounded-xl border bg-gray-50 p-4"><div class="flex flex-wrap gap-2 items-center">'+historyStatus(importRow)+'<span class="px-2 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold">'+quotationKind(row.quote_no).toUpperCase()+'</span><b class="text-base">'+esc(quotationDisplay(row.quote_no,row.source_payload))+'</b></div>'+
       '<div class="mt-2 text-xs text-gray-700"><b>Customer:</b> '+esc(row.customer_name||s.customerName||'Not entered')+(row.customer_phone?' · '+esc(row.customer_phone):'')+'</div>'+
       '<div class="mt-1 text-[10px] text-gray-500"><b>Salesperson:</b> '+esc(row.salesperson||s.salesperson||'Not entered')+' · <b>Issue date:</b> '+esc(row.issue_date||'')+'</div>'+
       '<div class="mt-1 text-[10px] text-gray-400">Source ID: '+esc(row.source_record_id)+'</div></div>'+
@@ -280,7 +292,7 @@
     const html=historyRows.map(row=>{
       const importRow=importBySource.get(String(row.source_record_id||''))||null;
       return '<div class="card rounded-2xl p-4 border border-[#ece6dc]"><div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">'+
-        '<div class="min-w-0"><div class="flex flex-wrap items-center gap-2">'+historyStatus(importRow)+'<div class="font-bold text-base">'+esc(row.quote_no)+'</div></div>'+
+        '<div class="min-w-0"><div class="flex flex-wrap items-center gap-2">'+historyStatus(importRow)+'<span class="px-2 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold">'+quotationKind(row.quote_no).toUpperCase()+'</span><div class="font-bold text-base">'+esc(quotationDisplay(row.quote_no,row.source_payload))+'</div></div>'+
         '<div class="text-xs text-gray-600 mt-2">'+esc(row.customer_name||'No customer name')+(row.customer_phone?' · '+esc(row.customer_phone):'')+'</div>'+
         '<div class="text-[10px] text-gray-400 mt-1">Issue '+esc(row.issue_date||'')+(row.salesperson?' · '+esc(row.salesperson):'')+' · '+money(row.amount||0,'USD')+'</div>'+
         '<div class="text-[10px] text-gray-400 mt-1">'+esc(row.source_name||'Saved quotation')+'</div></div>'+
@@ -290,7 +302,7 @@
         '</div></div></div>';
     }).join('');
     document.getElementById('content').innerHTML=
-      '<div class="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-3"><div><h3 class="font-bold text-lg">Quotation History</h3><p class="text-xs text-gray-500 mt-1">Permanent showroom quotation register. Every new issued quotation keeps its original number and snapshot.</p></div><button onclick="refreshCurrentPage()" class="px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold">Refresh</button></div>'+
+      '<div class="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-3"><div><h3 class="font-bold text-lg">Quotation History</h3><p class="text-xs text-gray-500 mt-1">Permanent V4 quotation register. S numbers are Showroom quotations; P numbers are Project quotations.</p></div><button onclick="refreshCurrentPage()" class="px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold">Refresh</button></div>'+
       quotationTabs()+
       '<div class="grid grid-cols-3 gap-2 mb-5"><div class="card rounded-xl p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Total Quotations</div><div class="text-xl font-bold mt-1">'+historyRows.length+'</div></div><div class="card rounded-xl p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Imported</div><div class="text-xl font-bold mt-1">'+imported+'</div></div><div class="card rounded-xl p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Converted</div><div class="text-xl font-bold mt-1">'+converted+'</div></div></div>'+
       '<div class="space-y-3">'+(html||'<div class="card rounded-2xl p-10 text-center text-sm text-gray-400">No permanent showroom quotations yet.</div>')+'</div>';
@@ -307,7 +319,7 @@
       const s=quoteSummary(row);
       const customer=(state.customers||[]).find(c=>String(c.id)===String(row.customer_id));
       const itemCount=s.lines.reduce((n,l)=>n+Number(l.qty||0),0);
-      const sourceLabel=row.source_quote_no||row.source_name||row.source_record_id;
+      const sourceLabel=quotationDisplay(row.source_quote_no,s.sourceState)||row.source_name||row.source_record_id;
       return '<div class="card rounded-2xl p-4 border border-[#ece6dc]"><div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4"><div class="min-w-0">'+
         '<div class="flex flex-wrap items-center gap-2">'+badge(row.status)+'<div class="font-bold text-base truncate">'+esc(sourceLabel)+'</div></div>'+
         '<div class="text-xs text-gray-500 mt-2">'+esc(s.customerName||'No customer name')+(s.customerPhone?' · '+esc(s.customerPhone):'')+'</div>'+
@@ -375,7 +387,7 @@
     }
     const lines=s.lines.map((l,i)=>'<div class="grid grid-cols-[1fr_70px_95px_95px] gap-2 items-center py-2 border-b last:border-b-0"><div class="min-w-0"><div class="text-xs font-semibold truncate">'+esc(l.code||l.name||('Line '+(i+1)))+'</div><div class="text-[10px] text-gray-500 truncate">'+esc(l.name||'')+(l.sourceSetName?' · Set: '+esc(l.sourceSetName):'')+'</div></div><div class="text-xs text-right">'+l.qty+'</div><div class="text-xs text-right">'+money(l.unitPrice,'USD')+'</div><div class="text-xs text-right">'+money(Math.max(l.qty*l.unitPrice-l.discountAmount,0),'USD')+'</div></div>').join('');
     openModal('Imported Quotation',
-      '<div class="space-y-5"><div class="rounded-xl border bg-gray-50 p-4"><div class="flex flex-wrap items-center gap-2">'+badge(row.status)+'<span class="px-2 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold">PUBLIC / SHARED SHOWROOM</span><b>'+esc(row.source_quote_no||row.source_name||row.source_record_id)+'</b></div>'+
+      '<div class="space-y-5"><div class="rounded-xl border bg-gray-50 p-4"><div class="flex flex-wrap items-center gap-2">'+badge(row.status)+'<span class="px-2 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold">'+quotationKind(row.source_quote_no).toUpperCase()+'</span><b>'+esc(quotationDisplay(row.source_quote_no,s.sourceState)||row.source_name||row.source_record_id)+'</b></div>'+
       '<div class="mt-3 text-[10px] uppercase tracking-wide font-bold text-gray-400">Showroom information · reference only</div>'+
       '<div class="text-xs text-gray-700 mt-1"><b>Entered customer:</b> '+esc(s.customerName||'Not entered')+(s.customerPhone?' · '+esc(s.customerPhone):'')+'</div>'+
       (s.customerAddress?'<div class="text-[10px] text-gray-500 mt-1"><b>Entered address:</b> '+esc(s.customerAddress)+'</div>':'')+
