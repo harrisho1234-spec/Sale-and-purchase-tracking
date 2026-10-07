@@ -115,16 +115,24 @@
   }
 
   async function productMapForCodes(codes){
-    const unique=[...new Set(codes.filter(Boolean).map(x=>String(x).trim()).filter(Boolean))];
+    const wanted=new Set(codes.filter(Boolean).map(x=>String(x).trim().toLowerCase()).filter(Boolean));
     const out=new Map();
-    if(!unique.length)return out;
-    for(let i=0;i<unique.length;i+=100){
-      const batch=unique.slice(i,i+100);
+    if(!wanted.size)return out;
+
+    // Load by normalized code instead of case-sensitive .in('code', ...).
+    // This makes ABC123, abc123 and codes with accidental outer spaces resolve
+    // to the same existing Product instead of looking like a new Code.
+    for(let from=0;;from+=1000){
       const {data,error}=await db.from('product_catalog')
-        .select('id,code,item_name,image_url')
-        .in('code',batch);
+        .select('id,code,item_name,image_url,active')
+        .order('code')
+        .range(from,from+999);
       if(error)throw error;
-      for(const p of data||[])out.set(String(p.code||'').trim().toLowerCase(),p);
+      for(const p of data||[]){
+        const key=String(p.code||'').trim().toLowerCase();
+        if(wanted.has(key)&&!out.has(key))out.set(key,p);
+      }
+      if(!data||data.length<1000)break;
     }
     return out;
   }
