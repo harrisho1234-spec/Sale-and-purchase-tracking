@@ -286,6 +286,7 @@
       '<div class="space-y-3">'+(html||'<div class="card rounded-2xl p-10 text-center text-sm text-gray-400">No permanent showroom quotations yet.</div>')+'</div>';
   }
   window.renderImportedQuotations=async function(){
+    if(quotationSection==='history')return renderQuotationHistoryPage();
     await loadOrderData();
     const rows=await getRows();
     const ready=rows.filter(x=>x.status==='ready').length;
@@ -306,7 +307,8 @@
         (canDelete?'<button type="button" onclick="deleteImportedQuotation(\''+row.id+'\')" class="px-4 py-2.5 rounded-xl border border-red-200 bg-white text-red-700 text-xs font-semibold hover:bg-red-50" title="Delete this imported record only">Delete</button>':'')+'</div></div></div>';
     }).join('');
     document.getElementById('content').innerHTML=
-      '<div class="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-5"><div><h3 class="font-bold text-lg">Imported Quotations</h3><p class="text-xs text-gray-500 mt-1">Public/shared quotations from limperial-showroom stay as drafts here until a logged-in user manually links the official CRM customer and completes the TK/RK Sales Order.</p></div><button onclick="refreshCurrentPage()" class="px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold">Refresh</button></div>'+
+      '<div class="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-3"><div><h3 class="font-bold text-lg">Quotation Workflow</h3><p class="text-xs text-gray-500 mt-1">Review imported showroom quotations, link the official CRM customer, and convert them to TK/RK Sales Orders. Permanent issued quotations remain available under Quotation History.</p></div><button onclick="refreshCurrentPage()" class="px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold">Refresh</button></div>'+
+      quotationTabs()+
       '<div class="grid grid-cols-3 gap-2 mb-5"><div class="card rounded-xl p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Customer Needed</div><div class="text-xl font-bold mt-1">'+draft+'</div></div><div class="card rounded-xl p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Ready</div><div class="text-xl font-bold mt-1">'+ready+'</div></div><div class="card rounded-xl p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Converted</div><div class="text-xl font-bold mt-1">'+converted+'</div></div></div>'+
       '<div class="space-y-3">'+(html||'<div class="card rounded-2xl p-10 text-center text-sm text-gray-400">No showroom quotations imported yet.</div>')+'</div>';
   };
@@ -475,7 +477,7 @@
       const items=oldNavItems.apply(this,arguments)||[];
       const allowed=typeof window.hasAppPermission!=='function'||window.hasAppPermission('sales_orders.view');
       if(!allowed||items.some(x=>x[0]==='quotation-imports'))return items;
-      const out=[];items.forEach(item=>{out.push(item);if(item[0]==='sales-orders')out.push(['quotation-imports','Imported Quotes','⇢'])});return out;
+      const out=[];items.forEach(item=>{out.push(item);if(item[0]==='sales-orders')out.push(['quotation-imports','Quotations','⇢'])});return out;
     };
   }
   const oldGo=window.go;
@@ -484,8 +486,8 @@
       if(page!=='quotation-imports')return oldGo.apply(this,arguments);
       if(typeof window.hasAppPermission==='function'&&!window.hasAppPermission('sales_orders.view')){showToast('You do not have access to Sales Orders.','err');return oldGo('dashboard')}
       state.page=page;renderNav();
-      document.getElementById('pageTitle').textContent='Imported Quotations';
-      document.getElementById('pageSubtitle').textContent='Review showroom quotations before creating official TK/RK Sales Orders';
+      document.getElementById('pageTitle').textContent='Quotations';
+      document.getElementById('pageSubtitle').textContent='Permanent showroom quotation history and TK/RK Sales Order conversion';
       document.getElementById('content').innerHTML='<div class="py-20 text-center text-gray-400">Loading...</div>';
       try{await renderImportedQuotations()}catch(err){document.getElementById('content').innerHTML='<div class="card rounded-xl p-5 text-red-600">Error: '+esc(err.message||String(err))+'</div>'}
     };
@@ -497,6 +499,7 @@
     handoffBusy=true;
     try{
       const row=await importSavedRecord(recordId);
+      quotationSection='imports';
       history.replaceState(null,'',location.pathname+location.search);
       await go('quotation-imports');
       showToast(row.status==='converted'?'Quotation already converted.':(row.status==='ready'?'Quotation opened with its previously linked official customer.':'Public showroom quotation imported. Select the official CRM customer before conversion.'));
