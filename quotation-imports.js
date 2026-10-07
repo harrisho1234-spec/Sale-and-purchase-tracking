@@ -5,7 +5,7 @@
   const SOURCE_API='https://script.google.com/macros/s/AKfycbwAah-oFIyiSON0jOhjWlL1lzlr0d354bq-1OxMDY2Qz-D-rzAYFaPzTkKDNlnfz1tk/exec';
   const TABLE='showroom_quotation_imports';
   const REGISTRY_TABLE='showroom_quotation_registry';
-  let quotationSection='imports';
+  let quotationSection='history';
   let handoffBusy=false;
   let activeConversionId=null;
   const pendingDeletions=new Set();
@@ -508,6 +508,9 @@
       if(page!=='quotation-imports')return oldGo.apply(this,arguments);
       if(typeof window.hasAppPermission==='function'&&!window.hasAppPermission('sales_orders.view')){showToast('You do not have access to Sales Orders.','err');return oldGo('dashboard')}
       state.page=page;renderNav();
+      // Normal navigation always opens the permanent Quotation History first.
+      // A V4 handoff keeps Imported Queue active so the newly imported quote can be reviewed.
+      if(!handoffBusy)quotationSection='history';
       document.getElementById('pageTitle').textContent='Quotations';
       document.getElementById('pageSubtitle').textContent='Permanent showroom quotation history and TK/RK Sales Order conversion';
       document.getElementById('content').innerHTML='<div class="py-20 text-center text-gray-400">Loading...</div>';
