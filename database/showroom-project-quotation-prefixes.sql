@@ -223,7 +223,7 @@ as $$
   select distinct btrim(u.display_name), u.role
   from public.app_users u
   where u.active is true
-    and u.role in ('sales','manager')
+    and u.role in ('sales','manager','admin','super_admin')
     and u.display_name is not null
     and btrim(u.display_name)<>''
   order by 1;
