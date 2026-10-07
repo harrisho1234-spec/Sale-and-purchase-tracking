@@ -52,8 +52,14 @@
     if(r.error)throw r.error;
     return r.data;
   }
-  async function refreshInventoryAfterApproval(){
+  async function refreshFulfillmentAvailability(){
     if(typeof window.invalidateInventoryCache==='function')window.invalidateInventoryCache();
+    if(typeof window.refreshStockFulfillmentBadge==='function'){
+      try{await window.refreshStockFulfillmentBadge()}catch(_){}
+    }
+  }
+  async function refreshInventoryAfterApproval(){
+    await refreshFulfillmentAvailability();
     if(typeof window.renderStockInventory==='function')await window.renderStockInventory();
   }
 
@@ -150,7 +156,8 @@
         try{
           await submit(actionType,payload,note);
           closeModal();
-          showToast(doItem?'DO Customer Delivery submitted for approval. Stock has not been deducted yet.':'Customer Delivery submitted for approval. Approval will update Stock and Customer Fulfillment together.');
+          await refreshFulfillmentAvailability();
+          showToast(doItem?'DO Customer Delivery submitted for approval. It is removed from Customer Fulfillment while pending.':'Customer Delivery submitted for approval. It is removed from Customer Fulfillment while pending.');
           if(typeof window.setInventoryTab==='function')window.setInventoryTab('requests');
         }catch(err){
           if(btn){btn.disabled=false;btn.textContent='Submit Customer Delivery for Approval'}
@@ -288,7 +295,8 @@
           await submit('sales_delivery',payload,note);
         }
         closeModal();
-        showToast(allocations.length>1?'Multi-location Stock OUT submitted for approval. Stock has not been deducted yet.':'Stock OUT submitted for approval. Stock has not been deducted yet.');
+        await refreshFulfillmentAvailability();
+        showToast(allocations.length>1?'Multi-location Stock OUT submitted for approval. It is removed from Customer Fulfillment while pending.':'Stock OUT submitted for approval. It is removed from Customer Fulfillment while pending.');
         if(typeof window.setInventoryTab==='function')window.setInventoryTab('requests');
       }catch(err){
         if(btn){btn.disabled=false;btn.textContent='Submit Stock OUT for Approval'}
@@ -321,7 +329,8 @@
       try{
         await submit('do_delivery',payload,payload.note);
         closeModal();
-        showToast('DO Stock OUT submitted for approval. Stock has not been deducted yet.');
+        await refreshFulfillmentAvailability();
+        showToast('DO Stock OUT submitted for approval. It is removed from Customer Fulfillment while pending.');
         if(typeof window.setInventoryTab==='function')window.setInventoryTab('requests');
       }catch(err){
         if(btn){btn.disabled=false;btn.textContent='Submit DO OUT for Approval'}
