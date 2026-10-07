@@ -543,7 +543,11 @@
   window.reviewImportedQuotation=async function(id){
     await loadOrderData();
     const r=await db.from(TABLE).select('*').eq('id',id).single();if(r.error)return showToast(r.error.message,'err');
-    const row=r.data;const s=quoteSummary(row);
+    let row=r.data;
+    if(row.status!=='converted'){
+      try{row=await importSavedRecord(row.source_record_id)}catch(err){console.warn('Latest quotation revision refresh skipped:',err?.message||err)}
+    }
+    const s=quoteSummary(row);
     const canCreate=typeof window.hasAppPermission!=='function'||window.hasAppPermission('sales_orders.create');
     const canDelete=canDeleteImportedQuotation();
     const linked=(state.customers||[]).find(c=>String(c.id)===String(row.customer_id));
@@ -606,8 +610,9 @@
     if(typeof window.hasAppPermission==='function'&&!window.hasAppPermission('sales_orders.create'))return showToast('Your role cannot create Sales Orders.','err');
     await loadOrderData();
     const r=await db.from(TABLE).select('*').eq('id',id).single();if(r.error)return showToast(r.error.message,'err');
-    const draft=r.data;
+    let draft=r.data;
     if(draft.status==='converted')return showToast('This quotation has already been converted.','err');
+    try{draft=await importSavedRecord(draft.source_record_id)}catch(err){return showToast(err.message||'Could not refresh the latest quotation revision.','err')}
     if(!draft.customer_id)return showToast('Link an existing customer before converting this quotation.','err');
     const customer=(state.customers||[]).find(c=>String(c.id)===String(draft.customer_id));
     if(!customer)return showToast('The linked customer is not available to your account. Create/link or request access first.','err');
