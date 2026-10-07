@@ -11,6 +11,18 @@
   function safePathPart(v){
     return String(v||'product').trim().replace(/[^a-zA-Z0-9._-]+/g,'-').replace(/-+/g,'-').slice(0,80)||'product';
   }
+  async function lookupCodeConflict(code){
+    const clean=String(code||'').trim();
+    if(!clean)return null;
+    const {data,error}=await db.rpc('lookup_product_code',{p_code:clean,p_exclude_id:null});
+    if(error)throw error;
+    return data||null;
+  }
+  function duplicateCodeMessage(x,typed){
+    return 'Product Code "'+(x?.code||typed||'')+'" already exists'
+      +(x?.item_name?' as "'+x.item_name+'"':'')
+      +'. Use the existing product instead of creating another code.';
+  }
   function resetModalWidth(){
     const box=document.querySelector('#modal > div');
     if(!box)return;
@@ -188,6 +200,7 @@
               <div class="pa-field">
                 <label>Code</label>
                 <input id="paCode" required placeholder="Code">
+                <div id="paCodeStatus" style="font-size:9px;margin-top:4px;color:#8b8b95"></div>
               </div>
               <div class="pa-field">
                 <label>Product</label>
@@ -253,6 +266,22 @@
     });
 
     ['paCost','paShipping','paPrice'].forEach(id=>document.getElementById(id)?.addEventListener('input',recalc));
+    const codeInput=document.getElementById('paCode');
+    const codeStatus=document.getElementById('paCodeStatus');
+    codeInput?.addEventListener('input',()=>{
+      if(codeStatus){codeStatus.textContent='';codeStatus.style.color='#8b8b95';}
+    });
+    codeInput?.addEventListener('blur',async()=>{
+      const code=codeInput.value.trim();
+      if(!code)return;
+      try{
+        const conflict=await lookupCodeConflict(code);
+        if(codeStatus){
+          codeStatus.textContent=conflict?duplicateCodeMessage(conflict,code):'Code available';
+          codeStatus.style.color=conflict?'#dc2626':'#0f8a4b';
+        }
+      }catch(_){}
+    });
     recalc();
 
     document.getElementById('productForm').onsubmit=async e=>{
@@ -262,6 +291,20 @@
       const code=document.getElementById('paCode').value.trim();
       const name=document.getElementById('paName').value.trim();
       if(!code||!name)return showToast('Product code and product name are required.','err');
+
+      try{
+        const conflict=await lookupCodeConflict(code);
+        if(conflict){
+          if(codeStatus){
+            codeStatus.textContent=duplicateCodeMessage(conflict,code);
+            codeStatus.style.color='#dc2626';
+          }
+          document.getElementById('paCode')?.focus();
+          return showToast(duplicateCodeMessage(conflict,code),'err');
+        }
+      }catch(err){
+        return showToast(err.message||'Could not validate Product Code.','err');
+      }
 
       const unitCost=Number(document.getElementById('paCost').value||0);
       const shipping=Number(document.getElementById('paShipping').value||0);
@@ -337,7 +380,10 @@
         showToast(photoWarning?photoWarning:'Product added · queued for App Products sync',photoWarning?'err':'ok');
         await renderProducts();
       }catch(err){
-        showToast(err.message||String(err),'err');
+        const msg=String(err?.message||err||'');
+        showToast((err?.code==='23505'||/already exists|duplicate key|unique constraint/i.test(msg))
+          ? 'Product Code "'+code+'" already exists. Use the existing product instead of creating another code.'
+          : msg,'err');
         btn.disabled=false;btn.textContent='Save Product';form.classList.remove('pa-uploading');
       }
     };
