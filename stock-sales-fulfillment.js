@@ -80,6 +80,18 @@
     }
   }
 
+  async function refreshFulfillmentBadge(){
+    try{
+      const rows=await loadRows('');
+      const tracked=rows.filter(x=>!!x.inventory_tracking_enabled).length;
+      patchDeliveryTabLabel(tracked);
+      return tracked;
+    }catch(_){
+      return null;
+    }
+  }
+  window.refreshStockFulfillmentBadge=refreshFulfillmentBadge;
+
   async function patchDashboardFulfillmentCard(){
     if(activeDeliveryTab())return;
     const body=document.getElementById('inventoryBody');
