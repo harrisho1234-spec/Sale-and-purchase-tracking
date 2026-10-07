@@ -101,7 +101,27 @@ async function openEditProduct(id){
     <div><label class="text-xs font-semibold">Sales Price</label><input id="epPrice" type="number" step="0.01" min="0" value="${Number(p.sales_price||0)}" class="mt-1 w-full border rounded-xl px-3 py-2"></div>
     <div><label class="text-xs font-semibold">Location</label><input id="epLocation" value="${esc(adminDetail?.location||'')}" class="mt-1 w-full border rounded-xl px-3 py-2"></div>
     <div class="md:col-span-2"><label class="text-xs font-semibold">Description</label><textarea id="epDescription" class="mt-1 w-full border rounded-xl px-3 py-2" rows="3">${esc(p.description||'')}</textarea></div>
-    <div class="md:col-span-2"><label class="text-xs font-semibold">Photo URL</label><input id="epImage" value="${esc(p.image_url||'')}" class="mt-1 w-full border rounded-xl px-3 py-2"></div>
+    <div class="md:col-span-2">
+      <label class="text-xs font-semibold">Product Photo</label>
+      <div class="mt-1 grid sm:grid-cols-[110px_1fr] gap-3 items-start">
+        <button type="button" id="epPhotoPick" class="w-[110px] h-[110px] rounded-xl border border-dashed bg-gray-50 overflow-hidden flex items-center justify-center relative hover:bg-gray-100" title="Upload replacement photo">
+          <img id="epPhotoPreview" src="${esc(normalizeGoogleImageUrl(p.image_url||''))}" alt="" class="w-full h-full object-cover ${p.image_url?'':'hidden'}">
+          <span id="epPhotoPlaceholder" class="text-[10px] text-gray-400 font-semibold text-center px-2 ${p.image_url?'hidden':''}">Upload<br>Photo</span>
+        </button>
+        <div>
+          <input id="epPhotoFile" type="file" accept="image/*" class="hidden">
+          <div class="flex flex-wrap gap-2">
+            <button type="button" id="epPhotoUploadBtn" class="px-3 py-2 rounded-xl border bg-white text-xs font-semibold">Replace Photo</button>
+            <button type="button" id="epPhotoClearBtn" class="px-3 py-2 rounded-xl border bg-white text-xs text-gray-500">Use URL Instead</button>
+          </div>
+          <div id="epPhotoStatus" class="text-[10px] text-gray-400 mt-2">Choose an image up to 8 MB. The new upload will replace the current product photo.</div>
+          <div id="epPhotoUrlWrap" class="mt-2 hidden">
+            <label class="text-[10px] font-semibold text-gray-500">Photo URL (optional fallback)</label>
+            <input id="epImage" value="${esc(p.image_url||'')}" class="mt-1 w-full border rounded-xl px-3 py-2 text-xs">
+          </div>
+        </div>
+      </div>
+    </div>
     <label class="flex items-center gap-2 text-sm"><input id="epActive" type="checkbox" ${p.active?'checked':''}> Active product</label>
     <div class="md:col-span-2 text-xs bg-amber-50 border border-amber-100 text-amber-800 rounded-xl p-3">Saving here marks this product as app-managed so Google Sheet product sync will not overwrite it.</div>
     <button class="md:col-span-2 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Product</button>
@@ -109,6 +129,45 @@ async function openEditProduct(id){
 
   const epCode=document.getElementById('epCode');
   const epCodeStatus=document.getElementById('epCodeStatus');
+  const epPhotoFile=document.getElementById('epPhotoFile');
+  const epPhotoPick=document.getElementById('epPhotoPick');
+  const epPhotoUploadBtn=document.getElementById('epPhotoUploadBtn');
+  const epPhotoClearBtn=document.getElementById('epPhotoClearBtn');
+  const epPhotoPreview=document.getElementById('epPhotoPreview');
+  const epPhotoPlaceholder=document.getElementById('epPhotoPlaceholder');
+  const epPhotoStatus=document.getElementById('epPhotoStatus');
+  const epPhotoUrlWrap=document.getElementById('epPhotoUrlWrap');
+  let epSelectedPhoto=null;
+  const openPhotoPicker=()=>epPhotoFile?.click();
+  epPhotoPick?.addEventListener('click',openPhotoPicker);
+  epPhotoUploadBtn?.addEventListener('click',openPhotoPicker);
+  epPhotoClearBtn?.addEventListener('click',()=>{
+    epPhotoUrlWrap?.classList.toggle('hidden');
+    if(epPhotoUrlWrap&&!epPhotoUrlWrap.classList.contains('hidden'))document.getElementById('epImage')?.focus();
+  });
+  epPhotoFile?.addEventListener('change',()=>{
+    const file=epPhotoFile.files?.[0]||null;
+    if(!file){epSelectedPhoto=null;return;}
+    if(!String(file.type||'').startsWith('image/')){
+      showToast('Please choose an image file.','err');
+      epPhotoFile.value='';epSelectedPhoto=null;return;
+    }
+    if(file.size>8*1024*1024){
+      showToast('Photo must be 8 MB or smaller.','err');
+      epPhotoFile.value='';epSelectedPhoto=null;return;
+    }
+    epSelectedPhoto=file;
+    if(epPhotoPreview){
+      epPhotoPreview.src=URL.createObjectURL(file);
+      epPhotoPreview.classList.remove('hidden');
+    }
+    epPhotoPlaceholder?.classList.add('hidden');
+    if(epPhotoStatus){
+      epPhotoStatus.textContent='Ready to replace photo with '+file.name+'.';
+      epPhotoStatus.className='text-[10px] text-green-600 mt-2';
+    }
+  });
+
   epCode?.addEventListener('input',()=>{if(epCodeStatus){epCodeStatus.textContent='';epCodeStatus.className='text-[10px] mt-1 text-gray-400';}});
   epCode?.addEventListener('blur',async()=>{
     const code=epCode.value.trim();
@@ -143,8 +202,9 @@ async function openEditProduct(id){
       code:newCode,item_name:document.getElementById('epName').value.trim(),
       brand:document.getElementById('epBrand').value.trim()||null,class:document.getElementById('epClass').value.trim()||null,
       sales_price:Number(document.getElementById('epPrice').value||0),description:document.getElementById('epDescription').value.trim()||null,
-      image_url:normalizeGoogleImageUrl(document.getElementById('epImage').value),active:document.getElementById('epActive').checked,manual_override:true
+      active:document.getElementById('epActive').checked,manual_override:true
     };
+    if(!epSelectedPhoto)row.image_url=normalizeGoogleImageUrl(document.getElementById('epImage')?.value||p.image_url||'');
     const {error:e1}=await db.from('product_catalog').update(row).eq('id',id);
     if(e1){
       const msg=String(e1.message||'');
@@ -153,7 +213,34 @@ async function openEditProduct(id){
         : msg,'err');
     }
     const {error:e2}=await db.from('product_admin_details').upsert({product_id:id,location:document.getElementById('epLocation').value.trim()||null,updated_at:new Date().toISOString()},{onConflict:'product_id'});if(e2)return showToast(e2.message,'err');
-    closeModal();showToast('Product updated');await renderProducts();
+
+    if(epSelectedPhoto){
+      if(typeof window.uploadProductDrivePhoto!=='function'){
+        return showToast('Product details were updated, but the photo uploader is unavailable. Refresh the app and try the photo again.','err');
+      }
+      const submitBtn=document.querySelector('#editProductForm button[type="submit"]');
+      if(submitBtn){submitBtn.disabled=true;submitBtn.textContent='Uploading Photo...';}
+      if(epPhotoStatus){
+        epPhotoStatus.textContent='Uploading replacement photo...';
+        epPhotoStatus.className='text-[10px] text-amber-600 mt-2';
+      }
+      try{
+        const uploadedUrl=await window.uploadProductDrivePhoto(id,newCode,epSelectedPhoto);
+        if(uploadedUrl){
+          row.image_url=uploadedUrl;
+          p.image_url=uploadedUrl;
+        }
+      }catch(photoErr){
+        if(submitBtn){submitBtn.disabled=false;submitBtn.textContent='Save Product';}
+        if(epPhotoStatus){
+          epPhotoStatus.textContent='Photo upload failed: '+(photoErr.message||photoErr);
+          epPhotoStatus.className='text-[10px] text-red-600 mt-2';
+        }
+        return showToast('Product details saved, but photo replacement failed: '+(photoErr.message||photoErr),'err');
+      }
+    }
+
+    closeModal();showToast(epSelectedPhoto?'Product updated and photo replaced':'Product updated');await renderProducts();
   };
 }
 
