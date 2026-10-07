@@ -1,5 +1,19 @@
 // Admin-only product detail overrides. Loaded after app.js.
 
+async function lookupProductCodeConflict(code,excludeId=null){
+  const clean=String(code||'').trim();
+  if(!clean)return null;
+  const {data,error}=await db.rpc('lookup_product_code',{p_code:clean,p_exclude_id:excludeId||null});
+  if(error)throw error;
+  return data||null;
+}
+
+function productCodeConflictMessage(x,typed){
+  return 'Product Code "'+(x?.code||typed||'')+'" already exists'
+    +(x?.item_name?' as "'+x.item_name+'"':'')
+    +'. Use the existing product instead of creating another code.';
+}
+
 async function getProductAdminDetail(productId){
   if(!isAdmin()) return null;
   const {data,error}=await db.from('product_admin_details').select('*').eq('product_id',productId).maybeSingle();
@@ -80,7 +94,7 @@ async function openEditProduct(id){
   try{adminDetail=await getProductAdminDetail(id)}catch(err){return showToast(err.message,'err')}
 
   openModal('Edit Product',`<form id="editProductForm" class="grid md:grid-cols-2 gap-4">
-    <div><label class="text-xs font-semibold">Code</label><input id="epCode" value="${esc(p.code)}" required class="mt-1 w-full border rounded-xl px-3 py-2"></div>
+    <div><label class="text-xs font-semibold">Code</label><input id="epCode" value="${esc(p.code)}" required class="mt-1 w-full border rounded-xl px-3 py-2"><div id="epCodeStatus" class="text-[10px] mt-1 text-gray-400"></div></div>
     <div><label class="text-xs font-semibold">Item Name</label><input id="epName" value="${esc(p.item_name)}" required class="mt-1 w-full border rounded-xl px-3 py-2"></div>
     <div><label class="text-xs font-semibold">Brand</label><input id="epBrand" value="${esc(p.brand||'')}" class="mt-1 w-full border rounded-xl px-3 py-2"></div>
     <div><label class="text-xs font-semibold">Class</label><input id="epClass" value="${esc(p.class||'')}" class="mt-1 w-full border rounded-xl px-3 py-2"></div>
@@ -93,15 +107,51 @@ async function openEditProduct(id){
     <button class="md:col-span-2 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Product</button>
   </form>`);
 
+  const epCode=document.getElementById('epCode');
+  const epCodeStatus=document.getElementById('epCodeStatus');
+  epCode?.addEventListener('input',()=>{if(epCodeStatus){epCodeStatus.textContent='';epCodeStatus.className='text-[10px] mt-1 text-gray-400';}});
+  epCode?.addEventListener('blur',async()=>{
+    const code=epCode.value.trim();
+    if(!code)return;
+    try{
+      const conflict=await lookupProductCodeConflict(code,id);
+      if(epCodeStatus){
+        epCodeStatus.textContent=conflict?productCodeConflictMessage(conflict,code):'Code available';
+        epCodeStatus.className='text-[10px] mt-1 '+(conflict?'text-red-600':'text-green-600');
+      }
+    }catch(_){}
+  });
+
   document.getElementById('editProductForm').onsubmit=async e=>{
     e.preventDefault();
+    const newCode=document.getElementById('epCode').value.trim();
+    if(!newCode)return showToast('Product Code is required.','err');
+    try{
+      const conflict=await lookupProductCodeConflict(newCode,id);
+      if(conflict){
+        if(epCodeStatus){
+          epCodeStatus.textContent=productCodeConflictMessage(conflict,newCode);
+          epCodeStatus.className='text-[10px] mt-1 text-red-600';
+        }
+        epCode?.focus();
+        return showToast(productCodeConflictMessage(conflict,newCode),'err');
+      }
+    }catch(err){
+      return showToast(err.message||'Could not validate Product Code.','err');
+    }
     const row={
-      code:document.getElementById('epCode').value.trim(),item_name:document.getElementById('epName').value.trim(),
+      code:newCode,item_name:document.getElementById('epName').value.trim(),
       brand:document.getElementById('epBrand').value.trim()||null,class:document.getElementById('epClass').value.trim()||null,
       sales_price:Number(document.getElementById('epPrice').value||0),description:document.getElementById('epDescription').value.trim()||null,
       image_url:normalizeGoogleImageUrl(document.getElementById('epImage').value),active:document.getElementById('epActive').checked,manual_override:true
     };
-    const {error:e1}=await db.from('product_catalog').update(row).eq('id',id);if(e1)return showToast(e1.message,'err');
+    const {error:e1}=await db.from('product_catalog').update(row).eq('id',id);
+    if(e1){
+      const msg=String(e1.message||'');
+      return showToast((e1.code==='23505'||/already exists|duplicate key|unique constraint/i.test(msg))
+        ? 'Product Code "'+newCode+'" already exists. Use the existing product instead.'
+        : msg,'err');
+    }
     const {error:e2}=await db.from('product_admin_details').upsert({product_id:id,location:document.getElementById('epLocation').value.trim()||null,updated_at:new Date().toISOString()},{onConflict:'product_id'});if(e2)return showToast(e2.message,'err');
     closeModal();showToast('Product updated');await renderProducts();
   };
