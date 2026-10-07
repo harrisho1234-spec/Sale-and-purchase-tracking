@@ -1004,9 +1004,25 @@
   };
 
 
+  async function activeProductCatalogCount(){
+    try{
+      const r=await db.from('product_catalog')
+        .select('id',{count:'exact',head:true})
+        .or('active.eq.true,active.is.null');
+      if(r.error)throw r.error;
+      return Number(r.count||0);
+    }catch(err){
+      console.warn('Active Product Catalog count could not be loaded:',err);
+      return inv.balances.length;
+    }
+  }
+
   async function renderDashboard(){
     await loadCore();
-    const tasks=await loadInventoryTasks();
+    const [tasks,catalogTotal]=await Promise.all([
+      loadInventoryTasks(),
+      activeProductCatalogCount()
+    ]);
     const onHand=inv.balances.reduce((a,x)=>a+n(x.on_hand),0);
     const reserved=inv.balances.reduce((a,x)=>a+n(x.reserved),0);
     const available=inv.balances.reduce((a,x)=>a+n(x.available),0);
@@ -1014,21 +1030,24 @@
     const incoming=inv.balances.reduce((a,x)=>a+n(x.incoming),0);
     const arrivedPending=inv.balances.reduce((a,x)=>a+n(x.arrived_pending_receive),0);
     const stocked=inv.balances.filter(x=>n(x.on_hand)>0).length;
+    const outOfStock=Math.max(Number(catalogTotal||0)-stocked,0);
     const noAvail=inv.balances.filter(x=>n(x.on_hand)>0&&n(x.available)<=0).length;
 
     const mov=await db.from('inventory_movement_history').select('*').neq('movement_type','opening').order('movement_date',{ascending:false}).order('created_at',{ascending:false}).limit(8);
     if(mov.error)throw mov.error;
     const recent=mov.data||[];
     const dashMatches=inv.search?stockProductMatches(inv.search).slice(0,8):[];
-    return `<div class="grid sm:grid-cols-2 xl:grid-cols-8 gap-3 mb-5">
-      <div class="inv-stat"><div class="inv-stat-label">On Hand</div><div class="inv-stat-value">${q(onHand)}</div></div>
-      <button onclick="openAllReservedStockDetails()" class="inv-stat text-left hover:shadow-sm transition" title="View products reserved for active Sales Orders"><div class="inv-stat-label">Reserved</div><div class="inv-stat-value text-amber-600">${q(reserved)}</div><div class="text-[9px] text-gray-400 mt-1">Click to view orders</div></button>
-      <div class="inv-stat"><div class="inv-stat-label">Available</div><div class="inv-stat-value text-green-600">${q(available)}</div></div>
-      <div class="inv-stat"><div class="inv-stat-label">On Order</div><div class="inv-stat-value text-amber-700">${q(onOrder)}</div><div class="text-[9px] text-gray-400 mt-1">Ordered / Production / Ready</div></div>
-      <div class="inv-stat"><div class="inv-stat-label">Incoming</div><div class="inv-stat-value text-blue-600">${q(incoming)}</div><div class="text-[9px] text-gray-400 mt-1">Shipping only</div></div>
-      <div class="inv-stat"><div class="inv-stat-label">Arrived Pending Receive</div><div class="inv-stat-value text-purple-600">${q(arrivedPending)}</div></div>
-      <div class="inv-stat"><div class="inv-stat-label">Codes In Stock</div><div class="inv-stat-value">${stocked.toLocaleString()}</div></div>
-      <div class="inv-stat"><div class="inv-stat-label">Fully Reserved</div><div class="inv-stat-value ${noAvail?'text-red-500':''}">${noAvail.toLocaleString()}</div></div>
+    return `<div class="grid sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
+      <div class="inv-stat"><div class="inv-stat-label">On Hand</div><div class="inv-stat-value">${q(onHand)}</div><div class="text-[9px] text-gray-400 mt-1">Total physical units</div></div>
+      <button onclick="openAllReservedStockDetails()" class="inv-stat text-left hover:shadow-sm transition" title="View products reserved for active Sales Orders"><div class="inv-stat-label">Reserved</div><div class="inv-stat-value text-amber-600">${q(reserved)}</div><div class="text-[9px] text-gray-400 mt-1">Units reserved for Sales Orders</div></button>
+      <div class="inv-stat"><div class="inv-stat-label">Available</div><div class="inv-stat-value text-green-600">${q(available)}</div><div class="text-[9px] text-gray-400 mt-1">On Hand minus Reserved</div></div>
+      <div class="inv-stat"><div class="inv-stat-label">On Order</div><div class="inv-stat-value text-amber-700">${q(onOrder)}</div><div class="text-[9px] text-gray-400 mt-1">Ordered / Production / Ready units</div></div>
+      <div class="inv-stat"><div class="inv-stat-label">Incoming</div><div class="inv-stat-value text-blue-600">${q(incoming)}</div><div class="text-[9px] text-gray-400 mt-1">Shipping units</div></div>
+      <div class="inv-stat"><div class="inv-stat-label">Arrived Pending Receive</div><div class="inv-stat-value text-purple-600">${q(arrivedPending)}</div><div class="text-[9px] text-gray-400 mt-1">Arrived units not received yet</div></div>
+      <button onclick="go('products')" class="inv-stat text-left hover:shadow-sm transition" title="Open the full active Product Catalog"><div class="inv-stat-label">Product Catalog</div><div class="inv-stat-value">${Number(catalogTotal||0).toLocaleString()}</div><div class="text-[9px] text-gray-400 mt-1">All active product codes</div></button>
+      <div class="inv-stat"><div class="inv-stat-label">Codes In Stock</div><div class="inv-stat-value">${stocked.toLocaleString()}</div><div class="text-[9px] text-gray-400 mt-1">Active codes with On Hand &gt; 0</div></div>
+      <div class="inv-stat"><div class="inv-stat-label">Out of Stock</div><div class="inv-stat-value ${outOfStock?'text-red-500':''}">${outOfStock.toLocaleString()}</div><div class="text-[9px] text-gray-400 mt-1">Active codes with On Hand = 0</div></div>
+      <div class="inv-stat"><div class="inv-stat-label">Fully Reserved</div><div class="inv-stat-value ${noAvail?'text-red-500':''}">${noAvail.toLocaleString()}</div><div class="text-[9px] text-gray-400 mt-1">In-stock codes with no available qty</div></div>
     </div>
 
     ${inv.search?`<div class="inv-card mb-5"><div class="flex items-center justify-between gap-3 mb-3"><div><h3 class="font-bold">Product Search</h3><div class="text-[10px] text-gray-400">Quick stock results for "${esc(inv.search)}".</div></div><button onclick="setInventorySearch('')" class="text-xs text-gray-500">Clear</button></div><div class="grid sm:grid-cols-2 xl:grid-cols-4 gap-2">${dashMatches.length?dashMatches.map(p=>`<button onclick="openProductStockCard('${p.product_id}')" class="rounded-xl border p-3 text-left hover:bg-amber-50/30 flex gap-3 items-center"><div class="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 shrink-0">${p.image_url?`<img loading="lazy" decoding="async" src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-[8px] text-gray-400">No Photo</div>'}</div><div class="min-w-0"><div class="text-[10px] font-bold text-[#a77d1a]">${esc(p.code||'')}${taxBadge(p)}</div><div class="text-sm font-semibold truncate">${esc(p.item_name||'')}</div><div class="text-[10px] text-gray-400">On hand ${q(p.on_hand)} · Available ${q(p.available)}</div></div></button>`).join(''):'<div class="col-span-full py-6 text-center text-sm text-gray-400">No matching product.</div>'}</div></div>`:''}
@@ -1045,7 +1064,7 @@
       <button onclick="openInventoryTask('aged')" class="inv-task-card border-red-100 bg-red-50/20"><div class="text-[9px] uppercase font-bold text-gray-400">Aging 365+ Days</div><div class="text-2xl font-black mt-1">${tasks.aged365.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">Products with old remaining stock</div></button>
       <button onclick="openInventoryTask('unassigned')" class="inv-task-card border-amber-100 bg-amber-50/20"><div class="text-[9px] uppercase font-bold text-gray-400">Unassigned Location</div><div class="text-2xl font-black mt-1">${tasks.unassigned.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">Products still sitting in UNASSIGNED / review</div></button>
       <button onclick="openInventoryTask('reserved')" class="inv-task-card"><div class="text-[9px] uppercase font-bold text-gray-400">Fully Reserved</div><div class="text-2xl font-black mt-1">${noAvail.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">On-hand products with no available quantity</div></button>
-      <button onclick="openInventoryProductFinder()" class="inv-task-card"><div class="text-[9px] uppercase font-bold text-gray-400">Find Product</div><div class="text-2xl font-black mt-1">${stocked.toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">Open a Stock Card by Code, product or brand</div></button>
+      <button onclick="openInventoryProductFinder()" class="inv-task-card"><div class="text-[9px] uppercase font-bold text-gray-400">Find Product</div><div class="text-2xl font-black mt-1">${Number(catalogTotal||0).toLocaleString()}</div><div class="text-[10px] text-gray-500 mt-2">Search all active product codes by Code, product or brand</div></button>
     </div>
 
     <div class="grid xl:grid-cols-[1.2fr_.8fr] gap-4">
