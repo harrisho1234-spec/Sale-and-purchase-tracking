@@ -199,8 +199,8 @@
       }
       const name=record.source_quote_no||record.source_name||'this quotation';
       const message=record.status==='converted'
-        ? 'Delete imported quotation "'+name+'"?\\n\\nThis removes the imported record and its link to the official Sales Order. The official Sales Order itself is NOT deleted.'
-        : 'Delete imported quotation "'+name+'"?\\n\\nThis removes it from Imported Quotes. The saved quotation in the public showroom is NOT deleted.';
+        ? 'Delete imported quotation "'+name+'"?\n\nThis removes the imported record and its link to the official Sales Order. The official Sales Order itself is NOT deleted.'
+        : 'Delete imported quotation "'+name+'"?\n\nThis removes it from Imported Quotes. The saved quotation in the public showroom is NOT deleted.';
       if(!window.confirm(message))return;
       const removed=await db.from(TABLE).delete().eq('id',id).select('id');
       if(removed.error)throw removed.error;
