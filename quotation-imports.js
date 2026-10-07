@@ -5,6 +5,7 @@
   const SOURCE_API='https://script.google.com/macros/s/AKfycbwAah-oFIyiSON0jOhjWlL1lzlr0d354bq-1OxMDY2Qz-D-rzAYFaPzTkKDNlnfz1tk/exec';
   const TABLE='showroom_quotation_imports';
   const REGISTRY_TABLE='showroom_quotation_registry';
+  const REVISION_TABLE='showroom_quotation_revisions';
   let quotationSection='history';
   let handoffBusy=false;
   let activeConversionId=null;
@@ -29,6 +30,10 @@
     const base=String(no||'').trim();
     const rev=quotationRevision(sourceState);
     return base&&rev>0?base+' · Rev '+rev:base;
+  }
+  function revisionLabel(n){
+    const rev=Math.max(0,Number(n)||0);
+    return rev>0?'Rev '+rev:'Original';
   }
   function actualPrice(item){
     const a=Number(item?.actualSalesPrice);if(Number.isFinite(a))return a;
@@ -132,24 +137,110 @@
       script.src=SOURCE_API+'?'+q.toString();document.head.appendChild(script);
     });
   }
+  function jsonpSavedListIndex(){
+    return new Promise((resolve,reject)=>{
+      const cb='__limperialQuoteList_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
+      const script=document.createElement('script');let done=false;
+      const finish=(err,data)=>{
+        if(done)return;done=true;clearTimeout(timer);
+        try{delete window[cb]}catch(_){window[cb]=undefined}
+        script.remove();err?reject(err):resolve(data);
+      };
+      const timer=setTimeout(()=>finish(new Error('Showroom quotation list timed out.')),15000);
+      window[cb]=data=>{
+        if(data?.ok===false)return finish(new Error(data.error||'Could not read showroom quotations.'));
+        finish(null,Array.isArray(data?.lists)?data.lists:[]);
+      };
+      script.onerror=()=>finish(new Error('Could not reach the showroom quotation service.'));
+      const q=new URLSearchParams({action:'list',callback:cb,_cb:String(Date.now())});
+      script.src=SOURCE_API+'?'+q.toString();document.head.appendChild(script);
+    });
+  }
+
+  async function confirmRegistryRevision(registryRow,record){
+    const sourceState=parseState(record);
+    const summary=quoteSummary(record);
+    const revision=quotationRevision(sourceState);
+    const current=Math.max(0,Number(registryRow?.current_revision)||0);
+    if(!summary.quoteNo||summary.quoteNo!==registryRow.quote_no||revision<=current)return false;
+    const confirmed=await db.rpc('confirm_showroom_quotation_v2',{
+      p_source_record_id:registryRow.source_record_id,
+      p_quote_no:registryRow.quote_no,
+      p_source_payload:sourceState,
+      p_source_name:String(record?.name||registryRow.source_name||'').trim()||null,
+      p_saved_at:record?.savedAt||new Date().toISOString(),
+      p_amount:summary.total
+    });
+    if(confirmed.error)throw confirmed.error;
+    return confirmed.data===true;
+  }
+
+  async function syncRegistryRevisionsFromV4(rows){
+    if(!Array.isArray(rows)||!rows.length)return false;
+    const lists=await jsonpSavedListIndex();
+    const byId=new Map(lists.map(x=>[String(x?.id||''),x]));
+    let changed=false;
+    for(const row of rows){
+      const record=byId.get(String(row.source_record_id||''));
+      if(!record)continue;
+      try{
+        if(await confirmRegistryRevision(row,record))changed=true;
+      }catch(err){
+        console.warn('Quotation revision sync skipped for '+row.quote_no+':',err?.message||err);
+      }
+    }
+    return changed;
+  }
+
+  async function getRevisionRows(quotationId){
+    const r=await db.from(REVISION_TABLE)
+      .select('*')
+      .eq('quotation_id',quotationId)
+      .order('revision_no',{ascending:false});
+    if(r.error)throw r.error;
+    return r.data||[];
+  }
+
   async function loadOrderData(){if(typeof ensureOrderFormData==='function')await ensureOrderFormData()}
   async function importSavedRecord(recordId){
     const id=String(recordId||'').trim();if(!id)throw new Error('Missing showroom quotation ID.');
     const existing=await db.from(TABLE).select('*').eq('source_system',SOURCE_SYSTEM).eq('source_record_id',id).maybeSingle();
     if(existing.error)throw existing.error;
-    if(existing.data)return existing.data;
     const record=await jsonpRecord(id);if(!record)throw new Error('The saved showroom quotation could not be found.');
     const sourceState=parseState(record);const summary=quoteSummary(record);
     if(summary.quoteNo){
       try{
-        const confirmed=await db.rpc('confirm_showroom_quotation',{
+        const confirmed=await db.rpc('confirm_showroom_quotation_v2',{
           p_source_record_id:id,
           p_quote_no:summary.quoteNo,
-          p_source_payload:sourceState
+          p_source_payload:sourceState,
+          p_source_name:String(record.name||'Saved quotation').trim(),
+          p_saved_at:record.savedAt||new Date().toISOString(),
+          p_amount:summary.total
         });
         if(confirmed.error)console.warn('Quotation history confirmation skipped:',confirmed.error.message);
       }catch(err){console.warn('Quotation history confirmation skipped:',err)}
     }
+
+    if(existing.data){
+      if(existing.data.status==='converted')return existing.data;
+      const refreshed={
+        source_name:String(record.name||existing.data.source_name||'Saved quotation').trim(),
+        source_saved_at:record.savedAt||existing.data.source_saved_at||null,
+        source_document_type:String(sourceState.documentType||'quotation'),
+        source_quote_no:summary.quoteNo||existing.data.source_quote_no||null,
+        source_salesperson:summary.salesperson||null,
+        source_payload:sourceState,
+        customer_name:summary.customerName||null,
+        customer_phone:summary.customerPhone||null,
+        customer_address:summary.customerAddress||null,
+        updated_at:new Date().toISOString()
+      };
+      const updated=await db.from(TABLE).update(refreshed).eq('id',existing.data.id).select().single();
+      if(updated.error)throw updated.error;
+      return updated.data;
+    }
+
     const row={
       source_system:SOURCE_SYSTEM,source_record_id:id,source_name:String(record.name||'Saved quotation').trim(),
       source_saved_at:record.savedAt||null,source_document_type:String(sourceState.documentType||'quotation'),
@@ -192,7 +283,7 @@
   };
   async function getRegistryRows(){
     const r=await db.from(REGISTRY_TABLE)
-      .select('id,quote_no,quote_prefix,quote_month,sequence_no,source_record_id,source_name,issue_date,saved_at,customer_name,customer_phone,salesperson,amount,confirmed_at,source_payload')
+      .select('id,quote_no,quote_prefix,quote_month,sequence_no,source_record_id,source_name,issue_date,saved_at,customer_name,customer_phone,salesperson,amount,confirmed_at,current_revision,source_payload')
       .order('issue_date',{ascending:false})
       .order('sequence_no',{ascending:false});
     if(r.error)throw r.error;
