@@ -6,6 +6,11 @@
   const TABLE='showroom_quotation_imports';
   let handoffBusy=false;
   let activeConversionId=null;
+  const pendingDeletions=new Set();
+  function canDeleteImportedQuotation(){
+    const role=String(state?.profile?.role||'').toLowerCase();
+    return ['super_admin','admin','manager'].includes(role);
+  }
 
   function round2(v){return Math.round((Number(v||0)+Number.EPSILON)*100)/100}
   function num(v,fallback=0){const n=Number(v);return Number.isFinite(n)?n:fallback}
@@ -156,6 +161,7 @@
     const ready=rows.filter(x=>x.status==='ready').length;
     const draft=rows.filter(x=>x.status==='imported_draft').length;
     const converted=rows.filter(x=>x.status==='converted').length;
+    const canDelete=canDeleteImportedQuotation();
     const html=rows.map(row=>{
       const s=quoteSummary(row);
       const customer=(state.customers||[]).find(c=>String(c.id)===String(row.customer_id));
@@ -166,13 +172,50 @@
         '<div class="text-xs text-gray-500 mt-2">'+esc(s.customerName||'No customer name')+(s.customerPhone?' · '+esc(s.customerPhone):'')+'</div>'+
         '<div class="text-[10px] text-gray-400 mt-1">'+itemCount+' quoted item'+(itemCount===1?'':'s')+' · '+money(s.total,'USD')+' · Imported '+esc(fmtDate(row.imported_at))+'</div>'+
         '<div class="text-[10px] mt-2 '+(customer?'text-green-700':'text-amber-700')+'">'+(customer?'Matched customer: <b>'+esc(customer.name)+'</b>':'No official CRM customer linked yet. The showroom details are reference only; select the customer manually before conversion.')+'</div></div>'+
-        '<div class="flex gap-2 shrink-0"><button onclick="reviewImportedQuotation(\''+row.id+'\')" class="px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold">'+(row.status==='converted'?'View':'Review / Convert')+'</button></div></div></div>';
+        '<div class="flex gap-2 shrink-0"><button onclick="reviewImportedQuotation(\''+row.id+'\')" class="px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold">'+(row.status==='converted'?'View':'Review / Convert')+'</button>'+
+        (canDelete?'<button type="button" onclick="deleteImportedQuotation(\''+row.id+'\')" class="px-4 py-2.5 rounded-xl border border-red-200 bg-white text-red-700 text-xs font-semibold hover:bg-red-50" title="Delete this imported record only">Delete</button>':'')+'</div></div></div>';
     }).join('');
     document.getElementById('content').innerHTML=
       '<div class="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-5"><div><h3 class="font-bold text-lg">Imported Quotations</h3><p class="text-xs text-gray-500 mt-1">Public/shared quotations from limperial-showroom stay as drafts here until a logged-in user manually links the official CRM customer and completes the TK/RK Sales Order.</p></div><button onclick="refreshCurrentPage()" class="px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold">Refresh</button></div>'+
       '<div class="grid grid-cols-3 gap-2 mb-5"><div class="card rounded-xl p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Customer Needed</div><div class="text-xl font-bold mt-1">'+draft+'</div></div><div class="card rounded-xl p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Ready</div><div class="text-xl font-bold mt-1">'+ready+'</div></div><div class="card rounded-xl p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Converted</div><div class="text-xl font-bold mt-1">'+converted+'</div></div></div>'+
       '<div class="space-y-3">'+(html||'<div class="card rounded-2xl p-10 text-center text-sm text-gray-400">No showroom quotations imported yet.</div>')+'</div>';
   };
+  window.deleteImportedQuotation=async function(id){
+    if(!canDeleteImportedQuotation()){
+      showToast('Only Super Admin, Admin, and Manager can delete imported quotations.','err');
+      return;
+    }
+    if(pendingDeletions.has(id))return;
+    pendingDeletions.add(id);
+    try{
+      // Check live status first so converted records get a clear warning.
+      const found=await db.from(TABLE).select('id,source_quote_no,source_name,status,converted_sales_order_id').eq('id',id).maybeSingle();
+      if(found.error)throw found.error;
+      const record=found.data;
+      if(!record){
+        showToast('This imported quotation no longer exists.','err');
+        if(state.page==='quotation-imports')await renderImportedQuotations();
+        return;
+      }
+      const name=record.source_quote_no||record.source_name||'this quotation';
+      const message=record.status==='converted'
+        ? 'Delete imported quotation "'+name+'"?\\n\\nThis removes the imported record and its link to the official Sales Order. The official Sales Order itself is NOT deleted.'
+        : 'Delete imported quotation "'+name+'"?\\n\\nThis removes it from Imported Quotes. The saved quotation in the public showroom is NOT deleted.';
+      if(!window.confirm(message))return;
+      const removed=await db.from(TABLE).delete().eq('id',id).select('id');
+      if(removed.error)throw removed.error;
+      if(!removed.data?.length)throw new Error('Delete was not permitted, or this imported quotation no longer exists.');
+      closeModal();
+      showToast('Imported quotation deleted. The showroom quotation and official Sales Orders remain unchanged.');
+      if(state.page==='quotation-imports')await renderImportedQuotations();
+    }catch(err){
+      console.error('Imported quotation deletion failed:',err);
+      showToast(err.message||'Could not delete imported quotation.','err');
+    }finally{
+      pendingDeletions.delete(id);
+    }
+  };
+
   function customerOptions(selectedId){
     return '<option value="">-- Select existing customer --</option>'+(state.customers||[]).map(c=>'<option value="'+esc(c.id)+'" '+(String(c.id)===String(selectedId||'')?'selected':'')+'>'+esc(c.name)+(c.phone?' · '+esc(c.phone):'')+'</option>').join('');
   }
@@ -181,6 +224,7 @@
     const r=await db.from(TABLE).select('*').eq('id',id).single();if(r.error)return showToast(r.error.message,'err');
     const row=r.data;const s=quoteSummary(row);
     const canCreate=typeof window.hasAppPermission!=='function'||window.hasAppPermission('sales_orders.create');
+    const canDelete=canDeleteImportedQuotation();
     const linked=(state.customers||[]).find(c=>String(c.id)===String(row.customer_id));
     let convertedOrderNo='';
     if(row.converted_sales_order_id){
@@ -205,7 +249,8 @@
       '<div class="flex flex-wrap gap-2 mt-3"><button '+(!canCreate?'disabled':'')+' onclick="saveImportedQuotationCustomer(\''+row.id+'\')" class="px-4 py-2.5 rounded-xl text-xs font-semibold '+(!canCreate?'bg-gray-200 text-gray-400 cursor-not-allowed':'bg-[#17324d] text-white')+'">'+(canCreate?'Link Official Customer':'View Only')+'</button><button onclick="closeModal();go(\'customers\')" class="px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold">Create / Find Customer</button></div></div>'+
       '<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>Official Sales Order rule:</b> conversion opens your normal Sales Order form. You must choose TK or RK and enter its official number; the existing duplicate, product, payment, DO, and role validations still run.</div>'+
       (!canCreate?'<div class="rounded-xl border bg-gray-50 p-3 text-xs text-gray-600">Your current role can review this quotation but cannot create Sales Orders.</div>':'')+
-      '<button '+(!canCreate||!row.customer_id||row.status==='converted'?'disabled':'')+' onclick="convertImportedQuotation(\''+row.id+'\')" class="w-full rounded-xl py-3 font-semibold '+(!canCreate||!row.customer_id||row.status==='converted'?'bg-gray-200 text-gray-400 cursor-not-allowed':'bg-[#211d18] text-white')+'">'+(row.status==='converted'?'Already Converted':(!canCreate?'View Only':'Convert to Official Sales Order'))+'</button></div>'
+      '<button '+(!canCreate||!row.customer_id||row.status==='converted'?'disabled':'')+' onclick="convertImportedQuotation(\''+row.id+'\')" class="w-full rounded-xl py-3 font-semibold '+(!canCreate||!row.customer_id||row.status==='converted'?'bg-gray-200 text-gray-400 cursor-not-allowed':'bg-[#211d18] text-white')+'">'+(row.status==='converted'?'Already Converted':(!canCreate?'View Only':'Convert to Official Sales Order'))+'</button>'+
+      (canDelete?'<button type="button" onclick="deleteImportedQuotation(\''+row.id+'\')" class="w-full rounded-xl border border-red-200 bg-white py-2.5 text-red-700 text-xs font-semibold">Delete Imported Quotation</button>':'')+'</div>'
     );
   };
   window.saveImportedQuotationCustomer=async function(id){
