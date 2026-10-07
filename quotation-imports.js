@@ -4,6 +4,8 @@
   const SOURCE_SYSTEM='limperial-showroom';
   const SOURCE_API='https://script.google.com/macros/s/AKfycbwAah-oFIyiSON0jOhjWlL1lzlr0d354bq-1OxMDY2Qz-D-rzAYFaPzTkKDNlnfz1tk/exec';
   const TABLE='showroom_quotation_imports';
+  const REGISTRY_TABLE='showroom_quotation_registry';
+  let quotationSection='imports';
   let handoffBusy=false;
   let activeConversionId=null;
   const pendingDeletions=new Set();
@@ -154,6 +156,134 @@
   async function getRows(){
     const r=await db.from(TABLE).select('*').order('imported_at',{ascending:false});
     if(r.error)throw r.error;return r.data||[];
+  }
+  function quotationTabs(){
+    const importsActive=quotationSection==='imports';
+    return '<div class="inline-flex rounded-xl border bg-white p-1 mb-5">'+
+      '<button type="button" onclick="showQuotationSection(\'imports\')" class="px-4 py-2 rounded-lg text-xs font-semibold '+(importsActive?'bg-[#211d18] text-white':'text-gray-600 hover:bg-gray-50')+'">Imported Queue</button>'+
+      '<button type="button" onclick="showQuotationSection(\'history\')" class="px-4 py-2 rounded-lg text-xs font-semibold '+(!importsActive?'bg-[#211d18] text-white':'text-gray-600 hover:bg-gray-50')+'">Quotation History</button>'+
+      '</div>';
+  }
+  window.showQuotationSection=function(section){
+    quotationSection=section==='history'?'history':'imports';
+    renderImportedQuotations();
+  };
+  async function getRegistryRows(){
+    const r=await db.from(REGISTRY_TABLE)
+      .select('id,quote_no,source_record_id,source_name,issue_date,saved_at,customer_name,customer_phone,salesperson,amount,confirmed_at')
+      .order('issue_date',{ascending:false})
+      .order('sequence_no',{ascending:false});
+    if(r.error)throw r.error;
+    return r.data||[];
+  }
+  function historyStatus(importRow){
+    if(!importRow)return '<span class="px-2 py-1 rounded-full bg-slate-50 text-slate-700 border border-slate-200 text-[10px] font-bold">SAVED</span>';
+    if(importRow.status==='converted')return '<span class="px-2 py-1 rounded-full bg-green-50 text-green-700 border border-green-200 text-[10px] font-bold">CONVERTED</span>';
+    if(importRow.status==='ready')return '<span class="px-2 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold">READY</span>';
+    return '<span class="px-2 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold">IMPORTED</span>';
+  }
+  function jsonpMarkDelete(recordId){
+    return new Promise((resolve,reject)=>{
+      const cb='__limperialQuoteDelete_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
+      const script=document.createElement('script');let done=false;
+      const finish=(err,data)=>{
+        if(done)return;done=true;clearTimeout(timer);
+        try{delete window[cb]}catch(_){window[cb]=undefined}
+        script.remove();err?reject(err):resolve(data);
+      };
+      const timer=setTimeout(()=>finish(new Error('Showroom quotation service timed out.')),15000);
+      window[cb]=data=>{
+        if(data?.ok===false)return finish(new Error(data.error||'Could not delete showroom quotation.'));
+        finish(null,data||{});
+      };
+      script.onerror=()=>finish(new Error('Could not reach the showroom quotation service.'));
+      const q=new URLSearchParams({action:'markDelete',recordId:String(recordId||''),callback:cb,_cb:String(Date.now())});
+      script.src=SOURCE_API+'?'+q.toString();document.head.appendChild(script);
+    });
+  }
+  window.importQuotationFromHistory=async function(sourceRecordId){
+    if(typeof window.hasAppPermission==='function'&&!window.hasAppPermission('sales_orders.create')){
+      showToast('Your role cannot import quotations for Sales Order conversion.','err');return;
+    }
+    try{
+      const row=await importSavedRecord(sourceRecordId);
+      quotationSection='imports';
+      await renderImportedQuotations();
+      showToast(row.status==='converted'?'Quotation was already converted.':'Quotation added to the Imported Queue.');
+      setTimeout(()=>reviewImportedQuotation(row.id),100);
+    }catch(err){showToast(err.message||'Could not import quotation.','err')}
+  };
+  window.reviewQuotationHistory=async function(id){
+    const r=await db.from(REGISTRY_TABLE).select('*').eq('id',id).single();
+    if(r.error)return showToast(r.error.message,'err');
+    const row=r.data,s=quoteSummary(row);
+    const imported=await db.from(TABLE).select('id,status,converted_sales_order_id').eq('source_record_id',row.source_record_id).maybeSingle();
+    const importRow=imported.data||null;
+    const lines=s.lines.map((l,i)=>'<div class="grid grid-cols-[1fr_70px_95px_95px] gap-2 items-center py-2 border-b last:border-b-0"><div class="min-w-0"><div class="text-xs font-semibold truncate">'+esc(l.code||l.name||('Line '+(i+1)))+'</div><div class="text-[10px] text-gray-500 truncate">'+esc(l.name||'')+'</div></div><div class="text-xs text-right">'+l.qty+'</div><div class="text-xs text-right">'+money(l.unitPrice,'USD')+'</div><div class="text-xs text-right">'+money(Math.max(l.qty*l.unitPrice-l.discountAmount,0),'USD')+'</div></div>').join('');
+    openModal('Quotation History',
+      '<div class="space-y-4">'+
+      '<div class="rounded-xl border bg-gray-50 p-4"><div class="flex flex-wrap gap-2 items-center">'+historyStatus(importRow)+'<b class="text-base">'+esc(row.quote_no)+'</b></div>'+
+      '<div class="mt-2 text-xs text-gray-700"><b>Customer:</b> '+esc(row.customer_name||s.customerName||'Not entered')+(row.customer_phone?' · '+esc(row.customer_phone):'')+'</div>'+
+      '<div class="mt-1 text-[10px] text-gray-500"><b>Salesperson:</b> '+esc(row.salesperson||s.salesperson||'Not entered')+' · <b>Issue date:</b> '+esc(row.issue_date||'')+'</div>'+
+      '<div class="mt-1 text-[10px] text-gray-400">Source ID: '+esc(row.source_record_id)+'</div></div>'+
+      '<div><div class="flex items-center justify-between mb-2"><b class="text-sm">Original quotation snapshot</b><span class="text-xs font-bold">'+money(row.amount??s.total,'USD')+'</span></div>'+
+      '<div class="rounded-xl border overflow-hidden"><div class="grid grid-cols-[1fr_70px_95px_95px] gap-2 bg-gray-50 px-3 py-2 text-[9px] uppercase font-bold text-gray-400"><div>Item</div><div class="text-right">Qty</div><div class="text-right">Price</div><div class="text-right">Net</div></div><div class="px-3">'+(lines||'<div class="p-4 text-xs text-gray-400">No item snapshot available.</div>')+'</div></div></div>'+
+      '<div class="flex flex-wrap gap-2">'+
+      (importRow?'<button type="button" onclick="closeModal();reviewImportedQuotation(\''+importRow.id+'\')" class="px-4 py-2.5 rounded-xl bg-[#211d18] text-white text-xs font-semibold">Open Imported Record</button>':'<button type="button" onclick="closeModal();importQuotationFromHistory(\''+esc(row.source_record_id)+'\')" class="px-4 py-2.5 rounded-xl bg-[#211d18] text-white text-xs font-semibold">Import to Sales Queue</button>')+
+      (canDeleteImportedQuotation()?'<button type="button" onclick="closeModal();deleteQuotationHistory(\''+row.id+'\',\''+esc(row.source_record_id)+'\',\''+esc(row.quote_no)+'\')" class="px-4 py-2.5 rounded-xl border border-red-200 bg-white text-red-700 text-xs font-semibold">Delete Quotation</button>':'')+
+      '</div></div>'
+    );
+  };
+  window.deleteQuotationHistory=async function(id,sourceRecordId,quoteNo){
+    if(!canDeleteImportedQuotation()){showToast('Only Super Admin, Admin, and Manager can delete quotation history.','err');return}
+    const imported=await db.from(TABLE).select('id,status,converted_sales_order_id').eq('source_record_id',sourceRecordId).maybeSingle();
+    if(imported.error)return showToast(imported.error.message,'err');
+    const importRow=imported.data||null;
+    const warning=importRow?.status==='converted'
+      ? 'Delete '+quoteNo+' from permanent quotation history?\n\nThe official Sales Order and converted import audit will remain.'
+      : 'Delete '+quoteNo+' permanently?\n\nIt will also be removed from the showroom saved quotation list.';
+    if(!window.confirm(warning))return;
+    try{
+      const sourceResult=await jsonpMarkDelete(sourceRecordId);
+      if(sourceResult?.ok!==true||sourceResult?.deleted!==true)throw new Error(sourceResult?.error||'Showroom did not confirm deletion.');
+      if(importRow&&importRow.status!=='converted'){
+        const q=await db.from(TABLE).delete().eq('id',importRow.id);
+        if(q.error)throw q.error;
+      }
+      const r=await db.from(REGISTRY_TABLE).delete().eq('id',id).select('id');
+      if(r.error)throw r.error;
+      if(!r.data?.length)throw new Error('Delete was not permitted or the quotation no longer exists.');
+      showToast(quoteNo+' deleted from quotation history.');
+      await renderImportedQuotations();
+    }catch(err){
+      console.error('Quotation history deletion failed:',err);
+      showToast(err.message||'Could not delete quotation history.','err');
+    }
+  };
+  async function renderQuotationHistoryPage(){
+    const [historyRows,imports]=await Promise.all([getRegistryRows(),getRows()]);
+    const importBySource=new Map(imports.map(row=>[String(row.source_record_id||''),row]));
+    const converted=historyRows.filter(row=>importBySource.get(String(row.source_record_id||''))?.status==='converted').length;
+    const imported=historyRows.filter(row=>importBySource.has(String(row.source_record_id||''))).length;
+    const canCreate=typeof window.hasAppPermission!=='function'||window.hasAppPermission('sales_orders.create');
+    const canDelete=canDeleteImportedQuotation();
+    const html=historyRows.map(row=>{
+      const importRow=importBySource.get(String(row.source_record_id||''))||null;
+      return '<div class="card rounded-2xl p-4 border border-[#ece6dc]"><div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">'+
+        '<div class="min-w-0"><div class="flex flex-wrap items-center gap-2">'+historyStatus(importRow)+'<div class="font-bold text-base">'+esc(row.quote_no)+'</div></div>'+
+        '<div class="text-xs text-gray-600 mt-2">'+esc(row.customer_name||'No customer name')+(row.customer_phone?' · '+esc(row.customer_phone):'')+'</div>'+
+        '<div class="text-[10px] text-gray-400 mt-1">Issue '+esc(row.issue_date||'')+(row.salesperson?' · '+esc(row.salesperson):'')+' · '+money(row.amount||0,'USD')+'</div>'+
+        '<div class="text-[10px] text-gray-400 mt-1">'+esc(row.source_name||'Saved quotation')+'</div></div>'+
+        '<div class="flex flex-wrap gap-2 shrink-0"><button type="button" onclick="reviewQuotationHistory(\''+row.id+'\')" class="px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold">View</button>'+
+        (!importRow&&canCreate?'<button type="button" onclick="importQuotationFromHistory(\''+esc(row.source_record_id)+'\')" class="px-4 py-2.5 rounded-xl bg-[#17324d] text-white text-xs font-semibold">Import</button>':'')+
+        (canDelete?'<button type="button" onclick="deleteQuotationHistory(\''+row.id+'\',\''+esc(row.source_record_id)+'\',\''+esc(row.quote_no)+'\')" class="px-4 py-2.5 rounded-xl border border-red-200 bg-white text-red-700 text-xs font-semibold">Delete</button>':'')+
+        '</div></div></div>';
+    }).join('');
+    document.getElementById('content').innerHTML=
+      '<div class="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-3"><div><h3 class="font-bold text-lg">Quotation History</h3><p class="text-xs text-gray-500 mt-1">Permanent showroom quotation register. Every new issued quotation keeps its original number and snapshot.</p></div><button onclick="refreshCurrentPage()" class="px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold">Refresh</button></div>'+
+      quotationTabs()+
+      '<div class="grid grid-cols-3 gap-2 mb-5"><div class="card rounded-xl p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Total Quotations</div><div class="text-xl font-bold mt-1">'+historyRows.length+'</div></div><div class="card rounded-xl p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Imported</div><div class="text-xl font-bold mt-1">'+imported+'</div></div><div class="card rounded-xl p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Converted</div><div class="text-xl font-bold mt-1">'+converted+'</div></div></div>'+
+      '<div class="space-y-3">'+(html||'<div class="card rounded-2xl p-10 text-center text-sm text-gray-400">No permanent showroom quotations yet.</div>')+'</div>';
   }
   window.renderImportedQuotations=async function(){
     await loadOrderData();
