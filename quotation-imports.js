@@ -128,6 +128,16 @@
     if(existing.data)return existing.data;
     const record=await jsonpRecord(id);if(!record)throw new Error('The saved showroom quotation could not be found.');
     const sourceState=parseState(record);const summary=quoteSummary(record);
+    if(summary.quoteNo){
+      try{
+        const confirmed=await db.rpc('confirm_showroom_quotation',{
+          p_source_record_id:id,
+          p_quote_no:summary.quoteNo,
+          p_source_payload:sourceState
+        });
+        if(confirmed.error)console.warn('Quotation history confirmation skipped:',confirmed.error.message);
+      }catch(err){console.warn('Quotation history confirmation skipped:',err)}
+    }
     const row={
       source_system:SOURCE_SYSTEM,source_record_id:id,source_name:String(record.name||'Saved quotation').trim(),
       source_saved_at:record.savedAt||null,source_document_type:String(sourceState.documentType||'quotation'),
