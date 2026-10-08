@@ -306,12 +306,13 @@
       };
       const timer=setTimeout(()=>finish(new Error('Showroom quotation service timed out.')),15000);
       window[cb]=data=>{
-        const msg=String(data?.error||'').trim();
-        const alreadyGone=/not found|already deleted|already removed|no longer exists/i.test(msg);
-        // If the quotation was already deleted from V4/Google Sheets, that side of
-        // the cleanup is already complete. Treat it as success so Sales & Order
-        // Management can remove its own permanent history record too.
-        if(data?.ok===false&&alreadyGone){
+        const msg=String(data?.error||data?.message||'').trim();
+        const alreadyGone=/not found|already deleted|already removed|no longer exists|does not exist/i.test(msg);
+        // Deletion is idempotent. Some older V4/Google Sheets responses return
+        // {ok:true, deleted:false, error:"...not found..."} while newer ones may
+        // return ok:false. In either case, "not found" means the V4 side is already
+        // clean and must not block deletion of Sales & Order Management history.
+        if(alreadyGone){
           return finish(null,{ok:true,deleted:true,alreadyDeleted:true,message:msg});
         }
         if(data?.ok===false)return finish(new Error(msg||'Could not delete showroom quotation.'));
@@ -442,9 +443,25 @@
       : 'Delete '+quoteNo+' permanently?\n\nIt will also be removed from the showroom saved quotation list.';
     if(!window.confirm(warning))return;
     try{
-      const sourceResult=await jsonpMarkDelete(sourceRecordId);
-      const sourceAlreadyGone=sourceResult?.alreadyDeleted===true;
-      if(sourceResult?.ok!==true||sourceResult?.deleted!==true)throw new Error(sourceResult?.error||'Showroom did not confirm deletion.');
+      let sourceResult=null;
+      let sourceAlreadyGone=false;
+      try{
+        sourceResult=await jsonpMarkDelete(sourceRecordId);
+        const sourceMessage=String(sourceResult?.error||sourceResult?.message||'').trim();
+        sourceAlreadyGone=sourceResult?.alreadyDeleted===true
+          || /not found|already deleted|already removed|no longer exists|does not exist/i.test(sourceMessage);
+        if(!sourceAlreadyGone&&(sourceResult?.ok!==true||sourceResult?.deleted!==true)){
+          throw new Error(sourceMessage||'Showroom did not confirm deletion.');
+        }
+      }catch(sourceErr){
+        const sourceMessage=String(sourceErr?.message||sourceErr||'').trim();
+        if(/not found|already deleted|already removed|no longer exists|does not exist/i.test(sourceMessage)){
+          sourceAlreadyGone=true;
+          sourceResult={ok:true,deleted:true,alreadyDeleted:true,message:sourceMessage};
+        }else{
+          throw sourceErr;
+        }
+      }
       if(importRow&&importRow.status!=='converted'){
         const q=await db.from(TABLE).delete().eq('id',importRow.id);
         if(q.error)throw q.error;
