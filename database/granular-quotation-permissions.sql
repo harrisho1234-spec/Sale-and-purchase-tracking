@@ -1,6 +1,6 @@
 -- Adds granular quotation permissions and applies them to quotation RLS.
 -- Defaults preserve existing access: View follows Sales Orders View,
--- Create follows Sales Orders Create, Delete stays Admin/Super Admin only.
+-- Create follows Sales Orders Create. Delete defaults to Admin/Super Admin but can be granted to any role/user.
 
 update public.app_access_role_templates
 set permissions = coalesce(permissions,'{}'::jsonb) || jsonb_build_object(
@@ -27,8 +27,7 @@ create policy showroom_quotation_registry_delete
 on public.showroom_quotation_registry
 for delete to authenticated
 using (
-  public.current_app_role() in ('super_admin','admin')
-  and public.current_user_has_permission('quotations.delete')
+  public.current_user_has_permission('quotations.delete')
 );
 
 drop policy if exists showroom_quotation_revisions_select on public.showroom_quotation_revisions;
@@ -87,6 +86,5 @@ create policy showroom_quotation_imports_delete
 on public.showroom_quotation_imports
 for delete to authenticated
 using (
-  public.current_app_role() in ('super_admin','admin')
-  and public.current_user_has_permission('quotations.delete')
+  public.current_user_has_permission('quotations.delete')
 );
