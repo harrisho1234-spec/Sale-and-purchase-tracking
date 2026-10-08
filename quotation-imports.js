@@ -21,10 +21,7 @@
     return canCreateQuotations()&&canCreateSales;
   }
   function canDeleteImportedQuotation(){
-    const role=String(state?.profile?.role||'').toLowerCase();
-    const allowedRole=['super_admin','admin'].includes(role);
-    const allowedPermission=typeof window.hasAppPermission!=='function'||window.hasAppPermission('quotations.delete');
-    return allowedRole&&allowedPermission;
+    return typeof window.hasAppPermission!=='function'||window.hasAppPermission('quotations.delete');
   }
 
   function round2(v){return Math.round((Number(v||0)+Number.EPSILON)*100)/100}
@@ -447,7 +444,7 @@
   };
   window.deleteQuotationHistory=async function(id,sourceRecordId,quoteNo){
     if(!canDeleteImportedQuotation()){
-      showToast('Only Super Admin and Admin can delete quotation history.','err');
+      showToast('You do not have permission to delete quotations.','err');
       return;
     }
 
@@ -562,7 +559,7 @@
   };
   window.deleteImportedQuotation=async function(id){
     if(!canDeleteImportedQuotation()){
-      showToast('Only Super Admin and Admin can delete imported quotations.','err');
+      showToast('You do not have permission to delete quotations.','err');
       return;
     }
     if(pendingDeletions.has(id))return;
