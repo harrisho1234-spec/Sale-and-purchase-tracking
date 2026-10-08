@@ -434,45 +434,44 @@
     );
   };
   window.deleteQuotationHistory=async function(id,sourceRecordId,quoteNo){
-    if(!canDeleteImportedQuotation()){showToast('Only Super Admin, Admin, and Manager can delete quotation history.','err');return}
-    const imported=await db.from(TABLE).select('id,status,converted_sales_order_id').eq('source_record_id',sourceRecordId).maybeSingle();
+    if(!canDeleteImportedQuotation()){
+      showToast('Only Super Admin, Admin, and Manager can delete quotation history.','err');
+      return;
+    }
+
+    const imported=await db.from(TABLE)
+      .select('id,status,converted_sales_order_id')
+      .eq('source_record_id',sourceRecordId)
+      .maybeSingle();
     if(imported.error)return showToast(imported.error.message,'err');
+
     const importRow=imported.data||null;
     const warning=importRow?.status==='converted'
       ? 'Delete '+quoteNo+' from permanent quotation history?\n\nThe official Sales Order and converted import audit will remain.'
-      : 'Delete '+quoteNo+' permanently?\n\nIt will also be removed from the showroom saved quotation list.';
+      : 'Delete '+quoteNo+' from permanent quotation history?\n\nThe V4 saved quotation will also be cleaned up if it still exists.';
     if(!window.confirm(warning))return;
+
     try{
-      let sourceResult=null;
-      let sourceAlreadyGone=false;
-      try{
-        sourceResult=await jsonpMarkDelete(sourceRecordId);
-        const sourceMessage=String(sourceResult?.error||sourceResult?.message||'').trim();
-        sourceAlreadyGone=sourceResult?.alreadyDeleted===true
-          || /not found|already deleted|already removed|no longer exists|does not exist/i.test(sourceMessage);
-        if(!sourceAlreadyGone&&(sourceResult?.ok!==true||sourceResult?.deleted!==true)){
-          throw new Error(sourceMessage||'Showroom did not confirm deletion.');
-        }
-      }catch(sourceErr){
-        const sourceMessage=String(sourceErr?.message||sourceErr||'').trim();
-        if(/not found|already deleted|already removed|no longer exists|does not exist/i.test(sourceMessage)){
-          sourceAlreadyGone=true;
-          sourceResult={ok:true,deleted:true,alreadyDeleted:true,message:sourceMessage};
-        }else{
-          throw sourceErr;
-        }
-      }
+      // Sales & Order Management owns this history record, so its deletion must
+      // never depend on whether the old V4 / Google Sheets saved list still exists.
       if(importRow&&importRow.status!=='converted'){
         const q=await db.from(TABLE).delete().eq('id',importRow.id);
         if(q.error)throw q.error;
       }
+
       const r=await db.from(REGISTRY_TABLE).delete().eq('id',id).select('id');
       if(r.error)throw r.error;
       if(!r.data?.length)throw new Error('Delete was not permitted or the quotation no longer exists.');
-      showToast(sourceAlreadyGone
-        ? quoteNo+' removed from quotation history. It was already deleted from V4.'
-        : quoteNo+' deleted from V4 and quotation history.');
-      await renderImportedQuotations();
+
+      closeModal();
+      showToast(quoteNo+' deleted from quotation history.');
+      if(state.page==='quotation-imports')await renderImportedQuotations();
+
+      // Best-effort V4 cleanup only. Do not block or show an error if the saved
+      // list was already removed from Google Sheets/V4.
+      Promise.resolve()
+        .then(()=>jsonpMarkDelete(sourceRecordId))
+        .catch(err=>console.warn('V4 quotation cleanup skipped:',err?.message||err));
     }catch(err){
       console.error('Quotation history deletion failed:',err);
       showToast(err.message||'Could not delete quotation history.','err');
