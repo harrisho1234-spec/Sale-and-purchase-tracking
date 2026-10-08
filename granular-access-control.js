@@ -29,7 +29,7 @@
     {
       id:'sales-orders',label:'Sales orders',icon:'▤',
       activities:[
-        {key:'sales_orders.view',label:'View sales orders',description:'View quotations, orders and invoice-linked sales records.',view:true},
+        {key:'sales_orders.view',label:'View sales orders',description:'View Sales Orders and invoice-linked sales records.',view:true},
         {key:'sales_orders.create',label:'Create sales orders',description:'Create new customer orders.'},
         {key:'sales_orders.edit',label:'Edit sales orders',description:'Edit permitted Sales Orders.'},
         {key:'sales_orders.delete',label:'Delete sales orders',description:'Delete transactions where the workflow allows.'},
