@@ -3,7 +3,7 @@
   var storageKey='limperial_sidebar_groups_v1';
   var collapseKey='limperial_sidebar_collapsed_v1';
   var groupDefs=[
-    {key:'sales',label:'Sales & Customers',icon:'▤',ids:['customers','sales-orders','tracking','rep-workspace']},
+    {key:'sales',label:'Sales & Customers',icon:'▤',ids:['customers','sales-orders','tracking','rep-workspace','quotation-imports']},
     {key:'finance',label:'Finance & Control',icon:'$',ids:['approvals','payments','returns']},
     {key:'operations',label:'Products & Procurement',icon:'◇',ids:['products','stock-inventory','procurement','vendor-info','supplier-pos']},
     {key:'management',label:'Management',icon:'▥',ids:['sales-access','stock-locations','users']},
