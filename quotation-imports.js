@@ -326,8 +326,26 @@
       setTimeout(()=>reviewImportedQuotation(row.id),100);
     }catch(err){showToast(err.message||'Could not import quotation.','err')}
   };
+  function quotationLineImage(line){
+    if(!line||line.kind==='service')return '';
+    let url=String(line.image||'').trim();
+    if(!url&&Array.isArray(state?.products)){
+      const product=state.products.find(p=>lower(p.code)===lower(line.code));
+      url=String(product?.image_url||'').trim();
+    }
+    if(url&&typeof window.normalizeGoogleImageUrl==='function')url=window.normalizeGoogleImageUrl(url);
+    else if(url&&typeof normalizeGoogleImageUrl==='function')url=normalizeGoogleImageUrl(url);
+    return url;
+  }
+
   function quotationSnapshotLines(summary){
-    return summary.lines.map((l,i)=>'<div class="grid grid-cols-[1fr_70px_95px_95px] gap-2 items-center py-2 border-b last:border-b-0"><div class="min-w-0"><div class="text-xs font-semibold truncate">'+esc(l.code||l.name||('Line '+(i+1)))+'</div><div class="text-[10px] text-gray-500 truncate">'+esc(l.name||'')+'</div></div><div class="text-xs text-right">'+l.qty+'</div><div class="text-xs text-right">'+money(l.unitPrice,'USD')+'</div><div class="text-xs text-right">'+money(Math.max(l.qty*l.unitPrice-l.discountAmount,0),'USD')+'</div></div>').join('');
+    return summary.lines.map((l,i)=>{
+      const img=quotationLineImage(l);
+      const photo=img
+        ? '<div class="w-10 h-10 rounded-lg border bg-gray-50 overflow-hidden shrink-0"><img src="'+esc(img)+'" alt="" class="w-full h-full object-cover" onerror="this.parentElement.innerHTML=\'<div class=&quot;w-full h-full flex items-center justify-center text-[7px] text-gray-400 text-center px-1&quot;>No image</div>\'"></div>'
+        : '<div class="w-10 h-10 rounded-lg border bg-gray-50 shrink-0 flex items-center justify-center text-[7px] text-gray-400 text-center px-1">No image</div>';
+      return '<div class="grid grid-cols-[1fr_70px_95px_95px] gap-2 items-center py-2 border-b last:border-b-0"><div class="min-w-0 flex items-center gap-2">'+photo+'<div class="min-w-0"><div class="text-xs font-semibold truncate">'+esc(l.code||l.name||('Line '+(i+1)))+'</div><div class="text-[10px] text-gray-500 truncate">'+esc(l.name||'')+'</div></div></div><div class="text-xs text-right">'+l.qty+'</div><div class="text-xs text-right">'+money(l.unitPrice,'USD')+'</div><div class="text-xs text-right">'+money(Math.max(l.qty*l.unitPrice-l.discountAmount,0),'USD')+'</div></div>';
+    }).join('');
   }
 
   function revisionTimelineButtons(quotationId,revisions,currentRevision){
@@ -339,6 +357,7 @@
   }
 
   window.reviewQuotationRevision=async function(quotationId,revisionNo){
+    await loadOrderData();
     const [q,r]=await Promise.all([
       db.from(REGISTRY_TABLE).select('*').eq('id',quotationId).single(),
       db.from(REVISION_TABLE).select('*').eq('quotation_id',quotationId).eq('revision_no',revisionNo).single()
@@ -361,6 +380,7 @@
   };
 
   window.reviewQuotationHistory=async function(id){
+    await loadOrderData();
     let r=await db.from(REGISTRY_TABLE).select('*').eq('id',id).single();
     if(r.error)return showToast(r.error.message,'err');
     let row=r.data;
