@@ -116,6 +116,12 @@
       ]
     },
     {
+      id:'showroom',label:'Showroom',icon:'▧',
+      activities:[
+        {key:'showroom.management_mode',label:'Use Management Mode',description:'Unlock Limperial Showroom Management Mode, including cost view, showroom background and seasonal promotion management.'}
+      ]
+    },
+    {
       id:'management',label:'Company & administration',icon:'♙',
       activities:[
         {key:'approvals.view',label:'View approvals',description:'Open approval queues.',view:true},
