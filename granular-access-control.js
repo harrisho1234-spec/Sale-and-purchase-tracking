@@ -43,7 +43,7 @@
       activities:[
         {key:'quotations.view',label:'View quotations',description:'View permanent Quotation History, revisions and imported quotation records.',view:true},
         {key:'quotations.create',label:'Create / import quotations',description:'Import V4 quotations into Sales & Order Management and prepare them for Sales Order conversion.'},
-        {key:'quotations.delete',label:'Delete quotations',description:'Protected Admin / Super Admin deletion of quotation history and imported quotation records.',protected:true}
+        {key:'quotations.delete',label:'Delete quotations',description:'Delete quotation history and imported quotation records when this permission is enabled.'}
       ]
     },
     {
