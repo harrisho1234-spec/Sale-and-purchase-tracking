@@ -12,7 +12,7 @@
   const pendingDeletions=new Set();
   function canDeleteImportedQuotation(){
     const role=String(state?.profile?.role||'').toLowerCase();
-    return ['super_admin','admin','manager'].includes(role);
+    return ['super_admin','admin'].includes(role);
   }
 
   function round2(v){return Math.round((Number(v||0)+Number.EPSILON)*100)/100}
@@ -435,7 +435,7 @@
   };
   window.deleteQuotationHistory=async function(id,sourceRecordId,quoteNo){
     if(!canDeleteImportedQuotation()){
-      showToast('Only Super Admin, Admin, and Manager can delete quotation history.','err');
+      showToast('Only Super Admin and Admin can delete quotation history.','err');
       return;
     }
 
@@ -550,7 +550,7 @@
   };
   window.deleteImportedQuotation=async function(id){
     if(!canDeleteImportedQuotation()){
-      showToast('Only Super Admin, Admin, and Manager can delete imported quotations.','err');
+      showToast('Only Super Admin and Admin can delete imported quotations.','err');
       return;
     }
     if(pendingDeletions.has(id))return;
