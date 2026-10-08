@@ -39,6 +39,14 @@
       ]
     },
     {
+      id:'quotations',label:'Quotations',icon:'⇢',
+      activities:[
+        {key:'quotations.view',label:'View quotations',description:'View permanent Quotation History, revisions and imported quotation records.',view:true},
+        {key:'quotations.create',label:'Create / import quotations',description:'Import V4 quotations into Sales & Order Management and prepare them for Sales Order conversion.'},
+        {key:'quotations.delete',label:'Delete quotations',description:'Protected Admin / Super Admin deletion of quotation history and imported quotation records.',protected:true}
+      ]
+    },
+    {
       id:'tracking',label:'Order tracking',icon:'◎',
       activities:[
         {key:'tracking.view',label:'View order tracking',description:'View item and order fulfillment status.',view:true},
@@ -125,6 +133,7 @@
     'sales-orders':'sales_orders.view',
     tracking:'tracking.view',
     'rep-workspace':'sales_orders.view',
+    'quotation-imports':'quotations.view',
     products:'products.view',
     payments:'payments.view',
     returns:'returns.view',
@@ -143,10 +152,10 @@
   };
 
   const ROLE_FALLBACK={
-    sales:new Set(['customers.view','customers.create','customers.edit','sales_orders.view','sales_orders.create','sales_orders.edit','sales_orders.print','tracking.view','tracking.edit','payments.view','returns.view','returns.create','products.view','products.sales_price_view','reports.view']),
-    accountant:new Set(['customers.view','sales_orders.view','tracking.view','payments.view','payments.create','payments.edit','returns.view','products.view','products.sales_price_view','inventory.view','inventory.reports','reports.view','reports.export','finance.ar_view','finance.cost_margin_view','finance.payment_records']),
+    sales:new Set(['customers.view','customers.create','customers.edit','sales_orders.view','sales_orders.create','sales_orders.edit','sales_orders.print','quotations.view','quotations.create','tracking.view','tracking.edit','payments.view','returns.view','returns.create','products.view','products.sales_price_view','reports.view']),
+    accountant:new Set(['customers.view','sales_orders.view','quotations.view','tracking.view','payments.view','payments.create','payments.edit','returns.view','products.view','products.sales_price_view','inventory.view','inventory.reports','reports.view','reports.export','finance.ar_view','finance.cost_margin_view','finance.payment_records']),
     stock_controller:new Set(['products.view','inventory.view','inventory.operate','inventory.transfer','inventory.count','inventory.reports','procurement.view','procurement.po_receive']),
-    manager:new Set(['customers.view','customers.create','customers.edit','sales_orders.view','sales_orders.create','sales_orders.edit','sales_orders.print','sales_orders.export','sales.view_all','tracking.view','tracking.edit','payments.view','payments.create','payments.edit','returns.view','returns.create','returns.edit','products.view','products.sales_price_view','inventory.view','inventory.reports','reports.view','reports.export','finance.ar_view','approvals.view','approvals.manage','sales_access.manage']),
+    manager:new Set(['customers.view','customers.create','customers.edit','sales_orders.view','sales_orders.create','sales_orders.edit','sales_orders.print','sales_orders.export','sales.view_all','quotations.view','quotations.create','tracking.view','tracking.edit','payments.view','payments.create','payments.edit','returns.view','returns.create','returns.edit','products.view','products.sales_price_view','inventory.view','inventory.reports','reports.view','reports.export','finance.ar_view','approvals.view','approvals.manage','sales_access.manage']),
     admin:new Set(AREAS.flatMap(a=>a.activities.map(x=>x.key)).filter(k=>!['users.manage','products.tax_manage','activity_logs.view'].includes(k))),
     super_admin:new Set(AREAS.flatMap(a=>a.activities.map(x=>x.key)))
   };
@@ -414,7 +423,7 @@
               '<div class="mt-4"><div class="text-xs font-semibold mb-2">Access level</div><div class="flex flex-wrap gap-2">'+
                 ['none','full','partial'].map(x=>'<button onclick="setAccessBuilderAreaLevel(\''+area.id+'\',\''+x+'\')" class="px-4 py-2.5 rounded-xl border text-xs font-semibold '+(level===x?'border-blue-600 bg-blue-50 text-blue-800':'bg-white')+'">'+(x==='none'?'None':x==='full'?'Full':'Partial')+'</button>').join('')+
               '</div></div>'+
-              '<div class="mt-4 text-xs text-gray-500">Full enables every editable activity in this area. Partial lets you choose individual activities. Protected Super Admin controls stay locked.</div>'+
+              '<div class="mt-4 text-xs text-gray-500">Full enables every editable activity in this area. Partial lets you choose individual activities. Protected system controls stay locked.</div>'+
               '<button onclick="setAccessBuilderViewOnly(\''+area.id+'\')" class="mt-4 px-3 py-2 rounded-xl border border-amber-300 bg-amber-50 text-amber-800 text-xs font-semibold">View only in this area</button>'+
               '<div class="mt-5 divide-y">'+area.activities.map(x=>{
                 const locked=!!x.protected;
