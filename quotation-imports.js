@@ -10,9 +10,21 @@
   let handoffBusy=false;
   let activeConversionId=null;
   const pendingDeletions=new Set();
+  function canViewQuotations(){
+    return typeof window.hasAppPermission!=='function'||window.hasAppPermission('quotations.view');
+  }
+  function canCreateQuotations(){
+    return typeof window.hasAppPermission!=='function'||window.hasAppPermission('quotations.create');
+  }
+  function canConvertQuotations(){
+    const canCreateSales=typeof window.hasAppPermission!=='function'||window.hasAppPermission('sales_orders.create');
+    return canCreateQuotations()&&canCreateSales;
+  }
   function canDeleteImportedQuotation(){
     const role=String(state?.profile?.role||'').toLowerCase();
-    return ['super_admin','admin'].includes(role);
+    const allowedRole=['super_admin','admin'].includes(role);
+    const allowedPermission=typeof window.hasAppPermission!=='function'||window.hasAppPermission('quotations.delete');
+    return allowedRole&&allowedPermission;
   }
 
   function round2(v){return Math.round((Number(v||0)+Number.EPSILON)*100)/100}
@@ -324,8 +336,8 @@
     });
   }
   window.importQuotationFromHistory=async function(sourceRecordId){
-    if(typeof window.hasAppPermission==='function'&&!window.hasAppPermission('sales_orders.create')){
-      showToast('Your role cannot import quotations for Sales Order conversion.','err');return;
+    if(!canCreateQuotations()){
+      showToast('Your role cannot create or import quotations.','err');return;
     }
     try{
       const row=await importSavedRecord(sourceRecordId);
@@ -501,7 +513,7 @@
     const importBySource=new Map(imports.map(row=>[String(row.source_record_id||''),row]));
     const converted=historyRows.filter(row=>importBySource.get(String(row.source_record_id||''))?.status==='converted').length;
     const imported=historyRows.filter(row=>importBySource.has(String(row.source_record_id||''))).length;
-    const canCreate=typeof window.hasAppPermission!=='function'||window.hasAppPermission('sales_orders.create');
+    const canCreate=canCreateQuotations();
     const canDelete=canDeleteImportedQuotation();
     const html=historyRows.map(row=>{
       const importRow=importBySource.get(String(row.source_record_id||''))||null;
@@ -595,7 +607,8 @@
       try{row=await importSavedRecord(row.source_record_id)}catch(err){console.warn('Latest quotation revision refresh skipped:',err?.message||err)}
     }
     const s=quoteSummary(row);
-    const canCreate=typeof window.hasAppPermission!=='function'||window.hasAppPermission('sales_orders.create');
+    const canCreate=canCreateQuotations();
+    const canConvert=canConvertQuotations();
     const canDelete=canDeleteImportedQuotation();
     const linked=(state.customers||[]).find(c=>String(c.id)===String(row.customer_id));
     let convertedOrderNo='';
@@ -620,13 +633,13 @@
       '<div class="text-[10px] text-gray-500 mt-1">If the customer does not exist yet, create/link the customer in the normal Customer workflow, then return here and select it.</div>'+
       '<div class="flex flex-wrap gap-2 mt-3"><button '+(!canCreate?'disabled':'')+' onclick="saveImportedQuotationCustomer(\''+row.id+'\')" class="px-4 py-2.5 rounded-xl text-xs font-semibold '+(!canCreate?'bg-gray-200 text-gray-400 cursor-not-allowed':'bg-[#17324d] text-white')+'">'+(canCreate?'Link Official Customer':'View Only')+'</button><button onclick="closeModal();go(\'customers\')" class="px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold">Create / Find Customer</button></div></div>'+
       '<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>Official Sales Order rule:</b> conversion opens your normal Sales Order form. You must choose TK or RK and enter its official number; the existing duplicate, product, payment, DO, and role validations still run.</div>'+
-      (!canCreate?'<div class="rounded-xl border bg-gray-50 p-3 text-xs text-gray-600">Your current role can review this quotation but cannot create Sales Orders.</div>':'')+
-      '<button '+(!canCreate||!row.customer_id||row.status==='converted'?'disabled':'')+' onclick="convertImportedQuotation(\''+row.id+'\')" class="w-full rounded-xl py-3 font-semibold '+(!canCreate||!row.customer_id||row.status==='converted'?'bg-gray-200 text-gray-400 cursor-not-allowed':'bg-[#211d18] text-white')+'">'+(row.status==='converted'?'Already Converted':(!canCreate?'View Only':'Convert to Official Sales Order'))+'</button>'+
+      (!canCreate?'<div class="rounded-xl border bg-gray-50 p-3 text-xs text-gray-600">Your current role can view quotations but cannot create or import them.</div>':(!canConvert?'<div class="rounded-xl border bg-gray-50 p-3 text-xs text-gray-600">Quotation access is enabled, but Create Sales Orders permission is also required for TK/RK conversion.</div>':''))+
+      '<button '+(!canConvert||!row.customer_id||row.status==='converted'?'disabled':'')+' onclick="convertImportedQuotation(\''+row.id+'\')" class="w-full rounded-xl py-3 font-semibold '+(!canConvert||!row.customer_id||row.status==='converted'?'bg-gray-200 text-gray-400 cursor-not-allowed':'bg-[#211d18] text-white')+'">'+(row.status==='converted'?'Already Converted':(!canConvert?'View Only':'Convert to Official Sales Order'))+'</button>'+
       (canDelete?'<button type="button" onclick="deleteImportedQuotation(\''+row.id+'\')" class="w-full rounded-xl border border-red-200 bg-white py-2.5 text-red-700 text-xs font-semibold">Delete Imported Quotation</button>':'')+'</div>'
     );
   };
   window.saveImportedQuotationCustomer=async function(id){
-    if(typeof window.hasAppPermission==='function'&&!window.hasAppPermission('sales_orders.create'))return showToast('Your role cannot create Sales Orders.','err');
+    if(!canCreateQuotations())return showToast('Your role cannot create or import quotations.','err');
     const customerId=document.getElementById('importQuoteCustomer')?.value||null;
     if(!customerId)return showToast('Select the official CRM customer first. If the customer does not exist, create/link it in Customers and then return here.','err');
     const r=await db.from(TABLE).update({customer_id:customerId,status:'ready',updated_at:new Date().toISOString()}).eq('id',id).select().single();
@@ -654,7 +667,8 @@
     row.querySelector('.qty').value=String(line.qty);row.querySelector('.unit-price').value=String(line.unitPrice);row.querySelector('.line-discount').value=String(line.discountAmount);row.dataset.discountBasis='amount';
   }
   window.convertImportedQuotation=async function(id){
-    if(typeof window.hasAppPermission==='function'&&!window.hasAppPermission('sales_orders.create'))return showToast('Your role cannot create Sales Orders.','err');
+    if(!canCreateQuotations())return showToast('Your role cannot create or import quotations.','err');
+    if(!canConvertQuotations())return showToast('Create Sales Orders permission is required to convert a quotation.','err');
     await loadOrderData();
     const r=await db.from(TABLE).select('*').eq('id',id).single();if(r.error)return showToast(r.error.message,'err');
     let draft=r.data;
@@ -716,7 +730,7 @@
   if(typeof oldNavItems==='function'){
     window.navItems=function(){
       const items=oldNavItems.apply(this,arguments)||[];
-      const allowed=typeof window.hasAppPermission!=='function'||window.hasAppPermission('sales_orders.view');
+      const allowed=canViewQuotations();
       if(!allowed||items.some(x=>x[0]==='quotation-imports'))return items;
       const out=[];items.forEach(item=>{out.push(item);if(item[0]==='sales-orders')out.push(['quotation-imports','Quotations','⇢'])});return out;
     };
@@ -725,7 +739,7 @@
   if(typeof oldGo==='function'){
     window.go=async function(page){
       if(page!=='quotation-imports')return oldGo.apply(this,arguments);
-      if(typeof window.hasAppPermission==='function'&&!window.hasAppPermission('sales_orders.view')){showToast('You do not have access to Sales Orders.','err');return oldGo('dashboard')}
+      if(!canViewQuotations()){showToast('You do not have access to Quotations.','err');return oldGo('dashboard')}
       state.page=page;renderNav();
       // Normal navigation always opens the permanent Quotation History first.
       // A V4 handoff keeps Imported Queue active so the newly imported quote can be reviewed.
@@ -742,6 +756,7 @@
     const recordId=params.get('showroom-quote');if(!recordId||!state?.user||!state?.profile)return;
     handoffBusy=true;
     try{
+      if(!canCreateQuotations())throw new Error('You do not have permission to create or import quotations.');
       const row=await importSavedRecord(recordId);
       quotationSection='imports';
       history.replaceState(null,'',location.pathname+location.search);
