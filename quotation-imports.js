@@ -306,7 +306,15 @@
       };
       const timer=setTimeout(()=>finish(new Error('Showroom quotation service timed out.')),15000);
       window[cb]=data=>{
-        if(data?.ok===false)return finish(new Error(data.error||'Could not delete showroom quotation.'));
+        const msg=String(data?.error||'').trim();
+        const alreadyGone=/not found|already deleted|already removed|no longer exists/i.test(msg);
+        // If the quotation was already deleted from V4/Google Sheets, that side of
+        // the cleanup is already complete. Treat it as success so Sales & Order
+        // Management can remove its own permanent history record too.
+        if(data?.ok===false&&alreadyGone){
+          return finish(null,{ok:true,deleted:true,alreadyDeleted:true,message:msg});
+        }
+        if(data?.ok===false)return finish(new Error(msg||'Could not delete showroom quotation.'));
         finish(null,data||{});
       };
       script.onerror=()=>finish(new Error('Could not reach the showroom quotation service.'));
@@ -435,6 +443,7 @@
     if(!window.confirm(warning))return;
     try{
       const sourceResult=await jsonpMarkDelete(sourceRecordId);
+      const sourceAlreadyGone=sourceResult?.alreadyDeleted===true;
       if(sourceResult?.ok!==true||sourceResult?.deleted!==true)throw new Error(sourceResult?.error||'Showroom did not confirm deletion.');
       if(importRow&&importRow.status!=='converted'){
         const q=await db.from(TABLE).delete().eq('id',importRow.id);
@@ -443,7 +452,9 @@
       const r=await db.from(REGISTRY_TABLE).delete().eq('id',id).select('id');
       if(r.error)throw r.error;
       if(!r.data?.length)throw new Error('Delete was not permitted or the quotation no longer exists.');
-      showToast(quoteNo+' deleted from quotation history.');
+      showToast(sourceAlreadyGone
+        ? quoteNo+' removed from quotation history. It was already deleted from V4.'
+        : quoteNo+' deleted from V4 and quotation history.');
       await renderImportedQuotations();
     }catch(err){
       console.error('Quotation history deletion failed:',err);
