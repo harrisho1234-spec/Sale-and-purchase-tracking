@@ -129,6 +129,7 @@
         '</div>'+
         '<div class="flex flex-wrap items-center gap-3 xl:justify-end">'+
           '<div class="text-right text-xs"><div class="text-gray-400">Requested / OUT</div><b>'+qty(req.total_requested_qty)+' / '+qty(req.total_delivered_qty)+'</b></div>'+
+          (hasDo?'<button type="button" onclick="exportStockDeliveryOrder(\''+esc(req.delivery_request_id)+'\')" class="px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-800 text-[10px] font-bold" title="Open the official Delivery Order, then print or save as PDF">↧ Export DO / PDF</button>':'')+
           (canEditDoNumber()?'<button onclick="assignDeliveryOrderNo(\''+esc(req.delivery_request_id)+'\')" class="px-3 py-2 rounded-lg border '+(hasDo?'border-purple-200 bg-purple-50 text-purple-700':'border-[#d8c28a] bg-[#fffaf0] text-[#8a6a1f]')+' text-[10px] font-bold">'+(hasDo?'Correct DO No.':'Assign Missing DO No.')+'</button>':'')+
         '</div>'+
       '</div>'+
@@ -163,11 +164,12 @@
         const items=Array.isArray(h.items)?h.items:[];
         let itemText='';
         items.forEach(function(i){itemText+=esc((i.product_code||'')+(i.item_name?' · '+i.item_name:''))+'<br>'});
-        cards+='<div class="inv-card grid lg:grid-cols-[1.1fr_1.5fr_100px_125px] gap-4 items-center">'+
+        cards+='<div class="inv-card grid lg:grid-cols-[1.1fr_1.5fr_100px_125px_auto] gap-4 items-center">'+
           '<div><div class="text-[9px] uppercase font-bold text-gray-400">Delivery Order</div><div class="font-bold text-purple-700">'+esc(h.do_no||'-')+'</div><div class="text-[10px] text-gray-500 mt-1">'+esc(h.document_no||'Sales Order')+'</div></div>'+
           '<div><div class="font-semibold">'+esc(h.customer_name||'')+'</div><div class="text-[10px] text-gray-500 mt-1">'+(itemText||'No item detail')+'</div></div>'+
           '<div class="text-xs"><div class="text-gray-400">OUT Qty</div><b class="text-green-700">'+qty(h.delivered_qty)+'</b></div>'+
           '<div class="text-xs text-right"><div class="text-gray-400">Last OUT</div><b>'+esc(dateText(h.delivered_date)||'-')+'</b>'+(h.requested_delivery_date?'<div class="text-[9px] text-gray-400 mt-1">Requested '+esc(dateText(h.requested_delivery_date))+'</div>':'')+'</div>'+
+          '<div class="flex justify-end"><button type="button" onclick="exportStockDeliveryOrder(\''+esc(h.delivery_request_id)+'\')" class="px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-800 text-[10px] font-bold" title="Reprint this Delivery Order or save as PDF">↧ Export DO / PDF</button></div>'+
         '</div>';
       });
       el.innerHTML=navHtml(reqs.length,rows.length)+
