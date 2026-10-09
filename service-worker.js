@@ -1,4 +1,4 @@
-const PWA_VERSION = '20261009-do-accordion1';
+const PWA_VERSION = '20261009-superadmin-do-delete1';
 const APP_ROOT = '/Sale-and-purchase-tracking/';
 const ATTENTION_TAG = 'limperial-action-items';
 
