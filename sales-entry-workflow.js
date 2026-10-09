@@ -273,6 +273,8 @@
     const panel=document.getElementById('salesDoDetails');if(!panel)return;
     const any=[...document.querySelectorAll('#orderItems .do-request-checkbox')].some(x=>x.checked);
     panel.classList.toggle('hidden',!any);
+    const dateInput=document.getElementById('doRequestedDate');
+    if(dateInput)dateInput.required=any;
   };
 
   window.addOrderItemRow=function(){
@@ -398,9 +400,9 @@
         </div>
 
         <div id="salesDoDetails" class="hidden rounded-2xl border border-blue-100 bg-blue-50/30 p-4">
-          <div class="mb-3"><h4 class="font-bold text-sm">Delivery Order Request</h4><div class="text-[10px] text-gray-500 mt-1">Only checked product lines will be sent to Stock as a DO request. The official DO number will be assigned later by Stock.</div></div>
+          <div class="mb-3"><h4 class="font-bold text-sm">Delivery Order Request</h4><div class="text-[10px] text-gray-500 mt-1">Only checked product lines are sent to Stock as a DO request. Delivery Date is mandatory and the DO number is generated when the request is submitted.</div></div>
           <div class="grid md:grid-cols-2 gap-3">
-            <div><label class="text-xs font-semibold">Requested Delivery Date</label><input id="doRequestedDate" type="date" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"></div>
+            <div><label for="doRequestedDate" class="text-xs font-semibold">Requested Delivery Date <span class="text-red-600">*</span></label><input id="doRequestedDate" type="date" aria-label="Requested Delivery Date required for DO" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"></div>
             <div><label class="text-xs font-semibold">Delivery Address</label><input id="doDeliveryAddress" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white" placeholder="Optional delivery address"></div>
             <div class="md:col-span-2"><label class="text-xs font-semibold">Delivery Note / Remark</label><textarea id="doRequestNote" rows="2" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white" placeholder="Access instructions, preferred time, delivery note..."></textarea></div>
           </div>
@@ -468,6 +470,13 @@
       return showToast('DO Qty must be greater than 0 and cannot exceed the sold quantity.','err');
     }
 
+    const requestedDoDate=document.getElementById('doRequestedDate');
+    if(doSelections.length && !requestedDoDate?.value){
+      requestedDoDate?.focus();
+      requestedDoDate?.reportValidity?.();
+      return showToast('Enter the Requested Delivery Date before saving an order with DO.','err');
+    }
+
     const repId=effectiveSalesRepId();
     const repName=effectiveSalesRepName();
     const orderDate=document.getElementById('orderDate').value;
@@ -496,7 +505,7 @@
       }
       const doReq=await db.rpc('submit_sales_delivery_request',{
         p_sales_order_id:so.id,
-        p_requested_delivery_date:document.getElementById('doRequestedDate')?.value||null,
+        p_requested_delivery_date:requestedDoDate.value,
         p_delivery_address:document.getElementById('doDeliveryAddress')?.value.trim()||null,
         p_request_note:document.getElementById('doRequestNote')?.value.trim()||null,
         p_items:requestItems
@@ -543,11 +552,21 @@
     }
     if(window.documentFlowState) window.documentFlowState.loaded=false;
     closeModal();
-    showToast((flow==='pre_order'?`Pre-order ${docNo} created`:`${invoiceType} invoice ${docNo} created`)
-      +(customerReviewPending?' · Customer review pending':'')
-      +(state.profile?.role==='sales'&&calc.depositAmount>0?' · Deposit pending approval':'')
-      +(doSelections.length?' · '+(generatedDoNo?'DO '+generatedDoNo+' generated':'DO created')+' for '+doSelections.length+' item'+(doSelections.length===1?'':'s'):''));
-    await go('sales-orders');
+    const receipt={
+      orderId:so.id,documentNo:docNo,hasDo:doSelections.length>0,
+      doNo:generatedDoNo,requestedDate:doSelections.length?requestedDoDate.value:'',
+      itemCount:doSelections.length,customerReviewPending
+    };
+    try{
+      await go('sales-orders');
+    }catch(navError){
+      console.warn('Sales Order saved; Sales Tracking refresh was unavailable:',navError);
+    }
+    if(typeof window.showSavedSalesDoConfirmation==='function'){
+      window.showSavedSalesDoConfirmation(receipt);
+    }else{
+      showToast(receipt.hasDo?'Sales Order and DO request saved.':'Sales Order saved — No DO requested.');
+    }
   };
 
   document.addEventListener('click',e=>{
