@@ -1,7 +1,7 @@
 // Delivery Order workflow overlay for Customer Fulfillment.
 // Keeps the existing linked-fulfillment screen intact and adds DO Requests + Delivery History.
 (function(){
-  const D={view:'linked',requests:[],history:[]};
+  const D={view:'linked',requests:[],history:[],expandedRequests:new Set()};
 
   function num(v){return Number(v||0)}
   function esc(v){
@@ -84,8 +84,10 @@
   function requestCard(req){
     const items=Array.isArray(req.items)?req.items:[];
     const hasDo=!!String(req.do_no||'').trim();
+    const id=String(req.delivery_request_id);
+    const expanded=D.expandedRequests.has(id);
     let itemHtml='';
-    items.forEach(function(item){
+    if(expanded)items.forEach(function(item){
       const remaining=num(item.remaining_qty);
       let actions='<span class="text-[10px] text-gray-400">View only</span>';
       if(canOperate()&&remaining>0){
@@ -115,41 +117,83 @@
       '</div>';
     });
 
+    // Keep the official DO number, date and actions visible while hiding long
+    // product lists until this individual request is expanded.
     return '<div class="inv-card">'+
-      '<div class="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-3 pb-3 border-b">'+
-        '<div>'+
-          '<div class="flex flex-wrap items-center gap-2"><b class="text-sm">'+esc(req.document_no||'Sales Order')+'</b>'+
-            '<span class="px-2 py-0.5 rounded-full border text-[9px] font-bold '+requestStatusClass(req.request_status)+'">'+esc(title(req.request_status||'requested'))+'</span>'+
-            (hasDo?'<span class="px-2 py-0.5 rounded-full border border-purple-200 bg-purple-50 text-purple-700 text-[9px] font-bold">'+esc(req.do_no)+'</span>':'')+
-          '</div>'+
-          '<div class="text-xs text-gray-600 mt-1">'+esc(req.customer_name||'')+(req.sales_rep_name?' · '+esc(req.sales_rep_name):'')+'</div>'+
-          '<div class="text-[10px] text-gray-400 mt-1">Requested '+dateText(req.requested_at)+(req.requested_delivery_date?' · Delivery '+dateText(req.requested_delivery_date):'')+'</div>'+
-          (req.delivery_address?'<div class="text-[10px] text-gray-500 mt-1">Address: '+esc(req.delivery_address)+'</div>':'')+
-          (req.request_note?'<div class="text-[10px] text-gray-500 mt-1">Remark: '+esc(req.request_note)+'</div>':'')+
-        '</div>'+
-        '<div class="flex flex-wrap items-center gap-3 xl:justify-end">'+
-          '<div class="text-right text-xs"><div class="text-gray-400">Requested / OUT</div><b>'+qty(req.total_requested_qty)+' / '+qty(req.total_delivered_qty)+'</b></div>'+
-          (hasDo?'<button type="button" onclick="exportStockDeliveryOrder(\''+esc(req.delivery_request_id)+'\')" class="px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-800 text-[10px] font-bold" title="Open the official Delivery Order, then print or save as PDF">↧ Export DO / PDF</button>':'')+
-          (canEditDoNumber()?'<button onclick="assignDeliveryOrderNo(\''+esc(req.delivery_request_id)+'\')" class="px-3 py-2 rounded-lg border '+(hasDo?'border-purple-200 bg-purple-50 text-purple-700':'border-[#d8c28a] bg-[#fffaf0] text-[#8a6a1f]')+' text-[10px] font-bold">'+(hasDo?'Correct DO No.':'Assign Missing DO No.')+'</button>':'')+
+      '<div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2">'+
+        '<button type="button" onclick="toggleDoRequestCard(\\''+esc(id)+'\\')" '+
+          'aria-expanded="'+String(expanded)+'" aria-controls="do-request-details-'+esc(id)+'" '+
+          'class="flex min-w-0 flex-1 items-center gap-3 text-left rounded-lg p-1.5 -m-1.5 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500" '+
+          'title="'+(expanded?'Collapse':'Expand')+' this Delivery Order">'+
+          '<span aria-hidden="true" class="flex w-7 h-7 shrink-0 items-center justify-center rounded-lg border border-blue-100 bg-blue-50 text-blue-700 font-bold">'+(expanded?'▾':'▸')+'</span>'+
+          '<span class="block min-w-0">'+
+            '<span class="flex flex-wrap items-center gap-2"><b class="text-sm">'+esc(req.document_no||'Sales Order')+'</b>'+
+              '<span class="px-2 py-0.5 rounded-full border text-[9px] font-bold '+requestStatusClass(req.request_status)+'">'+esc(title(req.request_status||'requested'))+'</span>'+
+              (hasDo?'<span class="px-2 py-0.5 rounded-full border border-purple-200 bg-purple-50 text-purple-700 text-[9px] font-bold">'+esc(req.do_no)+'</span>':'')+
+            '</span>'+
+            '<span class="block text-xs text-gray-600 mt-1">'+esc(req.customer_name||'')+(req.sales_rep_name?' · '+esc(req.sales_rep_name):'')+'</span>'+
+            '<span class="block text-[10px] text-gray-500 mt-1">Requested '+esc(dateText(req.requested_at))+(req.requested_delivery_date?' · Delivery '+esc(dateText(req.requested_delivery_date)):'')+' · '+items.length+' item'+(items.length===1?'':'s')+'</span>'+
+          '</span>'+
+        '</button>'+
+        '<div class="flex flex-wrap items-center gap-2 lg:justify-end lg:pl-3">'+
+          '<div class="text-xs text-right mr-1"><div class="text-gray-400">Requested / OUT</div><b>'+qty(req.total_requested_qty)+' / '+qty(req.total_delivered_qty)+'</b></div>'+
+          (hasDo?'<button type="button" onclick="exportStockDeliveryOrder(\\''+esc(id)+'\\')" class="px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-800 text-[10px] font-bold" title="Open the official Delivery Order, then print or save as PDF">↧ Export DO / PDF</button>':'')+
+          (canEditDoNumber()?'<button type="button" onclick="assignDeliveryOrderNo(\\''+esc(id)+'\\')" class="px-3 py-2 rounded-lg border '+(hasDo?'border-purple-200 bg-purple-50 text-purple-700':'border-[#d8c28a] bg-[#fffaf0] text-[#8a6a1f]')+' text-[10px] font-bold">'+(hasDo?'Correct DO No.':'Assign Missing DO No.')+'</button>':'')+
         '</div>'+
       '</div>'+
-      '<div class="divide-y">'+itemHtml+'</div>'+
+      '<div id="do-request-details-'+esc(id)+'" class="'+(expanded?'mt-3 pt-2 border-t':'hidden')+'">'+
+        (expanded?'<div class="space-y-1 pb-2">'+
+          (req.delivery_address?'<div class="text-[10px] text-gray-500">Address: '+esc(req.delivery_address)+'</div>':'')+
+          (req.request_note?'<div class="text-[10px] text-gray-500">Remark: '+esc(req.request_note)+'</div>':'')+
+        '</div><div class="divide-y">'+itemHtml+'</div>':'')+
+      '</div>'+
     '</div>';
   }
+
+  // Expand/collapse from the already-loaded DO list; do not refetch data on
+  // each tap (especially helpful when the list contains dozens of items).
+  function paintDoRequests(){
+    const el=body();if(!el||D.view!=='do'||!deliveryActive())return;
+    const rows=D.requests,history=D.history;
+    const cards=rows.map(requestCard).join('');
+    const expandedCount=rows.filter(r=>D.expandedRequests.has(String(r.delivery_request_id))).length;
+    el.innerHTML=navHtml(rows.length,history.length)+
+      '<div class="rounded-xl border border-amber-100 bg-amber-50/40 p-3 mb-3 text-xs text-amber-900"><b>DO workflow:</b> the official DO number is generated automatically when Sales submits the request (DOYYMM-001, resetting each month). Stock OUT from this section records that number with the movement. Only Admin/Super Admin can correct an unused number.</div>'+
+      '<div class="mb-3 flex flex-wrap items-center justify-between gap-2">'+
+        '<div class="text-xs text-gray-500">'+rows.length+' DO request'+(rows.length===1?'':'s')+' · '+expandedCount+' expanded</div>'+
+        '<div class="flex flex-wrap gap-2">'+
+          '<button type="button" onclick="setAllDoRequestsExpanded(true)" '+(rows.length&&expandedCount<rows.length?'':'disabled')+' class="px-3 py-2 border rounded-lg text-xs font-semibold bg-white disabled:opacity-40">Expand All</button>'+
+          '<button type="button" onclick="setAllDoRequestsExpanded(false)" '+(expandedCount?'':'disabled')+' class="px-3 py-2 border rounded-lg text-xs font-semibold bg-white disabled:opacity-40">Collapse All</button>'+
+        '</div>'+
+      '</div>'+
+      '<div class="grid gap-3">'+(cards||'<div class="inv-card py-12 text-center text-sm text-gray-400">No open DO requests match this search.</div>')+'</div>';
+  }
+
+  window.toggleDoRequestCard=function(requestId){
+    const id=String(requestId||'');
+    if(!D.requests.some(x=>String(x.delivery_request_id)===id))return;
+    if(D.expandedRequests.has(id))D.expandedRequests.delete(id);
+    else D.expandedRequests.add(id);
+    paintDoRequests();
+    // Replacing the list should not discard keyboard focus from its toggle.
+    const btn=[...document.querySelectorAll('#inventoryBody button[aria-controls]')]
+      .find(x=>x.getAttribute('aria-controls')==='do-request-details-'+id);
+    btn?.focus({preventScroll:true});
+  };
+  window.setAllDoRequestsExpanded=function(expand){
+    D.expandedRequests.clear();
+    if(expand)D.requests.forEach(x=>D.expandedRequests.add(String(x.delivery_request_id)));
+    paintDoRequests();
+  };
 
   async function renderRequests(){
     const el=body();if(!el)return;
     el.innerHTML='<div class="inv-card py-10 text-center text-sm text-gray-400">Loading DO requests...</div>';
     try{
-      const data=await Promise.all([loadRequests(searchValue()),loadHistory(searchValue())]);
-      const rows=data[0],history=data[1];
-      let cards='';
-      rows.forEach(function(r){cards+=requestCard(r)});
-      el.innerHTML=navHtml(rows.length,history.length)+
-        '<div class="rounded-xl border border-amber-100 bg-amber-50/40 p-3 mb-3 text-xs text-amber-900"><b>DO workflow:</b> the official DO number is generated automatically when Sales submits the request (DOYYMM-001, resetting each month). Stock OUT from this section records that number with the movement. Only Admin/Super Admin can correct an unused number.</div>'+
-        '<div class="grid gap-3">'+(cards||'<div class="inv-card py-12 text-center text-sm text-gray-400">No open DO requests match this search.</div>')+'</div>';
+      await Promise.all([loadRequests(searchValue()),loadHistory(searchValue())]);
+      paintDoRequests();
     }catch(err){
-      el.innerHTML='<div class="inv-card text-red-600">Error loading DO requests: '+esc(err.message||'Unknown error')+'</div>';
+      if(D.view==='do'&&deliveryActive())el.innerHTML='<div class="inv-card text-red-600">Error loading DO requests: '+esc(err.message||'Unknown error')+'</div>';
     }
   }
 
@@ -181,7 +225,11 @@
   }
 
   window.setStockDeliveryView=function(view){
-    D.view=['linked','do','history'].includes(view)?view:'linked';
+    const next=['linked','do','history'].includes(view)?view:'linked';
+    // Reopening the DO tab starts with compact summaries. A stock-side
+    // refresh while already on this tab preserves any expanded requests.
+    if(next==='do'&&D.view!=='do')D.expandedRequests.clear();
+    D.view=next;
     if(typeof window.renderStockInventory==='function')window.renderStockInventory();
   };
   window.showDoRequests=function(){window.setStockDeliveryView('do')};
