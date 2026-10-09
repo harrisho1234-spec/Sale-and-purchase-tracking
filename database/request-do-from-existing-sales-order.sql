@@ -127,6 +127,10 @@ declare
   v_available numeric;
   v_count integer:=0;
 begin
+  if p_requested_delivery_date is null then
+    raise exception 'Requested Delivery Date is required for a Delivery Order';
+  end if;
+
   if v_role not in ('sales','manager','admin','super_admin') then
     raise exception 'Sales, Manager or Admin access required';
   end if;
