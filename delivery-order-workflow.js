@@ -121,7 +121,7 @@
     // product lists until this individual request is expanded.
     return '<div class="inv-card">'+
       '<div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2">'+
-        '<button type="button" onclick="toggleDoRequestCard(\\''+esc(id)+'\\')" '+
+        '<button type="button" onclick="toggleDoRequestCard(\''+esc(id)+'\')" '+
           'aria-expanded="'+String(expanded)+'" aria-controls="do-request-details-'+esc(id)+'" '+
           'class="flex min-w-0 flex-1 items-center gap-3 text-left rounded-lg p-1.5 -m-1.5 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500" '+
           'title="'+(expanded?'Collapse':'Expand')+' this Delivery Order">'+
@@ -137,8 +137,8 @@
         '</button>'+
         '<div class="flex flex-wrap items-center gap-2 lg:justify-end lg:pl-3">'+
           '<div class="text-xs text-right mr-1"><div class="text-gray-400">Requested / OUT</div><b>'+qty(req.total_requested_qty)+' / '+qty(req.total_delivered_qty)+'</b></div>'+
-          (hasDo?'<button type="button" onclick="exportStockDeliveryOrder(\\''+esc(id)+'\\')" class="px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-800 text-[10px] font-bold" title="Open the official Delivery Order, then print or save as PDF">↧ Export DO / PDF</button>':'')+
-          (canEditDoNumber()?'<button type="button" onclick="assignDeliveryOrderNo(\\''+esc(id)+'\\')" class="px-3 py-2 rounded-lg border '+(hasDo?'border-purple-200 bg-purple-50 text-purple-700':'border-[#d8c28a] bg-[#fffaf0] text-[#8a6a1f]')+' text-[10px] font-bold">'+(hasDo?'Correct DO No.':'Assign Missing DO No.')+'</button>':'')+
+          (hasDo?'<button type="button" onclick="exportStockDeliveryOrder(\''+esc(id)+'\')" class="px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-800 text-[10px] font-bold" title="Open the official Delivery Order, then print or save as PDF">↧ Export DO / PDF</button>':'')+
+          (canEditDoNumber()?'<button type="button" onclick="assignDeliveryOrderNo(\''+esc(id)+'\')" class="px-3 py-2 rounded-lg border '+(hasDo?'border-purple-200 bg-purple-50 text-purple-700':'border-[#d8c28a] bg-[#fffaf0] text-[#8a6a1f]')+' text-[10px] font-bold">'+(hasDo?'Correct DO No.':'Assign Missing DO No.')+'</button>':'')+
         '</div>'+
       '</div>'+
       '<div id="do-request-details-'+esc(id)+'" class="'+(expanded?'mt-3 pt-2 border-t':'hidden')+'">'+
