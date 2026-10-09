@@ -477,8 +477,15 @@ window.existingSalesDoToggle=function(cb){
 };
 
 window.openExistingSalesDoRequest=async function(orderId){
-  const o=invoiceById(orderId);
-  if(!o)return showToast('Sales Order not found. Refresh and try again.','err');
+  // The new-order receipt may be opened immediately after navigation.
+  // Refresh order details once if they have not reached this view yet.
+  let o=invoiceById(orderId);
+  if(!o){
+    try{await loadSalesTrackingData();o=invoiceById(orderId);}catch(error){
+      return showToast(error.message||'Could not refresh Sales Tracking.','err');
+    }
+  }
+  if(!o)return showToast('Sales Order not found. Refresh Sales Tracking and try again.','err');
   if(!['sales','manager','admin','super_admin'].includes(state.profile?.role)){
     return showToast('Sales, Manager or Admin access required.','err');
   }
@@ -536,7 +543,7 @@ window.openExistingSalesDoRequest=async function(orderId){
         </div>
         <div class="space-y-2">${itemHtml}</div>
         <div class="grid md:grid-cols-2 gap-3 border-t pt-4">
-          <div><label class="text-xs font-semibold">Requested Delivery Date</label><input id="existingDoRequestedDate" type="date" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"></div>
+          <div><label for="existingDoRequestedDate" class="text-xs font-semibold">Requested Delivery Date <span class="text-red-600">*</span></label><input id="existingDoRequestedDate" type="date" required aria-label="Required requested delivery date" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><div class="mt-1 text-[10px] text-red-600">Required before sending DO to Stock.</div></div>
           <div><label class="text-xs font-semibold">Delivery Address</label><input id="existingDoAddress" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white" placeholder="Optional delivery address"></div>
           <div class="md:col-span-2"><label class="text-xs font-semibold">Delivery Note / Remark</label><textarea id="existingDoNote" rows="2" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white" placeholder="Preferred time, access instructions, delivery note..."></textarea></div>
         </div>
@@ -565,12 +572,19 @@ window.openExistingSalesDoRequest=async function(orderId){
         return showToast('DO Qty must be greater than 0 and cannot exceed the available quantity.','err');
       }
 
+      const dateInput=document.getElementById('existingDoRequestedDate');
+      if(!dateInput?.value){
+        dateInput?.focus();
+        dateInput?.reportValidity?.();
+        return showToast('Enter a Requested Delivery Date before submitting the DO.','err');
+      }
       const btn=document.getElementById('existingDoSubmit');
+      if(btn.disabled)return; // Blocks duplicate submissions.
       btn.disabled=true;btn.textContent='Submitting DO Request...';
 
       const rr=await db.rpc('submit_sales_delivery_request',{
         p_sales_order_id:orderId,
-        p_requested_delivery_date:document.getElementById('existingDoRequestedDate')?.value||null,
+        p_requested_delivery_date:dateInput.value,
         p_delivery_address:document.getElementById('existingDoAddress')?.value.trim()||null,
         p_request_note:document.getElementById('existingDoNote')?.value.trim()||null,
         p_items:selected.map(x=>({sales_order_item_id:x.sales_order_item_id,qty:x.qty}))
