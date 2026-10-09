@@ -424,7 +424,7 @@
         </div>
 
         <textarea id="orderNotes" class="w-full border rounded-xl px-3 py-2" placeholder="Notes"></textarea>
-        <button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Sale / Order</button>
+        <button id="saveSalesOrderSubmit" type="submit" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold disabled:opacity-50">Save Sale / Order</button>
       </form>`);
 
     addOrderItemRow();
@@ -433,8 +433,10 @@
     document.getElementById('orderForm').onsubmit=saveOrder;
   };
 
+  let savingSalesOrder=false;
   window.saveOrder=async function(e){
     e.preventDefault();
+    if(savingSalesOrder)return;
     const rows=lineRows();
     if(!rows.length) return showToast('Add at least one item.','err');
     const missingProduct=rows.find(r=>(r.querySelector('.line-kind')?.value||'product')!=='service'&&!r.querySelector('.product-id')?.value);
@@ -485,6 +487,10 @@
     const customerReviewPending=selectedCustomer?.review_status==='pending';
     const order={customer_id:selectedCustomerId,sales_rep_id:repId,sales_rep_name_snapshot:repName||null,order_date:orderDate,order_type:flow==='pre_order'?'pre_order':'in_stock',sales_flow_type:flow,status:'confirmed',currency:'USD',order_discount:calc.orderDiscount,notes:document.getElementById('orderNotes').value.trim()||null,sales_category:document.getElementById('salesCategory')?.value||'standard',created_by:state.user.id,order_no:docNo,invoice_no:flow==='stock_sale'?docNo:null,sr_no:flow==='pre_order'?docNo:null,sales_invoice_no:flow==='stock_sale'?docNo:null,sales_invoice_type:flow==='stock_sale'?invoiceType:null,invoice_request_status:flow==='stock_sale'?'not_needed':'not_requested',deposit_input_type:calc.depositMode,deposit_input_value:calc.depositValue};
 
+    savingSalesOrder=true;
+    const submitButton=document.getElementById('saveSalesOrderSubmit');
+    if(submitButton){submitButton.disabled=true;submitButton.textContent='Saving Sale / Order…';}
+    try{
     const {data:so,error}=await db.from('sales_orders').insert(order).select().single();
     if(error){const msg=String(error.message||'');return showToast(msg.toLowerCase().includes('duplicate')?'That SR/TK/RK number already exists.':msg,'err');}
 
@@ -566,6 +572,13 @@
       window.showSavedSalesDoConfirmation(receipt);
     }else{
       showToast(receipt.hasDo?'Sales Order and DO request saved.':'Sales Order saved — No DO requested.');
+    }
+    }finally{
+      savingSalesOrder=false;
+      if(submitButton?.isConnected){
+        submitButton.disabled=false;
+        submitButton.textContent='Save Sale / Order';
+      }
     }
   };
 
