@@ -26,6 +26,7 @@
   function role(){return String((typeof state!=='undefined'&&state&&state.profile&&state.profile.role)||'')}
   function canOperate(){return ['stock_controller','admin','super_admin'].includes(role())}
   function canEditDoNumber(){return ['admin','super_admin'].includes(role())}
+  function canDeleteDoRequest(){return role()==='super_admin'}
   function deliveryActive(){
     const btn=[].slice.call(document.querySelectorAll('.inv-tab')).find(function(b){
       return String(b.getAttribute('onclick')||'').includes("setInventoryTab('delivery')");
@@ -139,6 +140,7 @@
           '<div class="text-xs text-right mr-1"><div class="text-gray-400">Requested / OUT</div><b>'+qty(req.total_requested_qty)+' / '+qty(req.total_delivered_qty)+'</b></div>'+
           (hasDo?'<button type="button" onclick="exportStockDeliveryOrder(\''+esc(id)+'\')" class="px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-800 text-[10px] font-bold" title="Open the official Delivery Order, then print or save as PDF">↧ Export DO / PDF</button>':'')+
           (canEditDoNumber()?'<button type="button" onclick="assignDeliveryOrderNo(\''+esc(id)+'\')" class="px-3 py-2 rounded-lg border '+(hasDo?'border-purple-200 bg-purple-50 text-purple-700':'border-[#d8c28a] bg-[#fffaf0] text-[#8a6a1f]')+' text-[10px] font-bold">'+(hasDo?'Correct DO No.':'Assign Missing DO No.')+'</button>':'')+
+          (canDeleteDoRequest()?'<button type="button" data-do-delete-id="'+esc(id)+'" onclick="deleteDoRequest(\''+esc(id)+'\')" class="px-3 py-2 rounded-lg border border-red-200 bg-red-50 text-red-700 text-[10px] font-bold hover:bg-red-100" title="Super Admin only: remove an unreleased DO request">Delete DO</button>':'')+
         '</div>'+
       '</div>'+
       '<div id="do-request-details-'+esc(id)+'" class="'+(expanded?'mt-3 pt-2 border-t':'hidden')+'">'+
@@ -234,6 +236,46 @@
   };
   window.showDoRequests=function(){window.setStockDeliveryView('do')};
   window.showDeliveryHistory=function(){window.setStockDeliveryView('history')};
+
+  // Super Admin deletion removes an erroneous, unreleased DO from active
+  // fulfillment. The database keeps its official number and cancellation
+  // audit; it blocks Stock OUT or in-progress/approved stock approvals.
+  window.deleteDoRequest=async function(requestId){
+    if(!canDeleteDoRequest())return showToast('Only Super Admin can delete a DO request.','err');
+    const id=String(requestId||'');
+    const req=D.requests.find(function(x){return String(x.delivery_request_id)===id});
+    if(!req)return showToast('DO request not found. Refresh and try again.','err');
+    const number=String(req.do_no||'').trim()||'Unnumbered DO';
+    const customer=String(req.customer_name||'Customer');
+    const ok=confirm(
+      'Delete Delivery Order '+number+'?\n\n'+
+      'Sales Order: '+String(req.document_no||'')+'\n'+
+      'Customer: '+customer+'\n\n'+
+      'This removes the request from active Customer Fulfillment and frees its requested quantity. '+
+      'The issued DO number and cancellation audit are retained. '+
+      'Deletion is blocked when Stock OUT or pending/approved stock approvals exist.\n\n'+
+      'Continue?'
+    );
+    if(!ok)return;
+    const btn=[...document.querySelectorAll('[data-do-delete-id]')].find(function(el){
+      return el.getAttribute('data-do-delete-id')===id;
+    });
+    if(btn){btn.disabled=true;btn.textContent='Deleting…';}
+    try{
+      const r=await db.rpc('superadmin_delete_delivery_request',{p_delivery_request_id:id});
+      if(r.error)throw r.error;
+      if(r.data!==true)throw new Error('Could not delete this DO request. Please refresh.');
+      D.expandedRequests.delete(id);
+      if(typeof window.invalidateInventoryCache==='function')window.invalidateInventoryCache();
+      showToast('DO '+number+' removed from active requests. Its number and audit record were retained.');
+      if(typeof window.renderStockInventory==='function')await window.renderStockInventory();
+      else await renderRequests();
+    }catch(err){
+      showToast(err.message||'Could not delete the DO request.','err');
+    }finally{
+      if(btn&&btn.isConnected){btn.disabled=false;btn.textContent='Delete DO';}
+    }
+  };
 
   window.assignDeliveryOrderNo=async function(requestId){
     if(!canEditDoNumber())return showToast('Admin / Super Admin access required to correct DO numbers.','err');
