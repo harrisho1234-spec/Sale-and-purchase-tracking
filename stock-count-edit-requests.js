@@ -295,9 +295,7 @@
         if(document.getElementById('stockCountEditTools'))return result;
         const count=countResult.data,pending=(requests.data||[]).filter(x=>x.status==='pending');
         const hasRequests=(requests.data||[]).length>0;
-        const actionRow=[...document.querySelectorAll('#modalBody div')].find(el=>
-          el.classList.contains('justify-end')&&[...el.children].some(x=>
-            x.tagName==='BUTTON'&&/Submit Count|Close & Apply Variances|Delete Count|Reopen Count/.test(x.textContent||'')));
+        const actionRow=document.getElementById('stockCountActionBar');
         if(!actionRow)return result;
         const wrap=document.createElement('div');
         wrap.id='stockCountEditTools';
