@@ -26,7 +26,7 @@
       ?'<div class="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-2">'+
          '<div class="font-bold text-blue-900">✓ DO Request Created</div>'+
          '<div class="font-bold text-lg text-[#211d18]">'+
-           (lastReceipt.doNo?'DO '+escapeHtml(lastReceipt.doNo):'DO request saved — number not retrieved')+
+           (lastReceipt.doNo?(lastReceipt.doNo.toUpperCase().startsWith('DO')?'':'DO ')+escapeHtml(lastReceipt.doNo):'DO request saved — number not retrieved')+
          '</div>'+
          '<div class="text-xs text-blue-800">Requested Delivery Date: <b>'+date+
          '</b> · '+lastReceipt.itemCount+' product line(s) · Sent to Stock</div>'+
