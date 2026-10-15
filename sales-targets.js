@@ -2,7 +2,7 @@
 // Reuses get_sales_report_rows_v5 actual_sales instead of recalculating invoices.
 (function(){
   'use strict';
-  const T={plans:new Map(),loading:new Set(),reps:null,report:null,userId:null};
+  const T={plans:new Map(),loading:new Set(),reps:null,report:null,userId:null,yearOverview:null,yearOverviewLoading:false,yearOverviewError:null,editYear:null};
   const businessNames={RK:'LP Home (RK)',TK:"L’Imperial Luxury (TK)",PJ:'Project (PJ)'};
   const monthLabels=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   // Exactly 25% per quarter (and 100% per year), while staying within 0.0001% input steps.
@@ -99,6 +99,93 @@
       if(T.report?.year===year&&document.getElementById('salesTargetsPanel'))paint();
     }
   }
+  // Target management is independent of the Report's period/year filter.
+  // The compact overview only discloses annual amounts to users with
+  // targets.manage, enforced again by the database RPC.
+  async function loadYearOverview(){
+    if(T.yearOverview!==null||T.yearOverviewLoading)return;
+    T.yearOverviewLoading=true;
+    const uid=T.userId;
+    try{
+      const res=await db.rpc('get_sales_target_year_overview');
+      if(res.error)throw res.error;
+      if(T.userId===uid){
+        T.yearOverview=Array.isArray(res.data)?res.data:[];
+        T.yearOverviewError=null;
+      }
+    }catch(err){
+      if(T.userId===uid)T.yearOverviewError=err.message||'Could not load target years';
+    }finally{
+      if(T.userId===uid){
+        T.yearOverviewLoading=false;
+        if(document.getElementById('salesTargetsPanel'))paint();
+      }
+    }
+  }
+  window.retrySalesTargetYears=function(){
+    T.yearOverviewError=null;
+    T.yearOverview=null;
+    loadYearOverview();
+    paint();
+  };
+  function targetYearManager(plan){
+    if(!plan.can_manage)return '';
+    const current=new Date().getFullYear();
+    const configured=Array.isArray(T.yearOverview)?T.yearOverview:[];
+    const byYear=new Map(configured.map(x=>[Number(x.year),x]));
+    const reportYear=Number(T.report?.year);
+    const years=[...new Set([
+      ...Array.from({length:11},(_,i)=>current+i).filter(y=>y<=2100),
+      ...configured.map(x=>Number(x.year)),
+      ...(reportYear>=2020&&reportYear<=2100?[reportYear]:[])
+    ])].filter(y=>Number.isInteger(y)&&y>=2020&&y<=2100)
+      .sort((a,b)=>a>=current&&b>=current?a-b:a>=current?-1:b>=current?1:b-a);
+    let cards='';
+    if(T.yearOverview===null){
+      cards=T.yearOverviewError
+        ?'<div class="rounded-lg bg-red-50 border border-red-200 p-3 text-xs text-red-700">Target year status unavailable: '+h(T.yearOverviewError)+
+         ' <button type="button" onclick="retrySalesTargetYears()" class="underline font-bold ml-2">Retry</button></div>'
+        :'<p class="text-xs text-gray-500 py-3">Loading available target years…</p>';
+      if(!T.yearOverviewLoading&&!T.yearOverviewError)loadYearOverview();
+    }else{
+      cards='<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">'+years.map(y=>{
+        const saved=byYear.get(y),isReport=y===reportYear;
+        return '<button type="button" onclick="openSalesTargetEditorForYear('+y+')" '+
+          'aria-label="'+(saved?'Edit':'Set')+' sales target for '+y+'" '+
+          'class="text-left rounded-xl border px-3 py-2.5 transition hover:border-amber-400 hover:bg-amber-50 '+
+            (isReport?'border-amber-300 bg-amber-50/40':'border-gray-200 bg-white')+'">'+
+          '<div class="flex flex-wrap justify-between gap-1 items-center"><b class="text-sm text-gray-900">'+y+'</b>'+
+            '<span class="text-[10px] font-bold '+(saved?'text-emerald-700':'text-amber-800')+'">'+(saved?'Edit':'Set')+' <span aria-hidden="true">↗</span></span></div>'+
+          '<div class="text-[11px] mt-1 '+(saved?'font-semibold text-gray-800':'text-gray-500')+'">'+
+            (saved?moneyLocal(saved.annual_target):'Not set yet')+'</div></button>';
+      }).join('')+'</div>';
+    }
+    return '<section class="card rounded-2xl p-4 mb-3 border border-amber-100" aria-label="Manage annual targets by year">'+
+      '<div class="flex flex-wrap justify-between items-start gap-2 mb-3">'+
+        '<div><h3 class="font-bold text-sm">Manage Annual Sales Targets · All Years</h3>'+
+        '<p class="text-[11px] text-gray-600 mt-1">Choose a year here to <b>Set or Edit</b> its target. You do not need to change the Report year above. Each year is saved separately.</p></div>'+
+        '<span class="text-[10px] rounded-lg border border-gray-200 bg-gray-50 px-2 py-1 text-gray-600">Report displays '+h(reportYear)+'</span>'+
+      '</div>'+cards+
+      '<form class="flex flex-wrap gap-2 items-center mt-3 pt-3 border-t border-gray-100" onsubmit="event.preventDefault();openSalesTargetCustomYear()">'+
+        '<label for="targetYearCustom" class="text-xs font-semibold text-gray-700">Other year</label>'+
+        '<input id="targetYearCustom" type="number" min="2020" max="2100" step="1" placeholder="e.g. 2038" class="w-28 border rounded-lg px-3 py-2 text-xs bg-white">'+
+        '<button type="submit" class="px-3 py-2 rounded-lg border border-amber-300 text-xs font-semibold text-amber-900 hover:bg-amber-50">Set / Edit Year</button>'+
+        '<span class="text-[10px] text-gray-500">2020–2100</span></form>'+
+      '</section>';
+  }
+  window.openSalesTargetCustomYear=function(){
+    const field=document.getElementById('targetYearCustom');
+    const val=Number(field?.value);
+    if(!field?.value||!Number.isInteger(val)||val<2020||val>2100){
+      showToast('Enter a whole year between 2020 and 2100.','err');field?.focus();return;
+    }
+    window.openSalesTargetEditorForYear(val);
+  };
+  window.openSalesTargetEditorForYear=function(value){
+    const year=Number(value);
+    if(!Number.isInteger(year)||year<2020||year>2100)return showToast('Choose a year between 2020 and 2100.','err');
+    window.openSalesTargetEditor(year);
+  };
   function paint(){
     const root=document.getElementById('salesTargetsPanel'),S=T.report;if(!root||!S)return;
     const year=Number(S.year)||new Date().getFullYear();
@@ -106,10 +193,11 @@
     if(!plan){root.innerHTML='<div class="card rounded-2xl p-4 text-xs text-gray-500">Loading sales targets…</div>';loadPlan(year);return}
     if(plan.allowed===false){root.innerHTML='';return}
     if(plan.loadError){root.innerHTML='<div class="card rounded-2xl p-4 text-xs text-red-600">Sales target information unavailable: '+h(plan.loadError)+'</div>';return}
+    const manager=targetYearManager(plan);
     if(!plan.configured){
-      root.innerHTML='<div class="card rounded-2xl p-4 mb-4 flex flex-wrap items-center justify-between gap-3">'+
-       '<div><b>Annual Sales Targets · '+year+'</b><p class="text-xs text-gray-500 mt-1">No company target has been configured for '+year+'. Select another Target Year above to plan 2027, 2028 or any future year through 2100; each year is saved separately.</p></div>'+
-       (plan.can_manage?'<button type="button" class="px-4 py-2 bg-[#211d18] text-white text-xs rounded-lg font-bold" onclick="openSalesTargetEditor()">Set '+year+' Target</button>':'')+'</div>';
+      root.innerHTML=manager+'<div class="card rounded-2xl p-4 mb-4 flex flex-wrap items-center justify-between gap-3">'+
+       '<div><b>Annual Sales Target Performance · '+year+'</b><p class="text-xs text-gray-600 mt-1">No target set for the Report year '+year+'. '+(plan.can_manage?'Select any year above to set or edit its target.':'Target achievement will appear once a plan is configured.')+'</p></div>'+
+       (plan.can_manage?'<button type="button" class="px-4 py-2 bg-[#211d18] text-white text-xs rounded-lg font-bold" onclick="openSalesTargetEditorForYear('+year+')">Set '+year+' Target</button>':'')+'</div>';
       return;
     }
     const periods=monthsInView(S),months=visibleReportMonths(periods),filtered=restrictedRows(S,true),scope=targetShares(plan,S);
@@ -147,7 +235,7 @@
            '<td class="px-3 py-2 text-right">'+moneyLocal(t)+'</td><td class="px-3 py-2 text-right">'+moneyLocal(a)+'</td>'+
            '<td class="px-3 py-2 text-right font-bold">'+pct(a,t)+'</td></tr>';
        }).join('')+'</tbody></table></div></div>');
-    root.innerHTML='<div class="card rounded-2xl p-4 mb-4">'+
+    root.innerHTML=manager+'<div class="card rounded-2xl p-4 mb-4">'+
       '<div class="flex flex-wrap items-center justify-between gap-3">'+
       '<div><h3 class="text-lg font-bold">Annual Sales Target · '+year+'</h3>'+
       '<p class="text-xs font-semibold text-[#8a6514] mt-1">Target scope: '+h(scope.label||'Selected filters')+'</p>'+
@@ -167,7 +255,10 @@
   window.renderSalesTargetsPanel=function(S){
     // Avoid leaking a previous logged-in account's target cache when accounts switch.
     const uid=String(state?.user?.id||'');
-    if(T.userId!==uid){T.userId=uid;T.plans.clear();T.loading.clear();T.reps=null}
+    if(T.userId!==uid){
+      T.userId=uid;T.plans.clear();T.loading.clear();T.reps=null;
+      T.yearOverview=null;T.yearOverviewError=null;T.yearOverviewLoading=false;T.editYear=null;
+    }
     T.report=S;paint();
   };
   window.exportSalesTargetPerformance=function(){
@@ -191,12 +282,15 @@
   function itemInput(id,val,step='0.01'){
     return '<input type="number" min="0" max="100" step="'+step+'" id="'+id+'" value="'+h(val)+'" class="target-percent w-24 max-w-full px-2 py-2 rounded-lg border bg-white text-sm text-right" oninput="updateSalesTargetTotals()" aria-label="'+h(id)+' percentage">';
   }
-  window.openSalesTargetEditor=async function(){
-    const year=Number(T.report?.year)||new Date().getFullYear();
+  window.openSalesTargetEditor=async function(requestedYear){
+    const year=requestedYear===undefined?(Number(T.report?.year)||new Date().getFullYear()):Number(requestedYear);
+    if(!Number.isInteger(year)||year<2020||year>2100)return showToast('Choose a year between 2020 and 2100.','err');
+    if(!T.plans.has(year))await loadPlan(year);
     const plan=T.plans.get(year);
     if(!plan?.can_manage)return showToast('Target management permission required.','err');
     try{
       const list=await loadRepOptions();
+      T.editYear=year;
       const saved=new Map((plan.reps||[]).map(r=>[String(r.id),n(r.percentage)]));
       const business=plan.business||{RK:40,TK:40,PJ:20};
       const months=plan.months||defaults;
@@ -233,7 +327,7 @@
   };
   window.saveSalesTargetPlan=async function(event){
     event?.preventDefault?.();
-    const year=Number(T.report?.year),existing=T.plans.get(year);
+    const year=Number(T.editYear),existing=T.plans.get(year);
     if(!existing?.can_manage)return showToast('Target management permission required.','err');
     const annual=n(document.getElementById('targetAnnualUSD')?.value);
     const biz=Object.fromEntries(['RK','TK','PJ'].map(c=>[c,n(document.getElementById('targetBiz_'+c)?.value)]));
@@ -247,9 +341,13 @@
       const r=await db.rpc('save_sales_target_plan',{p_year:year,p_annual_target:annual,p_business:biz,p_reps:reps,p_months:months});
       if(r.error)throw r.error;
       T.plans.delete(year);
+      T.yearOverview=null;
+      T.yearOverviewError=null;
+      T.editYear=null;
       closeModal();
       showToast('Annual sales targets saved for '+year+'.');
-      await loadPlan(year);
+      await Promise.all([loadPlan(year),loadYearOverview()]);
+      paint();
     }catch(err){showToast(err.message||'Could not save annual targets.','err')}
     finally{if(button?.isConnected){button.disabled=false;button.textContent='Save Annual Targets'}}
   };
