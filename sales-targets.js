@@ -179,7 +179,7 @@
     if(!field?.value||!Number.isInteger(val)||val<2020||val>2100){
       showToast('Enter a whole year between 2020 and 2100.','err');field?.focus();return;
     }
-    window.openSalesTargetEditorForYear(val);
+    return window.openSalesTargetEditorForYear(val);
   };
   window.openSalesTargetEditorForYear=function(value){
     const year=Number(value);
