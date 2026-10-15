@@ -184,7 +184,7 @@
   window.openSalesTargetEditorForYear=function(value){
     const year=Number(value);
     if(!Number.isInteger(year)||year<2020||year>2100)return showToast('Choose a year between 2020 and 2100.','err');
-    window.openSalesTargetEditor(year);
+    return window.openSalesTargetEditor(year);
   };
   function paint(){
     const root=document.getElementById('salesTargetsPanel'),S=T.report;if(!root||!S)return;
@@ -196,8 +196,7 @@
     const manager=targetYearManager(plan);
     if(!plan.configured){
       root.innerHTML=manager+'<div class="card rounded-2xl p-4 mb-4 flex flex-wrap items-center justify-between gap-3">'+
-       '<div><b>Annual Sales Target Performance · '+year+'</b><p class="text-xs text-gray-600 mt-1">No target set for the Report year '+year+'. '+(plan.can_manage?'Select any year above to set or edit its target.':'Target achievement will appear once a plan is configured.')+'</p></div>'+
-       (plan.can_manage?'<button type="button" class="px-4 py-2 bg-[#211d18] text-white text-xs rounded-lg font-bold" onclick="openSalesTargetEditorForYear('+year+')">Set '+year+' Target</button>':'')+'</div>';
+       '<div><b>Annual Sales Target Performance · '+year+'</b><p class="text-xs text-gray-600 mt-1">No target set for the Report year '+year+'. '+(plan.can_manage?'Use a year card above to set or edit targets for any year.':'Target achievement will appear once a plan is configured.')+'</p></div></div>';
       return;
     }
     const periods=monthsInView(S),months=visibleReportMonths(periods),filtered=restrictedRows(S,true),scope=targetShares(plan,S);
@@ -240,8 +239,7 @@
       '<div><h3 class="text-lg font-bold">Annual Sales Target · '+year+'</h3>'+
       '<p class="text-xs font-semibold text-[#8a6514] mt-1">Target scope: '+h(scope.label||'Selected filters')+'</p>'+
       '<p class="text-[11px] text-gray-600 mt-1">Based on the existing Actual Sales formula. RK / TK / PJ and sales rep allocations are two independent views of the same 100% goal.</p></div>'+
-      '<div class="flex gap-2 flex-wrap">'+(plan.can_export?'<button type="button" onclick="exportSalesTargetPerformance()" class="border rounded-lg px-3 py-2 text-xs font-semibold">Export CSV</button>':'')+
-      (plan.can_manage?'<button type="button" onclick="openSalesTargetEditor()" class="bg-[#211d18] text-white rounded-lg px-3 py-2 text-xs font-semibold">Manage Targets</button>':'')+'</div></div>'+
+      '<div class="flex gap-2 flex-wrap">'+(plan.can_export?'<button type="button" onclick="exportSalesTargetPerformance()" class="border rounded-lg px-3 py-2 text-xs font-semibold">Export CSV</button>':'')+'</div></div>'+
       cards+
       '<div class="overflow-x-auto"><table class="w-full text-xs"><thead class="bg-[#faf9f6] text-gray-600"><tr>'+
       '<th class="px-3 py-2 text-left">Period</th><th class="px-3 py-2 text-right">Target</th><th class="px-3 py-2 text-right">Actual Sales</th><th class="px-3 py-2 text-right">Achieved</th></tr></thead><tbody>'+
