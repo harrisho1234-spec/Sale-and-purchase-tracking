@@ -408,7 +408,7 @@
     reportState.itemRows=itemRes.data||[];
 
     const years=reportYears();
-    if(!reportState.year||!years.includes(Number(reportState.year)))reportState.year=years[0]||new Date().getFullYear();
+    if(!reportState.year||!years.includes(Number(reportState.year)))reportState.year=years.includes(new Date().getFullYear())?new Date().getFullYear():(years[0]||new Date().getFullYear());
     renderSalesReportBody();
   };
 
