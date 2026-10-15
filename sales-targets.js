@@ -2,10 +2,11 @@
 // Reuses get_sales_report_rows_v5 actual_sales instead of recalculating invoices.
 (function(){
   'use strict';
-  const T={plans:new Map(),loading:new Set(),reps:null,report:null};
+  const T={plans:new Map(),loading:new Set(),reps:null,report:null,userId:null};
   const businessNames={RK:'LP Home (RK)',TK:"L’Imperial Luxury (TK)",PJ:'Project (PJ)'};
   const monthLabels=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const defaults=[8.3333,8.3333,8.3333,8.3333,8.3333,8.3333,8.3333,8.3333,8.3333,8.3333,8.3333,8.3337];
+  // Exactly 25% per quarter (and 100% per year), while staying within 0.0001% input steps.
+  const defaults=[8.3333,8.3333,8.3334,8.3333,8.3333,8.3334,8.3333,8.3333,8.3334,8.3333,8.3333,8.3334];
   const h=v=>String(v==null?'':v).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   const n=v=>{const x=Number(v);return Number.isFinite(x)?x:0};
   const moneyLocal=v=>'$'+n(v).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:2});
@@ -149,6 +150,7 @@
     root.innerHTML='<div class="card rounded-2xl p-4 mb-4">'+
       '<div class="flex flex-wrap items-center justify-between gap-3">'+
       '<div><h3 class="text-lg font-bold">Annual Sales Target · '+year+'</h3>'+
+      '<p class="text-xs font-semibold text-[#8a6514] mt-1">Target scope: '+h(scope.label||'Selected filters')+'</p>'+
       '<p class="text-[11px] text-gray-600 mt-1">Based on the existing Actual Sales formula. RK / TK / PJ and sales rep allocations are two independent views of the same 100% goal.</p></div>'+
       '<div class="flex gap-2 flex-wrap">'+(plan.can_export?'<button type="button" onclick="exportSalesTargetPerformance()" class="border rounded-lg px-3 py-2 text-xs font-semibold">Export CSV</button>':'')+
       (plan.can_manage?'<button type="button" onclick="openSalesTargetEditor()" class="bg-[#211d18] text-white rounded-lg px-3 py-2 text-xs font-semibold">Manage Targets</button>':'')+'</div></div>'+
@@ -162,7 +164,12 @@
       '</tbody></table></div><p class="text-[10px] text-gray-500 mt-3">Actual uses Invoice + Pre-payment − active Returns. Uncategorized “OTHER” sales remain in the main Sales Report but are excluded from target achievement until classified RK, TK, or PJ. Combined Sales Rep × Business targets are not estimated.</p>'+
       '</div><div class="grid gap-4 mb-4">'+bottom.join('')+'</div>';
   }
-  window.renderSalesTargetsPanel=function(S){T.report=S;paint()};
+  window.renderSalesTargetsPanel=function(S){
+    // Avoid leaking a previous logged-in account's target cache when accounts switch.
+    const uid=String(state?.user?.id||'');
+    if(T.userId!==uid){T.userId=uid;T.plans.clear();T.loading.clear();T.reps=null}
+    T.report=S;paint();
+  };
   window.exportSalesTargetPerformance=function(){
     const year=Number(T.report?.year),plan=T.plans.get(year);
     if(!plan?.can_export)return showToast('Target export permission required.','err');
