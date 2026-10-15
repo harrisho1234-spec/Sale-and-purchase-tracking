@@ -297,8 +297,8 @@
     const max=Math.max(...buckets.map(x=>x.actual),0);
     const yearSelect=`
       <div class="flex items-center gap-2">
-        <label for="salesReportYear" class="text-xs font-semibold text-gray-600 whitespace-nowrap">Target Year</label>
-        <select id="salesReportYear" onchange="setSalesReportYear(this.value)" title="Choose a year for its independent annual target plan" class="border rounded-xl bg-white px-3 py-2.5 text-sm">
+        <label for="salesReportYear" class="text-xs font-semibold text-gray-600 whitespace-nowrap">Report Year</label>
+        <select id="salesReportYear" onchange="setSalesReportYear(this.value)" title="Choose the year to display in the sales report" class="border rounded-xl bg-white px-3 py-2.5 text-sm">
           ${years.map(y=>`<option value="${y}" ${Number(reportState.year)===y?'selected':''}>${y}</option>`).join('')}
           <option value="custom">Other year (2020–2100)…</option>
         </select>
