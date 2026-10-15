@@ -12,6 +12,43 @@
   function actionLabel(v){return ({return_only:'Return Only / No Refund',return_to_stock:'Return to Stock',exchange:'Exchange',damaged_return:'Damaged / Defective Return'})[v]||titleCase(v||'')}
   function dispositionLabel(v){return ({return_to_stock:'Return to Stock',damaged_hold:'Damaged Hold',exchange:'Exchange',no_stock_action:'No Stock Action'})[v]||titleCase(v||'')}
   function conditionLabel(v){return ({good:'Good',damaged:'Damaged',defective:'Defective',other:'Other'})[v]||titleCase(v||'')}
+  // Return-to-stock is an instruction on a CN, not a completed warehouse
+  // receipt. The status is read from the stock ledger only when a movement
+  // has been explicitly linked to this exact CN line.
+  function pendingReceiptRows(){return window._cnPendingStockReceipts||[]}
+  function pendingReceiptSummary(returnId){
+    const list=pendingReceiptRows().filter(x=>String(x.return_id)===String(returnId));
+    const qty=list.reduce((sum,x)=>sum+Number(x.pending_qty||0),0);
+    return {items:list.length,qty};
+  }
+  function pendingReceiptBadge(returnId){
+    const v=pendingReceiptSummary(returnId);
+    return v.qty>0?'<span class="inline-flex items-center rounded-lg border border-amber-200 bg-amber-50 text-amber-800 px-2 py-1 text-[10px] font-bold">Pending Stock Receipt · '+v.qty+' pcs</span>':'';
+  }
+  function returnItemReceiptBadge(item,cnStatus){
+    if(item.disposition!=='return_to_stock'||cnStatus==='cancelled')return '';
+    if(window._cnReceiptStatusAvailable===false)
+      return '<span class="inline-flex rounded-md border px-2 py-1 text-[10px] text-gray-600">Stock receipt status unavailable</span>';
+    const row=pendingReceiptRows().find(x=>String(x.return_item_id)===String(item.return_item_id));
+    const pending=Number(row?.pending_qty||0);
+    return pending>0
+      ?'<span class="inline-flex rounded-md border border-amber-200 bg-amber-50 text-amber-800 px-2 py-1 text-[10px] font-bold">Pending Stock Receipt: '+pending+' pcs</span>'
+      :'<span class="inline-flex rounded-md border border-green-200 bg-green-50 text-green-800 px-2 py-1 text-[10px] font-bold">Stock Receipt Recorded</span>';
+  }
+  function returnHandlingHint(value){
+    return value==='return_to_stock'
+      ?'<span class="text-amber-800 font-semibold">Pending Stock Receipt</span> · A separate, linked and posted warehouse receipt is required. Inventory is not increased by this CN.'
+      :value==='damaged_hold'
+        ?'Damaged Hold · Separate from saleable stock until inspected.'
+        :value==='exchange'
+          ?'Exchange · Process the replacement and warehouse movement separately.'
+          :'No Stock Action · This CN does not request an inventory receipt.';
+  }
+  window.updateReturnHandlingHint=function(control){
+    const row=control?.closest('.sales-return-item, .edit-return-item');
+    const note=row?.querySelector('.return-handling-hint');
+    if(note)note.innerHTML=returnHandlingHint(control.value);
+  };
   function statusBadge(v){const cls=v==='received'?'bg-green-50 border-green-200 text-green-700':v==='cancelled'?'bg-gray-100 border-gray-200 text-gray-500':'bg-amber-50 border-amber-200 text-amber-700';return `<span class="inline-flex px-2 py-1 rounded-lg border text-[9px] uppercase tracking-wide font-bold ${cls}">${esc(v||'-')}</span>`}
 
   // Add Returns / CN to the same navigation system used by the rest of the app.
@@ -37,8 +74,15 @@
   };
 
   window.renderReturnsPage=async function(){
-    const {data,error}=await db.rpc('get_visible_sales_returns');
+    const [returnsResult,receiptsResult]=await Promise.all([
+      db.rpc('get_visible_sales_returns'),
+      db.rpc('get_visible_cn_pending_stock_receipts')
+    ]);
+    const {data,error}=returnsResult;
     if(error)throw error;
+    window._cnReceiptStatusAvailable=!receiptsResult.error;
+    window._cnPendingStockReceipts=Array.isArray(receiptsResult.data)?receiptsResult.data:[];
+    if(receiptsResult.error)console.warn('CN warehouse receipt statuses are temporarily unavailable:',receiptsResult.error);
     let rows=data||[];
     if(managerContext())rows=rows.filter(x=>x.sales_rep_id===managerRepId());
     window._visibleSalesReturns=rows;
@@ -81,7 +125,7 @@
         <div><div class="font-bold text-[15px]">${esc(r.cn_no||'')}</div><div class="text-[10px] text-gray-400 mt-0.5">${esc(fmtDate(r.return_date))}</div></div>
         <div class="min-w-0"><div class="font-semibold text-sm truncate">${esc(r.customer_name||'')}</div><div class="text-[10px] text-gray-400 truncate">Invoice(s): ${esc(r.original_document_no||'-')}</div></div>
         <div><div class="text-[9px] uppercase font-bold text-gray-400">Action</div><div class="text-xs font-semibold mt-1">${esc(actionLabel(r.action))}</div></div>
-        <div>${statusBadge(r.status)}${r.reason?`<div class="text-[10px] text-gray-400 truncate mt-1" title="${esc(r.reason)}">${esc(r.reason)}</div>`:''}</div>
+        <div class="flex flex-col items-start gap-1">${statusBadge(r.status)}${pendingReceiptBadge(r.return_id)}${r.reason?`<div class="text-[10px] text-gray-400 truncate mt-1" title="${esc(r.reason)}">${esc(r.reason)}</div>`:''}</div>
         <div><div class="text-[9px] uppercase font-bold text-gray-400">Net Return Value</div><div class="text-sm font-bold mt-1">${money(r.return_value)}</div><div class="text-[9px] text-gray-400">${Number(r.item_count||0)} item(s) · after discount</div></div>
         <div class="flex justify-end gap-2 flex-wrap">
           <button onclick="viewSalesReturn('${r.return_id}')" class="px-3 py-2 border rounded-lg text-xs font-semibold">View</button>
@@ -112,9 +156,9 @@
         <div class="flex items-center justify-between gap-3"><div><div class="font-bold text-sm">Source Invoices</div><div class="text-[10px] text-gray-400 mt-0.5">One CN can include multiple invoices for the same customer.</div></div><div id="returnInvoiceCount" class="text-[10px] font-semibold text-gray-400"></div></div>
         <div id="returnAdditionalInvoicesArea" class="mt-2 rounded-xl border bg-gray-50 p-4 text-sm text-gray-400">Choose the first invoice above.</div>
       </div>
-      <div><label class="text-xs font-semibold">Return Action</label><select id="returnAction" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="return_only">Return Only / No Refund</option><option value="return_to_stock">Return to Stock</option><option value="exchange">Exchange</option><option value="damaged_return">Damaged / Defective Return</option></select></div>
+      <div><label class="text-xs font-semibold">Return Action</label><select id="returnAction" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="return_only">Return Only / No Refund</option><option value="return_to_stock">Return to Stock</option><option value="exchange">Exchange</option><option value="damaged_return">Damaged / Defective Return</option></select><p class="mt-1 text-[11px] text-gray-600">Overall reason for the customer's return. Sets the initial Handling choice for each item; it does not change inventory.</p></div>
       <div><label class="text-xs font-semibold">Reason</label><input id="returnReason" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Changed model, wrong item, damaged..."></div>
-      <div class="md:col-span-2 border-t pt-4"><div class="font-bold text-sm">Returned Items</div><div class="text-[10px] text-gray-400 mt-1">Only select the quantities actually coming back from the customer.</div><div id="returnItemsArea" class="mt-3 rounded-xl border bg-gray-50 p-4 text-sm text-gray-800"><span class="text-gray-500">Select the original sale first.</span></div></div>
+      <div class="md:col-span-2 border-t pt-4"><div class="font-bold text-sm">Returned Items</div><div class="text-[11px] text-gray-600 mt-1">Only select quantities actually returning. <b>Handling</b> is per product: Return to Stock is marked <b>Pending Stock Receipt</b> until a separate warehouse receipt is recorded. CN creation does not increase stock.</div><div id="returnItemsArea" class="mt-3 rounded-xl border bg-gray-50 p-4 text-sm text-gray-800"><span class="text-gray-500">Select the original sale first.</span></div></div>
       <div class="md:col-span-2"><label class="text-xs font-semibold">CN Notes</label><textarea id="returnNotes" rows="3" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Return details, replacement instruction, warehouse note..."></textarea></div>
       <div class="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-700">Return value is calculated from the net sold value after applicable line and order discounts. Creating a CN does not automatically refund the customer or change AR.</div>
       <button class="md:col-span-2 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Create Credit Note</button>
@@ -209,7 +253,7 @@
 
   function syncReturnDisposition(action){
     const v=action==='return_to_stock'?'return_to_stock':action==='exchange'?'exchange':action==='damaged_return'?'damaged_hold':'no_stock_action';
-    document.querySelectorAll('.return-item-disposition').forEach(x=>x.value=v);
+    document.querySelectorAll('.return-item-disposition').forEach(x=>{x.value=v;window.updateReturnHandlingHint(x)});
   }
 
   async function loadReturnableItemsMulti(orderIds){
@@ -251,8 +295,9 @@
               <div class="min-w-0"><div class="font-semibold text-sm text-gray-900 truncate">${esc(x.item_name||'Item')}</div><div class="text-[10px] text-gray-600">${esc(x.product_code||'')}${x.product_code?' • ':''}Sold ${Number(x.qty_sold||0)} • Returned ${Number(x.qty_returned||0)} • Available ${Number(x.qty_available||0)}</div></div>
               <div><label class="text-[9px] uppercase font-bold text-gray-600">Qty</label><input type="number" min="1" max="${Number(x.qty_available||0)}" step="1" value="1" aria-label="Return quantity for ${esc(x.item_name||'Item')}" class="return-item-qty mt-1 w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-gray-900 bg-white"></div>
               <div><label class="text-[9px] uppercase font-bold text-gray-600">Condition</label><select aria-label="Condition of ${esc(x.item_name||'Item')}" class="return-item-condition mt-1 w-full border border-gray-300 rounded-lg px-2 py-2 bg-white text-gray-900 text-xs"><option value="good">Good</option><option value="damaged">Damaged</option><option value="defective">Defective</option><option value="other">Other</option></select></div>
-              <div><label class="text-[9px] uppercase font-bold text-gray-600">Handling</label><select aria-label="Stock handling for ${esc(x.item_name||'Item')}" class="return-item-disposition mt-1 w-full border border-gray-300 rounded-lg px-2 py-2 bg-white text-gray-900 text-xs"><option value="no_stock_action" ${defaultDisp==='no_stock_action'?'selected':''}>No Stock Action</option><option value="return_to_stock" ${defaultDisp==='return_to_stock'?'selected':''}>Return to Stock</option><option value="damaged_hold" ${defaultDisp==='damaged_hold'?'selected':''}>Damaged Hold</option><option value="exchange" ${defaultDisp==='exchange'?'selected':''}>Exchange</option></select></div>
+              <div><label class="text-[9px] uppercase font-bold text-gray-600">Handling</label><select aria-label="Stock handling for ${esc(x.item_name||'Item')}" onchange="updateReturnHandlingHint(this)" class="return-item-disposition mt-1 w-full border border-gray-300 rounded-lg px-2 py-2 bg-white text-gray-900 text-xs"><option value="no_stock_action" ${defaultDisp==='no_stock_action'?'selected':''}>No Stock Action</option><option value="return_to_stock" ${defaultDisp==='return_to_stock'?'selected':''}>Return to Stock</option><option value="damaged_hold" ${defaultDisp==='damaged_hold'?'selected':''}>Damaged Hold</option><option value="exchange" ${defaultDisp==='exchange'?'selected':''}>Exchange</option></select></div>
             </div>
+            <div class="return-handling-hint text-[10px] text-gray-600 mt-2" aria-live="polite">${returnHandlingHint(defaultDisp)}</div>
             <input class="return-item-note mt-2 w-full border border-gray-300 rounded-lg px-3 py-2 text-xs text-gray-900 bg-white placeholder:text-gray-500" aria-label="Return note for ${esc(x.item_name||'Item')}" placeholder="Item return note (optional)">
           </div>`).join(''):`<div class="text-xs text-gray-500 p-2">No quantity remains available for return from this invoice.</div>`}
         </div>
@@ -290,13 +335,13 @@
         <div><div class="text-[9px] uppercase font-bold text-gray-400">Source Invoice(s)</div><div class="font-semibold mt-1">${esc(h?.original_document_no||'-')}</div></div>
         <div><div class="text-[9px] uppercase font-bold text-gray-400">Customer</div><div class="font-semibold mt-1">${esc(h?.customer_name||'-')}</div></div>
         <div><div class="text-[9px] uppercase font-bold text-gray-400">Return Date</div><div class="font-semibold mt-1">${esc(fmtDate(h?.return_date))}</div></div>
-        <div><div class="text-[9px] uppercase font-bold text-gray-400">Status</div><div class="mt-1">${statusBadge(h?.status)}</div></div>
+        <div><div class="text-[9px] uppercase font-bold text-gray-400">Status</div><div class="mt-1 flex flex-col items-start gap-1">${statusBadge(h?.status)}${pendingReceiptBadge(id)}</div></div>
       </div>
       <div class="grid sm:grid-cols-2 gap-3"><div class="border rounded-xl p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Action</div><div class="font-semibold mt-1">${esc(actionLabel(h?.action))}</div></div><div class="border rounded-xl p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Net Return Value</div><div class="font-bold mt-1">${money(h?.return_value||0)}</div><div class="text-[9px] text-gray-400">After line + order discounts · no automatic refund</div></div></div>
       ${h?.reason?`<div class="border rounded-xl p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Reason</div><div class="text-sm mt-1">${esc(h.reason)}</div></div>`:''}
-      <div><div class="font-bold text-sm mb-2">Returned Items</div><div class="grid gap-2">${items.map(x=>{const gross=Number(x.qty||0)*Number(x.unit_price||0),net=Number(x.return_value||0),discount=Math.max(gross-net,0);return `<div class="border rounded-xl p-3 bg-white"><div class="flex flex-col md:flex-row md:justify-between gap-3"><div><div class="flex flex-wrap items-center gap-2"><div class="font-semibold">${esc(x.item_name||'Item')}</div>${x.source_document_no?`<span class="px-2 py-0.5 rounded-md border bg-gray-50 text-[9px] font-semibold text-gray-600">${esc(x.source_document_no)}</span>`:''}</div><div class="text-[10px] text-gray-400">${esc(x.product_code||'')}</div>${x.notes?`<div class="text-[10px] text-gray-500 mt-1">${esc(x.notes)}</div>`:''}</div><div class="flex flex-wrap gap-5"><div><div class="text-[9px] uppercase font-bold text-gray-400">Returned</div><b>${Number(x.qty||0)} of ${Number(x.qty_sold||0)}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Gross Value</div><b>${money(gross)}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Discount Applied</div><b class="text-amber-700">−${money(discount)}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Net Return Value</div><b>${money(net)}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Condition</div><b>${esc(conditionLabel(x.condition))}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Handling</div><b>${esc(dispositionLabel(x.disposition))}</b></div></div></div></div>`}).join('')}</div></div>
+      <div><div class="font-bold text-sm mb-2">Returned Items</div><div class="grid gap-2">${items.map(x=>{const gross=Number(x.qty||0)*Number(x.unit_price||0),net=Number(x.return_value||0),discount=Math.max(gross-net,0);return `<div class="border rounded-xl p-3 bg-white"><div class="flex flex-col md:flex-row md:justify-between gap-3"><div><div class="flex flex-wrap items-center gap-2"><div class="font-semibold">${esc(x.item_name||'Item')}</div>${x.source_document_no?`<span class="px-2 py-0.5 rounded-md border bg-gray-50 text-[9px] font-semibold text-gray-600">${esc(x.source_document_no)}</span>`:''}</div><div class="text-[10px] text-gray-600">${esc(x.product_code||'')}</div>${returnItemReceiptBadge(x,h?.status)}${x.notes?`<div class="text-[10px] text-gray-500 mt-1">${esc(x.notes)}</div>`:''}</div><div class="flex flex-wrap gap-5"><div><div class="text-[9px] uppercase font-bold text-gray-400">Returned</div><b>${Number(x.qty||0)} of ${Number(x.qty_sold||0)}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Gross Value</div><b>${money(gross)}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Discount Applied</div><b class="text-amber-700">−${money(discount)}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Net Return Value</div><b>${money(net)}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Condition</div><b>${esc(conditionLabel(x.condition))}</b></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Handling</div><b>${esc(dispositionLabel(x.disposition))}</b></div></div></div></div>`}).join('')}</div></div>
       ${h?.notes?`<div class="rounded-xl border bg-gray-50 p-3"><div class="text-[9px] uppercase font-bold text-gray-400">CN Notes</div><div class="text-sm mt-1">${esc(h.notes)}</div></div>`:''}
-      <div class="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-700">This CN records the return only. Customer payments and AR are not automatically changed.</div>
+      <div class="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-700">This CN documents the return. Customer payments, AR and inventory are not automatically changed. “Received” means physically received from the customer; it does not mean stock was added back. Return-to-stock items remain pending until their warehouse stock receipt is posted and linked.</div>
       <div class="flex justify-end gap-2 flex-wrap">
         ${canEditCN()&&h?.status!=='cancelled'?`<button onclick="openEditSalesReturn('${id}')" class="px-4 py-2 border border-amber-200 bg-amber-50 text-amber-800 rounded-lg text-xs font-semibold">Edit CN</button>`:''}
         ${canDeleteCN()?`<button onclick="deleteSalesReturn('${id}')" class="px-4 py-2 border border-red-200 bg-red-50 text-red-600 rounded-lg text-xs font-semibold">Delete CN</button>`:''}
@@ -321,27 +366,28 @@
         <div><label class="text-xs font-semibold">CN Number</label><input value="${esc(h.cn_no||'')}" disabled class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-gray-50 text-gray-500"></div>
         <div><label class="text-xs font-semibold">Source Invoice(s)</label><input value="${esc(h.original_document_no||'')}" disabled class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-gray-50 text-gray-500"></div>
         <div><label class="text-xs font-semibold">Return Date</label><input id="editReturnDate" type="date" value="${esc(h.return_date||today())}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
-        <div><label class="text-xs font-semibold">Return Action</label><select id="editReturnAction" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="return_only" ${h.action==='return_only'?'selected':''}>Return Only / No Refund</option><option value="return_to_stock" ${h.action==='return_to_stock'?'selected':''}>Return to Stock</option><option value="exchange" ${h.action==='exchange'?'selected':''}>Exchange</option><option value="damaged_return" ${h.action==='damaged_return'?'selected':''}>Damaged / Defective Return</option></select></div>
+        <div><label class="text-xs font-semibold">Return Action</label><select id="editReturnAction" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="return_only" ${h.action==='return_only'?'selected':''}>Return Only / No Refund</option><option value="return_to_stock" ${h.action==='return_to_stock'?'selected':''}>Return to Stock</option><option value="exchange" ${h.action==='exchange'?'selected':''}>Exchange</option><option value="damaged_return" ${h.action==='damaged_return'?'selected':''}>Damaged / Defective Return</option></select><p class="mt-1 text-[11px] text-gray-600">Overall customer return type; each item has separate Handling. No automatic stock movement.</p></div>
         <div class="md:col-span-2"><label class="text-xs font-semibold">Reason</label><input id="editReturnReason" value="${esc(h.reason||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Reason for return"></div>
 
         <div class="md:col-span-2 border-t pt-4">
           <div class="font-bold text-sm">Returned Items</div>
-          <div class="text-[10px] text-gray-400 mt-1">Change the returned quantity here. Example: if 3 were sold and only 1 came back, enter 1. Enter 0 to remove an item from this CN.</div>
+          <div class="text-[10px] text-gray-400 mt-1">Change the returned quantity here. Example: if 3 were sold and only 1 came back, enter 1. Enter 0 to remove an item from this CN. Handling “Return to Stock” is a pending warehouse receipt instruction, not an inventory increase.</div>
           <div class="grid gap-2 mt-3">
             ${items.map(x=>`<div class="edit-return-item border rounded-xl p-3 bg-white" data-sales-order-item-id="${x.sales_order_item_id}" data-max="${Number(x.max_edit_qty||0)}">
               <div class="grid lg:grid-cols-[minmax(0,1.5fr)_110px_150px_180px] gap-3 items-end">
                 <div><div class="flex flex-wrap items-center gap-2"><div class="font-semibold text-sm">${esc(x.item_name||'Item')}</div>${x.source_document_no?`<span class="px-2 py-0.5 rounded-md border bg-gray-50 text-[9px] font-semibold text-gray-600">${esc(x.source_document_no)}</span>`:''}</div><div class="text-[10px] text-gray-400">${esc(x.product_code||'')} · Sold ${Number(x.qty_sold||0)} · Other CN returns ${Number(x.qty_returned_other||0)} · Max for this CN ${Number(x.max_edit_qty||0)}</div></div>
                 <div><label class="text-[9px] uppercase font-bold text-gray-400">Return Qty</label><input class="edit-return-qty mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" max="${Number(x.max_edit_qty||0)}" step="1" value="${Number(x.qty||0)}"></div>
                 <div><label class="text-[9px] uppercase font-bold text-gray-400">Condition</label><select class="edit-return-condition mt-1 w-full border rounded-lg px-2 py-2 bg-white">${condOptions.map(v=>`<option value="${v}" ${x.condition===v?'selected':''}>${conditionLabel(v)}</option>`).join('')}</select></div>
-                <div><label class="text-[9px] uppercase font-bold text-gray-400">Handling</label><select class="edit-return-disposition mt-1 w-full border rounded-lg px-2 py-2 bg-white">${dispOptions.map(v=>`<option value="${v}" ${x.disposition===v?'selected':''}>${dispositionLabel(v)}</option>`).join('')}</select></div>
+                <div><label class="text-[9px] uppercase font-bold text-gray-400">Handling</label><select onchange="updateReturnHandlingHint(this)" class="edit-return-disposition mt-1 w-full border rounded-lg px-2 py-2 bg-white">${dispOptions.map(v=>`<option value="${v}" ${x.disposition===v?'selected':''}>${dispositionLabel(v)}</option>`).join('')}</select></div>
               </div>
+              <div class="return-handling-hint text-[10px] text-gray-600 mt-2" aria-live="polite">${returnHandlingHint(x.disposition)}</div>
               <input class="edit-return-note mt-2 w-full border rounded-lg px-3 py-2 text-xs" value="${esc(x.notes||'')}" placeholder="Item return note (optional)">
             </div>`).join('')}
           </div>
         </div>
 
         <div class="md:col-span-2"><label class="text-xs font-semibold">CN Notes</label><textarea id="editReturnNotes" rows="3" class="mt-1 w-full border rounded-xl px-3 py-2.5">${esc(h.notes||'')}</textarea></div>
-        <div class="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-700">Editing the CN changes only the return record. Source invoices remain unchanged and customer payments / AR are not automatically changed.</div>
+        <div class="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-700">Editing the CN changes the return record only. It does not post a warehouse stock receipt or adjust payments / AR. Return-to-stock quantities stay pending until a linked stock receipt is posted.</div>
         <div class="md:col-span-2 flex justify-between gap-2 flex-wrap">
           ${canDeleteCN()?`<button type="button" onclick="deleteSalesReturn('${id}')" class="px-4 py-2 border border-red-200 bg-red-50 text-red-600 rounded-lg text-xs font-semibold">Delete CN</button>`:'<span></span>'}
           <div class="flex gap-2"><button type="button" onclick="closeModal()" class="px-4 py-2 border rounded-lg text-xs">Cancel</button><button class="px-5 py-2 bg-[#211d18] text-white rounded-lg text-xs font-semibold">Save CN Changes</button></div>
