@@ -1,7 +1,7 @@
 // Delivery Order workflow overlay for Customer Fulfillment.
 // Keeps the existing linked-fulfillment screen intact and adds DO Requests + Delivery History.
 (function(){
-  const D={view:'linked',requests:[],history:[],expandedRequests:new Set()};
+  const D={view:'linked',requests:[],history:[],editRequests:[],expandedRequests:new Set()};
 
   function num(v){return Number(v||0)}
   function esc(v){
@@ -27,6 +27,9 @@
   function canOperate(){return ['stock_controller','admin','super_admin'].includes(role())}
   function canEditDoNumber(){return ['admin','super_admin'].includes(role())}
   function canDeleteDoRequest(){return role()==='super_admin'}
+  function canSubmitDoEdit(){return ['manager','admin'].includes(role())}
+  function canDirectDoEdit(){return role()==='super_admin'}
+  function canAccessDoEdit(){return canSubmitDoEdit()||canDirectDoEdit()}
   function deliveryActive(){
     const btn=[].slice.call(document.querySelectorAll('.inv-tab')).find(function(b){
       return String(b.getAttribute('onclick')||'').includes("setInventoryTab('delivery')");
@@ -40,6 +43,14 @@
     const r=await db.rpc('get_inventory_do_requests',{p_search:String(search||'').trim()||null});
     if(r.error)throw r.error;
     D.requests=r.data||[];
+    // Separate editable-document workflow. A failure to read edit-request
+    // history should never prevent the DO list itself from loading.
+    if(canAccessDoEdit()){
+      try{
+        const edits=await db.rpc('get_delivery_order_edit_requests',{p_delivery_request_id:null,p_pending_only:false});
+        D.editRequests=edits.error?[]:(edits.data||[]);
+      }catch(_){D.editRequests=[]}
+    }else D.editRequests=[];
     return D.requests;
   }
   async function loadHistory(search){
@@ -61,6 +72,8 @@
           b('linked','Linked Fulfillment',null)+
           b('do','DO Requests',reqCount)+
           b('history','Delivery History',historyCount)+
+          (canAccessDoEdit()?'<button type="button" onclick="openDeliveryOrderEditQueue()" class="px-3 py-2 rounded-lg border border-amber-200 bg-amber-50 text-amber-900 text-[10px] font-bold">'+(canDirectDoEdit()||role()==='admin'?'Review DO Edits':'My DO Edit Requests')+
+            (D.editRequests.filter(x=>x.status==='pending').length?' ('+D.editRequests.filter(x=>x.status==='pending').length+')':'')+'</button>':'')+
         '</div>'+
       '</div>'+
     '</div>';
@@ -87,6 +100,7 @@
     const hasDo=!!String(req.do_no||'').trim();
     const id=String(req.delivery_request_id);
     const expanded=D.expandedRequests.has(id);
+    const pendingEdit=D.editRequests.some(x=>String(x.delivery_request_id)===id&&x.status==='pending');
     let itemHtml='';
     if(expanded)items.forEach(function(item){
       const remaining=num(item.remaining_qty);
@@ -131,6 +145,7 @@
             '<span class="flex flex-wrap items-center gap-2"><b class="text-sm">'+esc(req.document_no||'Sales Order')+'</b>'+
               '<span class="px-2 py-0.5 rounded-full border text-[9px] font-bold '+requestStatusClass(req.request_status)+'">'+esc(title(req.request_status||'requested'))+'</span>'+
               (hasDo?'<span class="px-2 py-0.5 rounded-full border border-purple-200 bg-purple-50 text-purple-700 text-[9px] font-bold">'+esc(req.do_no)+'</span>':'')+
+              (pendingEdit?'<span class="px-2 py-0.5 rounded-full border border-amber-300 bg-amber-50 text-amber-800 text-[9px] font-bold">Edit Pending</span>':'')+
             '</span>'+
             '<span class="block text-xs text-gray-600 mt-1">'+esc(req.customer_name||'')+(req.sales_rep_name?' · '+esc(req.sales_rep_name):'')+'</span>'+
             '<span class="block text-[10px] text-gray-500 mt-1">Requested '+esc(dateText(req.requested_at))+(req.requested_delivery_date?' · Delivery '+esc(dateText(req.requested_delivery_date)):'')+' · '+items.length+' item'+(items.length===1?'':'s')+'</span>'+
@@ -139,6 +154,7 @@
         '<div class="flex flex-wrap items-center gap-2 lg:justify-end lg:pl-3">'+
           '<div class="text-xs text-right mr-1"><div class="text-gray-400">Requested / OUT</div><b>'+qty(req.total_requested_qty)+' / '+qty(req.total_delivered_qty)+'</b></div>'+
           (hasDo?'<button type="button" onclick="exportStockDeliveryOrder(\''+esc(id)+'\')" class="px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-800 text-[10px] font-bold" title="Open the official Delivery Order, then print or save as PDF">↧ Export DO / PDF</button>':'')+
+          (canAccessDoEdit()?'<button type="button" onclick="openDeliveryOrderEdit(\''+esc(id)+'\')" class="px-3 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-[10px] font-bold" title="'+(canDirectDoEdit()?'Apply DO corrections with audit history':'Submit changes for review')+'">'+(canDirectDoEdit()?'Edit DO':'Request Edit')+'</button>':'')+
           (canEditDoNumber()?'<button type="button" onclick="assignDeliveryOrderNo(\''+esc(id)+'\')" class="px-3 py-2 rounded-lg border '+(hasDo?'border-purple-200 bg-purple-50 text-purple-700':'border-[#d8c28a] bg-[#fffaf0] text-[#8a6a1f]')+' text-[10px] font-bold">'+(hasDo?'Correct DO No.':'Assign Missing DO No.')+'</button>':'')+
           (canDeleteDoRequest()?'<button type="button" data-do-delete-id="'+esc(id)+'" onclick="deleteDoRequest(\''+esc(id)+'\')" class="px-3 py-2 rounded-lg border border-red-200 bg-red-50 text-red-700 text-[10px] font-bold hover:bg-red-100" title="Super Admin only: remove an unreleased DO request">Delete DO</button>':'')+
         '</div>'+
@@ -215,7 +231,9 @@
           '<div><div class="font-semibold">'+esc(h.customer_name||'')+'</div><div class="text-[10px] text-gray-500 mt-1">'+(itemText||'No item detail')+'</div></div>'+
           '<div class="text-xs"><div class="text-gray-400">OUT Qty</div><b class="text-green-700">'+qty(h.delivered_qty)+'</b></div>'+
           '<div class="text-xs text-right"><div class="text-gray-400">Last OUT</div><b>'+esc(dateText(h.delivered_date)||'-')+'</b>'+(h.requested_delivery_date?'<div class="text-[9px] text-gray-400 mt-1">Requested '+esc(dateText(h.requested_delivery_date))+'</div>':'')+'</div>'+
-          '<div class="flex justify-end"><button type="button" onclick="exportStockDeliveryOrder(\''+esc(h.delivery_request_id)+'\')" class="px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-800 text-[10px] font-bold" title="Reprint this Delivery Order or save as PDF">↧ Export DO / PDF</button></div>'+
+          '<div class="flex justify-end gap-2 flex-wrap"><button type="button" onclick="exportStockDeliveryOrder(\''+esc(h.delivery_request_id)+'\')" class="px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-800 text-[10px] font-bold" title="Reprint this Delivery Order or save as PDF">↧ Export DO / PDF</button>'+
+            (canAccessDoEdit()?'<button type="button" onclick="openDeliveryOrderEdit(\''+esc(h.delivery_request_id)+'\')" class="px-3 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-[10px] font-bold">'+(canDirectDoEdit()?'Edit DO':'Request Edit')+'</button>':'')+
+          '</div>'+
         '</div>';
       });
       el.innerHTML=navHtml(reqs.length,rows.length)+
