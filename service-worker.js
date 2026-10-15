@@ -1,4 +1,4 @@
-const PWA_VERSION = '20261015-cn-receipt-guidance1';
+const PWA_VERSION = '20261015-annual-sales-targets1';
 const APP_ROOT = '/Sale-and-purchase-tracking/';
 const ATTENTION_TAG = 'limperial-action-items';
 
