@@ -114,7 +114,7 @@
       </div>
       <div><label class="text-xs font-semibold">Return Action</label><select id="returnAction" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="return_only">Return Only / No Refund</option><option value="return_to_stock">Return to Stock</option><option value="exchange">Exchange</option><option value="damaged_return">Damaged / Defective Return</option></select></div>
       <div><label class="text-xs font-semibold">Reason</label><input id="returnReason" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Changed model, wrong item, damaged..."></div>
-      <div class="md:col-span-2 border-t pt-4"><div class="font-bold text-sm">Returned Items</div><div class="text-[10px] text-gray-400 mt-1">Only select the quantities actually coming back from the customer.</div><div id="returnItemsArea" class="mt-3 rounded-xl border bg-gray-50 p-4 text-sm text-gray-400">Select the original sale first.</div></div>
+      <div class="md:col-span-2 border-t pt-4"><div class="font-bold text-sm">Returned Items</div><div class="text-[10px] text-gray-400 mt-1">Only select the quantities actually coming back from the customer.</div><div id="returnItemsArea" class="mt-3 rounded-xl border bg-gray-50 p-4 text-sm text-gray-800"><span class="text-gray-500">Select the original sale first.</span></div></div>
       <div class="md:col-span-2"><label class="text-xs font-semibold">CN Notes</label><textarea id="returnNotes" rows="3" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Return details, replacement instruction, warehouse note..."></textarea></div>
       <div class="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-700">Return value is calculated from the net sold value after applicable line and order discounts. Creating a CN does not automatically refund the customer or change AR.</div>
       <button class="md:col-span-2 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Create Credit Note</button>
@@ -196,6 +196,17 @@
     await loadReturnableItemsMulti(ids);
   };
 
+  // Keep all available return items readable. Selection changes the card
+  // accent only; submission still includes only checked rows.
+  window.returnItemSelectionChanged=function(checkbox){
+    const row=checkbox?.closest('.sales-return-item');if(!row)return;
+    const selected=!!checkbox.checked;
+    row.classList.toggle('border-amber-400',selected);
+    row.classList.toggle('bg-amber-50/30',selected);
+    row.classList.toggle('ring-1',selected);
+    row.classList.toggle('ring-amber-200',selected);
+  };
+
   function syncReturnDisposition(action){
     const v=action==='return_to_stock'?'return_to_stock':action==='exchange'?'exchange':action==='damaged_return'?'damaged_hold':'no_stock_action';
     document.querySelectorAll('.return-item-disposition').forEach(x=>x.value=v);
@@ -229,21 +240,21 @@
 
     root.innerHTML=`<div class="grid gap-4">${groups.map(g=>`
       <div class="rounded-xl border bg-white overflow-hidden">
-        <div class="px-4 py-3 bg-[#faf9f6] border-b flex items-center justify-between gap-3">
-          <div><div class="font-bold text-sm">${esc(g.order?.document_no||'Invoice')}</div><div class="text-[10px] text-gray-400">${esc(fmtDate(g.order?.order_date))}</div></div>
-          <div class="text-[10px] text-gray-400">${g.rows.length} returnable item${g.rows.length===1?'':'s'}</div>
+        <div class="px-4 py-3 bg-[#faf9f6] border-b flex items-center justify-between gap-3 text-gray-900">
+          <div><div class="font-bold text-sm">${esc(g.order?.document_no||'Invoice')}</div><div class="text-[10px] text-gray-600">${esc(fmtDate(g.order?.order_date))}</div></div>
+          <div class="text-[10px] text-gray-600">${g.rows.length} returnable item${g.rows.length===1?'':'s'}</div>
         </div>
         <div class="grid gap-2 p-3">
-          ${g.rows.length?g.rows.map(x=>`<div class="sales-return-item bg-white border rounded-xl p-3" data-id="${x.sales_order_item_id}" data-order-id="${g.order?.order_id||''}" data-max="${Number(x.qty_available||0)}">
+          ${g.rows.length?g.rows.map(x=>`<div class="sales-return-item bg-white text-gray-900 border border-gray-200 rounded-xl p-3 transition-colors" data-id="${x.sales_order_item_id}" data-order-id="${g.order?.order_id||''}" data-max="${Number(x.qty_available||0)}">
             <div class="grid grid-cols-[30px_minmax(0,1fr)] lg:grid-cols-[30px_minmax(0,1.5fr)_100px_150px_170px] gap-3 items-center">
-              <input type="checkbox" class="return-item-check w-4 h-4">
-              <div class="min-w-0"><div class="font-semibold text-sm truncate">${esc(x.item_name||'Item')}</div><div class="text-[10px] text-gray-400">${esc(x.product_code||'')}${x.product_code?' • ':''}Sold ${Number(x.qty_sold||0)} • Returned ${Number(x.qty_returned||0)} • Available ${Number(x.qty_available||0)}</div></div>
-              <div><label class="text-[9px] uppercase font-bold text-gray-400">Qty</label><input type="number" min="1" max="${Number(x.qty_available||0)}" step="1" value="1" class="return-item-qty mt-1 w-full border rounded-lg px-2 py-2 text-sm"></div>
-              <div><label class="text-[9px] uppercase font-bold text-gray-400">Condition</label><select class="return-item-condition mt-1 w-full border rounded-lg px-2 py-2 bg-white text-xs"><option value="good">Good</option><option value="damaged">Damaged</option><option value="defective">Defective</option><option value="other">Other</option></select></div>
-              <div><label class="text-[9px] uppercase font-bold text-gray-400">Handling</label><select class="return-item-disposition mt-1 w-full border rounded-lg px-2 py-2 bg-white text-xs"><option value="no_stock_action" ${defaultDisp==='no_stock_action'?'selected':''}>No Stock Action</option><option value="return_to_stock" ${defaultDisp==='return_to_stock'?'selected':''}>Return to Stock</option><option value="damaged_hold" ${defaultDisp==='damaged_hold'?'selected':''}>Damaged Hold</option><option value="exchange" ${defaultDisp==='exchange'?'selected':''}>Exchange</option></select></div>
+              <input type="checkbox" class="return-item-check w-4 h-4 accent-amber-600" aria-label="Select ${esc(x.item_name||'Item')} for return" onchange="returnItemSelectionChanged(this)">
+              <div class="min-w-0"><div class="font-semibold text-sm text-gray-900 truncate">${esc(x.item_name||'Item')}</div><div class="text-[10px] text-gray-600">${esc(x.product_code||'')}${x.product_code?' • ':''}Sold ${Number(x.qty_sold||0)} • Returned ${Number(x.qty_returned||0)} • Available ${Number(x.qty_available||0)}</div></div>
+              <div><label class="text-[9px] uppercase font-bold text-gray-600">Qty</label><input type="number" min="1" max="${Number(x.qty_available||0)}" step="1" value="1" aria-label="Return quantity for ${esc(x.item_name||'Item')}" class="return-item-qty mt-1 w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-gray-900 bg-white"></div>
+              <div><label class="text-[9px] uppercase font-bold text-gray-600">Condition</label><select aria-label="Condition of ${esc(x.item_name||'Item')}" class="return-item-condition mt-1 w-full border border-gray-300 rounded-lg px-2 py-2 bg-white text-gray-900 text-xs"><option value="good">Good</option><option value="damaged">Damaged</option><option value="defective">Defective</option><option value="other">Other</option></select></div>
+              <div><label class="text-[9px] uppercase font-bold text-gray-600">Handling</label><select aria-label="Stock handling for ${esc(x.item_name||'Item')}" class="return-item-disposition mt-1 w-full border border-gray-300 rounded-lg px-2 py-2 bg-white text-gray-900 text-xs"><option value="no_stock_action" ${defaultDisp==='no_stock_action'?'selected':''}>No Stock Action</option><option value="return_to_stock" ${defaultDisp==='return_to_stock'?'selected':''}>Return to Stock</option><option value="damaged_hold" ${defaultDisp==='damaged_hold'?'selected':''}>Damaged Hold</option><option value="exchange" ${defaultDisp==='exchange'?'selected':''}>Exchange</option></select></div>
             </div>
-            <input class="return-item-note mt-2 w-full border rounded-lg px-3 py-2 text-xs" placeholder="Item return note (optional)">
-          </div>`).join(''):`<div class="text-xs text-gray-400 p-2">No quantity remains available for return from this invoice.</div>`}
+            <input class="return-item-note mt-2 w-full border border-gray-300 rounded-lg px-3 py-2 text-xs text-gray-900 bg-white placeholder:text-gray-500" aria-label="Return note for ${esc(x.item_name||'Item')}" placeholder="Item return note (optional)">
+          </div>`).join(''):`<div class="text-xs text-gray-500 p-2">No quantity remains available for return from this invoice.</div>`}
         </div>
       </div>`).join('')}</div>`;
   }
