@@ -1,4 +1,4 @@
-const PWA_VERSION = '20261015-do-print-header-clean1';
+const PWA_VERSION = '20261015-manager-do-edit-approval1';
 const APP_ROOT = '/Sale-and-purchase-tracking/';
 const ATTENTION_TAG = 'limperial-action-items';
 
