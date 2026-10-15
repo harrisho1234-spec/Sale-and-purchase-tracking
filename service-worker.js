@@ -1,4 +1,4 @@
-const PWA_VERSION = '20261009-stockcount-edit-approval2';
+const PWA_VERSION = '20261015-stock-approvals-pending-first1';
 const APP_ROOT = '/Sale-and-purchase-tracking/';
 const ATTENTION_TAG = 'limperial-action-items';
 
