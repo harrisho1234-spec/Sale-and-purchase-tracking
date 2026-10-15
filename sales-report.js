@@ -5,6 +5,7 @@
     itemRows:[],
     view:'month',
     year:null,
+    customYearOpen:false,
     selectedReps:null,
     repMenuOpen:false,
     selectedMonths:null,
@@ -66,7 +67,18 @@
   function monthOf(v){const m=Number(String(v||'').slice(5,7));return m>=1&&m<=12?m:null}
   function reportYears(){
     const now=new Date().getFullYear();
-    return [...new Set([...reportState.rows.map(r=>yearOf(r.order_date)).filter(Boolean),now,now+1])].sort((a,b)=>b-a);
+    // One separately saved annual target for every year. Show the next ten
+    // years up front; older sales years and manually entered years remain
+    // selectable too. Backend annual plan supports 2020 through 2100.
+    const future=Array.from({length:11},(_,i)=>now+i).filter(y=>y<=2100);
+    const past=reportState.rows.map(r=>yearOf(r.order_date)).filter(y=>y>=2020&&y<=2100);
+    const chosen=Number(reportState.year);
+    const years=[...new Set([...future,...past,...(chosen>=2020&&chosen<=2100?[chosen]:[])])];
+    return years.sort((a,b)=>{
+      // Current and upcoming years first, nearest upcoming year first.
+      const aFuture=a>=now,bFuture=b>=now;
+      return aFuture!==bFuture?(aFuture?-1:1):(aFuture?a-b:b-a);
+    });
   }
   function monthNames(){return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']}
   function periodSelectionLabel(){
@@ -284,9 +296,19 @@
     const brandRows=aggregateItemDimension('brand'),productLineRows=aggregateItemDimension('product_line'),businessRows=businessBreakdown();
     const max=Math.max(...buckets.map(x=>x.actual),0);
     const yearSelect=`
-      <select id="salesReportYear" onchange="setSalesReportYear(this.value)" title="Target year (Year report table continues showing all years)" class="border rounded-xl bg-white px-3 py-2.5 text-sm">
-        ${years.map(y=>`<option value="${y}" ${Number(reportState.year)===y?'selected':''}>${y}</option>`).join('')}
-      </select>`;
+      <div class="flex items-center gap-2">
+        <label for="salesReportYear" class="text-xs font-semibold text-gray-600 whitespace-nowrap">Target Year</label>
+        <select id="salesReportYear" onchange="setSalesReportYear(this.value)" title="Choose a year for its independent annual target plan" class="border rounded-xl bg-white px-3 py-2.5 text-sm">
+          ${years.map(y=>`<option value="${y}" ${Number(reportState.year)===y?'selected':''}>${y}</option>`).join('')}
+          <option value="custom">Other year (2020–2100)…</option>
+        </select>
+      </div>
+      ${reportState.customYearOpen?`
+        <div class="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 p-1.5">
+          <label for="salesReportCustomYear" class="text-xs font-semibold text-amber-900">Enter year</label>
+          <input id="salesReportCustomYear" type="number" min="2020" max="2100" step="1" value="${Number(reportState.year)}" class="w-24 border rounded-lg px-2 py-1.5 text-sm bg-white" onkeydown="if(event.key==='Enter'){event.preventDefault();applySalesReportCustomYear()}">
+          <button type="button" onclick="applySalesReportCustomYear()" class="bg-[#211d18] text-white rounded-lg px-3 py-1.5 text-xs font-semibold">Go</button>
+        </div>`:''}`;
 
     root.innerHTML=`
       <div class="card rounded-2xl p-4 mb-4">
@@ -426,10 +448,31 @@
     renderSalesReportBody();
   };
   window.setSalesReportYear=function(v){
-    reportState.year=Number(v);
+    if(v==='custom'){
+      reportState.customYearOpen=true;
+      reportState.repMenuOpen=false;
+      reportState.periodMenuOpen=false;
+      renderSalesReportBody();
+      document.getElementById('salesReportCustomYear')?.focus();
+      return;
+    }
+    const y=Number(v);
+    if(!Number.isInteger(y)||y<2020||y>2100)return;
+    reportState.year=y;
+    reportState.customYearOpen=false;
     reportState.repMenuOpen=false;
     reportState.periodMenuOpen=false;
     renderSalesReportBody();
+  };
+  window.applySalesReportCustomYear=function(){
+    const input=document.getElementById('salesReportCustomYear');
+    const y=Number(input?.value);
+    if(!input?.value||!Number.isInteger(y)||y<2020||y>2100){
+      showToast('Choose a whole year between 2020 and 2100.','err');
+      input?.focus();
+      return;
+    }
+    window.setSalesReportYear(String(y));
   };
   window.setSalesReportBusiness=function(v){
     reportState.business=['RKTK','RK','TK','PJ','OTHER'].includes(v)?v:'all';
