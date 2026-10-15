@@ -110,6 +110,12 @@
       activities:[
         {key:'reports.view',label:'View reports',description:'View permitted sales and business reports.',view:true},
         {key:'reports.export',label:'Export reports',description:'Export report data.'},
+        {key:'targets.view_own',label:'View own sales target',description:'See only personal annual, monthly and quarterly targets.',view:true},
+        {key:'targets.view_team',label:'View sales rep targets',description:'See individual sales representative targets and comparisons.',view:true},
+        {key:'targets.view_business',label:'View RK / TK / PJ targets',description:'View targets by LP Home, L’Imperial Luxury and Project.',view:true},
+        {key:'targets.view_company',label:'View company-wide target',description:'See the company annual target and total achievement.',view:true},
+        {key:'targets.manage',label:'Create / edit annual targets',description:'Set yearly amount, business/rep percentages and monthly target weighting.'},
+        {key:'targets.export',label:'Export target reports',description:'Export visible target performance as CSV.'},
         {key:'finance.ar_view',label:'View Accounts Receivable',description:'View Active AR and customer balances.',view:true},
         {key:'finance.cost_margin_view',label:'View cost & margin',description:'View cost and margin-sensitive information.',view:true},
         {key:'finance.payment_records',label:'View payment records',description:'View detailed financial payment records.',view:true}
@@ -158,10 +164,10 @@
   };
 
   const ROLE_FALLBACK={
-    sales:new Set(['customers.view','customers.create','customers.edit','sales_orders.view','sales_orders.create','sales_orders.edit','sales_orders.print','quotations.view','quotations.create','tracking.view','tracking.edit','payments.view','returns.view','returns.create','products.view','products.sales_price_view','reports.view']),
+    sales:new Set(['customers.view','customers.create','customers.edit','sales_orders.view','sales_orders.create','sales_orders.edit','sales_orders.print','quotations.view','quotations.create','tracking.view','tracking.edit','payments.view','returns.view','returns.create','products.view','products.sales_price_view','reports.view','targets.view_own']),
     accountant:new Set(['customers.view','sales_orders.view','quotations.view','tracking.view','payments.view','payments.create','payments.edit','returns.view','products.view','products.sales_price_view','inventory.view','inventory.reports','reports.view','reports.export','finance.ar_view','finance.cost_margin_view','finance.payment_records']),
     stock_controller:new Set(['products.view','inventory.view','inventory.operate','inventory.transfer','inventory.count','inventory.reports','procurement.view','procurement.po_receive']),
-    manager:new Set(['customers.view','customers.create','customers.edit','sales_orders.view','sales_orders.create','sales_orders.edit','sales_orders.print','sales_orders.export','sales.view_all','quotations.view','quotations.create','tracking.view','tracking.edit','payments.view','payments.create','payments.edit','returns.view','returns.create','returns.edit','products.view','products.sales_price_view','inventory.view','inventory.reports','reports.view','reports.export','finance.ar_view','approvals.view','approvals.manage','sales_access.manage']),
+    manager:new Set(['customers.view','customers.create','customers.edit','sales_orders.view','sales_orders.create','sales_orders.edit','sales_orders.print','sales_orders.export','sales.view_all','quotations.view','quotations.create','tracking.view','tracking.edit','payments.view','payments.create','payments.edit','returns.view','returns.create','returns.edit','products.view','products.sales_price_view','inventory.view','inventory.reports','reports.view','reports.export','finance.ar_view','approvals.view','approvals.manage','sales_access.manage','targets.view_own','targets.view_team']),
     admin:new Set(AREAS.flatMap(a=>a.activities.map(x=>x.key)).filter(k=>!['users.manage','products.tax_manage','activity_logs.view'].includes(k))),
     super_admin:new Set(AREAS.flatMap(a=>a.activities.map(x=>x.key)))
   };
