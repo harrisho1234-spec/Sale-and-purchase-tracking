@@ -133,8 +133,6 @@
         '</div>'+
         '<div class="details-right">'+
           '<div class="detail do-number">DO N°: '+escapeHtml(doNumber)+'</div>'+
-          '<div class="detail"><strong>Install Date:</strong> -</div>'+
-          '<div class="detail"><strong>QB:</strong> -</div>'+
           '<div class="detail"><strong>Sale:</strong> '+(sale||'—')+'</div>'+
           '<div class="detail"><strong>Requested Delivery:</strong> '+requested+'</div>'+
           '<div class="detail source-ref">Sales Order: '+escapeHtml(doc.document_no||'—')+'</div>'+
