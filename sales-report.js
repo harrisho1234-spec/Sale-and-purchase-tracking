@@ -60,7 +60,8 @@
   function yearOf(v){const y=Number(String(v||'').slice(0,4));return Number.isFinite(y)?y:null}
   function monthOf(v){const m=Number(String(v||'').slice(5,7));return m>=1&&m<=12?m:null}
   function reportYears(){
-    return [...new Set(reportState.rows.map(r=>yearOf(r.order_date)).filter(Boolean))].sort((a,b)=>b-a);
+    const now=new Date().getFullYear();
+    return [...new Set([...reportState.rows.map(r=>yearOf(r.order_date)).filter(Boolean),now,now+1])].sort((a,b)=>b-a);
   }
   function monthNames(){return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']}
   function periodSelectionLabel(){
@@ -276,8 +277,8 @@
     const rows=periodRows(),buckets=bucketRows(),t=totals(rows),years=reportYears(),repRows=repBreakdown();
     const brandRows=aggregateItemDimension('brand'),productLineRows=aggregateItemDimension('product_line'),businessRows=businessBreakdown();
     const max=Math.max(...buckets.map(x=>x.actual),0);
-    const yearSelect=reportState.view==='year'?'':`
-      <select id="salesReportYear" onchange="setSalesReportYear(this.value)" class="border rounded-xl bg-white px-3 py-2.5 text-sm">
+    const yearSelect=`
+      <select id="salesReportYear" onchange="setSalesReportYear(this.value)" title="Target year (Year report table continues showing all years)" class="border rounded-xl bg-white px-3 py-2.5 text-sm">
         ${years.map(y=>`<option value="${y}" ${Number(reportState.year)===y?'selected':''}>${y}</option>`).join('')}
       </select>`;
 
@@ -315,6 +316,7 @@
         </div>
       </div>
 
+      <div id="salesTargetsPanel" class="mb-4"></div>
       <div class="grid xl:grid-cols-3 gap-3 mb-3">
         <div class="rounded-2xl p-5 bg-[#fff8e8] border border-[#e6c776] shadow-sm">
           <div class="text-[10px] uppercase tracking-[.16em] font-bold text-[#9a6b12]">Main Result · Actual Sales</div>
@@ -384,6 +386,10 @@
           </table>
         </div>
       </div>`;
+    // Targets share the existing report's year, Sales Rep, RK/TK/PJ and
+    // month/quarter filters without changing the source sales formulas.
+    if(typeof window.renderSalesTargetsPanel==='function')
+      window.renderSalesTargetsPanel(reportState);
   }
 
   window.renderReports=async function(){
