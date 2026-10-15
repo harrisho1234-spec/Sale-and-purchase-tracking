@@ -1769,7 +1769,16 @@
     if(!canAdmin()&&!isStockController())return '<div class="inv-card py-10 text-center text-sm text-gray-400">No request access.</div>';
     let qy=db.from('stock_change_requests').select('*').order('requested_at',{ascending:false}).limit(300);
     const rr=await qy;if(rr.error)throw rr.error;
-    const reqs=rr.data||[];
+    // Action approvals appear above this list; sort movement edits the same
+    // way so older PENDING work never gets buried below approved history.
+    const reqs=(rr.data||[]).slice().sort(function(a,b){
+      const pa=String(a.status||'').toLowerCase()==='pending';
+      const pb=String(b.status||'').toLowerCase()==='pending';
+      if(pa!==pb)return pa?-1:1;
+      const dateA=Date.parse((pa?a.requested_at:a.reviewed_at)||a.requested_at||'')||0;
+      const dateB=Date.parse((pb?b.requested_at:b.reviewed_at)||b.requested_at||'')||0;
+      return dateB-dateA;
+    });
     const shownReqs=reqs.slice(0,inventoryLimit('requests'));
     const ids=[...new Set(reqs.map(x=>x.movement_id).filter(Boolean))];
     const userIds=[...new Set(reqs.map(x=>x.requested_by).filter(Boolean))];
@@ -1784,16 +1793,27 @@
     const pr=productIds.length?await db.from('product_catalog').select('id,code,item_name').in('id',productIds):{data:[],error:null};
     if(pr.error)throw pr.error;
     const products=new Map((pr.data||[]).map(x=>[x.id,x]));
-    if(!reqs.length)return '<div class="inv-card py-12 text-center text-sm text-gray-400">No stock edit requests.</div>';
+    // When no movement-edit requests exist, the Stock Quantity Approvals
+    // panel still owns the Pending/History headings for this tab.
+    if(!reqs.length)return '';
+    const pendingCount=reqs.filter(x=>String(x.status||'').toLowerCase()==='pending').length;
 
-    return `<div class="grid gap-3">${shownReqs.map(r=>{
+    return `<div class="grid gap-3">${shownReqs.map((r,index)=>{
+      const pending=String(r.status||'').toLowerCase()==='pending';
+      const previousPending=index>0&&String(shownReqs[index-1].status||'').toLowerCase()==='pending';
+      const heading=(index===0||pending!==previousPending)
+        ?'<div class="mt-2 px-1 flex flex-wrap items-center justify-between gap-2"><b class="text-xs '+(pending?'text-amber-800':'text-gray-600')+'">'+
+          (pending?'Pending Stock Movement Edit Requests':'Reviewed Stock Movement Edit History')+'</b>'+
+          '<span class="text-[10px] text-gray-500">'+(pending?pendingCount:reqs.length-pendingCount)+' '+(pending?'Pending':'Reviewed')+'</span></div>'
+        :'';
+
       const m=moves.get(r.movement_id)||{},p=products.get(m.product_id)||{},u=users.get(r.requested_by)||{};
       const proposed=r.proposed_changes||{};
       const changes=r.request_type==='delete'
         ?'<span class="text-red-600 font-semibold">Delete this movement</span>'
         :Object.entries(proposed).map(([k,v])=>`<span class="inline-flex px-2 py-1 rounded-lg border bg-white"><b>${esc(k.replaceAll('_',' '))}:</b>&nbsp;${esc(v==null||v===''?'None':String(v))}</span>`).join(' ');
       const statusCls=r.status==='approved'?'text-green-600':r.status==='rejected'?'text-red-600':r.status==='pending'?'text-amber-700':'text-gray-500';
-      return `<div class="inv-card">
+      return `${heading}<div class="inv-card">
         <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-center gap-2"><b>${esc(p.code||'Stock Movement')} · ${esc(p.item_name||'')}</b><span class="px-2 py-1 rounded-lg border text-[9px] font-bold ${r.request_type==='delete'?'bg-red-50 text-red-600':'bg-amber-50 text-amber-700'}">${esc(titleCase(r.request_type))}</span><span class="text-[10px] font-bold ${statusCls}">${esc(titleCase(r.status))}</span></div>
