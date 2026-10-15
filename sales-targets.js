@@ -108,8 +108,8 @@
     if(plan.loadError){root.innerHTML='<div class="card rounded-2xl p-4 text-xs text-red-600">Sales target information unavailable: '+h(plan.loadError)+'</div>';return}
     if(!plan.configured){
       root.innerHTML='<div class="card rounded-2xl p-4 mb-4 flex flex-wrap items-center justify-between gap-3">'+
-       '<div><b>Annual Sales Targets · '+year+'</b><p class="text-xs text-gray-500 mt-1">No company target has been configured for this year.</p></div>'+
-       (plan.can_manage?'<button type="button" class="px-4 py-2 bg-[#211d18] text-white text-xs rounded-lg font-bold" onclick="openSalesTargetEditor()">Set Annual Target</button>':'')+'</div>';
+       '<div><b>Annual Sales Targets · '+year+'</b><p class="text-xs text-gray-500 mt-1">No company target has been configured for '+year+'. Select another Target Year above to plan 2027, 2028 or any future year through 2100; each year is saved separately.</p></div>'+
+       (plan.can_manage?'<button type="button" class="px-4 py-2 bg-[#211d18] text-white text-xs rounded-lg font-bold" onclick="openSalesTargetEditor()">Set '+year+' Target</button>':'')+'</div>';
       return;
     }
     const periods=monthsInView(S),months=visibleReportMonths(periods),filtered=restrictedRows(S,true),scope=targetShares(plan,S);
@@ -201,7 +201,7 @@
       const business=plan.business||{RK:40,TK:40,PJ:20};
       const months=plan.months||defaults;
       const content='<form id="salesTargetForm" class="space-y-4">'+
-        '<div class="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900">One company target = 100%. Business RK/TK/PJ totals 100%; sales reps independently total 100%. Neither allocation multiplies the other.</div>'+
+        '<div class="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900">Setting the <b>'+year+'</b> annual target only. Each year (2026, 2027, 2028 and beyond) has its own saved plan. One company target = 100%. Business RK/TK/PJ totals 100%; sales reps independently total 100%. Neither allocation multiplies the other.</div>'+
         '<label class="block text-xs font-semibold">Company Annual Target (USD) *<input id="targetAnnualUSD" type="number" min="0.01" step="0.01" required value="'+(plan.configured?n(plan.annual_target):'')+'" placeholder="Enter annual USD amount" class="block mt-1 w-full border rounded-xl px-3 py-2.5 text-sm"></label>'+
         '<section class="border rounded-xl p-3"><h4 class="text-sm font-bold mb-2">Business allocations · must total 100%</h4>'+
           '<div class="grid sm:grid-cols-3 gap-2">'+['RK','TK','PJ'].map(code=>'<label class="flex items-center justify-between gap-2 text-xs">'+h(businessNames[code])+itemInput('targetBiz_'+code,n(business[code]))+'</label>').join('')+
