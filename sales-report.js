@@ -34,14 +34,19 @@
     if(reportState.business==='RKTK')return 'RK + TK Combined';
     return 'All Business / Category';
   }
+  function reportCategory(r){
+    // Project is a distinct 20% company target bucket even when an invoice
+    // originally carries an RK or TK document prefix.
+    if(String(r.sales_category||'').toLowerCase()==='project')return 'PJ';
+    const prefix=String(r.business_code||'').toUpperCase();
+    return prefix==='RK'||prefix==='TK'?prefix:'OTHER';
+  }
   function rowInReportScope(r,includeBusiness=true){
     const scopeId=reportScopeUserId();
     if(scopeId&&r.sales_rep_id!==scopeId)return false;
     if(canChooseReportReps()&&!repSelected(repKey(r)))return false;
-    if(reportState.business==='PJ'){
-      if(String(r.sales_category||'standard')!=='project')return false;
-    }else if(includeBusiness&&reportState.business!=='all'){
-      const code=String(r.business_code||'OTHER');
+    if(includeBusiness&&reportState.business!=='all'){
+      const code=reportCategory(r);
       if(reportState.business==='RKTK'&&!['RK','TK'].includes(code))return false;
       if(reportState.business!=='RKTK'&&code!==reportState.business)return false;
     }
@@ -191,10 +196,11 @@
     const map=new Map([
       ['RK',{label:'LP Home (RK)',actual:0,collection:0,confirmed:0,returns:0,qty:0,lines:0}],
       ['TK',{label:"L'Imperial Luxury (TK)",actual:0,collection:0,confirmed:0,returns:0,qty:0,lines:0}],
+      ['PJ',{label:'Project (PJ)',actual:0,collection:0,confirmed:0,returns:0,qty:0,lines:0}],
       ['OTHER',{label:'Pre-Order / Other',actual:0,collection:0,confirmed:0,returns:0,qty:0,lines:0}]
     ]);
     (reportState.rows||[]).filter(r=>rowInReportScope(r,false)).forEach(r=>{
-      const key=['RK','TK'].includes(String(r.business_code||''))?String(r.business_code):'OTHER';
+      const key=reportCategory(r);
       const x=map.get(key);
       x.actual+=n(r.actual_sales);x.collection+=n(r.collection_value);x.confirmed+=n(r.confirmed_sales);x.returns+=n(r.return_value);x.lines+=1;
     });
@@ -360,11 +366,11 @@
         ${dimensionBarCard('Sales by Business','RK = LP Home · TK = L\'Imperial Luxury',businessRows)}
         <div class="card rounded-2xl p-4">
           <div class="flex items-start justify-between gap-3 mb-4">
-            <div><h4 class="font-bold">Business Unit Summary</h4><div class="text-[10px] text-gray-400 mt-1">Uses the invoice/document prefix to classify RK and TK. Project (PJ) is tracked separately as a category.</div></div>
+            <div><h4 class="font-bold">Business Unit Summary</h4><div class="text-[10px] text-gray-400 mt-1">RK and TK classify standard sales by invoice prefix. Project (PJ) sales are separated from both, even with an RK/TK invoice.</div></div>
             <div class="text-[10px] text-gray-400">${esc(reportBusinessLabel())}</div>
           </div>
-          <div class="grid sm:grid-cols-2 gap-3">
-            ${['RK','TK'].map(code=>{
+          <div class="grid sm:grid-cols-3 gap-3">
+            ${['RK','TK','PJ'].map(code=>{
               const x=businessRows.find(b=>b.label.includes('('+code+')'))||{label:code,actual:0,collection:0,confirmed:0,returns:0,lines:0};
               return `<div class="rounded-xl border bg-[#faf9f6] p-4"><div class="text-[10px] uppercase font-bold text-gray-400">${esc(x.label)}</div><div class="text-2xl font-bold mt-1">${money(x.actual)}</div><div class="text-[10px] text-gray-400 mt-1">Collection ${money(x.collection)} · Confirmed ${money(x.confirmed)} · Returns −${money(x.returns)}</div></div>`;
             }).join('')}
