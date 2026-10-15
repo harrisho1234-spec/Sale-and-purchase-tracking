@@ -541,18 +541,43 @@
     holder.innerHTML='<div class="inv-card py-8 text-center text-sm text-gray-400">Loading stock action approvals...</div>';
     try{
       const rows=await loadActionRequests();
-      const pending=rows.filter(function(x){return x.request_status==='pending'}).length;
-      let cards='';
-      rows.forEach(function(r){cards+=actionRequestCard(r)});
+      // Keep every pending request above reviewed stock/movement history.
+      // Recency still sorts requests within each group (newest first).
+      const newest=function(a,b,key){
+        const dateA=Date.parse(a[key]||a.requested_at||'')||0;
+        const dateB=Date.parse(b[key]||b.requested_at||'')||0;
+        return dateB-dateA;
+      };
+      const pendingRows=rows.filter(function(x){return String(x.request_status||'').toLowerCase()==='pending'})
+        .sort(function(a,b){return newest(a,b,'requested_at')});
+      const reviewedRows=rows.filter(function(x){return String(x.request_status||'').toLowerCase()!=='pending'})
+        .sort(function(a,b){return newest(a,b,'reviewed_at')});
+      const pending=pendingRows.length;
       holder.innerHTML=
         '<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 mb-3 flex flex-col md:flex-row md:items-center md:justify-between gap-2">'+
-          '<div><b class="text-sm">'+(canApprove()?'Stock Quantity Approvals':'My Stock Approval Requests')+'</b><div class="text-[10px] text-amber-900 mt-1">OUT, Broken, Transfer, Adjustment − and Customer/DO delivery do not change stock until approved.</div></div>'+
+          '<div><b class="text-sm">'+(canApprove()?'Pending Stock Quantity Approvals':'My Pending Stock Approval Requests')+'</b><div class="text-[10px] text-amber-900 mt-1">OUT, Broken, Transfer, Adjustment − and Customer/DO delivery do not change stock until approved.</div></div>'+
           '<span class="px-2 py-1 rounded-full bg-white border text-[10px] font-bold">'+pending+' Pending</span>'+
         '</div>'+
-        '<div class="grid gap-3">'+(cards||'<div class="inv-card py-10 text-center text-sm text-gray-400">No stock quantity approval requests yet.</div>')+'</div>';
+        '<div class="grid gap-3">'+(pendingRows.map(actionRequestCard).join('')||'<div class="inv-card py-6 text-center text-xs text-gray-400">No pending stock quantity approvals.</div>')+'</div>';
+      // Put reviewed actions AFTER the underlying Stock Movement Edit Requests.
+      // This way even an older pending edit stays above all completed actions.
+      let historyHolder=document.getElementById('stockActionApprovalHistoryPanel');
+      if(!historyHolder){
+        historyHolder=document.createElement('div');
+        historyHolder.id='stockActionApprovalHistoryPanel';
+        historyHolder.className='mt-5';
+      }
+      root.appendChild(historyHolder);
+      historyHolder.innerHTML=reviewedRows.length?
+        '<div class="rounded-xl border border-gray-200 bg-gray-50 p-3 mb-3 flex flex-wrap items-center justify-between gap-2">'+
+          '<div><b class="text-sm">Reviewed Stock Quantity History</b><div class="text-[10px] text-gray-500 mt-1">Approved and rejected requests, newest review first.</div></div>'+
+          '<span class="px-2 py-1 rounded-full bg-white border text-[10px] font-bold">'+reviewedRows.length+' Reviewed</span>'+
+        '</div><div class="grid gap-3">'+reviewedRows.map(actionRequestCard).join('')+'</div>':'';
       patchRequestBadge();
     }catch(err){
       holder.innerHTML='<div class="inv-card text-red-600">Error loading stock approvals: '+esc(err.message||'Unknown error')+'</div>';
+      const historyHolder=document.getElementById('stockActionApprovalHistoryPanel');
+      if(historyHolder)historyHolder.innerHTML='';
     }
   }
 
