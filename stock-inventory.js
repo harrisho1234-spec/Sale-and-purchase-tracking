@@ -1482,7 +1482,7 @@
     const v=String(value??'');
     // Avoid spreadsheet formula injection from user-entered product names,
     // references or notes. Keep the displayed value as text in Excel.
-    return /^[\\s]*[=+@-]/.test(v)?"'"+v:v;
+    return /^\s*[=+@-]/.test(v)?"'"+v:v;
   }
   window.exportStockMovementsExcel=async function(){
     if(!canView())return showToast('Stock & Inventory access required to export movements.','err');
@@ -1577,7 +1577,7 @@
           row.getCell(15).font={color:{argb:'FF9A6700'},bold:true};
         }
       }
-      ws.autoFilter={from:{row:5,column:1},to:{row:5,column:numCols}};
+      ws.autoFilter={from:{row:5,column:1},to:{row:ws.rowCount,column:numCols}};
       ws.getColumn(6).alignment={horizontal:'right'};
       ws.getColumn(11).alignment={wrapText:true,vertical:'top'};
       ws.getColumn(17).width=44;
