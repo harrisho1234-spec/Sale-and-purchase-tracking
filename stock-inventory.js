@@ -1319,13 +1319,14 @@
     inv.movementRows=all;
   }
 
-  function filteredMovements(){
-    const s=String(inv.search||'').trim().toLowerCase();
-    return inv.movementRows.filter(m=>!s||[
+  function matchingMovementRows(rows,search){
+    const s=String(search||'').trim().toLowerCase();
+    return (rows||[]).filter(m=>!s||[
       m.code,m.item_name,m.brand,m.movement_type,m.from_location,m.to_location,
       m.reference_no,m.counterparty,m.note,m.created_by_name
     ].filter(Boolean).join(' ').toLowerCase().includes(s));
   }
+  function filteredMovements(){return matchingMovementRows(inv.movementRows,inv.search)}
 
   function isoLocalDate(d){
     const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');
@@ -1476,10 +1477,132 @@
     });
   }
 
+  let movementExportBusy=false;
+  function safeMovementExcelText(value){
+    const v=String(value??'');
+    // Avoid spreadsheet formula injection from user-entered product names,
+    // references or notes. Keep the displayed value as text in Excel.
+    return /^[\\s]*[=+@-]/.test(v)?"'"+v:v;
+  }
+  window.exportStockMovementsExcel=async function(){
+    if(!canView())return showToast('Stock & Inventory access required to export movements.','err');
+    if(movementExportBusy)return;
+    if(typeof ExcelJS==='undefined')return showToast('Excel library is not ready. Refresh and try again.','err');
+    movementExportBusy=true;
+    const button=document.getElementById('stockMovementsExportButton');
+    const prior=button?.innerHTML;
+    const search=String(inv.search||'').trim();
+    if(button){button.disabled=true;button.textContent='Preparing Excel…'}
+    try{
+      // Do not export just the 30 visible rows (or the 10,000-row display
+      // loading limit). Read every page in deterministic ledger order.
+      const ledger=[];
+      const pageSize=1000;
+      for(let offset=0;offset<250000;offset+=pageSize){
+        const response=await db.from('inventory_movement_history')
+          .select('*')
+          .neq('movement_type','opening')
+          .order('movement_date',{ascending:false})
+          .order('created_at',{ascending:false})
+          .order('history_id',{ascending:false})
+          .range(offset,offset+pageSize-1);
+        if(response.error)throw response.error;
+        const batch=response.data||[];
+        ledger.push(...batch);
+        if(batch.length<pageSize)break;
+        if(offset+pageSize>=250000)throw new Error('Movement history is too large for a single Excel export. Narrow the dataset or contact an administrator.');
+      }
+      const rows=matchingMovementRows(ledger,search);
+      if(!rows.length){
+        showToast('No movements match the current search. Nothing to export.','err');
+        return;
+      }
+      const workbook=new ExcelJS.Workbook();
+      workbook.creator="L'Imperial Sales & Order Management";
+      workbook.created=new Date();
+      const ws=workbook.addWorksheet('Stock Movements',{views:[{state:'frozen',ySplit:5}]});
+      const columns=[
+        ['Movement Date',17],['Movement Type',21],['Product Code',23],['Product Name',38],
+        ['Brand',25],['Quantity',12],['From Location',18],['To Location',18],
+        ['Reference No.',23],['Counterparty',28],['Remarks / Notes',50],
+        ['Recorded By',27],['Source System',26],['Changes Stock Balance',25],
+        ['Imported History',20],['Recorded At',23],['Movement ID',44]
+      ];
+      const numCols=columns.length;
+      ws.mergeCells(1,1,1,numCols);
+      const heading=ws.getCell(1,1);heading.value='L’IMPERIAL · STOCK MOVEMENT HISTORY';
+      heading.font={name:'Aptos Display',bold:true,size:15,color:{argb:'FFFFFFFF'}};
+      heading.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF102D43'}};
+      heading.alignment={vertical:'middle'};ws.getRow(1).height=34;
+      ws.mergeCells(2,1,2,numCols);
+      const meta=ws.getCell(2,1);
+      meta.value='Exported '+new Date().toLocaleString('en-GB')+
+        '  |  Filter: '+(search||'All movements')+
+        '  |  '+rows.length.toLocaleString('en-US')+' movement(s)'+
+        '  |  Opening balances excluded';
+      meta.font={size:10,color:{argb:'FF475569'}};
+      ws.getRow(2).height=23;
+      ws.mergeCells(3,1,3,numCols);
+      ws.getCell(3,1).value='Includes live and imported historical movements. Imported history may not affect current stock balances.';
+      ws.getCell(3,1).font={italic:true,size:10,color:{argb:'FF64748B'}};
+      ws.getRow(3).height=22;
+      ws.columns=columns.map((col,index)=>({key:'m'+index,width:col[1]}));
+      const head=ws.getRow(5);
+      columns.forEach((col,i)=>head.getCell(i+1).value=col[0]);
+      head.height=28;head.font={bold:true,color:{argb:'FFFFFFFF'},size:10};
+      head.alignment={vertical:'middle',wrapText:true};
+      head.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF173D59'}};
+      const excelDate=value=>{
+        if(!value)return null;
+        const text=String(value);
+        const d=new Date(text.slice(0,10)+'T12:00:00');
+        return Number.isNaN(d.getTime())?safeMovementExcelText(text):d;
+      };
+      for(const m of rows){
+        const row=ws.addRow([
+          excelDate(m.movement_date),safeMovementExcelText(movementLabel(m.movement_type)),
+          safeMovementExcelText(m.code),safeMovementExcelText(m.item_name),
+          safeMovementExcelText(m.brand),Number(m.qty||0),
+          safeMovementExcelText(m.from_location),safeMovementExcelText(m.to_location),
+          safeMovementExcelText(m.reference_no),safeMovementExcelText(m.counterparty),
+          safeMovementExcelText(m.note),safeMovementExcelText(m.created_by_name),
+          safeMovementExcelText(m.source_system),m.affects_balance?'Yes':'No',
+          m.legacy?'Yes':'No',m.created_at?new Date(m.created_at):null,
+          safeMovementExcelText(m.history_id)
+        ]);
+        row.getCell(1).numFmt='dd mmm yyyy';
+        row.getCell(6).numFmt='#,##0.##';
+        row.getCell(16).numFmt='dd mmm yyyy hh:mm';
+        if(m.legacy){
+          row.getCell(15).font={color:{argb:'FF9A6700'},bold:true};
+        }
+      }
+      ws.autoFilter={from:{row:5,column:1},to:{row:5,column:numCols}};
+      ws.getColumn(6).alignment={horizontal:'right'};
+      ws.getColumn(11).alignment={wrapText:true,vertical:'top'};
+      ws.getColumn(17).width=44;
+      const dateStamp=isoLocalDate(new Date());
+      await downloadTaxWorkbook(workbook,
+        'LImperial_Stock_Movements_'+dateStamp+(search?'_Filtered':'')+'.xlsx');
+      showToast(rows.length.toLocaleString('en-US')+' stock movements exported to Excel.');
+    }catch(err){
+      showToast(err.message||'Could not export stock movements.','err');
+    }finally{
+      movementExportBusy=false;
+      if(button?.isConnected){button.disabled=false;button.innerHTML=prior}
+    }
+  };
+
   async function renderMovements(){
     await loadMovements();
     const rows=filteredMovements(),shown=rows.slice(0,inventoryLimit('movements'));
-    return `<div class="inv-card"><div class="divide-y">${shown.length?shown.map(m=>movementRow(m)).join(''):'<div class="py-10 text-center text-xs text-gray-400">No movements found.</div>'}</div>${inventoryListControls('movements',rows.length)}</div>`;
+    return `<div class="inv-card"><div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b">
+      <div><h3 class="font-bold text-sm">Movement History</h3>
+        <p class="text-[11px] text-gray-500 mt-1">Showing ${Math.min(shown.length,rows.length)} of ${rows.length.toLocaleString()} matching movements. Excel exports all matching records, including hidden pages.</p></div>
+      <button type="button" id="stockMovementsExportButton" onclick="exportStockMovementsExcel()"
+        class="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-green-200 bg-green-50 text-green-800 text-xs font-semibold hover:bg-green-100"
+        title="Export all matching stock movements to an Excel workbook">↧ Export Excel (.xlsx)</button>
+    </div><div class="divide-y">${shown.length?shown.map(m=>movementRow(m)).join(''):'<div class="py-10 text-center text-xs text-gray-400">No movements found.</div>'}</div>${inventoryListControls('movements',rows.length)}</div>`;
   }
 
   window.toggleInventoryPOGroup=function(poId){
