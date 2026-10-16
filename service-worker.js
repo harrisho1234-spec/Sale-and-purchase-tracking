@@ -1,4 +1,4 @@
-const PWA_VERSION = '20261015-single-target-year1';
+const PWA_VERSION = '20261016-stock-movements-excel1';
 const APP_ROOT = '/Sale-and-purchase-tracking/';
 const ATTENTION_TAG = 'limperial-action-items';
 
