@@ -591,7 +591,16 @@
         const er=await q;
         if(!er.error)editPending=(er.data||[]).length;
       }catch(_){}
-      const total=actionPending+editPending;
+      let doEditPending=0;
+      if(canApprove()){
+        try{
+          const doResult=await db.rpc('get_delivery_order_edit_requests',{
+            p_delivery_request_id:null,p_pending_only:true
+          });
+          if(!doResult.error&&Array.isArray(doResult.data))doEditPending=doResult.data.length;
+        }catch(_){}
+      }
+      const total=actionPending+editPending+doEditPending;
       const btn=[].slice.call(document.querySelectorAll('.inv-tab')).find(function(b){
         return String(b.getAttribute('onclick')||'').includes("setInventoryTab('requests')");
       });
@@ -646,8 +655,12 @@
   if(typeof baseBody==='function'){
     window.renderStockInventoryBody=async function(){
       const out=await baseBody.apply(this,arguments);
-      if(activeRequestsTab())await renderActionRequestsPanel();
-      else patchRequestBadge();
+      if(activeRequestsTab()){
+        await renderActionRequestsPanel();
+        if(typeof window.renderDeliveryOrderEditApprovalPanel==='function'){
+          await window.renderDeliveryOrderEditApprovalPanel();
+        }
+      }else patchRequestBadge();
       return out;
     };
   }
