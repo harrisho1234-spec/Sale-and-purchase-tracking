@@ -80,7 +80,11 @@ window.openCNStockReceiptForItem=async function(itemId){
       if(response.error)throw response.error;
       closeModal();showToast('CN stock receipt submitted. Stock stays unchanged until approval.');
       if(typeof window.renderReturnsPage==='function' && state.page==='returns')await window.renderReturnsPage();
-      if(typeof window.renderCNStockReceiptApprovalPanel==='function')await window.renderCNStockReceiptApprovalPanel();
+      if(el('inventoryBody')&&typeof window.renderStockInventory==='function'){
+        await window.renderStockInventory(); // Refresh Approvals count and stock receipt list.
+      }else if(typeof window.renderCNStockReceiptApprovalPanel==='function'){
+        await window.renderCNStockReceiptApprovalPanel();
+      }
     }catch(err){showToast(err.message||'Could not submit receipt.','err')}
     finally{receiptBusy=false;if(btn?.isConnected){btn.disabled=false;btn.textContent='Request Stock Receipt'}}
    };
