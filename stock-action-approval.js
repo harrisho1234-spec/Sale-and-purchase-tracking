@@ -600,7 +600,14 @@
           if(!doResult.error&&Array.isArray(doResult.data))doEditPending=doResult.data.length;
         }catch(_){}
       }
-      const total=actionPending+editPending+doEditPending;
+      let cnReceiptPending=0;
+      try{
+        const cnResp=await db.rpc('get_cn_stock_receipt_requests',{p_return_id:null});
+        if(!cnResp.error&&Array.isArray(cnResp.data)){
+          cnReceiptPending=cnResp.data.filter(x=>x.status==='pending').length;
+        }
+      }catch(_){}
+      const total=actionPending+editPending+doEditPending+cnReceiptPending;
       const btn=[].slice.call(document.querySelectorAll('.inv-tab')).find(function(b){
         return String(b.getAttribute('onclick')||'').includes("setInventoryTab('requests')");
       });
