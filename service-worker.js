@@ -1,4 +1,4 @@
-const PWA_VERSION = '20261017-cn-stock-receipt-approval1';
+const PWA_VERSION = '20261017-cn-stock-receipt-approval2';
 const APP_ROOT = '/Sale-and-purchase-tracking/';
 const ATTENTION_TAG = 'limperial-action-items';
 
