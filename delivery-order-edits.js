@@ -4,6 +4,7 @@
 (function(){
  'use strict';
  let editing=null;
+ let editingPending=[];
  let reviewRows=[];
  const escape=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
  const role=()=>String(typeof state!=='undefined'&&state?.profile?.role||'');
@@ -47,6 +48,10 @@
       (canDirect()?'<b>Super Admin direct edit.</b> Your saved corrections apply immediately and are audited.':'<b>Manager/Admin edit request.</b> No change takes effect until Admin or Super Admin approves.')+
       ' An item with Stock OUT or a stock approval cannot be changed or removed. Completed DOs allow delivery-detail corrections only.'+
    '</div>'+
+   (canDirect()&&editingPending.length?
+     '<div class="p-3 rounded-xl border border-amber-300 bg-amber-50 text-xs text-amber-900">'+
+       '<b>'+editingPending.length+' pending DO edit request'+(editingPending.length===1?'':'s')+'.</b> You can review the proposed changes or save your own correction. Saving your correction will mark the older request as <b>Superseded</b>, retaining its full audit history; it will not apply the older changes.'+
+       '<button type="button" onclick="openDeliveryOrderEditQueue()" class="ml-2 underline font-bold">Review request</button></div>':'')+
    '<div class="grid sm:grid-cols-2 gap-3">'+
     fieldLabel('Requested Delivery Date *','<input id="doEditDeliveryDate" required type="date" value="'+escape(strDate(context.requested_delivery_date))+'" class="block mt-1 w-full border rounded-lg px-3 py-2.5">')+
     fieldLabel('Delivery Address','<textarea id="doEditAddress" rows="2" maxlength="800" class="block mt-1 w-full border rounded-lg px-3 py-2">'+escape(context.delivery_address||'')+'</textarea>')+
@@ -67,6 +72,14 @@
    if(r.error)throw r.error;
    editing=r.data||null;
    if(!editing)throw Error('Delivery Order is unavailable');
+   editingPending=[];
+   if(canDirect()){
+     const pending=await db.rpc('get_delivery_order_edit_requests',{
+       p_delivery_request_id:String(id),p_pending_only:true
+     });
+     if(pending.error)throw pending.error;
+     editingPending=Array.isArray(pending.data)?pending.data:[];
+   }
    openModal(canDirect()?'Edit Delivery Order':'Request DO Correction',renderForm(editing));
    const form=document.getElementById('editDoForm');if(form)form.onsubmit=save;
   }catch(err){showToast(err.message||'Could not open DO editor.','err')}
@@ -96,7 +109,9 @@
    request_note:String(document.getElementById('doEditNote')?.value||'').trim(),
    items
   };
-  if(canDirect()&&!confirm('Apply these changes to '+(old.do_no||'this DO')+' immediately? An audit record will be saved. Stock OUT history will not be changed.'))return;
+  if(canDirect()&&!confirm('Apply corrections to '+(old.do_no||'this DO')+' immediately?'+
+    (editingPending.length?' The pending Admin/Manager request will be marked Superseded (not deleted or applied).':'')+
+    ' An audit record will be saved and Stock OUT history will not be changed.'))return;
   const btn=document.getElementById('doEditSave');
   if(btn){btn.disabled=true;btn.textContent=canDirect()?'Applying…':'Submitting…';}
   try{
@@ -104,9 +119,10 @@
     ?await db.rpc('superadmin_edit_delivery_order',{p_delivery_request_id:old.delivery_request_id,p_proposed:proposed})
     :await db.rpc('request_delivery_order_edit',{p_delivery_request_id:old.delivery_request_id,p_proposed:proposed,p_reason:reason});
    if(result.error)throw result.error;
-   editing=null;
+   const hadPending=editingPending.length>0;
+   editing=null;editingPending=[];
    closeModal();
-   showToast(canDirect()?'DO updated and audit history saved.':'DO edit request sent for Admin / Super Admin approval.');
+   showToast(canDirect()?(hadPending?'DO updated. Previous edit request superseded; audit history saved.':'DO updated and audit history saved.'):'DO edit request sent for Admin / Super Admin approval.');
    if(typeof window.invalidateInventoryCache==='function')window.invalidateInventoryCache();
    if(typeof window.renderStockInventory==='function')await window.renderStockInventory();
   }catch(err){showToast(err.message||'Could not save DO correction.','err')}
@@ -128,8 +144,9 @@
   }
   return html||'<span class="text-xs text-gray-500">No visible changes</span>';
  }
- function queueCard(r){
+ function queueCard(r,source='modal'){
   const pending=r.status==='pending',canAct=pending&&canReview();
+  const reviewNoteId='doEditReviewNote-'+source+'-'+String(r.id);
   return '<div class="rounded-xl border p-3 space-y-2">'+
    '<div class="flex flex-wrap gap-2 items-center justify-between"><div><b class="text-sm">'+escape(r.do_no||'DO')+' · '+escape(r.document_no||'')+'</b>'+
     '<div class="text-xs text-gray-500">'+escape(r.customer_name||'')+'</div>'+
@@ -138,9 +155,9 @@
    '<div class="text-xs"><b>Reason:</b> '+escape(r.reason)+'</div>'+
    '<div class="p-3 rounded-lg bg-gray-50 space-y-1">'+formatDiff(r)+'</div>'+
    (r.reviewer_note?'<div class="text-xs text-gray-500"><b>Review note:</b> '+escape(r.reviewer_note)+'</div>':'')+
-   (canAct?'<div class="border-t pt-3 space-y-2"><input id="doEditReviewNote-'+escape(r.id)+'" class="w-full border rounded-lg px-3 py-2 text-xs" placeholder="Reviewer note (optional)">'+
-     '<div class="flex justify-end gap-2"><button type="button" onclick="reviewDeliveryOrderEdit(\''+escape(r.id)+'\',false)" class="px-3 py-2 rounded-lg border border-red-200 text-red-700 text-xs font-semibold">Reject</button>'+
-     '<button type="button" onclick="reviewDeliveryOrderEdit(\''+escape(r.id)+'\',true)" class="px-3 py-2 rounded-lg bg-green-700 text-white text-xs font-semibold">Approve Changes</button></div></div>':'')+
+   (canAct?'<div class="border-t pt-3 space-y-2"><input id="'+escape(reviewNoteId)+'" class="w-full border rounded-lg px-3 py-2 text-xs" placeholder="Reviewer note (optional)">'+
+     '<div class="flex justify-end gap-2"><button type="button" onclick="reviewDeliveryOrderEdit(\''+escape(r.id)+'\',false,\''+source+'\')" class="px-3 py-2 rounded-lg border border-red-200 text-red-700 text-xs font-semibold">Reject</button>'+
+     '<button type="button" onclick="reviewDeliveryOrderEdit(\''+escape(r.id)+'\',true,\''+source+'\')" class="px-3 py-2 rounded-lg bg-green-700 text-white rounded-lg px-3 py-2 text-xs font-semibold">Approve Changes</button></div></div>':'')+
    '</div>';
  }
  window.openDeliveryOrderEditQueue=async function(){
@@ -159,19 +176,63 @@
    );
   }catch(err){showToast(err.message||'Could not load DO edit requests.','err')}
  };
- window.reviewDeliveryOrderEdit=async function(id,approve){
+ window.reviewDeliveryOrderEdit=async function(id,approve,source='modal'){
   if(!canReview())return showToast('Admin or Super Admin access required.','err');
   const item=reviewRows.find(x=>String(x.id)===String(id));
   if(!item||item.status!=='pending')return showToast('This request has already been reviewed.','err');
   if(approve&&!confirm('Approve corrections to '+(item.do_no||item.document_no)+'? The original DO will be updated, but existing Stock OUT history remains protected.'))return;
-  const note=String(document.getElementById('doEditReviewNote-'+id)?.value||'').trim();
+  const note=String(document.getElementById('doEditReviewNote-'+source+'-'+id)?.value||'').trim();
   try{
    const r=await db.rpc('review_delivery_order_edit',{p_request_id:id,p_approve:!!approve,p_reviewer_note:note||null});
    if(r.error)throw r.error;
    showToast(approve?'DO correction approved and applied.':'DO edit request rejected.');
    if(typeof window.invalidateInventoryCache==='function')window.invalidateInventoryCache();
    if(typeof window.renderStockInventory==='function')await window.renderStockInventory();
-   await window.openDeliveryOrderEditQueue();
+   if(source==='modal')await window.openDeliveryOrderEditQueue();
   }catch(err){showToast(err.message||'Review failed.','err')}
+ };
+ // Make DO corrections visible in the MAIN Approvals / Requests tab,
+ // not just under Customer Fulfillment. Always render pending first and
+ // keep reviewed history accessible through the existing review dialog.
+ window.renderDeliveryOrderEditApprovalPanel=async function(){
+  if(!canReview())return;
+  const active=[...document.querySelectorAll('.inv-tab')].some(button=>
+    String(button.getAttribute('onclick')||'').includes("setInventoryTab('requests')") &&
+    button.classList.contains('active'));
+  const root=document.getElementById('inventoryBody');
+  if(!root||!active)return;
+  let holder=document.getElementById('deliveryOrderEditApprovalPanel');
+  if(!holder){
+    holder=document.createElement('section');
+    holder.id='deliveryOrderEditApprovalPanel';
+    holder.className='mb-4';
+    root.insertBefore(holder,root.firstChild);
+  }
+  holder.innerHTML='<div class="inv-card text-xs text-gray-500 p-4">Loading Delivery Order edit approvals…</div>';
+  try{
+    const response=await db.rpc('get_delivery_order_edit_requests',{
+      p_delivery_request_id:null,p_pending_only:false
+    });
+    if(response.error)throw response.error;
+    reviewRows=Array.isArray(response.data)?response.data:[];
+    const pending=reviewRows.filter(r=>r.status==='pending')
+      .sort((a,b)=>Date.parse(b.requested_at||'')-Date.parse(a.requested_at||''));
+    const reviewed=reviewRows.filter(r=>r.status!=='pending');
+    holder.innerHTML='<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 mb-2 flex flex-wrap justify-between items-center gap-3">'+
+      '<div><b class="text-sm text-amber-900">Delivery Order Edit Approvals</b>'+
+        '<div class="text-[11px] text-amber-900/80 mt-1">Manager and Admin correction requests. Review the original and proposed values before approving.</div></div>'+
+      '<div class="flex items-center gap-2">'+
+        '<span class="rounded-full border bg-white px-2.5 py-1 text-xs font-bold">'+pending.length+' Pending</span>'+
+        '<button type="button" onclick="openDeliveryOrderEditQueue()" class="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900">Review History'+(reviewed.length?' ('+reviewed.length+')':'')+'</button>'+
+      '</div></div>'+
+      '<div class="grid gap-3">'+
+        (pending.length?pending.map(r=>queueCard(r,'panel')).join(''):
+         '<div class="rounded-xl border bg-white px-4 py-3 text-xs text-gray-500">No pending Delivery Order edit requests.</div>')+
+      '</div>';
+  }catch(err){
+    holder.innerHTML='<div class="inv-card border border-red-200 text-red-700 p-3 text-xs">Could not load DO approvals: '+
+      escape(err.message||'Unknown error')+
+      ' <button type="button" onclick="renderDeliveryOrderEditApprovalPanel()" class="underline font-bold">Retry</button></div>';
+  }
  };
 })();
