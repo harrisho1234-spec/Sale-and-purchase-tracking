@@ -969,6 +969,7 @@
     if(!canOperate())return '';
     return `<div class="flex gap-2 flex-wrap justify-end">
       <button onclick="openQuickStockAction()" class="px-3 py-2 bg-[#211d18] text-white rounded-xl text-xs font-semibold">＋ Quick Stock Action</button>
+      ${role()==='super_admin'?'<button onclick="openSuperAdminStockIncrease()" class="px-3 py-2 border border-green-200 bg-green-50 text-green-800 rounded-xl text-xs font-semibold">＋ Increase QTY</button>':''}
       <button onclick="openStockTransfer()" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-xl text-xs font-semibold">⇄ Transfer</button>
     </div>`;
   }
@@ -987,7 +988,7 @@
       ${btn('Stock OUT','Manual stock release / OUT',"openStockMovement('out')",'bg-red-50/40 border-red-100')}
       ${btn('Customer Return','Return stock back into a location',"openStockMovement('return')",'bg-green-50/40 border-green-100')}
       ${btn('Broken / Damaged','Record damaged stock and reduce a location',"openStockMovement('broken')",'bg-amber-50/40 border-amber-100')}
-      ${btn('Stock IN','Manual stock addition into a location',"openStockMovement('in')",'bg-green-50/40 border-green-100')}
+      ${role()==='super_admin'?btn('Increase QTY · Super Admin','Manually add stock to any existing Product Code with an audited reason',"openSuperAdminStockIncrease()",'bg-green-50/40 border-green-100'):''}
       ${btn('Customer Fulfillment','Review and release tracked customer stock orders',"quickInventoryGo('delivery')")}
       ${btn('Start Stock Count','Start a monthly physical count for a location',"quickInventoryGo('counts',true)")}
       ${btn('Find Product','Search a product and open its Stock Card',"openInventoryProductFinder()")}
@@ -2415,13 +2416,15 @@
 
   window.openStockMovement=async function(defaultType='in',defaultProductId=null){
     if(!canOperate())return showToast('Stock Controller or Admin access required.','err');
+    if(['in','adjustment_in'].includes(defaultType)&&role()!=='super_admin')
+      return showToast('Only Super Admin may manually increase Product QTY. Use Receive PO or Customer Return for normal receipts.','err');
     await loadCore(true);
     openModal('New Stock Movement',`<form id="stockMovementForm" class="space-y-4">
       <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">All stock changes are recorded in the inventory ledger. OUT/Broken/Transfer cannot reduce a location below zero.</div>
       <div><label class="text-xs font-semibold">Product / Code *</label><div class="relative"><input id="smProduct" autocomplete="off" required onfocus="showStockProductSuggestions(this)" oninput="stockProductInputChanged(this)" onblur="setTimeout(()=>document.getElementById('smProductSuggestions')?.classList.add('hidden'),150)" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white" placeholder="Type product code or item name..."><input id="smProductId" type="hidden"><div id="smProductSuggestions" class="hidden absolute z-[140] left-0 right-0 top-full mt-1 max-h-72 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-xl"></div></div><div id="smProductInfo"></div></div>
       <div class="grid md:grid-cols-2 gap-4">
         <div><label class="text-xs font-semibold">Movement Type</label><select id="smType" onchange="stockMovementTypeChanged()" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">
-          ${[['in','Stock In'],['out','Stock Out'],['return','Customer Return'],['broken','Broken / Damaged'],['transfer','Transfer Location'],['adjustment_in','Adjustment +'],['adjustment_out','Adjustment −']].map(([v,l])=>`<option value="${v}" ${v===defaultType?'selected':''}>${l}</option>`).join('')}
+          ${[['out','Stock Out'],['return','Customer Return'],['broken','Broken / Damaged'],['transfer','Transfer Location'],['adjustment_out','Adjustment −'],...(role()==='super_admin'?[['in','Stock In'],['adjustment_in','Adjustment +']]:[])].map(([v,l])=>`<option value="${v}" ${v===defaultType?'selected':''}>${l}</option>`).join('')}
         </select></div>
         <div><label class="text-xs font-semibold">Quantity *</label><input id="smQty" type="number" min="1" step="1" value="1" required class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
         <div id="smOutPurposeWrap" class="hidden md:col-span-2 rounded-xl border border-amber-200 bg-amber-50/50 p-3">
@@ -2473,6 +2476,8 @@
       if(!p)return showToast('Choose a Product / Code from the suggestion list.','err');
       const qty=stockWholeQtyInput('smQty',false,'Quantity');if(qty==null)return;
       const movementType=document.getElementById('smType').value;
+      if(['in','adjustment_in'].includes(movementType)&&role()!=='super_admin')
+        return showToast('Only Super Admin can manually increase Product QTY.','err');
       const outPurpose=movementType==='out'?String(document.getElementById('smOutPurpose')?.value||''):'';
       if(movementType==='out'&&!outPurpose)return showToast('Choose where the Stock OUT is going / its purpose first.','err');
       const outPurposeDetail=movementType==='out'&&outPurpose!=='customer_delivery'
@@ -2581,8 +2586,8 @@
 
   // Replace the old direct Product stock editor. All adjustments now go through the audited ledger.
   window.openAdjustStock=function(productId){
-    if(!canOperate())return showToast('Stock Controller or Admin access required.','err');
-    return openStockMovement('adjustment_in',productId);
+    if(role()!=='super_admin')return showToast('Only Super Admin can manually increase product QTY.','err');
+    return window.openSuperAdminStockIncrease(productId);
   };
 
   window.openProductStockCard=async function(productId){
@@ -2614,7 +2619,7 @@
       <div class="rounded-2xl border bg-[#fcfbf8] p-4 flex flex-col md:flex-row md:items-center gap-4">
         <div class="w-24 h-24 rounded-2xl overflow-hidden border bg-white shrink-0">${p.image_url?`<img loading="lazy" decoding="async" src="${esc(p.image_url)}" class="w-full h-full object-cover">`:'<div class="w-full h-full flex items-center justify-center text-xs text-gray-400">No Photo</div>'}</div>
         <div class="min-w-0 flex-1"><div class="text-xs font-bold text-[#a77d1a]">${esc(p.code||'')}${taxBadge(p)}</div><h3 class="text-xl font-bold mt-1">${esc(p.item_name||'')}</h3><div class="text-xs text-gray-500 mt-1">${[p.brand,p.class].filter(Boolean).map(esc).join(' · ')}</div><div class="mt-3 flex flex-wrap gap-2">${locs.map(l=>`<span class="px-2.5 py-1.5 rounded-lg border bg-white text-xs"><b>${esc(l.code)}</b> ${q(l.qty)}</span>`).join('')||'<span class="text-xs text-gray-400">No live stock location.</span>'}</div></div>
-        <div class="flex md:flex-col gap-2">${p.tax_item?`<button onclick="openTaxDeclaredSet('${productId}')" class="px-3 py-2 border border-amber-200 bg-amber-50 text-amber-800 rounded-xl text-xs font-semibold">Declared Set</button>`:''}${canOperate()?`<button onclick="openStockTransfer('${productId}')" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-xl text-xs font-semibold">Move</button><button onclick="openStockMovement('out','${productId}')" class="px-3 py-2 border border-red-200 bg-red-50 text-red-700 rounded-xl text-xs font-semibold">Stock OUT</button><button onclick="openStockMovement('return','${productId}')" class="px-3 py-2 border border-green-200 bg-green-50 text-green-700 rounded-xl text-xs font-semibold">Return</button>`:''}</div>
+        <div class="flex md:flex-col gap-2">${role()==='super_admin'?`<button onclick="openSuperAdminStockIncrease('${productId}')" class="px-3 py-2 border border-green-200 bg-green-50 text-green-800 rounded-xl text-xs font-semibold">+ Increase QTY</button>`:''}${p.tax_item?`<button onclick="openTaxDeclaredSet('${productId}')" class="px-3 py-2 border border-amber-200 bg-amber-50 text-amber-800 rounded-xl text-xs font-semibold">Declared Set</button>`:''}${canOperate()?`<button onclick="openStockTransfer('${productId}')" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-xl text-xs font-semibold">Move</button><button onclick="openStockMovement('out','${productId}')" class="px-3 py-2 border border-red-200 bg-red-50 text-red-700 rounded-xl text-xs font-semibold">Stock OUT</button><button onclick="openStockMovement('return','${productId}')" class="px-3 py-2 border border-green-200 bg-green-50 text-green-700 rounded-xl text-xs font-semibold">Return</button>`:''}</div>
       </div>
 
       <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
