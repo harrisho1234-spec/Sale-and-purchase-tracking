@@ -43,11 +43,12 @@
     if(df.loading)return df.loading;
     if(df.loaded&&!force)return;
     df.loading=(async()=>{
-      const [rr,er,mr,cr]=await Promise.all([
+      const [rr,er,mr,cr,srMulti]=await Promise.all([
         db.rpc('get_visible_sales_procurement_refs'),
         db.from('sales_document_events').select('*').order('created_at',{ascending:true}),
         db.from('sales_orders').select('id,order_no,invoice_no,sales_flow_type,sr_no,sales_invoice_no,sales_invoice_type,sales_category,invoice_request_status,invoice_requested_at,invoice_issued_at'),
-        db.rpc('get_my_sr_conversion_requests')
+        db.rpc('get_my_sr_conversion_requests'),
+        db.rpc('get_visible_sr_split_invoice_list')
       ]);
       if(rr.error)console.warn('PO reference load:',rr.error.message);
       if(er.error)console.warn('Document event load:',er.error.message);
@@ -59,6 +60,8 @@
         const id=String(x.sales_order_id);
         if(!df.conversions.has(id))df.conversions.set(id,x);
       });
+      if(srMulti?.error)console.warn('Multiple SR invoices:',srMulti.error.message);
+      df.splitInvoices=new Map((Array.isArray(srMulti?.data)?srMulti.data:[]).map(x=>[String(x.sr_id),x]));
       df.loaded=true;
     })().finally(()=>df.loading=null);
     return df.loading;
@@ -71,13 +74,15 @@
   }
 
   function flowPanel(raw){
-    const o=mergeMeta(raw),pre=isPre(o),refs=refsForOrder(o),pos=uniquePOs(o),paid=Number(o.amount_paid||0)>0,arrived=allArrived(o),delivered=allDelivered(o),issued=!!o.sales_invoice_no,requested=o.invoice_request_status==='requested'||issued,settled=norm(o.payment_status)==='paid';
+    const o=mergeMeta(raw),pre=isPre(o),refs=refsForOrder(o),pos=uniquePOs(o),paid=Number(o.amount_paid||0)>0,arrived=allArrived(o),delivered=allDelivered(o),srSplit=df.splitInvoices?.get(String(o.id))||null,issued=!!o.sales_invoice_no||Number(srSplit?.issued_count||0)>0,requested=o.invoice_request_status==='requested'||issued||Number(srSplit?.pending_count||0)>0,settled=norm(o.payment_status)==='paid';
     const production=refs.some(r=>['production','shipping','arrived','completed'].includes(norm(r.po_status)));
     const shipping=refs.some(r=>['shipping','arrived','completed'].includes(norm(r.po_status)));
     const poLinked=refs.length>0;
     const events=eventsForOrder(o.id);
     const conversion=conversionFor(o.id);
-    const pendingConversion=conversion?.status==='pending'&&!issued;
+    const pendingConversion=(conversion?.status==='pending'&&!o.sales_invoice_no)||Number(srSplit?.pending_count||0)>0;
+    const srUninvoiced=srSplit?Math.max(0,Number(srSplit.total_qty||0)-Number(srSplit.issued_qty||0)-Number(srSplit.pending_qty||0)):null;
+    const splitSummary=srSplit?('TK/RK '+Number(srSplit.issued_count||0)+' issued'+(Number(srSplit.pending_count||0)?', '+srSplit.pending_count+' pending':'')+' · '+srUninvoiced+' qty uninvoiced'):null;
     let steps='';
     if(pre){
       steps=[
@@ -88,7 +93,7 @@
         stepHtml('Shipping',shipping,production&&!shipping),
         stepHtml('Arrived',arrived,shipping&&!arrived),
         stepHtml(pendingConversion?'TK/RK Pending Approval':'Invoice Requested',requested||pendingConversion,arrived&&!requested&&!pendingConversion),
-        stepHtml('TK/RK Issued',issued,requested&&!issued,o.sales_invoice_no||''),
+        stepHtml('TK/RK Issued',issued,requested&&!issued,splitSummary||o.sales_invoice_no||''),
         stepHtml('Paid',settled,issued&&!settled),
         stepHtml('Delivered',delivered,settled&&!delivered)
       ].join('');
@@ -104,19 +109,24 @@
     const poBadges=pos.length?pos.map(p=>`<span class="lr-badge lr-badge-blue">${esc(p.no)} · ${esc(titleCase(p.status||'placed'))}${p.eta?' · '+esc(fmtDate(p.eta)):''}</span>`).join(' '):'<span class="text-[10px] text-gray-400">No supplier PO linked yet.</span>';
     const controls=[`<button onclick="openDocumentFlowDetails('${o.id}')" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">View Details</button>`];
     if(pre&&isAdminRole())controls.push(`<button onclick="openLinkPOItems('${o.id}')" class="px-3 py-2 rounded-lg border text-xs font-semibold">Link PO Items</button>`);
-    if(pre&&!issued&&arrived&&!pendingConversion&&canPrepareSr()
+    if(pre&&!o.sales_invoice_no&&(srUninvoiced==null||srUninvoiced>0)&&arrived&&!pendingConversion&&canPrepareSr()
        &&String(o.sales_rep_id||'')===String(state.user?.id||'')){
       controls.push(`<button onclick="openPrepareSrConversion('${o.id}')" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs font-semibold">Prepare TK/RK</button>`);
-    }else if(pre&&!issued&&!pendingConversion&&arrived&&canRequestInvoice()
+    }else if(pre&&!o.sales_invoice_no&&!srSplit&&!pendingConversion&&arrived&&canRequestInvoice()
        &&state.profile?.role!=='sales'&&o.invoice_request_status!=='requested'){
       controls.push(`<button onclick="openInvoiceRequest('${o.id}')" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs font-semibold">Request TK/RK</button>`);
     }
-    if(pre&&!issued&&!pendingConversion&&isAdminRole()&&(requested||arrived))controls.push(`<button onclick="openIssueFinalInvoice('${o.id}')" class="px-3 py-2 rounded-lg bg-[#b38b2e] text-white text-xs font-semibold">Issue TK/RK</button>`);
+    if(pre&&!o.sales_invoice_no&&!srSplit&&!pendingConversion&&isAdminRole()&&(requested||arrived))controls.push(`<button onclick="openIssueFinalInvoice('${o.id}')" class="px-3 py-2 rounded-lg bg-[#b38b2e] text-white text-xs font-semibold">Issue TK/RK</button>`);
 
     return `<div class="mb-4 rounded-2xl border border-[#eee7d9] bg-[#fffdf8] p-4">
       <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-3"><div><div class="text-[10px] uppercase tracking-wider font-extrabold text-[#a77d1a]">Document Flow</div><div class="font-bold mt-1">${esc(docLabel(o))}</div></div><div class="flex flex-wrap gap-2">${controls.join('')}</div></div>
       <div class="flex flex-wrap gap-2 mb-3">${pre?poBadges:''}</div>
-      ${pre&&conversion?`<div class="rounded-xl border p-3 mb-3 text-xs ${conversion.status==='pending'?'border-amber-200 bg-amber-50 text-amber-800':conversion.status==='approved'?'border-green-200 bg-green-50 text-green-800':'border-red-200 bg-red-50 text-red-700'}">
+      ${pre&&srSplit?`<div class="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 mb-3 text-xs text-blue-900">
+        <b>Linked TK/RK invoices:</b> ${esc(splitSummary||'')}
+        ${(srSplit.issued_numbers||[]).length?`<div class="mt-1 flex flex-wrap gap-1">${srSplit.issued_numbers.map(i=>`<span class="rounded-md border bg-white px-2 py-1">${esc(i.no)} · ${Number(i.total||0).toFixed(2)}</span>`).join('')}</div>`:''}
+        <button type="button" onclick="openSrInvoiceOverview('${o.id}')" class="mt-2 font-bold underline">View invoices and remaining quantities →</button>
+      </div>`:''}
+      ${pre&&conversion&&!srSplit?`<div class="rounded-xl border p-3 mb-3 text-xs ${conversion.status==='pending'?'border-amber-200 bg-amber-50 text-amber-800':conversion.status==='approved'?'border-green-200 bg-green-50 text-green-800':'border-red-200 bg-red-50 text-red-700'}">
         <b>TK/RK Conversion: ${esc(titleCase(conversion.status))}</b> · ${esc(conversion.invoice_no||'')}
         ${conversion.review_note?`<div class="mt-1">${esc(conversion.review_note)}</div>`:''}
       </div>`:''}
