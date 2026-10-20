@@ -328,15 +328,19 @@
       activityReportState.rows=activityReportState.cache[type]||[];
       return;
     }
-    const [liveRes,historyRes]=await Promise.all([
+    const [liveRes,historyRes,assignmentRes]=await Promise.all([
       db.rpc('get_customer_activity_rows',{p_activity_type:type}),
-      db.rpc('get_customer_history_index',{p_activity_type:type})
+      db.rpc('get_customer_history_index',{p_activity_type:type}),
+      db.rpc('get_activity_sales_assignment_state',{p_activity_type:type})
     ]);
     if(liveRes.error)throw liveRes.error;
     if(historyRes.error)throw historyRes.error;
-
+    if(assignmentRes.error)throw assignmentRes.error;
+    const assignments=new Map((assignmentRes.data||[]).map(x=>[String(x.activity_id),x]));
     const live=(liveRes.data||[]).map(r=>({
       ...r,
+      assigned_sales_id:assignments.get(String(r.id))?.approved_sales_id||r.assigned_sales_id,
+      sales_rep_name:assignments.get(String(r.id))?.approved_sales_name||r.sales_rep_name,
       entry_count:1,
       is_history:false,
       source_counts:null,
