@@ -109,7 +109,7 @@ declare
   v_item_ids uuid[] := array[]::uuid[];
   v_original_po uuid;
   v_old_agent uuid;
-  v_historical boolean;
+  v_item_historical boolean;
 begin
   if not (public.is_admin_or_super() or public.current_user_has_permission('procurement.po_edit')) then
     raise exception 'No permission to edit supplier shipments';
@@ -133,13 +133,6 @@ begin
   -- Serialize all shipment changes for this PO.
   perform 1 from public.supplier_pos where id=v_po for update;
   if not found then raise exception 'Supplier PO not found'; end if;
-  select exists(
-    select 1 from public.supplier_po_items
-    where supplier_po_id=v_po and coalesce(historical_stock_reconciled,false)
-  ) into v_historical;
-  if v_historical then
-    raise exception 'Historical/reconciled PO items cannot be assigned to live shipments';
-  end if;
   select name into v_agent_name from public.shipping_agents where id=v_agent;
   if not found then raise exception 'Shipping agent not found'; end if;
 
@@ -162,10 +155,11 @@ begin
       raise exception 'The same PO item appears twice in this shipment';
     end if;
     v_item_ids := array_append(v_item_ids,v_item_id);
-    select pi.qty into v_ordered
+    select pi.qty, coalesce(pi.historical_stock_reconciled,false) into v_ordered,v_item_historical
       from public.supplier_po_items pi
       where pi.id=v_item_id and pi.supplier_po_id=v_po;
     if not found then raise exception 'Shipment item does not belong to this PO'; end if;
+    if v_item_historical then raise exception 'A historically reconciled PO item cannot be allocated to a new shipment'; end if;
     select coalesce(sum(si.qty),0) into v_existing
       from public.supplier_po_shipment_items si
       join public.supplier_po_shipments sh on sh.id=si.shipment_id
