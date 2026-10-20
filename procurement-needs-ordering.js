@@ -135,7 +135,9 @@
         <button class="pw-tab" onclick="setProcurementTab('ordered')">PO Ordered Items</button>
         <button class="pw-tab" onclick="setProcurementTab('items')">PO Items</button>
         <button class="pw-tab" onclick="setProcurementTab('payments')">Supplier Payments</button>
-        <button class="pw-tab" onclick="setProcurementTab('shipping')">Shipping / ETA</button>
+        <button class="pw-tab" onclick="setProcurementTab('shipping')">PO Status / ETA</button>
+        <button class="pw-tab" onclick="setProcurementTab('shipments')">Shipments</button>
+        <button class="pw-tab" onclick="setProcurementTab('agents')">Shipping Agents</button>
         <button class="pw-tab" onclick="setProcurementTab('allocations')">SR Allocations</button>
         <button class="pw-tab" onclick="setProcurementTab('flow')">PO → SR → TK/RK</button>
       </div>
