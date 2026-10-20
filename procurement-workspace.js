@@ -187,22 +187,28 @@
   }
 
   window.saveManagePOStatus=async function(id){
-    const rm=await reconciliationMap();
-    if(rm.get(String(id))?.reconciliation_state==='historical_reconciled')return showToast('Historical / Reconciled POs are locked. Undo reconciliation first.','err');
-    const status=document.getElementById('managePOStatus')?.value||'placed';
-    const eta=document.getElementById('managePOEta')?.value||null;
-    const patch={status,estimated_arrival:eta,updated_at:new Date().toISOString()};
-    if(['arrived','delivered'].includes(status)){
-      const current=(window._procurementPOOptions||[]).find(x=>String(x.id)===String(id));
-      patch.actual_arrival=current?.actual_arrival||new Date().toISOString().slice(0,10);
+    try {
+      const rm=await reconciliationMap();
+      if(rm.get(String(id))?.reconciliation_state==='historical_reconciled')return showToast('Historical / Reconciled POs are locked. Undo reconciliation first.','err');
+      const status=document.getElementById('managePOStatus')?.value||'placed';
+      const eta=document.getElementById('managePOEta')?.value||null;
+      if(status==='arrived'){
+        // Atomic, confirmed PO+item update. No inventory receipt is posted here.
+        const confirmed=await window.confirmWholePOArrival(id,eta);
+        if(!confirmed)return;
+      }else{
+        const patch={status,estimated_arrival:eta,updated_at:new Date().toISOString()};
+        const {error}=await db.from('supplier_pos').update(patch).eq('id',id);
+        if(error)throw error;
+        if(window.documentFlowState)window.documentFlowState.loaded=false;
+        showToast('PO status / ETA updated. Individual item progress is unchanged.');
+      }
+      await load();
+      await renderProcurementWorkspace();
+      await openManageSupplierPO(id);
+    }catch(err){
+      showToast(err.message||'Could not update PO status','err');
     }
-    const {error}=await db.from('supplier_pos').update(patch).eq('id',id);
-    if(error)return showToast(error.message,'err');
-    if(window.documentFlowState)window.documentFlowState.loaded=false;
-    showToast('PO status / ETA updated');
-    await load();
-    await renderProcurementWorkspace();
-    await openManageSupplierPO(id);
   };
 
   window.openManageSupplierPO=async function(id){
@@ -415,26 +421,33 @@
   }
 
   window.saveProcShipping=async function(id){
-    const status=document.getElementById('status-'+id)?.value,eta=document.getElementById('eta-'+id)?.value||null;
-    const patch={status,estimated_arrival:eta};
-    if(['arrived','delivered'].includes(status))patch.actual_arrival=new Date().toISOString().slice(0,10);
-    const r=await db.from('supplier_pos').update(patch).eq('id',id);
-    if(r.error)return showToast(r.error.message,'err');
-
-    // A PO-level status update is a deliberate whole-PO action, so keep live item statuses
-    // aligned. Historical/Reconciled item lines stay untouched and remain outside the live list.
-    const ir=await db.from('supplier_po_items')
-      .update({procurement_status:status,updated_at:new Date().toISOString()})
-      .eq('supplier_po_id',id)
-      .eq('historical_stock_reconciled',false);
-    if(ir.error)return showToast(ir.error.message,'err');
-
-    if(window.documentFlowState)window.documentFlowState.loaded=false;
-    if(typeof window.invalidateInventoryCache==='function')window.invalidateInventoryCache();
-    if(typeof window.invalidateInventoryTasks==='function')window.invalidateInventoryTasks();
-    showToast('Shipping / ETA updated');
-    await load();
-    await renderProcurementWorkspace();
+    try{
+      const status=document.getElementById('status-'+id)?.value;
+      const eta=document.getElementById('eta-'+id)?.value||null;
+      if(status==='arrived'){
+        // Same confirmed all-active-item arrival as Manage PO and Edit PO.
+        const confirmed=await window.confirmWholePOArrival(id,eta);
+        if(!confirmed)return;
+      }else{
+        const patch={status,estimated_arrival:eta,updated_at:new Date().toISOString()};
+        const r=await db.from('supplier_pos').update(patch).eq('id',id);
+        if(r.error)throw r.error;
+        // Retain the existing whole-PO shipping control behavior for non-arrival stages.
+        const ir=await db.from('supplier_po_items')
+          .update({procurement_status:status,updated_at:new Date().toISOString()})
+          .eq('supplier_po_id',id)
+          .eq('historical_stock_reconciled',false);
+        if(ir.error)throw ir.error;
+        if(window.documentFlowState)window.documentFlowState.loaded=false;
+        if(typeof window.invalidateInventoryCache==='function')window.invalidateInventoryCache();
+        if(typeof window.invalidateInventoryTasks==='function')window.invalidateInventoryTasks();
+        showToast('Shipping / ETA and live item statuses updated');
+      }
+      await load();
+      await renderProcurementWorkspace();
+    }catch(err){
+      showToast(err.message||'Could not update shipping status','err');
+    }
   };
 
   window.renderProcurementWorkspace=async function(){
