@@ -888,6 +888,57 @@ ${activityAllowed()?`          <select onchange="setActivityStatus(this.value)" 
     await renderCustomerActivity(activityState.type);
   }
 
+  window.openActivityAssignmentRequest=function(id){
+    const row=activityState.rows.find(x=>String(x.id)===String(id));
+    if(!row||row.is_history)return showToast('This entry cannot be reassigned','err');
+    if(row.pending_target_id){
+      return showToast('Assignment to '+row.pending_target_name+' is already pending approval.');
+    }
+    const candidates=activityState.salesUsers.filter(u=>['sales','manager'].includes(u.role)
+      && String(u.user_id)!==String(row.assigned_sales_id||''));
+    if(!candidates.length)return showToast('No other active salespeople available','err');
+    openModal('Request Sales Assignment',`<form id="activityAssignRequestForm" class="space-y-4">
+      <div class="rounded-xl bg-gray-50 border p-3">
+        <b class="text-sm">${esc(row.customer_name||'Customer')}</b>
+        <div class="text-xs text-gray-500 mt-1">${esc(activityTypeLabel(row.activity_type))} · ${esc(fmtActivityDate(row.activity_date))} · ${esc(row.business_code||'')}</div>
+        <div class="text-xs mt-2">Currently assigned: <b>${esc(row.sales_rep_name||'Unassigned')}</b></div>
+      </div>
+      <div><label class="text-xs font-semibold">Assign To (Pending Approval) *</label>
+        <select id="activityAssignTarget" required class="mt-1 w-full border rounded-xl bg-white p-3 text-sm">
+          <option value="">Choose a different Sales Rep</option>
+          ${candidates.map(u=>`<option value="${esc(u.user_id)}">${esc(u.display_name||u.email)}</option>`).join('')}
+        </select>
+      </div>
+      <div><label class="text-xs font-semibold">Reason / Notes (optional)</label>
+        <textarea id="activityAssignNote" rows="3" maxlength="2000" class="mt-1 w-full border rounded-xl p-3 text-sm" placeholder="Reason for assigning another salesperson"></textarea>
+      </div>
+      <div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+        The current assignment stays unchanged until a Sales Manager or Admin approves this request.
+        This changes showroom/online reporting credit only, not ownership in Customer Master.
+      </div>
+      <button type="submit" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold text-sm">Submit for Approval</button>
+    </form>`);
+    document.getElementById('activityAssignRequestForm').onsubmit=async e=>{
+      e.preventDefault();
+      const btn=e.target.querySelector('button[type="submit"]');
+      const target=document.getElementById('activityAssignTarget').value;
+      if(!target)return showToast('Select a Sales Rep','err');
+      if(btn)btn.disabled=true;
+      const result=await db.rpc('request_activity_sales_assignment',{
+        p_activity_id:row.id,p_target_sales_id:target,
+        p_note:document.getElementById('activityAssignNote').value.trim()||null
+      });
+      if(result.error){
+        if(btn)btn.disabled=false;
+        return showToast(result.error.message,'err');
+      }
+      closeModal();
+      showToast('Assignment requested · Pending Sales Manager / Admin approval');
+      if(typeof refreshApprovalNotifications==='function')setTimeout(refreshApprovalNotifications,50);
+      await renderCustomerActivity(activityState.type);
+    };
+  };
+
   window.setActivitySearch=function(v){activityState.search=v;activityState.page=1;renderActivityBody()};
   window.setActivityBusiness=function(v){activityState.business=v;activityState.page=1;renderActivityBody()};
   window.setActivityStatus=function(v){activityState.status=v;activityState.page=1;renderActivityBody()};
