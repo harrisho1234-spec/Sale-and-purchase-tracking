@@ -111,7 +111,7 @@
        &&state.profile?.role!=='sales'&&o.invoice_request_status!=='requested'){
       controls.push(`<button onclick="openInvoiceRequest('${o.id}')" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs font-semibold">Request TK/RK</button>`);
     }
-    if(pre&&!issued&&isAdminRole()&&(requested||arrived))controls.push(`<button onclick="openIssueFinalInvoice('${o.id}')" class="px-3 py-2 rounded-lg bg-[#b38b2e] text-white text-xs font-semibold">Issue TK/RK</button>`);
+    if(pre&&!issued&&!pendingConversion&&isAdminRole()&&(requested||arrived))controls.push(`<button onclick="openIssueFinalInvoice('${o.id}')" class="px-3 py-2 rounded-lg bg-[#b38b2e] text-white text-xs font-semibold">Issue TK/RK</button>`);
 
     return `<div class="mb-4 rounded-2xl border border-[#eee7d9] bg-[#fffdf8] p-4">
       <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-3"><div><div class="text-[10px] uppercase tracking-wider font-extrabold text-[#a77d1a]">Document Flow</div><div class="font-bold mt-1">${esc(docLabel(o))}</div></div><div class="flex flex-wrap gap-2">${controls.join('')}</div></div>
