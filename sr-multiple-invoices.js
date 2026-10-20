@@ -89,7 +89,10 @@
    for(const inp of document.querySelectorAll('[data-split-idx]')){
      const t=listing[Number(inp.dataset.splitIdx)],qty=Number(inp.value||0);
      if(!t||qty<=0)continue;
-     pcs+=qty;total+=Number(t.line_total||0)*(qty/Number(t.qty||1));
+     pcs+=qty;const gross=listing.reduce((sum,row)=>sum+Number(row.line_total||0),0);
+     const discount=Number(window._currentSRDiscount||0);
+     const itemGross=Number(t.line_total||0);
+     total+=(itemGross-(gross>0?discount*itemGross/gross:0))*(qty/Number(t.qty||1));
    }
    const div=document.getElementById('srSplitTotal');
    if(div)div.textContent='Selected: '+pcs+' pcs · Approx. line value '+moneyN(total)+' (original SR deposit/discount remain on the SR)';
