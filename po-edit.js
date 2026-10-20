@@ -102,7 +102,20 @@
         const file=document.getElementById('epoFile').files[0]||null;
         const selectedVendor=typeof findVendorMaster==='function'?findVendorMaster(document.getElementById('epoVendor').value):null;
         const patch={po_number:document.getElementById('epoNo').value.trim()||null,vendor_id:selectedVendor?.id||document.getElementById('epoVendorId')?.value||null,vendor_name:selectedVendor?.name||document.getElementById('epoVendor').value.trim(),status:historical?(p.status||'placed'):document.getElementById('epoStatus').value,estimated_arrival:historical?(p.estimated_arrival||null):(document.getElementById('epoEta').value||null),shipping_agent:document.getElementById('epoAgent').value.trim()||null,order_date:document.getElementById('epoDate').value||p.order_date,notes:document.getElementById('epoNotes').value.trim()||null};
-        const r=await db.from('supplier_pos').update(patch).eq('id',poId);if(r.error)return showToast(r.error.message,'err');
+        if(!historical&&patch.status==='arrived'){
+          try{
+            // Same confirmation and atomic PO/item status update used in Manage PO.
+            const confirmed=await window.confirmWholePOArrival(poId,patch.estimated_arrival);
+            if(!confirmed)return;
+            // PO status and ETA were already saved by the arrival RPC.
+            delete patch.status;
+            delete patch.estimated_arrival;
+          }catch(err){
+            return showToast(err.message||'Could not mark PO Arrived','err');
+          }
+        }
+        const r=await db.from('supplier_pos').update(patch).eq('id',poId);
+        if(r.error)return showToast(r.error.message,'err');
         if(file){const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,'_'),path=`${poId}/${Date.now()}-${safe}`;const up=await db.storage.from('po-documents').upload(path,file,{upsert:false});if(up.error)return showToast(`PO updated but file upload failed: ${up.error.message}`,'err');const u=await db.from('supplier_pos').update({po_document_path:path,po_document_name:file.name}).eq('id',poId);if(u.error)return showToast(u.error.message,'err')}
         showToast('Supplier PO updated');closeModal();if(window.documentFlowState)window.documentFlowState.loaded=false;await go('supplier-pos');
       };
