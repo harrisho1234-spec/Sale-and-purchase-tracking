@@ -116,12 +116,14 @@ function syncAllProducts(showUi = true) {
     const products = buildAggregatedProducts_();
     const result = pushProducts_(products, 'full');
     result.sheetWrites = appToSheet.written || 0;
-    saveSyncStatus_('success', `Full product sync: ${result.upserted}/${result.sent} products updated; ${result.sheetWrites} app changes written to App Products.`);
-
+    const issues=(result.conflicted||0)+(result.failed||0);
+    const summary=`Full product sync: ${result.created} new, ${result.updated} updated, ${result.skipped} protected/skipped, ${result.conflicted} conflicts, ${result.failed} failed; ${result.sheetWrites} app changes written to App Products.`;
+    saveSyncStatus_(issues?'warning':'success',summary);
+    writeProductSyncIssues_(result,'full');
     if (showUi) {
       notify_(
-        'Product Sync Complete',
-        `${result.upserted} of ${result.sent} products updated; ${result.sheetWrites || 0} app changes written to App Products.`
+        issues?'Product Sync Completed With Issues':'Product Sync Complete',
+        summary+(issues?' Open the "Product Sync Issues" sheet tab to review unresolved codes.':'')
       );
     }
     return result;
@@ -160,7 +162,10 @@ function syncEditedProducts(e) {
     if (!products.length) return;
 
     const result = pushProducts_(products, 'edit');
-    saveSyncStatus_('success', `Edit sync: ${result.upserted}/${result.sent} products updated.`);
+    const issues=(result.conflicted||0)+(result.failed||0);
+    saveSyncStatus_(issues?'warning':'success',
+      `Edit sync: ${result.created} new, ${result.updated} updated, ${result.skipped} protected, ${result.conflicted} conflicts, ${result.failed} failed.`);
+    if(issues)writeProductSyncIssues_(result,'edit');
   } catch (err) {
     saveSyncStatus_('error', String(err && err.message ? err.message : err));
     throw err;
@@ -409,22 +414,43 @@ function buildAggregatedProducts_(onlyCodes) {
 }
 
 function pushProducts_(products, mode) {
-  let upserted = 0;
-  let skipped = 0;
-
-  for (let i = 0; i < products.length; i += LPH_PRODUCT_SYNC.batchSize) {
-    const batch = products.slice(i, i + LPH_PRODUCT_SYNC.batchSize);
-    const response = callSyncApi_({
-      mode: mode || 'push',
-      spreadsheet_id: LPH_PRODUCT_SYNC.spreadsheetId,
-      products: batch
+  const result={sent:products.length,upserted:0,created:0,updated:0,skipped:0,conflicted:0,failed:0,issues:[]};
+  for(let i=0;i<products.length;i+=LPH_PRODUCT_SYNC.batchSize){
+    const batch=products.slice(i,i+LPH_PRODUCT_SYNC.batchSize);
+    const response=callSyncApi_({
+      mode:mode||'push',spreadsheet_id:LPH_PRODUCT_SYNC.spreadsheetId,products:batch
     });
-    if (!response.ok) throw new Error(response.error || 'Supabase product sync failed.');
-    upserted += Number(response.upserted || 0);
-    skipped += Number(response.skipped_app_managed || 0);
+    if(!response.ok)throw new Error(response.error||'Supabase product sync failed.');
+    result.upserted+=Number(response.upserted||0);
+    result.created+=Number(response.created||0);
+    result.updated+=Number(response.updated||0);
+    result.skipped+=Number(response.skipped_app_managed||0);
+    result.conflicted+=Number(response.conflicted||0);
+    result.failed+=Number(response.failed||0);
+    if(Array.isArray(response.issues))result.issues.push(...response.issues);
   }
+  return result;
+}
 
-  return { sent: products.length, upserted: upserted, skipped: skipped };
+function writeProductSyncIssues_(result,mode){
+  const ss=SpreadsheetApp.openById(LPH_PRODUCT_SYNC.spreadsheetId);
+  const sheet=ss.getSheetByName('Product Sync Issues')||ss.insertSheet('Product Sync Issues');
+  sheet.clearContents();
+  const clean=v=>{
+    const value=String(v??'').slice(0,500);
+    return /^[\\s]*[=+@-]/.test(value)?"'"+value:value;
+  };
+  const header=['Last Sync','Mode','Code','Status','Reason'];
+  const issues=Array.isArray(result.issues)?result.issues:[];
+  const rows=issues.slice(0,300).map(x=>[
+    new Date(),clean(mode),clean(x.code||''),clean(x.status||''),clean(x.reason||'')
+  ]);
+  sheet.getRange(1,1,1,header.length).setValues([header]);
+  if(rows.length)sheet.getRange(2,1,rows.length,header.length).setValues(rows);
+  else sheet.getRange(2,1,1,5).setValues([[new Date(),clean(mode),'','No conflicts','All products processed without conflicts']]);
+  sheet.setFrozenRows(1);
+  sheet.getRange(1,1,1,5).setFontWeight('bold');
+  sheet.autoResizeColumns(1,5);
 }
 
 
