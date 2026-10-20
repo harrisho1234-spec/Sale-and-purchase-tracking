@@ -55,7 +55,7 @@
       return showToast('No Ready/Arrived SR item has remaining quantity for a new invoice.','err');
    if(existing.some(t=>t.status==='pending'))
       return showToast('Review the pending TK/RK invoice first. Then prepare the next invoice.','err');
-   shownOrder=orderId;listing=choices;
+   shownOrder=orderId;listing=choices;window._currentSRDiscount=Number(s.data?.order_discount||0);
    openModal('Prepare SR → TK/RK · Multiple Invoices','<form id="splitInvoiceForm" class="space-y-4">'+
     '<div class="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs"><b>SR '+h(o.data.sr_no||o.data.order_no)+'</b> · Create another TK/RK invoice for selected products or partial quantities. A different Manager/Admin must approve it before it is officially issued. <b>Do not recreate the sale or deposit.</b></div>'+
     '<div class="grid grid-cols-2 gap-3">'+
