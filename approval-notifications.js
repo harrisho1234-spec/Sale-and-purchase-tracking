@@ -1,16 +1,16 @@
 // Unified pending approvals notification center.
 (function(){
-  var A={orders:[],customers:[],payments:[],stages:[],stockActions:[],stockEdits:[],loading:false};
+  var A={orders:[],customers:[],payments:[],stages:[],assignments:[],stockActions:[],stockEdits:[],loading:false};
 
   function role(){return state.profile&&state.profile.role||''}
   function reviewer(){return typeof window.hasAppPermission==='function'?window.hasAppPermission('approvals.view'):['manager','admin','super_admin'].indexOf(role())>=0}
   function stockReviewer(){return typeof window.hasAppPermission==='function'?window.hasAppPermission('inventory.approve'):['admin','super_admin'].indexOf(role())>=0}
   function stockTotal(){return A.stockActions.length+A.stockEdits.length}
-  function total(){return A.orders.length+A.customers.length+A.payments.length+A.stages.length+stockTotal()}
+  function total(){return A.orders.length+A.customers.length+A.payments.length+A.stages.length+A.assignments.length+stockTotal()}
   function dateText(v){var d=new Date(v);return isNaN(d.getTime())?String(v||''):d.toLocaleString()}
 
   async function loadPending(){
-    if(!reviewer()){A.orders=[];A.customers=[];A.payments=[];A.stages=[];A.stockActions=[];A.stockEdits=[];return}
+    if(!reviewer()){A.orders=[];A.customers=[];A.payments=[];A.stages=[];A.assignments=[];A.stockActions=[];A.stockEdits=[];return}
     var stockActionPromise=stockReviewer()
       ?db.rpc('get_stock_action_requests',{p_status:'pending'})
       :Promise.resolve({data:[],error:null});
@@ -22,6 +22,7 @@
       db.rpc('get_visible_customer_change_requests',{p_status:'pending'}),
       db.rpc('get_visible_sales_payment_requests',{p_status:'pending'}),
       db.rpc('get_visible_customer_lead_stage_change_requests',{p_status:'pending'}),
+      db.rpc('get_pending_activity_sales_assignments'),
       stockActionPromise,
       stockEditPromise
     ]);
@@ -31,12 +32,14 @@
     if(res[3].error)throw res[3].error;
     if(res[4].error)throw res[4].error;
     if(res[5].error)throw res[5].error;
+    if(res[6].error)throw res[6].error;
     A.orders=res[0].data||[];
     A.customers=res[1].data||[];
     A.payments=res[2].data||[];
     A.stages=res[3].data||[];
-    A.stockActions=res[4].data||[];
-    A.stockEdits=res[5].data||[];
+    A.assignments=res[4].data||[];
+    A.stockActions=res[5].data||[];
+    A.stockEdits=res[6].data||[];
   }
 
   function addNavBadge(){
@@ -104,6 +107,7 @@
       +'<button onclick="openApprovalCenter(\'customers\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Customers</div><div class="text-2xl font-bold mt-1">'+A.customers.length+'</div></button>'
       +'<button onclick="openApprovalCenter(\'payments\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Payments</div><div class="text-2xl font-bold mt-1">'+A.payments.length+'</div></button>'
       +'<button onclick="openApprovalCenter(\'stages\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Stage Changes</div><div class="text-2xl font-bold mt-1">'+A.stages.length+'</div></button>'
+      +'<button onclick="openApprovalCenter(\'assignments\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Sales Assignments</div><div class="text-2xl font-bold mt-1">'+A.assignments.length+'</div></button>'
       +(stockReviewer()?'<button onclick="openStockApprovalRequests()" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Stock</div><div class="text-2xl font-bold mt-1">'+stockTotal()+'</div></button>':'')
       +'</div></div>';
     root.insertBefore(box,root.firstChild);
@@ -169,6 +173,13 @@
   };
 
   function requestHtml(r,type){
+    if(type==='assignment'){
+      return '<button type="button" onclick="openActivitySalesAssignmentApproval(\''+esc(r.request_id)+'\')" class="w-full text-left rounded-xl border border-amber-200 bg-amber-50/40 p-4 hover:bg-amber-50">'
+        +'<div class="flex items-center justify-between flex-wrap gap-3"><div><div class="flex gap-2 items-center"><span class="px-2 py-1 rounded text-[9px] bg-amber-100 font-bold text-amber-800">SALES ASSIGNMENT</span><b>'+esc(r.customer_name||'Customer')+'</b></div>'
+        +'<div class="text-xs text-gray-500 mt-2">'+esc(r.activity_type==='online'?'Online':'Showroom Visit')+' · '+esc(r.business_code||'')+'</div>'
+        +'<div class="text-xs mt-2">'+esc(r.from_sales_name||'Unassigned')+' → <b>'+esc(r.to_sales_name||'Sales Rep')+'</b></div>'
+        +'</div><div class="text-right text-xs text-gray-500">Requested by <b>'+esc(r.requested_by_name||'Sales')+'</b><div class="mt-1">'+esc(dateText(r.requested_at))+'</div><div class="text-amber-700 mt-2 font-semibold">Review →</div></div></div></button>';
+    }
     if(type==='stock'){
       return '<button type="button" onclick="openStockApprovalRequests()" class="w-full text-left rounded-xl border border-amber-200 bg-amber-50/40 p-4 hover:bg-amber-50">'
         +'<div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">'
@@ -228,6 +239,7 @@
     if(filter==='all'||filter==='customers')A.customers.forEach(function(x){rows.push({type:'customer',x:x})});
     if(filter==='all'||filter==='payments')A.payments.forEach(function(x){rows.push({type:'payment',x:x})});
     if(filter==='all'||filter==='stages')A.stages.forEach(function(x){rows.push({type:'stage',x:x})});
+    if(filter==='all'||filter==='assignments')A.assignments.forEach(function(x){rows.push({type:'assignment',x:x})});
     if((filter==='all'||filter==='stock')&&stockReviewer()&&stockTotal()>0){
       var latest=([].concat(A.stockActions||[],A.stockEdits||[]).sort(function(a,b){return new Date(b.requested_at)-new Date(a.requested_at)})[0]||{});
       rows.push({type:'stock',x:{requested_at:latest.requested_at||new Date().toISOString()}});
@@ -249,6 +261,7 @@
       +'<button onclick="closeModal();openApprovalCenter(\'customers\')" class="rounded-xl border px-3 py-3 '+(filter==='customers'?'bg-[#211d18] text-white':'bg-white')+'"><div class="text-[9px] uppercase font-bold opacity-70">Customers</div><div class="text-xl font-bold">'+A.customers.length+'</div></button>'
       +'<button onclick="closeModal();openApprovalCenter(\'payments\')" class="rounded-xl border px-3 py-3 '+(filter==='payments'?'bg-[#211d18] text-white':'bg-white')+'"><div class="text-[9px] uppercase font-bold opacity-70">Payments</div><div class="text-xl font-bold">'+A.payments.length+'</div></button>'
       +'<button onclick="closeModal();openApprovalCenter(\'stages\')" class="rounded-xl border px-3 py-3 '+(filter==='stages'?'bg-[#211d18] text-white':'bg-white')+'"><div class="text-[9px] uppercase font-bold opacity-70">Stage Changes</div><div class="text-xl font-bold">'+A.stages.length+'</div></button>'
+      +'<button onclick="closeModal();openApprovalCenter(\'assignments\')" class="rounded-xl border px-3 py-3 '+(filter==='assignments'?'bg-[#211d18] text-white':'bg-white')+'"><div class="text-[9px] uppercase font-bold opacity-70">Assignments</div><div class="text-xl font-bold">'+A.assignments.length+'</div></button>'
       +(stockReviewer()?'<button onclick="closeModal();openApprovalCenter(\'stock\')" class="rounded-xl border px-3 py-3 '+(filter==='stock'?'bg-[#211d18] text-white':'bg-white')+'"><div class="text-[9px] uppercase font-bold opacity-70">Stock</div><div class="text-xl font-bold">'+stockTotal()+'</div></button>':'')
       +'</div>'
       +'<div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">Open a request to review it, make any final adjustment, then approve/post/publish or reject.</div>'
@@ -271,6 +284,7 @@
       +'<button onclick="openApprovalCenter(\'customers\')" class="card rounded-2xl p-5 text-left"><div class="text-[10px] uppercase font-bold text-gray-400">Customer Requests</div><div class="text-3xl font-bold mt-2">'+A.customers.length+'</div><div class="text-xs text-gray-400 mt-1">New customers and changes</div></button>'
       +'<button onclick="openApprovalCenter(\'payments\')" class="card rounded-2xl p-5 text-left"><div class="text-[10px] uppercase font-bold text-gray-400">Payment Requests</div><div class="text-3xl font-bold mt-2">'+A.payments.length+'</div><div class="text-xs text-gray-400 mt-1">Deposits and payments</div></button>'
       +'<button onclick="openApprovalCenter(\'stages\')" class="card rounded-2xl p-5 text-left"><div class="text-[10px] uppercase font-bold text-gray-400">Stage Corrections</div><div class="text-3xl font-bold mt-2">'+A.stages.length+'</div><div class="text-xs text-gray-400 mt-1">Backward CRM stage requests</div></button>'
+      +'<button onclick="openApprovalCenter(\'assignments\')" class="card rounded-2xl p-5 text-left"><div class="text-[10px] uppercase font-bold text-gray-400">Sales Assignments</div><div class="text-3xl font-bold mt-2">'+A.assignments.length+'</div><div class="text-xs text-gray-400 mt-1">Showroom / Online reassignment</div></button>'
       +(stockReviewer()?'<button onclick="openStockApprovalRequests()" class="card rounded-2xl p-5 text-left border-amber-200"><div class="text-[10px] uppercase font-bold text-gray-400">Stock Approvals</div><div class="text-3xl font-bold mt-2 text-amber-700">'+stockTotal()+'</div><div class="text-xs text-gray-400 mt-1">Stock OUT, transfer and delivery requests</div></button>':'')
       +'</div>'
       +'<div class="card rounded-2xl p-5"><div class="flex items-center justify-between gap-3 mb-4"><div><h3 class="font-bold text-lg">Waiting for Review</h3><p class="text-xs text-gray-400">Newest first</p></div><button onclick="renderApprovals().then(refreshApprovalNotifications)" class="px-3 py-2 border rounded-lg text-xs font-semibold">Refresh</button></div>'
