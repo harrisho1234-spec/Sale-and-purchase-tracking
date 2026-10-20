@@ -94,11 +94,11 @@ as $$
   left join public.app_users u on u.user_id=ra.assigned_sales_id
   left join public.customer_activity_assignment_requests rq
     on rq.activity_id=a.id and rq.status='pending'
+    and (rq.requested_by=auth.uid()
+         or public.current_app_role() in ('manager','admin','super_admin'))
   left join public.app_users t on t.user_id=rq.to_sales_id
   where public.current_app_role() in ('sales','manager','admin','super_admin')
     and (p_activity_type is null or a.activity_type=p_activity_type)
-    and (rq.requested_by=auth.uid() or rq.requested_by is null
-         or public.current_app_role() in ('manager','admin','super_admin'))
 $$;
 
 create or replace function public.get_pending_activity_sales_assignments()
