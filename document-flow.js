@@ -2,7 +2,7 @@
 // Loaded after tracking-redesign.js. Keeps the existing UI and adds business-document workflow.
 
 (function(){
-  const df={refs:[],events:[],orderMeta:new Map(),loaded:false,loading:null};
+  const df={refs:[],events:[],conversions:new Map(),orderMeta:new Map(),loaded:false,loading:null};
   window.documentFlowState=df;
 
   function norm(v=''){return String(v||'').trim().toLowerCase().replace(/[\s-]+/g,'_')}
@@ -11,6 +11,9 @@
   function stockControllerTrackingRole(){return (state.profile?.role||'')==='stock_controller'}
   function salesTimelineOnly(){return (state.profile?.role||'')==='sales'}
   function canRequestInvoice(){return ['sales','manager','admin','super_admin'].includes(state.profile?.role)}
+  function canPrepareSr(){return state.profile?.role==='sales' && (typeof window.hasAppPermission==='function'
+    ?window.hasAppPermission('sales_orders.convert_request'):false)}
+  function conversionFor(id){return df.conversions.get(String(id))||null}
   function docLabel(o){
     if(isPre(o)){
       const sr=o.sr_no||o.order_no||'SR Pending';
@@ -40,15 +43,23 @@
     if(df.loading)return df.loading;
     if(df.loaded&&!force)return;
     df.loading=(async()=>{
-      const [rr,er,mr]=await Promise.all([
+      const [rr,er,mr,cr]=await Promise.all([
         db.rpc('get_visible_sales_procurement_refs'),
         db.from('sales_document_events').select('*').order('created_at',{ascending:true}),
-        db.from('sales_orders').select('id,order_no,invoice_no,sales_flow_type,sr_no,sales_invoice_no,sales_invoice_type,sales_category,invoice_request_status,invoice_requested_at,invoice_issued_at')
+        db.from('sales_orders').select('id,order_no,invoice_no,sales_flow_type,sr_no,sales_invoice_no,sales_invoice_type,sales_category,invoice_request_status,invoice_requested_at,invoice_issued_at'),
+        db.rpc('get_my_sr_conversion_requests')
       ]);
       if(rr.error)console.warn('PO reference load:',rr.error.message);
       if(er.error)console.warn('Document event load:',er.error.message);
       if(mr.error)console.warn('Document metadata load:',mr.error.message);
-      df.refs=rr.data||[];df.events=er.data||[];df.orderMeta=new Map((mr.data||[]).map(x=>[x.id,x]));df.loaded=true;
+      if(cr.error)console.warn('Invoice conversion request load:',cr.error.message);
+      df.refs=rr.data||[];df.events=er.data||[];df.orderMeta=new Map((mr.data||[]).map(x=>[x.id,x]));
+      df.conversions=new Map();
+      (cr.data||[]).forEach(x=>{
+        const id=String(x.sales_order_id);
+        if(!df.conversions.has(id))df.conversions.set(id,x);
+      });
+      df.loaded=true;
     })().finally(()=>df.loading=null);
     return df.loading;
   }
@@ -65,7 +76,8 @@
     const shipping=refs.some(r=>['shipping','arrived','completed'].includes(norm(r.po_status)));
     const poLinked=refs.length>0;
     const events=eventsForOrder(o.id);
-
+    const conversion=conversionFor(o.id);
+    const pendingConversion=conversion?.status==='pending'&&!issued;
     let steps='';
     if(pre){
       steps=[
@@ -75,7 +87,7 @@
         stepHtml('Production',production,poLinked&&!production),
         stepHtml('Shipping',shipping,production&&!shipping),
         stepHtml('Arrived',arrived,shipping&&!arrived),
-        stepHtml('Invoice Requested',requested,arrived&&!requested),
+        stepHtml(pendingConversion?'TK/RK Pending Approval':'Invoice Requested',requested||pendingConversion,arrived&&!requested&&!pendingConversion),
         stepHtml('TK/RK Issued',issued,requested&&!issued,o.sales_invoice_no||''),
         stepHtml('Paid',settled,issued&&!settled),
         stepHtml('Delivered',delivered,settled&&!delivered)
@@ -92,12 +104,22 @@
     const poBadges=pos.length?pos.map(p=>`<span class="lr-badge lr-badge-blue">${esc(p.no)} · ${esc(titleCase(p.status||'placed'))}${p.eta?' · '+esc(fmtDate(p.eta)):''}</span>`).join(' '):'<span class="text-[10px] text-gray-400">No supplier PO linked yet.</span>';
     const controls=[`<button onclick="openDocumentFlowDetails('${o.id}')" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">View Details</button>`];
     if(pre&&isAdminRole())controls.push(`<button onclick="openLinkPOItems('${o.id}')" class="px-3 py-2 rounded-lg border text-xs font-semibold">Link PO Items</button>`);
-    if(pre&&!issued&&arrived&&canRequestInvoice()&&o.invoice_request_status!=='requested')controls.push(`<button onclick="openInvoiceRequest('${o.id}')" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs font-semibold">Request TK/RK</button>`);
+    if(pre&&!issued&&arrived&&!pendingConversion&&canPrepareSr()
+       &&String(o.sales_rep_id||'')===String(state.user?.id||'')){
+      controls.push(`<button onclick="openPrepareSrConversion('${o.id}')" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs font-semibold">Prepare TK/RK</button>`);
+    }else if(pre&&!issued&&!pendingConversion&&arrived&&canRequestInvoice()
+       &&state.profile?.role!=='sales'&&o.invoice_request_status!=='requested'){
+      controls.push(`<button onclick="openInvoiceRequest('${o.id}')" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs font-semibold">Request TK/RK</button>`);
+    }
     if(pre&&!issued&&isAdminRole()&&(requested||arrived))controls.push(`<button onclick="openIssueFinalInvoice('${o.id}')" class="px-3 py-2 rounded-lg bg-[#b38b2e] text-white text-xs font-semibold">Issue TK/RK</button>`);
 
     return `<div class="mb-4 rounded-2xl border border-[#eee7d9] bg-[#fffdf8] p-4">
       <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-3"><div><div class="text-[10px] uppercase tracking-wider font-extrabold text-[#a77d1a]">Document Flow</div><div class="font-bold mt-1">${esc(docLabel(o))}</div></div><div class="flex flex-wrap gap-2">${controls.join('')}</div></div>
       <div class="flex flex-wrap gap-2 mb-3">${pre?poBadges:''}</div>
+      ${pre&&conversion?`<div class="rounded-xl border p-3 mb-3 text-xs ${conversion.status==='pending'?'border-amber-200 bg-amber-50 text-amber-800':conversion.status==='approved'?'border-green-200 bg-green-50 text-green-800':'border-red-200 bg-red-50 text-red-700'}">
+        <b>TK/RK Conversion: ${esc(titleCase(conversion.status))}</b> · ${esc(conversion.invoice_no||'')}
+        ${conversion.review_note?`<div class="mt-1">${esc(conversion.review_note)}</div>`:''}
+      </div>`:''}
       <div class="flex gap-2 overflow-x-auto pb-2">${steps}</div>
       ${events.length?`<div class="mt-3 text-[10px] text-gray-400">Latest activity: ${esc(titleCase(events[events.length-1].event_type))} · ${esc(fmtDate(String(events[events.length-1].created_at).slice(0,10)))}</div>`:''}
     </div>`;
@@ -302,6 +324,63 @@
       const body=document.getElementById('modalBody');
       if(body)body.innerHTML=`<div class="rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-600">Could not load details: ${esc(err.message||'Unknown error')}</div>`;
     }
+  };
+
+  window.openPrepareSrConversion=async function(orderId){
+    if(!canPrepareSr())return showToast('You do not have permission to request TK/RK conversion.','err');
+    const r=await db.from('sales_orders').select('id,sr_no,order_no,sales_rep_id,sales_invoice_no,sales_category,sales_flow_type')
+      .eq('id',orderId).single();
+    if(r.error)return showToast(r.error.message,'err');
+    const o=r.data;
+    if(String(o.sales_rep_id||'')!==String(state.user?.id||''))
+      return showToast('Only the assigned Sales Rep can prepare this SR conversion.','err');
+    if(o.sales_invoice_no||o.sales_flow_type!=='pre_order')return showToast('This SR is not eligible for conversion.','err');
+    if(conversionFor(orderId)?.status==='pending')return showToast('A conversion request is already pending approval.','err');
+    openModal('Prepare SR → TK/RK',`<form id="prepareSrConversionForm" class="grid md:grid-cols-2 gap-4">
+      <div class="md:col-span-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+        <b>Pending Management Approval.</b> You are preparing the proposed final invoice; it will not become official until approved by a Sales Manager or Admin. All SR items must be ready/arrived.
+        <div class="mt-2 font-semibold">SR: ${esc(o.sr_no||o.order_no||'')}</div>
+      </div>
+      <div><label class="text-xs font-semibold">Business / Invoice Type *</label>
+        <select id="conversionType" class="w-full mt-1 border rounded-xl px-3 py-2.5 bg-white" required>
+          <option value="TK">TK — Limperial Luxury</option><option value="RK">RK — LP Home</option>
+        </select>
+      </div>
+      <div><label class="text-xs font-semibold">Sales Category *</label>
+        <select id="conversionCategory" class="w-full mt-1 border rounded-xl px-3 py-2.5 bg-white">
+          <option value="standard" ${o.sales_category!=='project'?'selected':''}>Standard</option>
+          <option value="project" ${o.sales_category==='project'?'selected':''}>Project (PJ)</option>
+        </select>
+      </div>
+      <div class="md:col-span-2"><label class="text-xs font-semibold">Proposed Official TK/RK Number *</label>
+        <input id="conversionNumber" required maxlength="80" placeholder="Example: TK2610-011 or RK2610-011" class="w-full mt-1 border rounded-xl px-3 py-2.5">
+        <p class="text-[10px] text-gray-500 mt-1">Use the correct business prefix. Duplicate invoice numbers are rejected.</p>
+      </div>
+      <div class="md:col-span-2"><label class="text-xs font-semibold">Note / Reason (optional)</label>
+        <textarea id="conversionNote" rows="3" maxlength="2000" class="w-full mt-1 border rounded-xl px-3 py-2.5" placeholder="Anything the approver should check"></textarea>
+      </div>
+      <button id="conversionSubmit" type="submit" class="md:col-span-2 bg-[#211d18] text-white rounded-xl py-3 text-sm font-semibold">Submit for Approval</button>
+    </form>`);
+    document.getElementById('prepareSrConversionForm').onsubmit=async e=>{
+      e.preventDefault();
+      const type=document.getElementById('conversionType').value;
+      const no=document.getElementById('conversionNumber').value.trim().toUpperCase().replace(/\s+/g,'');
+      const category=document.getElementById('conversionCategory').value;
+      const note=document.getElementById('conversionNote').value.trim()||null;
+      if(!no.startsWith(type))return showToast('Invoice number must start with '+type,'err');
+      const btn=document.getElementById('conversionSubmit');btn.disabled=true;
+      try{
+        const result=await db.rpc('submit_sr_conversion_request',{
+          p_order_id:orderId,p_invoice_type:type,p_invoice_no:no,
+          p_sales_category:category,p_note:note
+        });
+        if(result.error)throw result.error;
+        closeModal();showToast('TK/RK conversion submitted. Awaiting Sales Manager / Admin approval.');
+        df.loaded=false;
+        if(typeof refreshApprovalNotifications==='function')refreshApprovalNotifications();
+        await go('sales-orders');
+      }catch(err){showToast(err.message,'err');btn.disabled=false}
+    };
   };
 
   window.openInvoiceRequest=function(orderId){
