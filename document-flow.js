@@ -109,9 +109,10 @@
     const poBadges=pos.length?pos.map(p=>`<span class="lr-badge lr-badge-blue">${esc(p.no)} · ${esc(titleCase(p.status||'placed'))}${p.eta?' · '+esc(fmtDate(p.eta)):''}</span>`).join(' '):'<span class="text-[10px] text-gray-400">No supplier PO linked yet.</span>';
     const controls=[`<button onclick="openDocumentFlowDetails('${o.id}')" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">View Details</button>`];
     if(pre&&isAdminRole())controls.push(`<button onclick="openLinkPOItems('${o.id}')" class="px-3 py-2 rounded-lg border text-xs font-semibold">Link PO Items</button>`);
-    if(pre&&!o.sales_invoice_no&&(srUninvoiced==null||srUninvoiced>0)&&arrived&&!pendingConversion&&canPrepareSr()
-       &&String(o.sales_rep_id||'')===String(state.user?.id||'')){
-      controls.push(`<button onclick="openPrepareSrConversion('${o.id}')" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs font-semibold">Prepare TK/RK</button>`);
+    if(pre&&!o.sales_invoice_no&&(srUninvoiced==null||srUninvoiced>0)&&!pendingConversion
+       &&(canPrepareSr()&&String(o.sales_rep_id||'')===String(state.user?.id||'')
+           || ['manager','admin','super_admin'].includes(state.profile?.role||''))){
+      controls.push(`<button onclick="openPrepareSrConversion('${o.id}')" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs font-semibold">Prepare TK/RK (Partial / Multiple)</button>`);
     }else if(pre&&!o.sales_invoice_no&&!srSplit&&!pendingConversion&&arrived&&canRequestInvoice()
        &&state.profile?.role!=='sales'&&o.invoice_request_status!=='requested'){
       controls.push(`<button onclick="openInvoiceRequest('${o.id}')" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs font-semibold">Request TK/RK</button>`);
