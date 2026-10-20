@@ -144,7 +144,7 @@
   async function renderShipping(){
     const list=await loadPOs();
     const q=pw.search.toLowerCase();const rows=list.filter(p=>!isHistoricalPO(p)&&!isClosedPO(p)&&!isCancelledPO(p)).filter(p=>!q||[poLabel(p),p.vendor_name,p.status,poDisplayStatus(p),p.shipping_agent].filter(Boolean).join(' ').toLowerCase().includes(q));
-    return `<div class="rounded-xl border border-blue-100 bg-blue-50 p-3 mb-4 text-xs text-blue-800"><b>Live Shipping / ETA only.</b> Historical / Reconciled POs are kept in Supplier PO history and are not editable here.</div><div class="pw-grid">${rows.length?rows.map(p=>`<div class="pw-card grid lg:grid-cols-[1.2fr_1fr_160px_170px_100px] gap-3 items-center"><div><div class="font-bold">${esc(poLabel(p))}</div><div class="pw-mini">${esc(p.vendor_name||'')}</div></div><div>${poDisplayStatusHtml(p)}<div class="pw-mini mt-1">${esc(p.shipping_agent||'No shipping agent')}</div></div><div><label class="pw-mini">ETA</label><input id="eta-${p.id}" type="date" value="${esc(p.estimated_arrival||'')}" class="mt-1 w-full border rounded-lg px-2 py-2 text-xs"></div><div><label class="pw-mini">Status</label><select id="status-${p.id}" class="mt-1 w-full border rounded-lg px-2 py-2 text-xs bg-white">${[['placed','Ordered'],['production','Production'],['shipping','Shipping'],['arrived','Arrived'],['delivered','Delivered']].map(([s,l])=>`<option value="${s}" ${p.status===s?'selected':''}>${l}</option>`).join('')}</select></div><button onclick="saveProcShipping('${p.id}')" class="px-3 py-2 bg-[#211d18] text-white rounded-lg text-xs font-semibold">Save</button></div>`).join(''):'<div class="card rounded-2xl">'+empty('No active supplier POs to track.')+'</div>'}</div>`;
+    return `<div class="rounded-xl border border-blue-100 bg-blue-50 p-3 mb-4 text-xs text-blue-800"><b>Overall PO Status / ETA only.</b> For split shipments, agents, container numbers and freight costs use the Shipments tab. Historical / Reconciled POs are kept in Supplier PO history and are not editable here.</div><div class="pw-grid">${rows.length?rows.map(p=>`<div class="pw-card grid lg:grid-cols-[1.2fr_1fr_160px_170px_100px] gap-3 items-center"><div><div class="font-bold">${esc(poLabel(p))}</div><div class="pw-mini">${esc(p.vendor_name||'')}</div></div><div>${poDisplayStatusHtml(p)}<div class="pw-mini mt-1">${esc(p.shipping_agent||'No shipping agent')}</div></div><div><label class="pw-mini">ETA</label><input id="eta-${p.id}" type="date" value="${esc(p.estimated_arrival||'')}" class="mt-1 w-full border rounded-lg px-2 py-2 text-xs"></div><div><label class="pw-mini">Status</label><select id="status-${p.id}" class="mt-1 w-full border rounded-lg px-2 py-2 text-xs bg-white">${[['placed','Ordered'],['production','Production'],['shipping','Shipping'],['arrived','Arrived'],['delivered','Delivered']].map(([s,l])=>`<option value="${s}" ${p.status===s?'selected':''}>${l}</option>`).join('')}</select></div><button onclick="saveProcShipping('${p.id}')" class="px-3 py-2 bg-[#211d18] text-white rounded-lg text-xs font-semibold">Save</button></div>`).join(''):'<div class="card rounded-2xl">'+empty('No active supplier POs to track.')+'</div>'}</div>`;
   }
 
   async function renderAllocations(){
@@ -255,6 +255,7 @@
             </div>
             <div class="flex flex-wrap gap-2">
               <button onclick="openSupplierPayment('${p.id}',true)" class="px-3 py-2 rounded-lg bg-green-600 text-white text-xs font-semibold">+ Record Payment</button>
+               ${!historical?`<button onclick="openNewPOShipment('${p.id}')" class="px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 text-xs font-semibold">+ Shipment</button>`:''}
               ${!historical&&typeof openReceivePOForPO==='function'? `<button onclick="openReceivePOForPO('${p.id}')" class="px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 text-xs font-semibold">Receive Stock</button>`:''}
               <button onclick="openEditSupplierPO('${p.id}')" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">${historical?'View / Edit History':'Edit Items / PO'}</button>
               ${p.po_document_path?`<button onclick="viewPODocument('${p.id}')" class="px-3 py-2 rounded-lg border border-blue-200 bg-white text-blue-600 text-xs font-semibold">PO Document</button>`:''}
@@ -438,7 +439,7 @@
 
   window.renderProcurementWorkspace=async function(){
     inject();requireAdmin();
-    const tabs=[['pos','Supplier POs'],['needs','Needs Ordering'],['ordered','PO Ordered Items'],['items','PO Items'],['payments','Supplier Payments'],['shipping','Shipping / ETA'],['allocations','SR Allocations'],['flow','PO → SR → TK/RK']];
+    const tabs=[['pos','Supplier POs'],['needs','Needs Ordering'],['ordered','PO Ordered Items'],['items','PO Items'],['payments','Supplier Payments'],['shipping','PO Status / ETA'],['shipments','Shipments'],['agents','Shipping Agents'],['allocations','SR Allocations'],['flow','PO → SR → TK/RK']];
     let action='';
     if(pw.tab==='pos')action=`<div class="flex flex-wrap gap-2 justify-end"><button onclick="openBulkPOImport()" class="px-4 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-xl text-sm font-semibold">Bulk Import Excel</button><button onclick="openNewSupplierPO()" class="px-4 py-2 bg-[#211d18] text-white rounded-xl text-sm font-semibold">+ Supplier PO</button></div>`;
     if(pw.tab==='payments')action=`<button onclick="openSupplierPayment()" class="px-4 py-2 bg-[#211d18] text-white rounded-xl text-sm font-semibold">+ Supplier Payment</button>`;
@@ -450,6 +451,8 @@
       else if(pw.tab==='items')html=await renderPOItems();
       else if(pw.tab==='payments')html=await renderPayments();
       else if(pw.tab==='shipping')html=await renderShipping();
+       else if(pw.tab==='shipments')html=await window.renderProcurementShipments(pw.search);
+       else if(pw.tab==='agents')html=await window.renderProcurementAgents(pw.search);
       else if(pw.tab==='allocations')html=await renderAllocations();
       else if(pw.tab==='flow'&&typeof renderProcurementDocumentFlow==='function')html=await renderProcurementDocumentFlow(pw.search);
       else html='<div class="card rounded-xl p-5 text-gray-400">Document flow is unavailable.</div>';
@@ -467,7 +470,7 @@
     const r=await prevGo(page);
     if(page==='procurement'){
       document.getElementById('pageTitle').textContent='Procurement';
-      document.getElementById('pageSubtitle').textContent='Supplier POs, PO items, payments, shipping, ETA, SR allocations and PO → SR → TK/RK flow';
+      document.getElementById('pageSubtitle').textContent='Supplier POs, PO items, agents, split shipments, freight, ETA, payments and SR allocations';
     }
     return r;
   };
