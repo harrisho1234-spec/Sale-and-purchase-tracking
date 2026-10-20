@@ -75,7 +75,7 @@
         {key:'products.sales_price_view',label:'View Sales Price',description:'Show the normal product Sales Price. Does not grant cost, landed cost, margin or Tax pricing access.'},
         {key:'products.create',label:'Create products',description:'Add products to the catalog.'},
         {key:'products.edit',label:'Edit products',description:'Edit product information.'},
-        {key:'products.delete',label:'Delete products',description:'Delete products where allowed.'},
+        {key:'products.delete',label:'Delete / archive products · Super Admin only',description:'Protected. Only Super Admin can archive or restore products; historical links and stock are safeguarded.',protected:true},
         {key:'products.tax_view',label:'View Tax Inventory',description:'Access Tax Inventory classification and stock view.',view:true},
         {key:'products.tax_manage',label:'Manage confidential Tax setup',description:'Protected Super Admin tax pricing/classification controls.',protected:true}
       ]
@@ -170,7 +170,7 @@
     accountant:new Set(['customers.view','sales_orders.view','quotations.view','tracking.view','payments.view','payments.create','payments.edit','returns.view','products.view','products.sales_price_view','inventory.view','inventory.reports','reports.view','reports.export','finance.ar_view','finance.cost_margin_view','finance.payment_records']),
     stock_controller:new Set(['products.view','inventory.view','inventory.operate','inventory.transfer','inventory.count','inventory.reports','procurement.view','procurement.po_receive']),
     manager:new Set(['customers.view','customers.create','customers.edit','sales_orders.view','sales_orders.create','sales_orders.edit','sales_orders.convert_approve','sales_orders.print','sales_orders.export','sales.view_all','quotations.view','quotations.create','tracking.view','tracking.edit','payments.view','payments.create','payments.edit','returns.view','returns.create','returns.edit','products.view','products.sales_price_view','inventory.view','inventory.reports','reports.view','reports.export','finance.ar_view','approvals.view','approvals.manage','sales_access.manage','targets.view_own','targets.view_team']),
-    admin:new Set(AREAS.flatMap(a=>a.activities.map(x=>x.key)).filter(k=>!['users.manage','products.tax_manage','activity_logs.view'].includes(k))),
+    admin:new Set(AREAS.flatMap(a=>a.activities.map(x=>x.key)).filter(k=>!['users.manage','products.delete','products.tax_manage','activity_logs.view'].includes(k))),
     super_admin:new Set(AREAS.flatMap(a=>a.activities.map(x=>x.key)))
   };
 
