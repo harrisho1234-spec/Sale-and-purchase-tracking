@@ -25,6 +25,30 @@
   const cleanFile=x=>String(x||'PO').replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,80);
   const getEvents=i=>Array.isArray(i.receipt_events)?i.receipt_events:[];
   const findPO=id=>reports.get(String(id));
+  function thumbnailUrl(raw){
+    const value=String(raw||'').trim();
+    return /^https?:\/\/[^\s<>"']+$/i.test(value)?value:'';
+  }
+  function productThumbnail(raw,small=false){
+    const url=thumbnailUrl(raw),size=small?'por-thumb por-thumb-sm':'por-thumb';
+    return '<span class="'+size+'">'+
+      '<span class="por-thumb-placeholder">No Photo</span>'+
+      (url?'<img src="'+safe(url)+'" alt="" loading="eager" decoding="async" onerror="this.style.display=\'none\'">':'')+
+      '</span>';
+  }
+  async function loadReportPhotos(g){
+    if(g.photosLoaded)return;
+    const ids=[...new Set((g.items||[]).map(i=>i.po_item_id).filter(Boolean))];
+    if(!ids.length){g.photosLoaded=true;return}
+    const photos=new Map();
+    for(let i=0;i<ids.length;i+=200){
+      const r=await db.rpc('get_inventory_po_receipt_thumbnails',{p_item_ids:ids.slice(i,i+200)});
+      if(r.error)throw r.error;
+      (r.data||[]).forEach(x=>photos.set(String(x.po_item_id),thumbnailUrl(x.image_url)));
+    }
+    for(const item of g.items)item.image_url=photos.get(String(item.po_item_id))||'';
+    g.photosLoaded=true;
+  }
   const badgeClass=x=>x==='complete'?'border-green-200 bg-green-50 text-green-700':
     x==='partial'?'border-amber-200 bg-amber-50 text-amber-800':'border-blue-200 bg-blue-50 text-blue-700';
 
@@ -140,6 +164,13 @@
       '.por-table th{background:#f6f2ea;text-transform:uppercase;color:#6e624f;text-align:left;font-size:9px;padding:11px 8px;border-bottom:1px solid #ddd2bd}'+
       '.por-table td{padding:10px 8px;border-bottom:1px solid #ede9e3;vertical-align:top;overflow-wrap:anywhere}'+
       '.por-table th.num,.por-table td.num{text-align:right}'+
+      '.por-product{display:flex;align-items:center;gap:10px;min-width:0}'+
+      '.por-product-info{min-width:0;flex:1}'+
+      '.por-thumb{width:46px;height:46px;flex:0 0 46px;display:inline-flex;align-items:center;justify-content:center;position:relative;overflow:hidden;border:1px solid #e8e2d7;border-radius:7px;background:#f7f6f3}'+
+      '.por-thumb-sm{width:30px;height:30px;flex-basis:30px;border-radius:5px}'+
+      '.por-thumb-placeholder{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:7px;color:#aba399;text-align:center}'+
+      '.por-thumb-sm .por-thumb-placeholder{font-size:6px}'+
+      '.por-thumb img{position:relative;z-index:1;width:100%;height:100%;object-fit:contain;background:white}'+
       '.por-code{font-weight:800;color:#9b762f;font-size:10px}'+
       '.por-note{font-size:9px;line-height:1.5;color:#6b6257;margin-top:14px}'+
       '.por-footer{margin-top:24px;padding-top:13px;border-top:1px solid #e2d8c6;display:flex;justify-content:space-between;gap:10px;font-size:10px;color:#7c756b}';
@@ -159,9 +190,11 @@
       const historic=!!i.historical_reconciled;
       const locs=[...new Set(getEvents(i).map(x=>x.location_code).filter(Boolean))];
       return '<tr>'+
-        '<td style="width:46%"><div class="por-code">'+safe(i.product_code||'No Code')+'</div>'+
+        '<td style="width:46%"><div class="por-product">'+productThumbnail(i.image_url)+
+          '<div class="por-product-info"><div class="por-code">'+safe(i.product_code||'No Code')+'</div>'+
           '<div style="margin-top:3px">'+safe(i.item_name||'')+'</div>'+
-          (historic?'<div style="font-size:9px;color:#6d4798;margin-top:3px">Historically reconciled</div>':'')+'</td>'+
+          (historic?'<div style="font-size:9px;color:#6d4798;margin-top:3px">Historically reconciled</div>':'')+
+          '</div></div></td>'+
         '<td class="num">'+qty(i.ordered_qty)+'</td>'+
         '<td class="num" style="font-weight:800;color:#17663b">'+qty(i.received_qty)+'</td>'+
         '<td class="num">'+(historic?'—':qty(i.remaining_qty))+'</td>'+
@@ -170,7 +203,8 @@
     }).join('');
     const eventRows=g.events.map(x=>
       '<tr><td>'+safe(day(x.receipt_date))+'</td>'+
-        '<td><b>'+safe(x.product_code)+'</b></td>'+
+        '<td><div class="por-product">'+productThumbnail(g.items.find(i=>i.product_code===x.product_code)?.image_url,true)+
+          '<div class="por-product-info"><b>'+safe(x.product_code)+'</b></div></div></td>'+
         '<td class="num" style="font-weight:bold;color:#17663b">+'+qty(x.qty)+'</td>'+
         '<td>'+safe(x.location_code||'—')+'</td>'+
         '<td>'+safe(x.received_by||'System')+'</td>'+
@@ -223,6 +257,12 @@
         if(g)reports.set(String(id),g);
       }
       if(!g)throw new Error('PO receiving report not found or you do not have access.');
+      try{
+        await loadReportPhotos(g);
+      }catch(err){
+        console.warn('PO receipt thumbnails are unavailable:',err);
+        showToast('Product photos could not be loaded. The receiving report remains available.','err');
+      }
       ensureStyles();
       openModal('PO Receiving History · '+g.po_number,
         '<div class="space-y-3">'+
@@ -255,6 +295,16 @@
     const el=document.getElementById('poReceiptCapture');
     if(!el)throw new Error('Open a PO report first.');
     if(typeof window.html2canvas!=='function')throw new Error('Image capture library is still loading. Refresh the app and try again.');
+    const imageWaits=[...el.querySelectorAll('.por-thumb img')].map(img=>
+      img.complete?Promise.resolve():new Promise(resolve=>{
+        img.addEventListener('load',resolve,{once:true});
+        img.addEventListener('error',resolve,{once:true});
+      })
+    );
+    await Promise.race([
+      Promise.all(imageWaits),
+      new Promise(resolve=>setTimeout(resolve,5000))
+    ]);
     const height=el.scrollHeight||el.offsetHeight||1500;
     const scale=Math.min(2,Math.max(1,12000/Math.max(height,1)));
     const canvas=await window.html2canvas(el,{
@@ -372,6 +422,13 @@
       '</style></head><body>'+content+'</body></html>');
     popup.document.close();
     popup.focus();
-    popup.print();
+    const waits=[...popup.document.querySelectorAll('.por-thumb img')].map(img=>
+      img.complete?Promise.resolve():new Promise(resolve=>{
+        img.addEventListener('load',resolve,{once:true});
+        img.addEventListener('error',resolve,{once:true});
+      })
+    );
+    Promise.race([Promise.all(waits),new Promise(resolve=>setTimeout(resolve,5000))])
+      .then(()=>{if(!popup.closed)popup.print()});
   };
 })();
