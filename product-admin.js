@@ -80,7 +80,9 @@ async function openProductDetail(id){
               <button onclick="openAdjustStock('${id}')" class="px-3 py-2.5 border rounded-xl text-sm">Adjust Stock</button>
               <button onclick="openEditCosting('${id}')" class="px-3 py-2.5 border rounded-xl text-sm">Edit Costing</button>
             </div>
-            ${isAppProduct(p)?`<button onclick="deleteAppProduct('${id}')" class="mt-2 w-full px-3 py-2.5 border border-red-200 bg-red-50 text-red-600 rounded-xl text-xs font-semibold">Delete Product</button>`:''}
+            ${state.profile?.role==='super_admin'?(p.archived_at?
+ `<button onclick="restoreArchivedProduct('${id}')" class="mt-2 w-full px-3 py-2.5 border border-green-200 bg-green-50 text-green-700 rounded-xl text-xs font-semibold">Restore Archived Product</button>`:
+ `<button onclick="deleteAppProduct('${id}')" class="mt-2 w-full px-3 py-2.5 border border-red-200 bg-red-50 text-red-700 rounded-xl text-xs font-semibold">Delete / Archive Product</button>`):''}
             ${p.manual_override&&!(String(p.source_row_key||'').startsWith('app:')||['app_created','app_products_sheet'].includes(String(p.source_system||'')))?`<button onclick="resumeProductSheetSync('${id}')" class="mt-2 w-full px-3 py-2 border border-amber-200 text-amber-700 bg-amber-50 rounded-xl text-xs">Resume Google Sheet sync for this product</button>`:''}
             ${history.length?`<div class="mt-5"><div class="text-xs font-bold uppercase text-gray-400 mb-2">Recent Stock Changes</div><div class="divide-y border rounded-xl">${history.map(h=>`<div class="p-2.5 flex justify-between gap-3 text-xs"><div><b>${esc(h.reason)}</b>${h.note?`<div class="text-gray-400">${esc(h.note)}</div>`:''}</div><div class="text-right"><b>${Number(h.previous_qty)} → ${Number(h.new_qty)}</b><div class="text-gray-400">${new Date(h.created_at).toLocaleString()}</div></div></div>`).join('')}</div></div>`:''}
           </div>`:''}
@@ -122,7 +124,7 @@ async function openEditProduct(id){
         </div>
       </div>
     </div>
-    <label class="flex items-center gap-2 text-sm"><input id="epActive" type="checkbox" ${p.active?'checked':''}> Active product</label>
+    <div class="md:col-span-2 text-xs border rounded-xl bg-gray-50 p-3">Availability: <b>${p.archived_at?'Archived':p.active?'Active':'Inactive'}</b>. Only Super Admin can delete/archive or restore a product from its Product Details.</div>
     <div class="md:col-span-2 text-xs bg-amber-50 border border-amber-100 text-amber-800 rounded-xl p-3">Saving here marks this product as app-managed so Google Sheet product sync will not overwrite it.</div>
     <button class="md:col-span-2 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Product</button>
   </form>`);
@@ -202,7 +204,7 @@ async function openEditProduct(id){
       code:newCode,item_name:document.getElementById('epName').value.trim(),
       brand:document.getElementById('epBrand').value.trim()||null,class:document.getElementById('epClass').value.trim()||null,
       sales_price:Number(document.getElementById('epPrice').value||0),description:document.getElementById('epDescription').value.trim()||null,
-      active:document.getElementById('epActive').checked,manual_override:true
+      active:p.active,manual_override:true
     };
     if(!epSelectedPhoto)row.image_url=normalizeGoogleImageUrl(document.getElementById('epImage')?.value||p.image_url||'');
     const {error:e1}=await db.from('product_catalog').update(row).eq('id',id);
@@ -265,21 +267,35 @@ function openNewProduct(){
 
 
 async function deleteAppProduct(id){
-  if(!isAdmin())return showToast('Admin access required.','err');
+  if(state.profile?.role!=='super_admin')return showToast('Only Super Admin can delete/archive products.','err');
   const p=productById(id);
   if(!p)return showToast('Product not found.','err');
-  if(!isAppProduct(p))return showToast('Only products created in the app / App Products can be deleted here.','err');
+  if(p.archived_at||p.active===false)return showToast('Product is already inactive or archived.','err');
 
-  const ok=confirm(
-    'Delete '+(p.code||p.item_name||'this product')+' from the active Product catalog?\n\n'+
-    'Historical Sales Orders and Supplier POs will be kept. The product will no longer be available for new sales or procurement selections.'
-  );
-  if(!ok)return;
+  if(!confirm(
+    'DELETE / ARCHIVE PRODUCT: '+(p.code||p.item_name||'Product')+'\n\n'+
+    'This removes the product from the active catalog, but does not erase its product ID, Sales Orders, POs, or stock history.\n\n'+
+    'Products that still have stock or unfinished Sales Orders / Supplier POs cannot be archived.\n\n'+
+    'Only you as Super Admin can restore the product. Continue?'
+  ))return;
 
-  const {data,error}=await db.rpc('delete_app_product_safe',{p_product_id:id});
-  if(error)return showToast(error.message,'err');
-
+  const {data,error}=await db.rpc('superadmin_archive_product',{
+    p_product_id:id,p_reason:'Archived by Super Admin from Products'
+  });
+  if(error)return showToast(error.message||'Could not archive product.','err');
   closeModal();
-  showToast('Product deleted from active catalog');
+  showToast('Product '+(data?.code||p.code||'')+' archived. Historical records preserved.');
+  await renderProducts();
+}
+
+async function restoreArchivedProduct(id){
+  if(state.profile?.role!=='super_admin')return showToast('Only Super Admin can restore products.','err');
+  const p=productById(id);
+  if(!p||!p.archived_at)return showToast('Product is not in the archived list.','err');
+  if(!confirm('Restore '+(p.code||p.item_name)+' to the active Products catalog?'))return;
+  const {error}=await db.rpc('superadmin_restore_product',{p_product_id:id});
+  if(error)return showToast(error.message||'Could not restore product.','err');
+  closeModal();
+  showToast('Product restored to the active catalog.');
   await renderProducts();
 }
