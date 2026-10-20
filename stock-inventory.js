@@ -956,6 +956,7 @@
       ['balance','Stock Balance',0],
       ['tax','Tax Inventory',0],
       ['receive','Receive PO',inv.taskBadges.receive||0],
+      ['po-receiving-history','PO Receiving History',0],
       ['delivery','Customer Fulfillment',inv.taskBadges.delivery||0]
     ];
     t.push(['counts','Stock Count',inv.taskBadges.counts||0],['reports','Reports',0]);
@@ -981,6 +982,7 @@
     const btn=(title,sub,action,tone='')=>`<button onclick="${action}" class="text-left rounded-xl border p-3 hover:shadow-sm ${tone}"><div class="font-bold text-sm">${title}</div><div class="text-[10px] text-gray-500 mt-1">${sub}</div></button>`;
     openModal('Quick Stock Action',`<div class="grid sm:grid-cols-2 gap-3">
       ${btn('Receive PO','Receive incoming supplier items into a location',"quickInventoryGo('receive')",'bg-blue-50/40 border-blue-100')}
+      ${btn('PO Receiving History','View posted PO receipts and save reports for Telegram',"quickInventoryGo('po-receiving-history')",'bg-green-50/40 border-green-100')}
       ${btn('Transfer Location','Move existing stock from one location to another',"openStockTransfer()",'bg-blue-50/40 border-blue-100')}
       ${btn('Stock OUT','Manual stock release / OUT',"openStockMovement('out')",'bg-red-50/40 border-red-100')}
       ${btn('Customer Return','Return stock back into a location',"openStockMovement('return')",'bg-green-50/40 border-green-100')}
@@ -1632,7 +1634,7 @@
       grouped.get(key).items.push(x);
     }
     const groups=[...grouped.values()],shownGroups=groups.slice(0,inventoryLimit('receive'));
-    return `<div class="rounded-xl border border-purple-100 bg-purple-50/30 p-3 mb-4 text-xs text-purple-800"><b>Receive PO:</b> this queue now shows only items already marked <b>Arrived</b>. Ordered / Production / Ready items stay under <b>On Order</b>; Shipping items show as <b>Incoming</b>.</div><div class="grid gap-3">${shownGroups.length?shownGroups.map(g=>{
+    return `<div class="rounded-xl border border-purple-100 bg-purple-50/30 p-3 mb-4 text-xs text-purple-800"><b>Receive PO:</b> this queue shows items marked <b>Arrived</b> and still awaiting stock receipt. Already received POs are in <button type="button" class="underline font-semibold" onclick="setInventoryTab('po-receiving-history')">PO Receiving History</button>, where you can save a screenshot-ready report. Ordered / Production / Ready items remain under On Order; Shipping items show as Incoming.</div><div class="grid gap-3">${shownGroups.length?shownGroups.map(g=>{
       const ordered=g.items.reduce((a,x)=>a+n(x.ordered_qty),0);
       const remaining=g.items.reduce((a,x)=>a+n(x.remaining_qty),0);
       const expanded=inv.poExpanded.has(g.id);
@@ -1988,6 +1990,7 @@
       else if(inv.tab==='balance'||inv.tab==='tax')html=await renderBalance();
       else if(inv.tab==='movements')html=await renderMovements();
       else if(inv.tab==='receive')html=await renderReceive();
+      else if(inv.tab==='po-receiving-history'&&typeof window.renderPOReceivingHistory==='function')html=await window.renderPOReceivingHistory(inv.search);
       else if(inv.tab==='delivery')html=await renderDelivery();
       else if(inv.tab==='counts')html=await renderCounts();
       else if(inv.tab==='history-reconstruction'&&typeof window.renderHistoricalReconstructionPanel==='function')html=await window.renderHistoricalReconstructionPanel();
@@ -2003,7 +2006,7 @@
     if(inv.tab==='tax')await loadTaxCore();
     else{await loadCore();await loadInventoryTasks()}
     if(!tabs().some(x=>x[0]===inv.tab))inv.tab='dashboard';
-    const searchPlaceholder=inv.tab==='receive'?'Search PO, vendor, Code...':inv.tab==='delivery'?'Search invoice, customer, Code...':inv.tab==='history-reconstruction'?'Search historical reference, customer/vendor, Code...':'Search Code, item, brand, location, reference...';
+    const searchPlaceholder=(inv.tab==='receive'||inv.tab==='po-receiving-history')?'Search PO, supplier, product Code...':inv.tab==='delivery'?'Search invoice, customer, Code...':inv.tab==='history-reconstruction'?'Search historical reference, customer/vendor, Code...':'Search Code, item, brand, location, reference...';
     document.getElementById('content').innerHTML=`<div class="max-w-[1550px] mx-auto">
       <div class="inv-tabs">${tabs().map(([v,l,b])=>`<button class="inv-tab ${inv.tab===v?'active':''}" onclick="setInventoryTab('${v}')">${l}${b?`<span class="inv-tab-badge">${Number(b).toLocaleString()}</span>`:''}</button>`).join('')}</div>
       <div class="inv-toolbar">
@@ -2674,7 +2677,7 @@
       const btn=document.getElementById('rpoSave');btn.disabled=true;btn.textContent='Receiving...';
       const r=await db.rpc('receive_po_stock',{p_supplier_po_item_id:itemId,p_qty:qty,p_location_id:document.getElementById('rpoLocation').value,p_receipt_date:document.getElementById('rpoDate').value||null,p_note:document.getElementById('rpoNote').value.trim()||null});
       if(r.error){btn.disabled=false;btn.textContent='Confirm Receipt';return showToast(r.error.message,'err')}
-      closeModal();showToast('PO stock received.');invalidateInventoryTasks();inv.locations=[];inv.balances=[];await renderStockInventory();
+      closeModal();showToast('PO stock received. Open PO Receiving History to share the receiving report.');invalidateInventoryTasks();inv.locations=[];inv.balances=[];await renderStockInventory();
     };
   };
 
