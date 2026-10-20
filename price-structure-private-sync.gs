@@ -438,7 +438,7 @@ function writeProductSyncIssues_(result,mode){
   sheet.clearContents();
   const clean=v=>{
     const value=String(v??'').slice(0,500);
-    return /^[\\s]*[=+@-]/.test(value)?"'"+value:value;
+    return ['=','+','-','@'].includes(value.trimStart().charAt(0))?"'"+value:value;
   };
   const header=['Last Sync','Mode','Code','Status','Reason'];
   const issues=Array.isArray(result.issues)?result.issues:[];
