@@ -73,7 +73,7 @@
           '<div class="flex items-start justify-between flex-wrap gap-3"><div>'+
           '<div class="flex flex-wrap gap-2 items-center"><b class="text-sm">'+h(labelPO(p))+'</b>'+
           '<span class="border rounded-full px-2 py-0.5 text-[10px] font-semibold '+statusClass(s.status)+'">'+h(STATUS.find(x=>x[0]===s.status)?.[1]||s.status)+'</span>'+
-          '</div><div class="text-xs text-gray-500 mt-1">'+h(p?.vendor_name||'')+' · Agent: <b>'+h(agMap.get(s.shipping_agent_id)?.name||s.shipping_agent_name_snapshot)+'</b></div>'+
+          '</div><div class="text-xs text-gray-500 mt-1">'+h(p?.vendor_name||'')+' · Agent: <b>'+h(s.shipping_agent_name_snapshot || agMap.get(s.shipping_agent_id)?.name)+'</b></div>'+
           '<div class="text-xs text-gray-500 mt-1">'+h(s.shipment_reference||'Shipment')+' · '+h(METHODS.find(x=>x[0]===s.shipment_method)?.[1]||s.shipment_method)+'</div></div>'+
           '<div class="flex items-center gap-2">'+
           (mayEdit()?'<button onclick="openNewPOShipment(\''+h(s.supplier_po_id)+'\',\''+h(s.id)+'\')" class="px-3 py-2 border rounded-lg text-xs font-semibold">Edit</button>':'')+
