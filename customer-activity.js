@@ -4,6 +4,7 @@
     type:'showroom_visit',
     rows:[],
     salesUsers:[],
+    assignmentState:new Map(),
     search:'',
     business:'all',
     status:'all',
@@ -255,6 +256,10 @@ ${activityAllowed()?`          <select onchange="setActivityStatus(this.value)" 
       const canSeeStage=activityCanSeeStage(r);
       const historyBadge=r.is_history?`<span class="px-2 py-1 rounded-lg border border-[#ead69b] bg-[#fffaf0] text-[9px] font-bold text-[#8a6514]">Google History · ${entryWeight(r)} ${activityState.type==='online'?'inquir'+(entryWeight(r)===1?'y':'ies'):'visit'+(entryWeight(r)===1?'':'s')}</span>`:'';
       const canRequestMaster=!r.is_history&&(state.profile?.role||'')==='sales';
+      const canRequestAssign=!r.is_history&&(state.profile?.role||'')==='sales'
+        &&(String(r.created_by||'')===String(state.user?.id||'')
+          ||String(r.original_assigned_sales_id||'')===String(state.user?.id||'')
+          ||String(r.assigned_sales_id||'')===String(state.user?.id||''));
       return `<div class="card rounded-2xl p-4 ${r.is_history?'cursor-pointer hover:border-[#d8c287] transition':''}" ${r.is_history?`onclick="openCustomerHistoryGroup('${r.id}')"`:''}>
         <div class="grid lg:grid-cols-[110px_1.3fr_.8fr_.85fr_.85fr_auto] gap-3 lg:gap-4 items-center">
           <div><div class="text-[10px] uppercase font-bold text-gray-400">${r.is_history?'Latest Date':'Date'}</div><div class="text-sm font-semibold mt-1">${esc(fmtActivityDate(r.activity_date))}</div>${r.is_history?`<div class="text-[9px] text-gray-400 mt-1">Monthly archive</div>`:''}</div>
@@ -264,9 +269,9 @@ ${activityAllowed()?`          <select onchange="setActivityStatus(this.value)" 
             ${detail?`<div class="text-[11px] text-gray-600 mt-1 line-clamp-2">${esc(detail)}</div>`:''}
           </div>
           <div><div class="text-[10px] uppercase font-bold text-gray-400">Stage</div>${canSeeStage?`<span class="inline-flex mt-1 px-2 py-1 rounded-lg border text-[10px] font-semibold ${statusTone(r.status)}">${esc(r.status||'-')}</span>`:'<div class="text-[11px] text-gray-400 mt-1">Private</div>'}</div>
-          <div><div class="text-[10px] uppercase font-bold text-gray-400">Sales</div><div class="text-sm mt-1">${esc(r.sales_rep_name||'-')}</div></div>
+          <div><div class="text-[10px] uppercase font-bold text-gray-400">Sales</div><div class="text-sm mt-1">${esc(r.sales_rep_name||'-')}</div>${r.pending_target_name?`<div class="text-[10px] text-amber-700 font-semibold mt-1">Pending approval → ${esc(r.pending_target_name)}</div>`:''}</div>
           <div><div class="text-[10px] uppercase font-bold text-gray-400">Follow Up</div><div class="text-sm mt-1">${canSeeStage?esc(r.follow_up_date?fmtActivityDate(r.follow_up_date):'-'):'Private'}</div></div>
-          <div class="flex flex-wrap lg:justify-end gap-2">${canEdit?`<button onclick="event.stopPropagation();openEditCustomerActivity('${r.id}')" class="px-3 py-2 border rounded-lg text-xs font-semibold bg-white">Edit</button>`:r.is_history?'<span class="text-[10px] font-semibold text-[#9a6b12]">View history →</span>':''}${canRequestMaster?`<button onclick="event.stopPropagation();openActivityCustomerMasterRequest('${r.id}')" class="px-3 py-2 border border-amber-200 bg-amber-50 text-amber-800 rounded-lg text-[10px] font-semibold whitespace-nowrap">${r.linked_customer_id?'Customer Master':'Request as My Customer'}</button>`:''}</div>
+          <div class="flex flex-wrap lg:justify-end gap-2">${canRequestAssign?`<button onclick="event.stopPropagation();openActivityAssignmentRequest('${r.id}')" class="px-3 py-2 border border-amber-200 bg-amber-50 text-amber-800 rounded-lg text-xs font-semibold">${r.pending_target_id?'Pending Approval':'Request Assignment'}</button>`:''}${canEdit?`<button onclick="event.stopPropagation();openEditCustomerActivity('${r.id}')"  class="px-3 py-2 border rounded-lg text-xs font-semibold bg-white">Edit</button>`:r.is_history?'<span class="text-[10px] font-semibold text-[#9a6b12]">View history →</span>':''}${canRequestMaster?`<button onclick="event.stopPropagation();openActivityCustomerMasterRequest('${r.id}')" class="px-3 py-2 border border-amber-200 bg-amber-50 text-amber-800 rounded-lg text-[10px] font-semibold whitespace-nowrap">${r.linked_customer_id?'Customer Master':'Request as My Customer'}</button>`:''}</div>
         </div>
       </div>`;
     }).join('')+'</div>';
@@ -336,14 +341,24 @@ ${activityAllowed()?`          <select onchange="setActivityStatus(this.value)" 
     document.getElementById('content').innerHTML='<div id="customerActivityRoot"><div class="py-20 text-center text-gray-400">Loading...</div></div>';
 
     await loadActivitySalesUsers();
-    const [liveRes,historyRes]=await Promise.all([
+    const [liveRes,historyRes,assignmentRes]=await Promise.all([
       db.rpc('get_customer_activity_rows',{p_activity_type:type}),
-      db.rpc('get_customer_history_index',{p_activity_type:type})
+      db.rpc('get_customer_history_index',{p_activity_type:type}),
+      db.rpc('get_activity_sales_assignment_state',{p_activity_type:type})
     ]);
     if(liveRes.error)throw liveRes.error;
     if(historyRes.error)throw historyRes.error;
-
-    const live=(liveRes.data||[]).map(r=>({...r,entry_count:1,is_history:false}));
+    if(assignmentRes.error)throw assignmentRes.error;
+    activityState.assignmentState=new Map((assignmentRes.data||[]).map(x=>[String(x.activity_id),x]));
+    const live=(liveRes.data||[]).map(r=>{
+      const a=activityState.assignmentState.get(String(r.id))||{};
+      return {...r,original_assigned_sales_id:r.assigned_sales_id,
+        assigned_sales_id:a.approved_sales_id||r.assigned_sales_id,
+        sales_rep_name:a.approved_sales_id?(a.approved_sales_name||r.sales_rep_name):r.sales_rep_name,
+        pending_target_id:a.pending_target_id||null,
+        pending_target_name:a.pending_target_name||null,
+        entry_count:1,is_history:false};
+    });
     const history=(historyRes.data||[]).map(r=>({
       id:'history-'+r.id,
       activity_date:r.activity_date,
@@ -416,7 +431,16 @@ ${activityAllowed()?`          <select onchange="setActivityStatus(this.value)" 
         ?`<div><label class="text-xs font-semibold">Page</label><div class="mt-1 border rounded-xl px-3 py-2.5 bg-gray-50 text-sm text-gray-600">RK = Home Page · TK = Luxury Page</div></div>`
         :`<div><label class="text-xs font-semibold">Source From</label><select id="activitySource" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${selectOptions(SOURCES,source,'Select source')}</select></div>`}
       <div><label class="text-xs font-semibold">Customer Stage</label><select id="activityStatusInput" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${selectOptions(STATUSES,status,'Select customer stage')}</select></div>
-      <div><label class="text-xs font-semibold">Person In Charge</label>${salesSelectHtml(row?.assigned_sales_id)}</div>
+      <div><label class="text-xs font-semibold">Current CRM Person In Charge</label>${salesSelectHtml(row?.original_assigned_sales_id||row?.assigned_sales_id)}</div>
+      ${(state.profile?.role||'')==='sales'?`<div class="md:col-span-2 rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-2">
+        <label class="text-xs font-semibold text-amber-900">Request Different Assigned Sales (Approval Required)</label>
+        <select id="activityRequestedSalesRep" class="w-full border rounded-lg px-3 py-2.5 bg-white text-sm">
+          <option value="">No reassignment request</option>
+          ${activityState.salesUsers.filter(u=>['sales','manager'].includes(u.role)&&String(u.user_id)!==String(state.user?.id||'')).map(u=>`<option value="${esc(u.user_id)}">${esc(u.display_name||u.email)}</option>`).join('')}
+        </select>
+        <input id="activityRequestedSalesNote" class="w-full border rounded-lg px-3 py-2 text-sm bg-white" placeholder="Reason for handover (optional)">
+        <p class="text-[10px] text-amber-800">Saving creates the visit/inquiry first. The new Sales assignment remains pending until approved; customer master ownership is unchanged.</p>
+      </div>`:''}
       <div class="md:col-span-2"><label class="text-xs font-semibold">Interest</label><input id="activityInterest" value="${esc(row?.interest||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="${isOnline?'Example: Sofa set, chandelier, bedroom set':'Example: Modern sofa, chandelier, dining table'}"></div>
       <div><label class="text-xs font-semibold">Follow-up Date</label><input id="activityFollowUp" type="date" value="${esc(row?.follow_up_date||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
       <div class="md:col-span-2"><label class="text-xs font-semibold">Remark</label><textarea id="activityRemark" rows="3" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Customer request / follow-up note...">${esc(row?.remark||'')}</textarea></div>
@@ -808,6 +832,8 @@ ${activityAllowed()?`          <select onchange="setActivityStatus(this.value)" 
     }
 
     const salesId=document.getElementById('activitySalesRep')?.value||null;
+    const requestedSalesId=document.getElementById('activityRequestedSalesRep')?.value||null;
+    const requestNote=document.getElementById('activityRequestedSalesNote')?.value?.trim()||null;
     if(salesId&&!activityHasContactNumber()&&!activitySelectedIdentity?.assigned_sales_id){
       activitySalesAssignmentChanged();
       return showToast('Enter a valid contact phone number before claiming this customer.','err');
@@ -836,10 +862,25 @@ ${activityAllowed()?`          <select onchange="setActivityStatus(this.value)" 
       if(btn){btn.disabled=false;btn.textContent=row?'Save Changes':'Save'}
       return showToast(res.error.message,'err');
     }
+    let assignmentError=null;
+    if(requestedSalesId){
+      const activityId=row?.id||res.data;
+      if(!activityId){
+        assignmentError='Entry saved, but the ID was not returned. Use Request Assignment from the entry card.';
+      }else{
+        const request=await db.rpc('request_activity_sales_assignment',{
+          p_activity_id:activityId,p_target_sales_id:requestedSalesId,p_note:requestNote
+        });
+        if(request.error)assignmentError=request.error.message;
+        else if(typeof refreshApprovalNotifications==='function')setTimeout(refreshApprovalNotifications,50);
+      }
+    }
     const assignedUser=salesId?activityState.salesUsers.find(x=>String(x.user_id)===String(salesId)):null;
     const lockedOwner=activitySelectedIdentity?.assigned_sales_name||'';
     closeModal();
-    showToast(
+    if(assignmentError)showToast('Entry saved, but assignment request was not submitted: '+assignmentError,'err');
+    else if(requestedSalesId)showToast('Entry saved · Sales assignment is PENDING APPROVAL');
+    else showToast(
       salesId
         ?(row?'Updated ':'Saved ')+activityTypeLabel(activityState.type)+' · '+(lockedOwner?'linked to '+lockedOwner:'assigned to '+(assignedUser?.display_name||assignedUser?.email||'selected Sales Rep'))
         :(row?'Updated ':'Saved ')+activityTypeLabel(activityState.type)
