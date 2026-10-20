@@ -54,7 +54,7 @@
        (rows.length?'<div class="grid md:grid-cols-2 xl:grid-cols-3 gap-2">'+rows.slice(0,6).map(t=>
          '<button type="button" onclick="openCNReturnDashboard()" class="rounded-xl bg-white border p-3 text-left flex gap-3 hover:border-amber-300">'+
          img(t)+'<div class="min-w-0 flex-1"><div class="font-bold text-xs text-amber-700">'+x(t.cn_no)+' · '+x(t.product_code)+'</div>'+
-         '<div class="text-xs font-medium truncate">'+x(t.item_name)+'</div>'+
+         '<div class="text-xs font-medium truncate">'+x(t.item_name)+'</div>'+ '<div class="text-[10px] text-gray-600 truncate">Customer: '+x(t.customer_name||'—')+'</div>'+
          '<div class="text-[10px] text-gray-500">'+x(asDate(t.return_date))+
          ' · CN Qty '+n(t.cn_qty)+' · To Receive '+n(t.available_to_request)+'</div>'+
          (n(t.pending_approval_qty)>0?'<div class="text-[10px] text-amber-700">Approval pending: '+n(t.pending_approval_qty)+'</div>':'')+
