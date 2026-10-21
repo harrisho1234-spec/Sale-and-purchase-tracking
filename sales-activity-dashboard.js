@@ -2,7 +2,15 @@
 (function(){
 'use strict';
 const keys=['sales_activity.view_own','sales_activity.view_team','sales_activity.view_all'];
-const allowed=()=>state?.profile?.role==='super_admin'||keys.some(k=>typeof window.hasAppPermission==='function'&&window.hasAppPermission(k));
+const allowed=()=>{
+ const role=state?.profile?.role;
+ if(role==='super_admin')return true;
+ if(typeof window.hasAppPermission!=='function')return false;
+ // Managers cannot use Own-only permissions to see non-Sales actions.
+ // A granted View All permission is still capped to Sales-only on the server.
+ if(role==='manager')return window.hasAppPermission('sales_activity.view_team')||window.hasAppPermission('sales_activity.view_all');
+ return keys.some(k=>window.hasAppPermission(k));
+};
 const h=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const names={'customer_activity':'Customer activity','showroom_visit':'Showroom visit','online_inquiry':'Online inquiry','customer_followup':'Customer follow-up','quotation':'Quotation imported','sales_order':'Sales Order / SR','tk_rk':'TK/RK conversion','order_event':'Order activity','delivery':'Delivery Order','payment':'Payment','credit_note':'Credit Note'};
 const symbols={'customer_activity':'◉','showroom_visit':'▣','online_inquiry':'◎','customer_followup':'◷','quotation':'▤','sales_order':'▥','tk_rk':'⌑','order_event':'◈','delivery':'▰','payment':'＄','credit_note':'↶'};
@@ -17,7 +25,7 @@ const friendlyDate=d=>new Intl.DateTimeFormat('en-GB',{weekday:'short',year:'num
 const clock=t=>new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Phnom_Penh',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(t));
 function scopeNotice(){
   if(ui.scope==='own')return 'Own activity only';
-  if(ui.scope==='team')return 'Team: all Sales-role staff and your own actions; individual reporting lines are not configured.';
+  if(ui.scope==='team')return 'Sales staff only. Managers cannot see their own management actions or activity by Admin, Super Admin, Stock Controller, or other Managers.';
   return 'All staff with recorded activity (permission-controlled).';
 }
 function render(){
@@ -34,7 +42,7 @@ function render(){
  '<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-4">'+
  '<label class="text-xs font-semibold">From<input id="actStart" type="date" value="'+h(ui.from)+'" class="block mt-1 border rounded-lg w-full p-2.5"></label>'+
  '<label class="text-xs font-semibold">To<input id="actEnd" type="date" value="'+h(ui.to)+'" class="block mt-1 border rounded-lg w-full p-2.5"></label>'+
- '<label class="text-xs font-semibold">Salesperson<select id="actPerson" class="block mt-1 border rounded-lg w-full p-2.5 bg-white"><option value="">All permitted staff</option>'+
+ '<label class="text-xs font-semibold">Salesperson<select id="actPerson" class="block mt-1 border rounded-lg w-full p-2.5 bg-white"><option value="">'+(ui.scope==='team'?'All Salespeople':'All permitted staff')+'</option>'+
  ui.people.map(x=>'<option value="'+h(x.id)+'" '+(ui.person===x.id?'selected':'')+'>'+h(x.name)+' · '+h(x.role)+'</option>').join('')+'</select></label>'+
  '<label class="text-xs font-semibold">Activity<select id="actType" class="block mt-1 border rounded-lg w-full p-2.5 bg-white"><option value="">All activities</option>'+
  Object.entries(names).map(([k,v])=>'<option value="'+h(k)+'" '+(ui.type===k?'selected':'')+'>'+h(v)+'</option>').join('')+'</select></label></div>'+
