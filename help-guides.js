@@ -84,8 +84,9 @@ function rolePage(g){
   return g.page;
 }
 function visible(g){
- const role=userRole();
- return g.roles.includes(role)&&permissionPage(rolePage(g));
+ // Reading role-relevant instructions is safe even if an operational page
+ // is unavailable. The 'Open Related Area' action checks permissions.
+ return g.roles.includes(userRole());
 }
 function guides(){
  return GUIDE_DATA.filter(visible).map(g=>({...g,...(model.edits.get(g.id)||{}),page:rolePage(g)}));
