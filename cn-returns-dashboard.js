@@ -31,7 +31,7 @@
      const r=await db.rpc('get_cn_stock_receipt_queue');
      if(r.error)throw r.error;
      if(seq!==call||!panel.isConnected)return;
-     const rows=(Array.isArray(r.data)?r.data:[]).filter(t=>t.return_status==='confirmed'||n(t.available_to_request)>0||n(t.pending_approval_qty)>0);
+     const rows=(Array.isArray(r.data)?r.data:[]).filter(t=>(t.return_status==='confirmed'&&t.warehouse_stage!=='stock_received')||n(t.available_to_request)>0||n(t.pending_approval_qty)>0);
      const ready=rows.filter(t=>t.disposition==='return_to_stock'&&t.return_status==='received'&&n(t.available_to_request)>0);
       const awaiting=rows.filter(t=>t.return_status==='confirmed');
      const pending=rows.filter(t=>n(t.available_to_request)<=0&&n(t.pending_approval_qty)>0);
@@ -56,7 +56,7 @@
          '<button type="button" onclick="openCNReturnDashboard()" class="rounded-xl bg-white border p-3 text-left flex gap-3 hover:border-amber-300">'+
          img(t)+'<div class="min-w-0 flex-1"><div class="font-bold text-xs text-amber-700">'+x(t.cn_no)+' · '+x(t.product_code)+'</div>'+
          '<div class="text-xs font-medium truncate">'+x(t.item_name)+'</div>'+ '<div class="text-[10px] text-gray-600 truncate">Customer: '+x(t.customer_name||'—')+'</div>'+
-         '<div class="text-[10px] font-bold mt-1 '+(t.return_status==='confirmed'?'text-amber-700':'text-emerald-700')+'">'+(n(t.pending_approval_qty)>0?'Receipt Approval Pending':t.return_status==='confirmed'?'Awaiting Physical Return':t.disposition!=='return_to_stock'?'Information Only':'Ready for Stock Receipt')+'</div>'+ 
+         '<div class="text-[10px] font-bold mt-1 '+(t.return_status==='confirmed'?'text-amber-700':'text-emerald-700')+'">'+(n(t.pending_approval_qty)>0?'Receipt Approval Pending':t.return_status==='confirmed'&&t.disposition!=='return_to_stock'?'Awaiting Physical Return · No Stock Action':t.return_status==='confirmed'?'Awaiting Physical Return':t.disposition!=='return_to_stock'?'Information Only':'Ready for Stock Receipt')+'</div>'+ 
           '<div class="text-[10px] text-gray-500">'+x(asDate(t.return_date))+
          ' · CN Qty '+n(t.cn_qty)+(t.disposition==='return_to_stock'?' · To Receive '+n(t.available_to_request):' · '+x(String(t.disposition||'No Stock Action').replaceAll('_',' ')))+'</div>'+ 
          (n(t.pending_approval_qty)>0?'<div class="text-[10px] text-amber-700">Approval pending: '+n(t.pending_approval_qty)+'</div>':'')+
