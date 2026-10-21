@@ -17,7 +17,7 @@
     return ['pre_order','mixed'].includes(norm(o?.order_type))||norm(o?.sales_flow_type)==='pre_order'||String(o?.sr_no||'').toUpperCase().startsWith('SR');
   }
   // A pre-order becomes collectible AR only after the final TK/RK has been issued.
-  function isPendingPre(o){return isPre(o)&&!o?.sales_invoice_no&&!o?.invoice_issued_at}
+  function isPendingPre(o){return isPre(o)&&!o?.sales_invoice_no&&!o?.invoice_issued_at&&!o?.linked_fully_issued}
   function isOpen(o){return !isCancelled(o)&&!isSettled(o)&&n(o?.balance_due)>0.001}
 
   function withinDate(dateStr,filter){
@@ -56,7 +56,9 @@
       if(ui.salesClass!=='all'&&!(o.items||[]).some(i=>i.product_catalog?.class===ui.salesClass))return false;
       if(!statusMatch(o))return false;
       if(q){
-        const hay=[o.order_no,o.invoice_no,o.sr_no,o.sales_invoice_no,o.customer_name,o.customer_code,repName(o),o.status,o.order_type,
+        const hay=[o.order_no,o.invoice_no,o.sr_no,o.sales_invoice_no,
+           ...(o.linked_documents||[]).map(x=>x.invoice_no),
+           o.customer_name,o.customer_code,repName(o),o.status,o.order_type,
           ...(o.items||[]).flatMap(i=>[i.product_code_snapshot,i.item_name_snapshot,i.product_catalog?.brand,i.product_catalog?.class])
         ].filter(Boolean).join(' ').toLowerCase();
         if(!hay.includes(q))return false;
