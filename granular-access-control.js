@@ -140,7 +140,8 @@
         {key:'sales_activity.view_all',label:'View All Sales Activity',description:'See recorded actions by all sales and authorized management staff.'},
         {key:'stock_locations.manage',label:'Manage Stock Locations',description:'Create and maintain stock locations.'},
         {key:'users.manage',label:'Manage Users & Access',description:'Protected Super Admin account and permission administration.',protected:true},
-        {key:'activity_logs.view',label:'View access activity log',description:'Protected audit trail for access changes.',protected:true,view:true}
+        {key:'activity_logs.view',label:'View access activity log',description:'Protected audit trail for access changes.',protected:true,view:true},
+        {key:'help.manage',label:'Edit Help & Guides',description:'Update staff instructions, troubleshooting, and training guide text in Help & Guides. Restricted to authorized Manager/Admin roles.'}
       ]
     }
   ];
