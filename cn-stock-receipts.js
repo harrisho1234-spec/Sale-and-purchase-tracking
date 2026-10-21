@@ -37,21 +37,21 @@ window.openCNStockReceiptForItem=async function(itemId){
  try{
    const [items,availableLocations]=await Promise.all([queue(),locations()]);
    const row=items.find(x=>String(x.return_item_id)===String(itemId));
-   if(!row||row.disposition!=='return_to_stock')throw Error('CN Handling must be Return to Stock for a saleable stock receipt.');
+   if(!row||!['return_to_stock','exchange'].includes(row.disposition))throw Error('Only Return to Stock and Exchange lines can request saleable Stock IN.');
     if(row.approval_status==='pending'||row.approval_status==='rejected')throw Error('Manager/Admin must approve this CN before warehouse intake.');
-   if(row.request_id)throw Error('This item already has a receipt awaiting approval. Review it before requesting another.');
+   if(row.request_id||row.exchange_hold_request_id)throw Error('This item already has a pending warehouse receipt or damaged hold. Review it first.');
    const remaining=Number(row.available_to_request||0);
    if(remaining<=0)throw Error('No remaining CN quantity available for stock receipt.');
    if(!row.product_id)throw Error('Link this CN item to an inventory product first.');
    if(!availableLocations.length)throw Error('No active stock location is configured.');
    const options=availableLocations.map(loc=>
      '<option value="'+e(loc.id)+'">'+e(loc.code||'')+' · '+e(loc.name||'')+'</option>').join('');
-   openModal('Receive Returned Items · '+e(row.cn_no),'<form id="cnStockReceiptForm" class="space-y-4">'+
+   openModal((row.disposition==='exchange'?'Receive Good Exchange Item · ':'Receive Returned Items · ')+e(row.cn_no),'<form id="cnStockReceiptForm" class="space-y-4">'+
      '<div class="rounded-xl border bg-gray-50 p-3"><b class="text-sm">'+e(row.product_code||'')+' · '+e(row.item_name||'')+'</b>'+
        '<div class="text-xs text-gray-600 mt-1">CN '+e(row.cn_no)+' · Returned '+fmt(row.cn_qty)+' · Already received '+fmt(row.received_qty)+
        ' · Pending approval '+fmt(row.pending_approval_qty)+' · Available to receive <b>'+fmt(remaining)+'</b></div></div>'+
      '<div class="bg-blue-50 border border-blue-200 text-blue-800 rounded-xl p-3 text-xs">'+style+
-       ' CN status: <b>'+e(row.return_status==='confirmed'?'Awaiting Physical Return':row.return_status)+'</b>. Confirm that the goods are physically present and inspected. Damaged or defective goods must NOT enter saleable stock.</div>'+
+       ' CN status: <b>'+e(row.return_status==='confirmed'?'Awaiting Physical Return':row.return_status)+'</b>. '+(row.disposition==='exchange'?'Original exchange item: <b>only inspected GOOD goods may return to saleable stock</b>. The replacement delivery follows its own Sales Order/DO. ':'')+'Confirm that goods are physically present and inspected. Damaged or defective goods must NOT enter saleable stock.</div>'+ 
      '<div class="grid sm:grid-cols-2 gap-3">'+
        '<label class="text-xs font-semibold">Received Qty *<input id="cnReceiptQty" required type="number" min="1" max="'+remaining+'" step="1" value="'+remaining+
           '" class="mt-1 block w-full border rounded-lg px-3 py-2.5 text-sm"></label>'+
@@ -140,28 +140,28 @@ window.renderCNStockReceiptApprovalPanel=async function(){
  try{
    const [items,reqs]=await Promise.all([queue(),requests()]);
    const pending=reqs.filter(x=>x.status==='pending'),history=reqs.filter(x=>x.status!=='pending');
-   const ready=items.filter(x=>(x.return_status==='confirmed'&&x.warehouse_stage!=='stock_received')||Number(x.available_to_request)>0||!!x.request_id);
+   const ready=items.filter(x=>(x.return_status==='confirmed'&&x.warehouse_stage!=='stock_received')||Number(x.available_to_request)>0||Number(x.exchange_available_to_process)>0||!!x.request_id||!!x.exchange_hold_request_id);
    holder.innerHTML='<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 mb-2">'+
      '<div class="flex flex-wrap justify-between items-center gap-3"><div><b class="text-sm text-amber-900">CN / Return Stock Receipts</b>'+
      '<div class="text-xs text-amber-900/80 mt-1">Submitted CNs appear immediately. Awaiting Physical Return means the warehouse has NOT received the item. Only approved good-item receipts increase stock.</div></div>'+
      '<span class="rounded-full bg-white border px-3 py-1 text-xs font-semibold">'+pending.length+' Pending Approval</span></div></div>'+
      (pending.length?'<div class="grid gap-3 mb-3">'+pending.map(card).join('')+'</div>':'')+
      (operate()?'<div class="inv-card mb-3"><b class="text-sm">Receive Returned Items</b>'+
-       '<p class="text-xs text-gray-500 mt-1 mb-3">Submitted CNs appear here before approval. Manager/Admin approves the CN first; then Stock can receive eligible goods. Admin approves the stock receipt separately.</p>'+
+       '<p class="text-xs text-gray-500 mt-1 mb-3">Submitted CNs appear here before approval. After Manager/Admin approval, Stock inspects the return. Good exchange items may request Stock IN; damaged exchanges go to a separate hold and do not increase saleable stock.</p>'+
        '<div class="grid gap-2">'+(ready.length?ready.map(row=>{
           const available=Number(row.available_to_request||0);
-          const canReceive=row.disposition==='return_to_stock'&&available>0&&(!row.approval_status||['approved','legacy'].includes(row.approval_status));
-          const status=row.approval_status==='pending'?'Awaiting CN Approval':row.approval_status==='rejected'?'CN Rejected':row.request_id?'Receipt Approval Pending':row.return_status==='confirmed'&&row.disposition!=='return_to_stock'?'Awaiting Physical Return · No Stock Action':row.return_status==='confirmed'?'Awaiting Physical Return':row.disposition!=='return_to_stock'?'No Stock Action':'Ready for Receipt';
+          const canReceive=['return_to_stock','exchange'].includes(row.disposition)&&available>0&&(!row.approval_status||['approved','legacy'].includes(row.approval_status))&&!row.request_id&&!row.exchange_hold_request_id;
+          const status=row.approval_status==='pending'?'Awaiting CN Approval':row.approval_status==='rejected'?'CN Rejected':row.exchange_hold_request_id?'Damaged Hold Approval Pending':row.request_id?'Receipt Approval Pending':row.disposition==='exchange'&&row.warehouse_stage==='exchange_resolved'?'Exchange Resolved':row.disposition==='exchange'?'Awaiting Exchange Inspection':row.return_status==='confirmed'&&row.disposition!=='return_to_stock'?'Awaiting Physical Return · No Stock Action':row.return_status==='confirmed'?'Awaiting Physical Return':row.disposition!=='return_to_stock'?'No Stock Action':'Ready for Receipt';
           return '<div class="flex flex-wrap justify-between items-center gap-3 border rounded-xl bg-white p-3">'+
            '<div><b class="text-xs">'+e(row.cn_no)+' · '+e(row.product_code||'')+'</b>'+
            '<div class="text-xs text-gray-700">'+e(row.item_name||'')+'</div>'+
            '<div class="mt-1 inline-block px-2 py-1 rounded-lg border bg-amber-50 text-amber-800 text-[10px] font-semibold">'+e(status)+'</div>'+
            '<div class="text-[10px] text-gray-500 mt-1">Handling: '+e(String(row.disposition||'').replaceAll('_',' '))+'</div>'+ 
            '<div class="text-[11px] text-gray-600">Returned '+fmt(row.cn_qty)+' · Received '+fmt(row.received_qty)+
-             ' · Awaiting approval '+fmt(row.pending_approval_qty)+' · Available '+fmt(available)+'</div></div>'+
+             ' · Awaiting approval '+fmt(row.pending_approval_qty)+(row.disposition==='exchange'?' · Damaged Held '+fmt(row.exchange_held_qty)+' · Hold Pending '+fmt(row.exchange_hold_pending_qty):'')+' · Available '+fmt(available)+'</div></div>'+ 
            (canReceive?'<button type="button" onclick="openCNStockReceiptForItem(\''+e(row.return_item_id)+'\')" '+
-             'class="px-3 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-xs font-bold">Confirm Physical Return</button>':
-             '<span class="text-xs font-semibold text-amber-700">'+(row.approval_status==='pending'?'Waiting for Manager/Admin':row.approval_status==='rejected'?'Rejected by Management':row.disposition!=='return_to_stock'?'Information Only':row.request_id?'Approval Pending':'Already Received')+'</span>')+'</div>'
+             'class="px-3 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-xs font-bold">'+(row.disposition==='exchange'?'Good → Request Stock IN':'Confirm Physical Return')+'</button>':
+             '<span class="text-xs font-semibold text-amber-700">'+(row.approval_status==='pending'?'Waiting for Manager/Admin':row.approval_status==='rejected'?'Rejected by Management':!['return_to_stock','exchange'].includes(row.disposition)?'Information Only':row.request_id?'Approval Pending':row.exchange_hold_request_id?'Hold Pending Approval':'Already Received')+'</span>')+'</div>'
        }).join(''):'<div class="text-xs text-gray-500 py-2">No CN items awaiting stock receipt.</div>')+
        '</div></div>':'')+
      (history.length?'<details class="inv-card"><summary class="cursor-pointer text-xs font-semibold">CN Receipt History · '+history.length+' reviewed</summary>'+
