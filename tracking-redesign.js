@@ -391,6 +391,15 @@
     return `${items.length} Item${items.length===1?'':'s'}: ${names.join(', ')}${items.length>4?'…':''}`;
   }
 
+  function srTkRkLabel(o){
+    const sr=String(o.sr_no||o.order_no||'').trim();
+    const isSr=(o.sales_flow_type||o.order_type)==='pre_order'||sr.toUpperCase().startsWith('SR');
+    if(!isSr)return String(o.sales_invoice_no||o.invoice_no||o.order_no||'Order');
+    const docs=[o.sales_invoice_no,...(o.linked_documents||[]).filter(x=>x.status==='issued').map(x=>x.invoice_no)]
+      .map(x=>String(x||'').trim()).filter(Boolean);
+    const issued=[...new Map(docs.map(x=>[x.toUpperCase(),x])).values()];
+    return sr+(issued.length?' → '+issued.join(' · '):'');
+  }
   function invoiceCard(o) {
     const open = ui.salesExpanded.has(o.id);
     const items = o.items||[];
@@ -401,9 +410,8 @@
             <button onclick="toggleSalesInvoice('${o.id}')" class="shrink-0 w-9 h-9 rounded-lg border bg-[#fffdf9] flex items-center justify-center text-[#b3871e]">▤</button>
             <div class="min-w-0">
               <div class="flex flex-wrap items-center gap-2">
-                <button onclick="toggleSalesInvoice('${o.id}')" class="font-extrabold text-[14px] hover:text-[#b3871e]">${esc(o.invoice_no||o.order_no||'Order')}</button>
+                <button onclick="toggleSalesInvoice('${o.id}')" class="font-extrabold text-[14px] hover:text-[#b3871e]">${esc(srTkRkLabel(o))}</button>
                 ${salesStatusBadge(o)}
-                ${(o.linked_documents||[]).map(doc=>`<span class="lr-badge lr-badge-blue" title="${doc.kind==='legacy'?'Single-invoice conversion':'Linked TK/RK invoice'}">${esc(doc.invoice_no)} · Issued</span>`).join('')}
                 ${o.sales_category==='project'?'<span class="lr-badge lr-badge-blue">PJ · Project</span>':''}
                 ${items.some(i=>Number(returnInfo(i)?.qty_returned||0)>0)?`<span class="lr-badge lr-badge-amber">↩ Return Recorded</span>`:''}
                 ${repName(o)?`<span class="lr-badge lr-badge-gray">▣ ${esc(repName(o))}</span>`:''}
@@ -464,7 +472,7 @@
       <div class="lr-thumb" style="width:70px;height:70px">${imageHtml(i.image_url_snapshot||i.product_catalog?.image_url)}</div>
       <div class="min-w-0">
         <div class="flex flex-wrap items-center gap-2">
-          <b>${esc(o.invoice_no||o.order_no||'Order')}</b>
+          <b>${esc(srTkRkLabel(o))}</b>
           <span class="font-bold">${Number(i.qty||0)}x</span>
           <span class="lr-badge lr-badge-gray">${esc(i.product_code_snapshot||'No Code')}</span>
           <span class="lr-badge ${cleanStatus(i.fulfillment_status)==='delivered'?'lr-badge-green':['arrived','ready'].includes(cleanStatus(i.fulfillment_status))?'lr-badge-blue':'lr-badge-amber'}">${esc(titleCase(i.fulfillment_status||'ordered'))}</span>
@@ -1164,7 +1172,7 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
       <div class="flex items-start justify-between gap-2">
         <div class="min-w-0">
           <div class="flex flex-wrap gap-2 items-center">
-            <b class="text-[14px]">${esc(order.order_no||order.invoice_no||'Order')}</b>
+            <b class="text-[14px]">${esc(srTkRkLabel(order))}</b>
             <span class="lr-badge ${m.badge}">${esc(m.label)}</span>
           </div>
           <div class="text-[11px] text-gray-500 mt-1 truncate">${esc(order.customer_name||'Customer')}</div>
@@ -1190,7 +1198,7 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
           <button class="w-8 h-8 rounded-lg border bg-gray-50 shrink-0">${open?'⌃':'⌄'}</button>
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
-              <b class="text-[15px]">${esc(order.order_no||order.invoice_no||'Order')}</b>
+              <b class="text-[15px]">${esc(srTkRkLabel(order))}</b>
               <span class="lr-badge ${m.badge}">${esc(m.label)}</span>
               <span class="lr-badge lr-badge-gray">${esc(titleCase(order.order_type||'Order'))}</span>
               <span class="lr-badge lr-badge-gray">Total Qty: ${qty}</span>
