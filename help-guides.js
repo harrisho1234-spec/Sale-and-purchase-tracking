@@ -96,10 +96,10 @@ const editAllowed=()=>userRole()==='super_admin' ||
 
 async function loadEdits(){
  if(!userId())return;
- const r=await db.from(guideTable).select('guide_id,title,summary,steps,cautions,updated_at');
+ const r=await db.from(guideTable).select('guide_id,title,summary,steps,cautions,media_url,updated_at');
  if(r.error){console.warn('Help guides read:',r.error.message);return}
  model.edits=new Map((r.data||[]).map(g=>[g.guide_id,{
-   title:g.title,summary:g.summary,cautions:g.cautions,
+   title:g.title,summary:g.summary,cautions:g.cautions,media_url:g.media_url||'',
    steps:Array.isArray(g.steps)?g.steps.filter(x=>typeof x==='string').slice(0,18):[]
  }]));
 }
@@ -151,6 +151,16 @@ function buttons(){
  return '<button type="button" onclick="startHelpTour(false)" class="px-4 py-2.5 rounded-xl bg-[#211d18] text-white text-xs font-bold">Start Guided Tour</button>'+
  '<button type="button" onclick="startHelpTour(true)" class="px-4 py-2.5 rounded-xl border text-xs font-bold">Resume Tour</button>'+
  '<button type="button" onclick="restartHelpTour()" class="px-4 py-2.5 rounded-xl border text-xs font-bold">Restart from Beginning</button>';
+}
+function helpMedia(g){
+ const link=String(g.media_url||'').trim();
+ if(!/^https:\/\/[^\s]+$/i.test(link))return '';
+ let image=false;
+ try{const u=new URL(link);image=/\.(png|jpe?g|webp)$/i.test(u.pathname)}catch(_){return ''}
+ return '<div class="mt-5 rounded-xl border p-3 bg-[#fbfaf7]">'+
+   '<div class="text-xs font-semibold mb-3">Training screenshot or video</div>'+
+   (image?'<a target="_blank" rel="noopener noreferrer" href="'+html(link)+'"><img alt="Screenshot of this workflow" loading="lazy" class="w-full max-h-[400px] object-contain rounded-lg border bg-white" src="'+html(link)+'"></a>':'')+
+   '<a href="'+html(link)+'" target="_blank" rel="noopener noreferrer" class="inline-block mt-2 text-sm underline text-blue-700">Open training material ↗</a></div>';
 }
 function helpSections(){
  const filtered=guides().filter(g=>
@@ -209,6 +219,7 @@ window.openHelpGuide=function(id){
  '<ol class="mt-6 space-y-3">'+g.steps.map((step,i)=>
  '<li class="flex gap-3 p-3 bg-[#fcfaf8] border rounded-xl"><span class="rounded-full bg-[#211d18] text-white flex items-center justify-center w-7 h-7 text-xs shrink-0 font-bold">'+(i+1)+'</span><p class="text-sm text-gray-800 leading-relaxed">'+html(step)+'</p></li>').join('')+'</ol>'+
  (g.cautions?'<div class="border-l-4 border-amber-400 bg-amber-50 p-4 rounded-lg mt-5 text-sm"><b>Important:</b> '+html(g.cautions)+'</div>':'')+
+ helpMedia(g)+
  '<div class="flex gap-2 flex-wrap mt-6">'+(g.page&&g.page!=='help'&&permissionPage(g.page)?'<button type="button" onclick="navigateHelpPage(\''+g.page+'\')" class="rounded-xl bg-[#211d18] px-4 py-2.5 text-white text-xs font-semibold">Open Related Area →</button>':'')+
  '<button type="button" onclick="backToHelp()" class="rounded-xl border px-4 py-2.5 text-xs font-semibold">More Guides</button></div>'+
  '</article></div>';
@@ -234,7 +245,8 @@ window.editHelpGuide=function(id){
  '<label class="block text-xs font-bold">Title<input id="helpEditTitle" maxlength="140" required class="mt-1 w-full rounded-xl border p-3" value="'+html(g.title)+'"></label>'+
  '<label class="block text-xs font-bold">Summary<textarea id="helpEditSummary" maxlength="450" rows="2" class="mt-1 w-full rounded-xl border p-3">'+html(g.summary)+'</textarea></label>'+
  '<label class="block text-xs font-bold">Steps (one step per line, maximum 18)<textarea id="helpEditSteps" rows="12" required class="mt-1 w-full rounded-xl border p-3 text-sm">'+html(g.steps.join('\n'))+'</textarea></label>'+
- '<label class="block text-xs font-bold">Important note<textarea id="helpEditCautions" rows="3" maxlength="2000" class="mt-1 w-full rounded-xl border p-3">'+html(g.cautions||'')+'</textarea></label>'+
+ '<label class="block text-xs font-bold">Important note<textarea id="helpEditCautions" rows="3" maxlength="2000" class="mt-1 w-full rounded-xl border p-3">'+html(g.cautions||'')+'</textarea></label>'+ 
+ '<label class="block text-xs font-bold">Screenshot or training video URL (optional, HTTPS only)<input type="url" id="helpEditMedia" maxlength="1800" placeholder="https://..." class="mt-1 w-full rounded-xl border p-3" value="'+html(g.media_url||'')+'"></label>'+ 
  '<button type="submit" class="bg-[#211d18] text-white w-full py-3 rounded-xl font-semibold">Save Staff Guide</button></form>');
  const form=document.getElementById('helpGuideEditor');
  if(form)form.onsubmit=async e=>{
@@ -243,12 +255,14 @@ window.editHelpGuide=function(id){
    const summary=document.getElementById('helpEditSummary').value.trim();
    const steps=document.getElementById('helpEditSteps').value.split('\n').map(s=>s.trim()).filter(Boolean);
    const cautions=document.getElementById('helpEditCautions').value.trim();
+   const media_url=document.getElementById('helpEditMedia').value.trim();
+   if(media_url&&!/^https:\/\/[^\s]+$/i.test(media_url))return showToast('Training media link must start with https://','err');
    if(title.length<3||title.length>140||steps.length<1||steps.length>18||steps.some(x=>x.length>2000))
     return showToast('Enter a title and 1–18 steps (max 2,000 characters each).','err');
    const btn=form.querySelector('button[type="submit"]');btn.disabled=true;btn.textContent='Saving…';
-   const r=await db.from(guideTable).upsert({guide_id:id,title,summary,steps,cautions,updated_by:userId(),updated_at:new Date().toISOString()},{onConflict:'guide_id'});
+   const r=await db.from(guideTable).upsert({guide_id:id,title,summary,steps,cautions,media_url:media_url||null,updated_by:userId(),updated_at:new Date().toISOString()},{onConflict:'guide_id'});
    if(r.error){btn.disabled=false;btn.textContent='Save Staff Guide';return showToast(r.error.message,'err')}
-   model.edits.set(id,{title,summary,steps,cautions});
+   model.edits.set(id,{title,summary,steps,cautions,media_url});
    closeModal();window.openHelpGuide(id);showToast('Guide updated for staff.');
  };
 };
