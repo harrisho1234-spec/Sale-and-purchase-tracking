@@ -65,7 +65,24 @@ function actions(){
 const priorRender=window.renderReturnsPage;
 if(typeof priorRender==='function')window.renderReturnsPage=async function(){
  await priorRender.apply(this,arguments);
- try{await load();actions()}catch(err){console.warn('CN case status unavailable:',err.message)}
+ try{
+  await load();actions();
+  const root=document.getElementById('salesReturnsRoot');
+  const old=root?.querySelector('[data-cn-approval-summary]');
+  if(old)old.remove();
+  if(root&&canApprove()){
+    const pending=[...cases.values()].filter(c=>c.approval_status==='pending'&&c.requested_by!==state.user?.id);
+    if(pending.length){
+      const panel=document.createElement('div');
+      panel.dataset.cnApprovalSummary='1';
+      panel.className='mb-4 p-4 rounded-xl border border-amber-200 bg-amber-50 flex flex-wrap justify-between items-center gap-3';
+      panel.innerHTML='<div><b class="text-sm text-amber-900">Pending CN Approvals · '+pending.length+'</b>'+
+       '<div class="text-xs text-amber-800 mt-1">These Credit Notes are already visible to Stock, but warehouse receipt is blocked until Manager/Admin approval.</div></div>'+
+       '<div class="text-xs text-amber-700">'+pending.map(c=>text(c.cn_no)).join(' · ')+'</div>';
+      root.insertBefore(panel,root.firstChild);
+    }
+  }
+ }catch(err){console.warn('CN case status unavailable:',err.message)}
 };
 const priorFilter=window.filterSalesReturns;
 if(typeof priorFilter==='function')window.filterSalesReturns=function(){
