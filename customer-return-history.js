@@ -8,9 +8,15 @@
     const d=new Date(String(v).slice(0,10)+'T00:00:00');
     return Number.isNaN(d.getTime())?String(v):d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
   }
-  function docNo(o){return o.sales_invoice_no||o.sr_no||o.invoice_no||o.order_no||'Order'}
+  function docNo(o){
+    const sr=String(o.sr_no||o.order_no||'Order');
+    if(!isPre(o))return o.sales_invoice_no||o.invoice_no||o.order_no||'Order';
+    const refs=[o.sales_invoice_no,...(o.issued_tk_rk||[])].map(x=>String(x||'').trim()).filter(Boolean);
+    const unique=[...new Map(refs.map(x=>[x.toUpperCase(),x])).values()];
+    return sr+(unique.length?' → '+unique.join(' · '):'');
+  }
   function isPre(o){return ['pre_order','mixed'].includes(norm(o.order_type))||norm(o.sales_flow_type)==='pre_order'||String(o.sr_no||'').toUpperCase().startsWith('SR')}
-  function isPendingPre(o){return isPre(o)&&!o.sales_invoice_no&&!o.invoice_issued_at}
+  function isPendingPre(o){return isPre(o)&&!o.sales_invoice_no&&!o.invoice_issued_at&&!o.linked_fully_issued}
   function isSettled(o){return norm(o.payment_status)==='paid'||num(o.balance_due)<=0.001}
   function returnActionLabel(v){
     return ({
@@ -52,11 +58,12 @@
 
     openModal(`Customer — ${customer.name||''}`,`<div class="py-12 text-center text-sm text-gray-400">Loading customer orders and returns...</div>`);
 
-    const [sr,dr,rr,rf]=await Promise.all([
+    const [sr,dr,rr,rf,linked]=await Promise.all([
       db.from('sales_order_summary').select('*').eq('customer_id',customerId).order('order_date',{ascending:false}),
       db.from('sales_orders').select(`id,sales_invoice_no,sr_no,invoice_no,order_no,sales_flow_type,order_type,invoice_issued_at,sales_order_items(id,product_code_snapshot,item_name_snapshot,qty,fulfillment_status)`).eq('customer_id',customerId),
       db.rpc('get_visible_sales_returns'),
-      db.from('sales_returns').select('id,sales_order_id,financial_effect,credit_amount').eq('customer_id',customerId)
+      db.from('sales_returns').select('id,sales_order_id,financial_effect,credit_amount').eq('customer_id',customerId),
+      db.rpc('get_visible_sr_split_invoice_list')
     ]);
 
     if(sr.error)return showToast(sr.error.message,'err');
@@ -64,8 +71,16 @@
     if(rr.error)console.warn('Customer return history unavailable:',rr.error.message);
     if(rf.error)console.warn('Customer return financial detail unavailable:',rf.error.message);
 
+    if(linked.error)console.warn('Customer TK/RK invoice references:',linked.error.message);
+    const splitMap=new Map((Array.isArray(linked.data)?linked.data:[]).map(x=>[String(x.sr_id),x]));
     const detailMap=new Map((dr.data||[]).map(x=>[x.id,x]));
-    const orders=(sr.data||[]).map(o=>({...o,...(detailMap.get(o.id)||{})}));
+    const orders=(sr.data||[]).map(o=>{
+      const split=splitMap.get(String(o.id)),details=detailMap.get(o.id)||{};
+      return {...o,...details,
+        issued_tk_rk:(split?.issued_numbers||[]).map(x=>x.no),
+        linked_fully_issued:!!(split&&Number(split.total_qty)>0&&Number(split.issued_qty)>=Number(split.total_qty)&&!Number(split.pending_qty))
+      };
+    });
     const orderIds=new Set(orders.map(o=>o.id));
 
     const allVisibleReturns=rr.error?[]:(rr.data||[]);
