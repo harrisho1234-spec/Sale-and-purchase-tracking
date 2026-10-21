@@ -139,7 +139,7 @@ window.renderCNStockReceiptApprovalPanel=async function(){
  try{
    const [items,reqs]=await Promise.all([queue(),requests()]);
    const pending=reqs.filter(x=>x.status==='pending'),history=reqs.filter(x=>x.status!=='pending');
-   const ready=items.filter(x=>x.return_status==='confirmed'||Number(x.available_to_request)>0||!!x.request_id);
+   const ready=items.filter(x=>(x.return_status==='confirmed'&&x.warehouse_stage!=='stock_received')||Number(x.available_to_request)>0||!!x.request_id);
    holder.innerHTML='<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 mb-2">'+
      '<div class="flex flex-wrap justify-between items-center gap-3"><div><b class="text-sm text-amber-900">CN / Return Stock Receipts</b>'+
      '<div class="text-xs text-amber-900/80 mt-1">Submitted CNs appear immediately. Awaiting Physical Return means the warehouse has NOT received the item. Only approved good-item receipts increase stock.</div></div>'+
@@ -150,7 +150,7 @@ window.renderCNStockReceiptApprovalPanel=async function(){
        '<div class="grid gap-2">'+(ready.length?ready.map(row=>{
           const available=Number(row.available_to_request||0);
           const canReceive=row.disposition==='return_to_stock'&&available>0;
-          const status=row.request_id?'Approval Pending':row.return_status==='confirmed'?'Awaiting Physical Return':row.disposition!=='return_to_stock'?'No Stock Action':'Ready for Receipt';
+          const status=row.request_id?'Approval Pending':row.return_status==='confirmed'&&row.disposition!=='return_to_stock'?'Awaiting Physical Return · No Stock Action':row.return_status==='confirmed'?'Awaiting Physical Return':row.disposition!=='return_to_stock'?'No Stock Action':'Ready for Receipt';
           return '<div class="flex flex-wrap justify-between items-center gap-3 border rounded-xl bg-white p-3">'+
            '<div><b class="text-xs">'+e(row.cn_no)+' · '+e(row.product_code||'')+'</b>'+
            '<div class="text-xs text-gray-700">'+e(row.item_name||'')+'</div>'+
