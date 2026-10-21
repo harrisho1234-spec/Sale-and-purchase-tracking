@@ -60,19 +60,24 @@
   }
 
   async function loadCustomerSalesMetrics(){
-    let q=db.from('sales_order_summary').select('customer_id,sales_rep_id,order_total,amount_paid,balance_due,status,payment_status,order_type,sales_flow_type,sr_no,sales_invoice_no,invoice_issued_at,order_date');
+    let q=db.from('sales_order_summary').select('id,customer_id,sales_rep_id,order_total,amount_paid,balance_due,status,payment_status,order_type,sales_flow_type,sr_no,invoice_no,sales_invoice_no,invoice_issued_at,order_date');
     if(isSalesUser())q=q.eq('sales_rep_id',state.user.id);
     else if(managerContext())q=q.eq('sales_rep_id',managerRepId());
-    const {data,error}=await q;
+    const [{data,error},linked]=await Promise.all([q,db.rpc('get_visible_sr_split_invoice_list')]);
+    if(linked.error)console.warn('Customer Buyer linked invoice status:',linked.error.message);
+    const issuedSRs=new Set((Array.isArray(linked.data)?linked.data:[])
+      .filter(i=>Number(i.issued_count||0)>0||(i.issued_numbers||[]).length>0)
+      .map(i=>String(i.sr_id)));
     if(error){console.warn('Customer sales metrics unavailable:',error.message);window._customerSalesMetrics=new Map();return;}
     const map=new Map();
     for(const o of data||[]){
       if(String(o.status||'').toLowerCase()==='cancelled')continue;
-      const x=map.get(o.customer_id)||{sales:0,paid:0,ar:0,pending:0,orders:0,lastInvoiceAt:null,lastOrderAt:null,lastActivityAt:null};
+      const x=map.get(o.customer_id)||{sales:0,paid:0,ar:0,pending:0,orders:0,hasIssuedInvoice:false,lastInvoiceAt:null,lastOrderAt:null,lastActivityAt:null};
       x.sales+=Number(o.order_total||0);
       x.paid+=Number(o.amount_paid||0);
       if(isPendingPre(o)&&!isSettled(o))x.pending+=Number(o.balance_due||0);else if(!isSettled(o))x.ar+=Number(o.balance_due||0);
       x.orders+=1;
+      if(!!o.invoice_issued_at||!!String(o.sales_invoice_no||'').trim()||/^(TK|RK)[-0-9]/i.test(String(o.invoice_no||''))||issuedSRs.has(String(o.id)))x.hasIssuedInvoice=true;
       if(o.order_date&&(!x.lastOrderAt||String(o.order_date)>String(x.lastOrderAt)))x.lastOrderAt=o.order_date;
       if(o.invoice_issued_at&&(!x.lastInvoiceAt||String(o.invoice_issued_at)>String(x.lastInvoiceAt)))x.lastInvoiceAt=o.invoice_issued_at;
       const activityDate=o.invoice_issued_at||o.order_date||null;
@@ -80,6 +85,10 @@
       map.set(o.customer_id,x);
     }
     window._customerSalesMetrics=map;
+    window.customerCommercialStatus=function(c){
+      const m=map.get(String(c?.id||c))||{};
+      return m.hasIssuedInvoice?'buyer':Number(m.orders||0)>0?'order_in_progress':'registered_prospect';
+    };
   }
 
   function portfolioTotals(){
