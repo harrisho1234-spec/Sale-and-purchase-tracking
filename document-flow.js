@@ -14,13 +14,22 @@
   function canPrepareSr(){return state.profile?.role==='sales' && (typeof window.hasAppPermission==='function'
     ?window.hasAppPermission('sales_orders.convert_request'):false)}
   function conversionFor(id){return df.conversions.get(String(id))||null}
+  function issuedTkRkNumbers(o){
+    const linked=df.splitInvoices?.get(String(o.id))?.issued_numbers||[];
+    const stored=o.linked_documents||[];
+    const numbers=[o.sales_invoice_no,...linked.map(x=>x.no),...stored.filter(x=>x.status==='issued').map(x=>x.invoice_no)]
+      .map(x=>String(x||'').trim()).filter(Boolean);
+    return [...new Map(numbers.map(x=>[x.toUpperCase(),x])).values()];
+  }
   function docLabel(o){
     if(isPre(o)){
       const sr=o.sr_no||o.order_no||'SR Pending';
-      return sr;
+      const issued=issuedTkRkNumbers(o);
+      return issued.length?sr+' → '+issued.join(' · '):sr;
     }
     return o.sales_invoice_no||o.invoice_no||o.order_no||'Invoice Pending';
   }
+  window.formatSrTkRkDocument=docLabel;
   function flowMeta(o){return df.orderMeta.get(o.id)||o}
   function refsForOrder(o){const ids=new Set((o.items||[]).map(i=>i.id));return df.refs.filter(r=>r.sales_order_id===o.id||ids.has(r.sales_order_item_id))}
   function refsForItem(id){return df.refs.filter(r=>r.sales_order_item_id===id)}
@@ -144,8 +153,10 @@
     const cards=[...document.querySelectorAll('#salesTrackingRoot .lr-order-card')];
     cards.forEach(card=>{
       const title=card.querySelector('.lr-order-main button.font-extrabold');if(!title)return;
-      const original=title.textContent.trim();
-      const o=all.find(x=>[x.invoice_no,x.order_no,x.sr_no,x.sales_invoice_no].filter(Boolean).map(String).includes(original));
+      // Match the stable Sales Order UUID, not the changing display label.
+      // This is essential when one SR shows multiple TK/RK invoice numbers.
+      const id=String(card.id||'').replace(/^sales-order-/,'');
+      const o=all.find(x=>String(x.id)===id);
       if(!o)return;
       title.textContent=docLabel(o);
       const detail=card.querySelector('.lr-detail');if(detail&&!detail.querySelector('.document-flow-panel')){
@@ -576,7 +587,7 @@
   function flowTrackingHtml(){
     const ui=window.trackingRedesign||{};const q=String(ui.trackingSearch||'').toLowerCase();
     const orders=(ui.trackingOrders||[]).map(o=>({...o,...(df.orderMeta.get(o.id)||{})})).filter(o=>!q||[o.order_no,o.sr_no,o.sales_invoice_no,...(df.splitInvoices?.get(String(o.id))?.issued_numbers||[]).map(i=>i.no),o.customer_name,...(o.items||[]).flatMap(i=>[i.product_code_snapshot,i.item_name_snapshot])].filter(Boolean).join(' ').toLowerCase().includes(q));
-    return `<div class="grid gap-3">${orders.map(o=>{const pre=isPre(o),pos=uniquePOs(o);return `<div class="lr-panel p-4"><div class="flex flex-col lg:flex-row lg:items-center gap-3"><div class="flex-1"><div class="text-[10px] uppercase font-bold text-gray-400">${pre?'Pre-Order Flow':'Stock Sale Flow'}</div><div class="font-bold mt-1">${esc(o.customer_name||'Customer')}</div></div><div class="flex items-center gap-2 overflow-x-auto pb-1">${pre?`<span class="lr-badge lr-badge-blue">${esc(pos.map(p=>p.no).join(', ')||'PO Pending')}</span><span>→</span><span class="lr-badge lr-badge-amber">${esc(o.sr_no||o.order_no||'SR')}</span><span>→</span><span class="lr-badge ${o.sales_invoice_no?'lr-badge-green':'lr-badge-gray'}">${esc(o.sales_invoice_no||(df.splitInvoices?.get(String(o.id))?.issued_numbers||[]).map(i=>i.no).join(', ')||'TK/RK Pending')}</span>`:`<span class="lr-badge lr-badge-gray">Stock</span><span>→</span><span class="lr-badge lr-badge-green">${esc(o.sales_invoice_no||o.invoice_no||o.order_no||'TK/RK')}</span>`}</div></div>${pre?`<div class="mt-3">${flowPanel(o)}</div>`:''}</div>`}).join('')||'<div class="lr-panel lr-empty">No document flows found.</div>'}</div>`;
+    return `<div class="grid gap-3">${orders.map(o=>{const pre=isPre(o),pos=uniquePOs(o);return `<div class="lr-panel p-4"><div class="flex flex-col lg:flex-row lg:items-center gap-3"><div class="flex-1"><div class="text-[10px] uppercase font-bold text-gray-400">${pre?'Pre-Order Flow':'Stock Sale Flow'}</div><div class="font-bold mt-1">${esc(o.customer_name||'Customer')}</div><div class="text-xs text-gray-700 mt-1 font-semibold">${esc(docLabel(o))}</div></div><div class="flex items-center gap-2 overflow-x-auto pb-1">${pre?`<span class="lr-badge lr-badge-blue">${esc(pos.map(p=>p.no).join(', ')||'PO Pending')}</span><span>→</span><span class="lr-badge lr-badge-amber">${esc(o.sr_no||o.order_no||'SR')}</span><span>→</span><span class="lr-badge ${o.sales_invoice_no?'lr-badge-green':'lr-badge-gray'}">${esc(o.sales_invoice_no||(df.splitInvoices?.get(String(o.id))?.issued_numbers||[]).map(i=>i.no).join(', ')||'TK/RK Pending')}</span>`:`<span class="lr-badge lr-badge-gray">Stock</span><span>→</span><span class="lr-badge lr-badge-green">${esc(o.sales_invoice_no||o.invoice_no||o.order_no||'TK/RK')}</span>`}</div></div>${pre?`<div class="mt-3">${flowPanel(o)}</div>`:''}</div>`}).join('')||'<div class="lr-panel lr-empty">No document flows found.</div>'}</div>`;
   }
 
   const baseTrackingBody=window.renderOrderTrackingBody;
@@ -634,7 +645,7 @@
     return `<div class="rounded-xl bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800 mb-4"><b>PO → SR → TK/RK</b> is managed under Procurement. Link matching Supplier PO items to each SR, follow production/shipping/arrival, then continue to the final TK/RK invoice.</div>
       <div class="grid gap-4">${orders.length?orders.map(o=>`<div class="pw-card">
         <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-3">
-          <div><div class="text-[10px] uppercase font-bold text-gray-400">Customer / SR</div><div class="font-bold mt-1">${esc(o.customer_name||'Customer')} · ${esc(o.sr_no||o.order_no||'SR')}</div></div>
+          <div><div class="text-[10px] uppercase font-bold text-gray-400">Customer / SR</div><div class="font-bold mt-1">${esc(o.customer_name||'Customer')} · ${esc(docLabel(o))}</div></div>
           <div class="flex items-center gap-2 overflow-x-auto">
             <span class="lr-badge lr-badge-blue">${esc(uniquePOs(o).map(p=>p.no).join(', ')||'PO Pending')}</span>
             <span>→</span>
