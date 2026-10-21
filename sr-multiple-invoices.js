@@ -76,10 +76,12 @@
         ' class="w-full border rounded-lg p-2.5 mt-1 text-sm" oninput="updateSrSplitInvoicePreview()"></div></div>'
        ).join('')+'</div>'+
     '</div>'+
+    '<div id="srFreeGiftModule" class="mb-3"></div>'+ 
     '<div id="srSplitTotal" class="p-3 rounded-lg border bg-gray-50 text-xs font-bold">Selected: 0 pcs</div>'+
     '<div><label class="text-xs font-bold">Note to Approver</label><textarea id="splitNote" maxlength="2000" rows="2" class="mt-1 w-full border rounded-lg p-3"></textarea></div>'+
     '<button id="splitSubmit" class="bg-[#211d18] text-white w-full rounded-xl py-3 font-semibold">Submit TK/RK for Approval</button>'+
    '</form>');
+   if(typeof window.initSrFreeGiftUI==='function')window.initSrFreeGiftUI();
    document.getElementById('splitInvoiceForm').onsubmit=submit;
    window.updateSrSplitInvoicePreview();
  };
@@ -107,20 +109,22 @@
       if(qty>0){if(!t.ready)return showToast(t.code+' is not Ready yet','err');lines.push({item_id:t.id,qty});}
    }
    if(!lines.length)return showToast('Choose at least one product and a positive quantity','err');
+   const freeGifts=typeof window.getSrFreeGiftPayload==='function'?window.getSrFreeGiftPayload():[];
+   if(freeGifts===null)return showToast('Free Gift QTY must be a whole number from 1 to 10000.','err');
    const type=document.getElementById('splitType').value,
      no=String(document.getElementById('splitNo').value||'').trim().toUpperCase();
    if(!no.startsWith(type))return showToast('Invoice number must begin with '+type,'err');
    const btn=document.getElementById('splitSubmit');
    btn.disabled=true;btn.textContent='Submitting...';
    try{
-    const r=await db.rpc('submit_sr_split_invoice',{
+    const r=await db.rpc('submit_sr_split_invoice_with_gifts',{ 
       p_order_id:shownOrder,p_invoice_type:type,p_invoice_no:no,
       p_sales_category:document.getElementById('splitCategory').value,
-      p_lines:lines,p_note:document.getElementById('splitNote').value.trim()||null
+      p_lines:lines,p_gifts:freeGifts,p_note:document.getElementById('splitNote').value.trim()||null
     });
     if(r.error)throw r.error;
     closeModal();
-    showToast('TK/RK invoice '+no+' requested. Selected quantities reserved pending approval. SR preserved.');
+    showToast('TK/RK '+no+' submitted for approval. Free gifts remain proposed until approved, then can be requested on a normal DO.');
     if(window.documentFlowState)window.documentFlowState.loaded=false;
     if(typeof window.refreshApprovalNotifications==='function')await window.refreshApprovalNotifications();
     await go('sales-orders');
@@ -161,7 +165,7 @@
        const r=await db.rpc('review_sr_split_invoice',{p_request_id:id,p_approve:action==='approved',p_note:note});
        if(r.error)throw r.error;
        closeModal();
-       showToast(action==='approved'?'TK/RK issued. Remaining SR items can be invoiced separately.':'Invoice request rejected; its quantities are released.');
+       showToast(action==='approved'?'TK/RK issued. Approved free gifts can now be requested on a normal Delivery Order; stock OUT occurs on DO release.':'Invoice rejected; any proposed free gifts were not added to the SR or stock.');
        if(window.documentFlowState)window.documentFlowState.loaded=false;
        if(typeof window.refreshApprovalNotifications==='function')await window.refreshApprovalNotifications();
        if(state.page==='approvals'&&typeof renderApprovals==='function')await renderApprovals();
