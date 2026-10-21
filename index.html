@@ -103,7 +103,7 @@
     </aside>
     <main id="appMain" class="lg:ml-64 min-h-screen">
       <header class="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-[#ece6dc]">
-        <div class="px-4 md:px-7 h-16 flex items-center justify-between"><div><h1 id="pageTitle" class="text-lg md:text-xl font-bold">Dashboard</h1><p id="pageSubtitle" class="text-[11px] text-gray-400">Sales & Order Management</p></div><div class="flex items-center gap-2"><button onclick="openChangeMyPassword()" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">My Password</button><button onclick="refreshCurrentPage()" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">Refresh</button><button id="mobileMenuBtn" class="lg:hidden px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs">Menu</button></div></div>
+        <div class="px-4 md:px-7 h-16 flex items-center justify-between"><div><h1 id="pageTitle" class="text-lg md:text-xl font-bold">Dashboard</h1><p id="pageSubtitle" class="text-[11px] text-gray-400">Sales & Order Management</p></div><div class="flex items-center gap-2"><button onclick="openContextHelp()" title="Help for this screen" aria-label="Help for the current screen" class="inline-flex items-center justify-center w-9 h-9 rounded-lg border bg-white text-sm font-extrabold text-[#916b16] hover:bg-amber-50">?</button><button onclick="openChangeMyPassword()" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">My Password</button><button onclick="refreshCurrentPage()" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">Refresh</button><button id="mobileMenuBtn" class="lg:hidden px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs">Menu</button></div></div>
         <div id="mobileNav" class="hidden lg:hidden px-4 pb-3 bg-white border-t"></div>
       </header>
       <section id="content" class="p-4 md:p-7"></section>
@@ -210,11 +210,12 @@
   <script src="cn-stock-receipts.js?v=20261017-cn-receipts2"></script>
   <script src="cn-returns-dashboard.js?v=20261020-cn-returns-pending2"></script>
   <script src="accountant-access.js?v=20261001-access3"></script>
-  <script src="granular-access-control.js?v=20261021-sales-activity1"></script>
+  <script src="granular-access-control.js?v=20261021-help-guides1"></script>
   <script src="quotation-imports.js?v=20261008-permissions2"></script>
   <script src="customer-superadmin-delete.js?v=20260928-1930"></script>
   <script src="customer-history-link-picker.js?v=20260928-1905"></script>
   <script src="sales-activity-dashboard.js?v=20261021-manager-sales-only1"></script>
+  <script src="help-guides.js?v=20261021-english-help1"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function () {
