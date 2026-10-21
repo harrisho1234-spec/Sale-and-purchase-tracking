@@ -119,6 +119,12 @@
       <div class="flex flex-col lg:flex-row gap-3 lg:items-center lg:justify-between mb-4">
         <div class="flex flex-col sm:flex-row gap-3 w-full">
           <input id="customerSearch" oninput="filterCustomerRows()" class="border rounded-xl px-4 py-3 w-full max-w-xl bg-white" placeholder="Search customer, phone, address, note...">
+          <select id="customerCommercialFilter" onchange="filterCustomerRows()" class="border rounded-xl px-3 py-3 bg-white text-sm min-w-[190px]" title="Based on recorded orders and issued invoices, not Customer Master registration">
+            <option value="all">All Purchase Stages</option>
+            <option value="registered_prospect">Registered Prospects</option>
+            <option value="order_in_progress">Orders In Progress</option>
+            <option value="buyer">Buyers (Invoiced)</option>
+          </select>
           <select id="customerStatusFilter" onchange="filterCustomerRows()" class="border rounded-xl px-3 py-3 bg-white text-sm min-w-[190px]">
             <option value="all">All Customers</option>
             <option value="active_ar">Active AR</option>
