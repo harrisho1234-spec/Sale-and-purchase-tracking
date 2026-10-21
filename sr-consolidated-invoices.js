@@ -22,7 +22,7 @@
      if(!source)continue;
      for(const t of source.lines||[]){
        const input=current.slot?.querySelector('[data-consolidated-line="'+t.id+'"]');
-       const q=Number(input?.value||0);
+       const q=Number(input?.value??current.quantities.get(t.id)??0);
        if(q>0)lines.push({...t,sr_id:source.id,sr_no:candidateName(source),selected_qty:q});
      }
    }
@@ -62,6 +62,7 @@
  }
  function drawSelected(){
    if(!current||!current.slot?.isConnected)return;
+   current.slot.querySelectorAll('[data-consolidated-line]').forEach(x=>current.quantities.set(x.dataset.consolidatedLine,Number(x.value||0)));
    const content=current.slot.querySelector('#combinedSRSelected');
    if(!content)return;
    content.innerHTML=current.selected.size?[...current.selected.keys()].map(id=>{
@@ -79,7 +80,7 @@
               '<div class="text-[10px] text-gray-600 truncate">'+esc(t.name)+'</div>'+
               '<div class="text-[10px] text-gray-500">Remaining '+max+' / '+Number(t.qty||0)+' · '+(t.ready?'Ready':'Not Ready')+'</div></div>'+
             '<label class="shrink-0 text-[10px] font-bold">Invoice QTY'+
-              '<input type="number" data-consolidated-line="'+esc(t.id)+'" min="0" max="'+max+'" step="1" value="0" '+
+              '<input type="number" data-consolidated-line="'+esc(t.id)+'" min="0" max="'+max+'" step="1" value="'+(current.quantities.get(t.id)||0)+'" '+
               (max?'':'disabled')+' class="block mt-1 w-24 border rounded-lg p-2.5 text-sm"></label>'+
             '</div>';
         }).join('')+'</div></div>';
@@ -87,7 +88,7 @@
    content.querySelectorAll('[data-combined-remove]').forEach(button=>{
       button.addEventListener('click',()=>{current.selected.delete(button.dataset.combinedRemove);drawSelected()});
    });
-   content.querySelectorAll('[data-consolidated-line]').forEach(input=>input.addEventListener('input',renderTotal));
+   content.querySelectorAll('[data-consolidated-line]').forEach(input=>input.addEventListener('input',()=>{current.quantities.set(input.dataset.consolidatedLine,Number(input.value||0));renderTotal()}));
    const opts=current.slot.querySelector('#combinedSRSelect');
    if(opts){
       opts.innerHTML='<option value="">Select another SR for this customer</option>'+
@@ -183,7 +184,7 @@
      current={
         orderId,primary:primary.data||{items:[]},
         primaryNo:'Starting SR',candidates:Array.isArray(info.candidates)?info.candidates:[],
-        selected:new Map(),slot:root
+        selected:new Map(),quantities:new Map(),slot:root
      };
      current.primary.order_discount=Number(current.primary.order_discount||0);
      root.querySelector('#combinedSRCustomer').innerHTML='Customer: <b>'+esc(info.customer_name||'Customer')+
