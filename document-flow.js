@@ -17,7 +17,7 @@
   function docLabel(o){
     if(isPre(o)){
       const sr=o.sr_no||o.order_no||'SR Pending';
-      return o.sales_invoice_no?`${sr} → ${o.sales_invoice_no}`:sr;
+      return sr;
     }
     return o.sales_invoice_no||o.invoice_no||o.order_no||'Invoice Pending';
   }
@@ -123,10 +123,11 @@
     return `<div class="mb-4 rounded-2xl border border-[#eee7d9] bg-[#fffdf8] p-4">
       <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-3"><div><div class="text-[10px] uppercase tracking-wider font-extrabold text-[#a77d1a]">Document Flow</div><div class="font-bold mt-1">${esc(docLabel(o))}</div></div><div class="flex flex-wrap gap-2">${controls.join('')}</div></div>
       <div class="flex flex-wrap gap-2 mb-3">${pre?poBadges:''}</div>
-      ${pre&&srSplit?`<div class="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 mb-3 text-xs text-blue-900">
-        <b>Linked TK/RK invoices:</b> ${esc(splitSummary||'')}
-        ${(srSplit.issued_numbers||[]).length?`<div class="mt-1 flex flex-wrap gap-1">${srSplit.issued_numbers.map(i=>`<span class="rounded-md border bg-white px-2 py-1">${esc(i.no)} · ${Number(i.total||0).toFixed(2)}</span>`).join('')}</div>`:''}
-        <button type="button" onclick="openSrInvoiceOverview('${o.id}')" class="mt-2 font-bold underline">View invoices and remaining quantities →</button>
+      ${pre&&(srSplit||o.sales_invoice_no)?`<div class="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 mb-3 text-xs text-blue-900">
+        <b>Linked TK/RK invoices:</b> ${esc(splitSummary||'1 issued · original SR retained')}
+        ${o.sales_invoice_no?`<div class="mt-1 flex flex-wrap gap-1"><span class="rounded-md border bg-white px-2 py-1 font-semibold">${esc(o.sales_invoice_no)} · Issued</span></div>`:''}
+        ${(srSplit?.issued_numbers||[]).length?`<div class="mt-1 flex flex-wrap gap-1">${srSplit.issued_numbers.map(i=>`<span class="rounded-md border bg-white px-2 py-1 font-semibold">${esc(i.no)} · Issued</span>`).join('')}</div>`:''}
+        ${srSplit?`<button type="button" onclick="openSrInvoiceOverview('${o.id}')" class="mt-2 font-bold underline">View invoices and remaining quantities →</button>`:`<p class="text-[10px] mt-2">Historical single-invoice conversion · Original SR and TK/RK are linked above.</p>`}
       </div>`:''}
       ${pre&&conversion&&!srSplit?`<div class="rounded-xl border p-3 mb-3 text-xs ${conversion.status==='pending'?'border-amber-200 bg-amber-50 text-amber-800':conversion.status==='approved'?'border-green-200 bg-green-50 text-green-800':'border-red-200 bg-red-50 text-red-700'}">
         <b>TK/RK Conversion: ${esc(titleCase(conversion.status))}</b> · ${esc(conversion.invoice_no||'')}
