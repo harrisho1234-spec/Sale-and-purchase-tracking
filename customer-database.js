@@ -201,8 +201,8 @@
       :STAGES.filter(s=>stageRank(s)>stageRank(r.stage));
 
     const direct=choices.length
-      ?`<select data-stop-row onchange="openLeadStageChange('${r.lead_id}',this.value);this.value='${esc(r.stage)}'" class="w-full min-w-[145px] border rounded-lg px-2 py-1.5 bg-white text-[11px] font-semibold"><option value="${esc(r.stage)}" selected>${esc(r.stage)}</option>${choices.map(s=>`<option value="${s}">${s}</option>`).join('')}</select>`
-      :`<span class="inline-flex px-2 py-1 rounded-lg border text-[10px] font-semibold ${stageTone(r.stage)}">${esc(r.stage)}</span>`;
+      ?`<select data-stop-row onchange="openLeadStageChange('${r.lead_id}',this.value);this.value='${esc(r.stage)}'" class="w-full min-w-[145px] border rounded-lg px-2 py-1.5 bg-white text-[11px] font-semibold"><option value="${esc(r.stage)}" selected>${esc(r.stage==='Buy'?'Buy · Sales Reported':r.stage)}</option>${choices.map(s=>`<option value="${s}">${s}</option>`).join('')}</select>`
+      :`<span class="inline-flex px-2 py-1 rounded-lg border text-[10px] font-semibold ${stageTone(r.stage)}">${esc(r.stage==='Buy'?'Buy · Sales Reported':r.stage)}</span>`;
 
     const correction=!managerDirect&&stageRank(r.stage)>1
       ?`<button type="button" data-stop-row onclick="openLeadStageCorrection('${r.lead_id}')" class="text-[9px] font-semibold text-amber-700 hover:underline whitespace-nowrap">Request correction</button>`
@@ -218,7 +218,7 @@
   function rowHtml(r){
     const followClass=r.follow_up_overdue?'text-red-600 font-bold':r.follow_up_today?'text-amber-600 font-bold':'text-gray-600';
     const linkBadge=r.linked_customer_id
-      ?'<span class="px-2 py-1 rounded-md border bg-green-50 text-green-700 border-green-200 text-[9px] font-bold">CUSTOMER</span>'
+      ?'<span class="px-2 py-1 rounded-md border bg-green-50 text-green-700 border-green-200 text-[9px] font-bold" title="Registered in Customer Master; verified purchase status is tracked separately">REGISTERED</span>'
       :r.pending_customer_request_id
         ?'<span class="px-2 py-1 rounded-md border bg-amber-50 text-amber-700 border-amber-200 text-[9px] font-bold">APPROVAL PENDING</span>'
         :'';
@@ -806,7 +806,7 @@
           <b>${esc(r.customer_name)}</b>
           <div class="text-xs text-gray-500 mt-1">${esc(r.phone||'Private / no phone')} · Current CRM stage: ${esc(r.stage||'-')}</div>
         </div>
-        <div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>Choose carefully.</b> Converting/linking connects this CRM record to Customer Master and moves the CRM stage to <b>Buy</b>.</div>
+        <div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>Choose carefully.</b> Converting/linking registers this CRM record in Customer Master and records <b>Buy (Sales Reported)</b>. Verified Buyer status appears in Customer Master only when a TK/RK invoice is issued. Registration alone never counts as a purchase.</div>
         <button type="button" onclick="findExistingCustomerForLead('${id}')" class="w-full border rounded-xl py-3 font-semibold bg-white">Search Existing Customer</button>
         <button type="button" onclick="convertLeadToCustomerNow('${id}')" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Create / Convert as Customer</button>
         <button type="button" onclick="openCustomerLead('${id}')" class="w-full border rounded-xl py-3 font-semibold">Cancel</button>
