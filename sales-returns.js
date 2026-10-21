@@ -26,14 +26,15 @@
     return v.qty>0?'<span class="inline-flex items-center rounded-lg border border-amber-200 bg-amber-50 text-amber-800 px-2 py-1 text-[10px] font-bold">Pending Stock Receipt · '+v.qty+' pcs</span>':'';
   }
   function returnItemReceiptBadge(item,cnStatus){
-    if(item.disposition!=='return_to_stock'||cnStatus==='cancelled')return '';
+    if(!['return_to_stock','exchange'].includes(item.disposition)||cnStatus==='cancelled')return '';
     if(window._cnReceiptStatusAvailable===false)
       return '<span class="inline-flex rounded-md border px-2 py-1 text-[10px] text-gray-600">Stock receipt status unavailable</span>';
     const row=pendingReceiptRows().find(x=>String(x.return_item_id)===String(item.return_item_id));
+    const isExchange=item.disposition==='exchange';
     const pending=Number(row?.pending_qty||0);
     return pending>0
-      ?'<span class="inline-flex rounded-md border border-amber-200 bg-amber-50 text-amber-800 px-2 py-1 text-[10px] font-bold">Pending Stock Receipt: '+pending+' pcs</span>'
-      :'<span class="inline-flex rounded-md border border-green-200 bg-green-50 text-green-800 px-2 py-1 text-[10px] font-bold">No Pending Receipt · Check Stock</span>';
+      ?'<span class="inline-flex rounded-md border border-amber-200 bg-amber-50 text-amber-800 px-2 py-1 text-[10px] font-bold">'+(isExchange?'Pending Exchange Inspection: ':'Pending Stock Receipt: ')+pending+' pcs</span>'
+      :'<span class="inline-flex rounded-md border border-green-200 bg-green-50 text-green-800 px-2 py-1 text-[10px] font-bold">'+(isExchange?'Exchange Inspection Resolved':'No Pending Receipt · Check Stock')+'</span>';
   }
   function returnHandlingHint(value){
     return value==='return_to_stock'
