@@ -33,7 +33,7 @@
     const pending=Number(row?.pending_qty||0);
     return pending>0
       ?'<span class="inline-flex rounded-md border border-amber-200 bg-amber-50 text-amber-800 px-2 py-1 text-[10px] font-bold">Pending Stock Receipt: '+pending+' pcs</span>'
-      :'<span class="inline-flex rounded-md border border-green-200 bg-green-50 text-green-800 px-2 py-1 text-[10px] font-bold">Stock Receipt Recorded</span>';
+      :'<span class="inline-flex rounded-md border border-green-200 bg-green-50 text-green-800 px-2 py-1 text-[10px] font-bold">No Pending Receipt · Check Stock</span>';
   }
   function returnHandlingHint(value){
     return value==='return_to_stock'
