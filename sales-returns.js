@@ -322,7 +322,7 @@
     const btn=e.target.querySelector('button');if(btn){btn.disabled=true;btn.textContent='Creating CN...'}
     const {data,error}=await db.rpc('create_sales_return_multi',{p_sales_order_ids:usedOrderIds,p_cn_no:document.getElementById('returnCnNo').value.trim()||null,p_return_date:document.getElementById('returnDate').value,p_action:document.getElementById('returnAction').value,p_reason:document.getElementById('returnReason').value.trim()||null,p_notes:document.getElementById('returnNotes').value.trim()||null,p_items:items});
     if(error){if(btn){btn.disabled=false;btn.textContent='Create Credit Note'}return showToast(error.message,'err')}
-    const out=Array.isArray(data)?data[0]:data;closeModal();showToast(`${out?.cn_no||'Credit Note'} created from ${usedOrderIds.length} invoice${usedOrderIds.length===1?'':'s'}`);await renderReturnsPage();
+    const out=Array.isArray(data)?data[0]:data;closeModal();showToast(`${out?.cn_no||'Credit Note'} submitted for Manager/Admin approval from ${usedOrderIds.length} invoice${usedOrderIds.length===1?'':'s'}`);await renderReturnsPage();
   }
 
   window.viewSalesReturn=async function(id){
