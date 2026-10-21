@@ -319,7 +319,18 @@
     let oq=db.from('sales_order_summary').select('*').neq('status','cancelled').order('order_date',{ascending:false});
     let iq=db.from('sales_order_items').select('id,qty,fulfillment_status,sales_order_id,sales_orders!inner(sales_rep_id,order_date,status)').order('created_at',{ascending:false});
     if(mgrCtx()){oq=oq.eq('sales_rep_id',managerRepId());iq=iq.eq('sales_orders.sales_rep_id',managerRepId())}
-    const [o,i]=await Promise.all([oq,iq]);if(o.error)throw o.error;if(i.error)throw i.error;reportState.orders=o.data||[];reportState.items=i.data||[];
+    const [o,i,linked]=await Promise.all([oq,iq,db.rpc('get_visible_sr_split_invoice_list')]);
+    if(o.error)throw o.error;if(i.error)throw i.error;
+    if(linked.error)console.warn('Report TK/RK references:',linked.error.message);
+    const lookup=new Map((Array.isArray(linked.data)?linked.data:[]).map(x=>[String(x.sr_id),x]));
+    reportState.orders=(o.data||[]).map(order=>{
+      const sr=lookup.get(String(order.id));
+      const legacy=String(order.sales_invoice_no||'').trim();
+      const invoices=[...(legacy?[legacy]:[]),...(sr?.issued_numbers||[]).map(x=>String(x.no||''))]
+        .filter((v,i,a)=>v&&a.indexOf(v)===i);
+      return {...order,linked_invoice_nos:invoices};
+    });
+    reportState.items=i.data||[];
   }
   function periodDates(mode){const now=new Date(),iso=d=>d.toISOString().slice(0,10);if(mode==='month')return [iso(new Date(now.getFullYear(),now.getMonth(),1)),iso(now)];if(mode==='year')return [`${now.getFullYear()}-01-01`,iso(now)];return ['','']}
   window.reportPeriodChanged=function(){const m=document.getElementById('reportPeriod').value,[f,t]=periodDates(m);if(m!=='custom'){document.getElementById('reportFrom').value=f;document.getElementById('reportTo').value=t}runSalesReport()};
@@ -342,7 +353,7 @@
         <div class="card rounded-2xl overflow-hidden"><div class="p-5 border-b"><h3 class="font-bold">Sales by Rep</h3><p class="text-xs text-gray-400">Sales, collection and outstanding AR</p></div><div class="divide-y">${repRows.length?repRows.map(r=>`<div class="p-4"><div class="flex justify-between gap-3"><div><b>${esc(r.name)}</b><div class="text-[10px] text-gray-400">${r.orders} orders · ${pct(r.paid,r.sales)}% collected</div></div><div class="text-right"><b>${money(r.sales)}</b><div class="text-[10px] text-red-500">AR ${money(r.ar)}</div></div></div><div class="mt-2 h-2 bg-gray-100 rounded-full overflow-hidden"><div class="h-full bg-[#b38b2e]" style="width:${Math.max(2,r.sales/maxRep*100)}%"></div></div></div>`).join(''):empty('No sales in this period.')}</div></div>
         <div class="card rounded-2xl p-5"><h3 class="font-bold">Order / Fulfillment Mix</h3><div class="grid grid-cols-4 gap-2 mt-4">${Object.entries(docs).map(([k,v])=>`<div class="rounded-xl border p-3 text-center"><div class="text-[10px] text-gray-400 font-bold">${k}</div><div class="text-xl font-extrabold mt-1">${v}</div></div>`).join('')}</div><div class="mt-5 space-y-2">${[...st.entries()].sort((a,b)=>b[1]-a[1]).map(([s,v])=>`<div class="flex justify-between text-sm border-b pb-2"><span>${esc(titleCase(s))}</span><b>${v}</b></div>`).join('')||'<div class="text-xs text-gray-400">No item activity.</div>'}</div></div>
       </div>
-      <div class="card rounded-2xl overflow-hidden"><div class="p-5 border-b flex justify-between"><div><h3 class="font-bold">Outstanding AR</h3><p class="text-xs text-gray-400">Largest balances in the selected period</p></div><b class="text-red-500">${money(ar)}</b></div><div class="divide-y">${outstanding.length?outstanding.map(o=>`<div class="p-4 grid md:grid-cols-[150px_1fr_150px_150px] gap-2 items-center"><b>${esc(docNo(o))}</b><div>${esc(o.customer_name||'')}<div class="text-[10px] text-gray-400">${esc(o.sales_rep_name_snapshot||'Unassigned')} · ${esc(o.order_date||'')}</div></div><div class="text-sm">Total ${money(o.order_total,o.currency||'USD')}</div><div class="font-bold text-red-500">${money(o.balance_due,o.currency||'USD')}</div></div>`).join(''):empty('No outstanding AR in this selection.')}</div></div>`;
+      <div class="card rounded-2xl overflow-hidden"><div class="p-5 border-b flex justify-between"><div><h3 class="font-bold">Outstanding AR</h3><p class="text-xs text-gray-400">Largest balances in the selected period</p></div><b class="text-red-500">${money(ar)}</b></div><div class="divide-y">${outstanding.length?outstanding.map(o=>`<div class="p-4 grid md:grid-cols-[150px_1fr_150px_150px] gap-2 items-center"><b>${esc(o.sr_no||o.order_no||docNo(o))}</b><div>${esc(o.customer_name||'')}<div class="text-[10px] text-gray-400">${esc(o.sales_rep_name_snapshot||'Unassigned')} · ${esc(o.order_date||'')}</div>${(o.linked_invoice_nos||[]).length?`<div class="mt-1 text-[10px] text-blue-700 font-semibold">Linked TK/RK: ${(o.linked_invoice_nos||[]).map(esc).join(' · ')}</div>`:''}</div><div class="text-sm">Total ${money(o.order_total,o.currency||'USD')}</div><div class="font-bold text-red-500">${money(o.balance_due,o.currency||'USD')}</div></div>`).join(''):empty('No outstanding AR in this selection.')}</div></div>`;
   }
 
   window.renderReports=async function(){
