@@ -223,16 +223,20 @@
       ordersQ = ordersQ.eq('sales_rep_id',repContextId());
     }
 
-    const [sr,or,rr] = await Promise.all([
+    const [sr,or,rr,linked] = await Promise.all([
       summaryQ,
       ordersQ,
-      db.rpc('get_sales_tracking_return_summary')
+      db.rpc('get_sales_tracking_return_summary'),
+      db.rpc('get_visible_sr_split_invoice_list')
     ]);
     if(sr.error) throw sr.error;
     if(or.error) throw or.error;
     if(rr.error) throw rr.error;
 
     const returnMap=new Map((rr.data||[]).map(x=>[x.sales_order_item_id,x]));
+    // Original SR remains the single accounting record. Invoice aliases are display/search metadata.
+    if(linked.error)console.warn('TK/RK reference lookup:',linked.error.message);
+    const splitBySr=new Map((Array.isArray(linked.data)?linked.data:[]).map(x=>[String(x.sr_id),x]));
     const detailMap = new Map((or.data||[]).map(o=>[o.id,o]));
     const merged = (sr.data||[]).map(s => {
       const d = detailMap.get(s.id) || {};
@@ -240,9 +244,23 @@
         ...i,
         return_info:returnMap.get(i.id)||null
       }));
+      const split=splitBySr.get(String(s.id))||null;
+      const legacy=String(s.sales_invoice_no||'').trim();
+      const docs=[
+        ...(legacy?[{invoice_no:legacy,type:legacy.slice(0,2).toUpperCase(),status:'issued',kind:'legacy'}]:[]),
+        ...(split?.issued_numbers||[]).map(x=>({
+          invoice_no:String(x.no||''),type:String(x.no||'').slice(0,2).toUpperCase(),
+          status:'issued',kind:'linked',invoice_total:Number(x.total||0)
+        })).filter(x=>x.invoice_no && x.invoice_no.toUpperCase()!==legacy.toUpperCase())
+      ];
       return {
         ...s,
         ...d,
+        linked_documents:docs,
+        linked_issued_count:docs.length,
+        linked_pending_count:Number(split?.pending_count||0),
+        linked_fully_issued:!!legacy||!!(split&&Number(split.total_qty)>0&&
+          Number(split.issued_qty)>=Number(split.total_qty)&&!Number(split.pending_qty)),
         customer_name: s.customer_name || d.customers?.name || '',
         customer_code: d.customers?.customer_code || '',
         customer_phone: d.customers?.phone || '',
@@ -300,7 +318,7 @@
   }
 
   function salesBusinessCode(o){
-    const doc=String(o.sales_invoice_no||o.invoice_no||o.order_no||'').toUpperCase();
+    const doc=String(o.sales_invoice_no||o.linked_documents?.[0]?.invoice_no||o.invoice_no||o.order_no||'').toUpperCase();
     const type=String(o.sales_invoice_type||'').toUpperCase();
     if(type==='RK'||doc.startsWith('RK'))return 'RK';
     if(type==='TK'||doc.startsWith('TK'))return 'TK';
@@ -311,7 +329,8 @@
     const filter=ui.salesBusiness||'all';
     if(filter==='all')return true;
     if(filter==='PJ')return String(o.sales_category||'standard')==='project';
-    if(filter==='RK'||filter==='TK')return salesBusinessCode(o)===filter;
+    if(filter==='RK'||filter==='TK')return salesBusinessCode(o)===filter||
+      (o.linked_documents||[]).some(x=>x.type===filter&&x.status==='issued');
     if(filter==='OTHER')return salesBusinessCode(o)==='OTHER';
     return true;
   }
@@ -327,7 +346,9 @@
       if(!orderMatchesStatus(o)) return false;
       if(q){
         const hay = [
-          o.order_no,o.invoice_no,o.customer_name,o.customer_code,o.customer_phone,o.status,o.order_type,
+          o.order_no,o.invoice_no,o.sr_no,o.sales_invoice_no,
+          ...(o.linked_documents||[]).map(x=>x.invoice_no),
+          o.customer_name,o.customer_code,o.customer_phone,o.status,o.order_type,
           salesBusinessCode(o),o.sales_category==='project'?'Project PJ':'Standard',
           ...(o.items||[]).flatMap(i=>[
             i.product_code_snapshot,i.item_name_snapshot,i.product_catalog?.brand,i.product_catalog?.class
@@ -382,6 +403,7 @@
               <div class="flex flex-wrap items-center gap-2">
                 <button onclick="toggleSalesInvoice('${o.id}')" class="font-extrabold text-[14px] hover:text-[#b3871e]">${esc(o.invoice_no||o.order_no||'Order')}</button>
                 ${salesStatusBadge(o)}
+                ${(o.linked_documents||[]).map(doc=>`<span class="lr-badge lr-badge-blue" title="${doc.kind==='legacy'?'Single-invoice conversion':'Linked TK/RK invoice'}">${esc(doc.invoice_no)} · Issued</span>`).join('')}
                 ${o.sales_category==='project'?'<span class="lr-badge lr-badge-blue">PJ · Project</span>':''}
                 ${items.some(i=>Number(returnInfo(i)?.qty_returned||0)>0)?`<span class="lr-badge lr-badge-amber">↩ Return Recorded</span>`:''}
                 ${repName(o)?`<span class="lr-badge lr-badge-gray">▣ ${esc(repName(o))}</span>`:''}
@@ -1028,9 +1050,9 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
   window.exportSalesTrackingCsv = function() {
     const rows=filteredSalesOrders();
     const csv=[
-      ['Invoice/Order','Business','Category','Customer','Sales Rep','Date','Type','Status','Total','Paid','Balance'],
+      ['Original SR/Order','TK/RK Invoice(s)','Business','Category','Customer','Sales Rep','Date','Type','Status','Total','Paid','Balance'],
       ...rows.map(o=>[
-        o.invoice_no||o.order_no||'',salesBusinessCode(o),o.sales_category==='project'?'Project (PJ)':'Standard',o.customer_name||'',repName(o),o.order_date||'',o.order_type||'',o.status||'',
+        o.sr_no||o.order_no||o.invoice_no||'',(o.linked_documents||[]).map(x=>x.invoice_no).join(' | '),salesBusinessCode(o),o.sales_category==='project'?'Project (PJ)':'Standard',o.customer_name||'',repName(o),o.order_date||'',o.order_type||'',o.status||'',
         Number(o.order_total||0),Number(o.amount_paid||0),Number(o.balance_due||0)
       ])
     ].map(r=>r.map(v=>`"${String(v??'').replaceAll('"','""')}"`).join(',')).join('\n');
@@ -1125,7 +1147,8 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
     const q=ui.trackingSearch.toLowerCase().trim();
     if(!q) return true;
     const hay=[
-      order.order_no,order.invoice_no,order.customer_name,repName(order),order.order_type,order.status,
+      order.order_no,order.invoice_no,order.sr_no,order.sales_invoice_no,
+      ...(order.linked_documents||[]).map(x=>x.invoice_no),order.customer_name,repName(order),order.order_type,order.status,
       ...(order.items||[]).flatMap(i=>[
         i.product_code_snapshot,i.item_name_snapshot,i.product_catalog?.brand,i.product_catalog?.class
       ])
