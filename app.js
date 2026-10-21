@@ -53,13 +53,20 @@ function salesDashCard(label,value,sub,badge,tone='neutral'){
 }
 
 async function renderDashboard(){
-  const [o,i,p]=await Promise.all([
+  const [o,i,p,linked]=await Promise.all([
     db.from('sales_order_summary').select('*').order('created_at',{ascending:false}),
     db.from('sales_order_items').select('id,sales_order_id,qty,line_total,fulfillment_status,line_kind,source_type'),
-    isAdmin()?db.from('supplier_po_summary').select('*').order('created_at',{ascending:false}):Promise.resolve({data:[],error:null})
+    isAdmin()?db.from('supplier_po_summary').select('*').order('created_at',{ascending:false}):Promise.resolve({data:[],error:null}),
+    db.rpc('get_visible_sr_split_invoice_list')
   ]);
   if(o.error)throw o.error;if(i.error)throw i.error;if(p.error)throw p.error;
-  state.orderSummary=o.data||[];state.supplierSummary=p.data||[];
+  if(linked.error)console.warn('Dashboard TK/RK issue status:',linked.error.message);
+  const splitMap=new Map((Array.isArray(linked.data)?linked.data:[]).map(row=>[String(row.sr_id),row]));
+  state.orderSummary=(o.data||[]).map(order=>{
+    const sr=splitMap.get(String(order.id));
+    return {...order,linked_fully_issued:!!(sr&&Number(sr.total_qty)>0&&Number(sr.issued_qty)>=Number(sr.total_qty)&&!Number(sr.pending_qty))};
+  });
+  state.supplierSummary=p.data||[];
   const items=i.data||[];
 
   // Keep Dashboard KPIs consistent with Sales Tracking's "All Active" logic.
@@ -71,7 +78,7 @@ async function renderDashboard(){
     const pre=['pre_order','mixed'].includes(norm(x.order_type))
       || norm(x.sales_flow_type)==='pre_order'
       || String(x.sr_no||'').toUpperCase().startsWith('SR');
-    return pre && !x.sales_invoice_no && !x.invoice_issued_at;
+    return pre && !x.sales_invoice_no && !x.invoice_issued_at && !x.linked_fully_issued;
   };
 
   const openOrders=state.orderSummary.filter(x=>
