@@ -575,8 +575,8 @@
 
   function flowTrackingHtml(){
     const ui=window.trackingRedesign||{};const q=String(ui.trackingSearch||'').toLowerCase();
-    const orders=(ui.trackingOrders||[]).map(o=>({...o,...(df.orderMeta.get(o.id)||{})})).filter(o=>!q||[o.order_no,o.sr_no,o.sales_invoice_no,o.customer_name,...(o.items||[]).flatMap(i=>[i.product_code_snapshot,i.item_name_snapshot])].filter(Boolean).join(' ').toLowerCase().includes(q));
-    return `<div class="grid gap-3">${orders.map(o=>{const pre=isPre(o),pos=uniquePOs(o);return `<div class="lr-panel p-4"><div class="flex flex-col lg:flex-row lg:items-center gap-3"><div class="flex-1"><div class="text-[10px] uppercase font-bold text-gray-400">${pre?'Pre-Order Flow':'Stock Sale Flow'}</div><div class="font-bold mt-1">${esc(o.customer_name||'Customer')}</div></div><div class="flex items-center gap-2 overflow-x-auto pb-1">${pre?`<span class="lr-badge lr-badge-blue">${esc(pos.map(p=>p.no).join(', ')||'PO Pending')}</span><span>→</span><span class="lr-badge lr-badge-amber">${esc(o.sr_no||o.order_no||'SR')}</span><span>→</span><span class="lr-badge ${o.sales_invoice_no?'lr-badge-green':'lr-badge-gray'}">${esc(o.sales_invoice_no||'TK/RK Pending')}</span>`:`<span class="lr-badge lr-badge-gray">Stock</span><span>→</span><span class="lr-badge lr-badge-green">${esc(o.sales_invoice_no||o.invoice_no||o.order_no||'TK/RK')}</span>`}</div></div>${pre?`<div class="mt-3">${flowPanel(o)}</div>`:''}</div>`}).join('')||'<div class="lr-panel lr-empty">No document flows found.</div>'}</div>`;
+    const orders=(ui.trackingOrders||[]).map(o=>({...o,...(df.orderMeta.get(o.id)||{})})).filter(o=>!q||[o.order_no,o.sr_no,o.sales_invoice_no,...(df.splitInvoices?.get(String(o.id))?.issued_numbers||[]).map(i=>i.no),o.customer_name,...(o.items||[]).flatMap(i=>[i.product_code_snapshot,i.item_name_snapshot])].filter(Boolean).join(' ').toLowerCase().includes(q));
+    return `<div class="grid gap-3">${orders.map(o=>{const pre=isPre(o),pos=uniquePOs(o);return `<div class="lr-panel p-4"><div class="flex flex-col lg:flex-row lg:items-center gap-3"><div class="flex-1"><div class="text-[10px] uppercase font-bold text-gray-400">${pre?'Pre-Order Flow':'Stock Sale Flow'}</div><div class="font-bold mt-1">${esc(o.customer_name||'Customer')}</div></div><div class="flex items-center gap-2 overflow-x-auto pb-1">${pre?`<span class="lr-badge lr-badge-blue">${esc(pos.map(p=>p.no).join(', ')||'PO Pending')}</span><span>→</span><span class="lr-badge lr-badge-amber">${esc(o.sr_no||o.order_no||'SR')}</span><span>→</span><span class="lr-badge ${o.sales_invoice_no?'lr-badge-green':'lr-badge-gray'}">${esc(o.sales_invoice_no||(df.splitInvoices?.get(String(o.id))?.issued_numbers||[]).map(i=>i.no).join(', ')||'TK/RK Pending')}</span>`:`<span class="lr-badge lr-badge-gray">Stock</span><span>→</span><span class="lr-badge lr-badge-green">${esc(o.sales_invoice_no||o.invoice_no||o.order_no||'TK/RK')}</span>`}</div></div>${pre?`<div class="mt-3">${flowPanel(o)}</div>`:''}</div>`}).join('')||'<div class="lr-panel lr-empty">No document flows found.</div>'}</div>`;
   }
 
   const baseTrackingBody=window.renderOrderTrackingBody;
@@ -596,7 +596,13 @@
   const baseSetTrackingTab=window.setTrackingTab;
   if(baseSetTrackingTab){window.setTrackingTab=function(tab){if(tab==='flow'){if(salesTimelineOnly()||stockControllerTrackingRole())return;baseSetTrackingTab('flow');window.trackingRedesign.trackingTab='flow';renderOrderTrackingBody()}else baseSetTrackingTab(tab)}}
   const baseTracking=window.renderTracking;
-  if(baseTracking){window.renderTracking=async function(){await baseTracking();await refreshFlowData(true);renderOrderTrackingBody()}}
+  if(baseTracking){window.renderTracking=async function(){await baseTracking();await refreshFlowData(true);
+    const tui=window.trackingRedesign;
+    if(tui&&Array.isArray(tui.trackingOrders))tui.trackingOrders=tui.trackingOrders.map(o=>{
+      const meta=df.orderMeta.get(o.id)||{},split=df.splitInvoices?.get(String(o.id));
+      return {...o,...meta,linked_documents:(split?.issued_numbers||[]).map(x=>({invoice_no:x.no,status:'issued'}))};
+    });
+    renderOrderTrackingBody()}}
 
   window.renderProcurementDocumentFlow=async function(search=''){
     if(!isAdminRole())throw new Error('Admin access required');
@@ -619,7 +625,8 @@
       .map(o=>({...o,...(df.orderMeta.get(o.id)||{}),items:itemMap.get(o.id)||[]}))
       .filter(isPre)
       .filter(o=>!q||[
-        o.order_no,o.sr_no,o.sales_invoice_no,o.invoice_no,o.customer_name,
+        o.order_no,o.sr_no,o.sales_invoice_no,o.invoice_no,
+        ...(df.splitInvoices?.get(String(o.id))?.issued_numbers||[]).map(x=>x.no),o.customer_name,
         ...((o.items||[]).flatMap(i=>[i.product_code_snapshot,i.item_name_snapshot])),
         ...refsForOrder(o).flatMap(r=>[r.po_number,r.po_status])
       ].filter(Boolean).join(' ').toLowerCase().includes(q));
@@ -633,7 +640,7 @@
             <span>→</span>
             <span class="lr-badge lr-badge-amber">${esc(o.sr_no||o.order_no||'SR')}</span>
             <span>→</span>
-            <span class="lr-badge ${o.sales_invoice_no?'lr-badge-green':'lr-badge-gray'}">${esc(o.sales_invoice_no||'TK/RK Pending')}</span>
+            <span class="lr-badge ${o.sales_invoice_no?'lr-badge-green':'lr-badge-gray'}">${esc(o.sales_invoice_no||(df.splitInvoices?.get(String(o.id))?.issued_numbers||[]).map(i=>i.no).join(', ')||'TK/RK Pending')}</span>
           </div>
         </div>
         ${flowPanel(o)}
