@@ -38,6 +38,7 @@ window.openCNStockReceiptForItem=async function(itemId){
    const [items,availableLocations]=await Promise.all([queue(),locations()]);
    const row=items.find(x=>String(x.return_item_id)===String(itemId));
    if(!row||row.disposition!=='return_to_stock')throw Error('CN Handling must be Return to Stock for a saleable stock receipt.');
+    if(row.approval_status==='pending'||row.approval_status==='rejected')throw Error('Manager/Admin must approve this CN before warehouse intake.');
    if(row.request_id)throw Error('This item already has a receipt awaiting approval. Review it before requesting another.');
    const remaining=Number(row.available_to_request||0);
    if(remaining<=0)throw Error('No remaining CN quantity available for stock receipt.');
@@ -146,11 +147,11 @@ window.renderCNStockReceiptApprovalPanel=async function(){
      '<span class="rounded-full bg-white border px-3 py-1 text-xs font-semibold">'+pending.length+' Pending Approval</span></div></div>'+
      (pending.length?'<div class="grid gap-3 mb-3">'+pending.map(card).join('')+'</div>':'')+
      (operate()?'<div class="inv-card mb-3"><b class="text-sm">Receive Returned Items</b>'+
-       '<p class="text-xs text-gray-500 mt-1 mb-3">All submitted CNs appear here. Only Return to Stock lines can be physically received into saleable stock.</p>'+
+       '<p class="text-xs text-gray-500 mt-1 mb-3">Submitted CNs appear here before approval. Manager/Admin approves the CN first; then Stock can receive eligible goods. Admin approves the stock receipt separately.</p>'+
        '<div class="grid gap-2">'+(ready.length?ready.map(row=>{
           const available=Number(row.available_to_request||0);
-          const canReceive=row.disposition==='return_to_stock'&&available>0;
-          const status=row.request_id?'Approval Pending':row.return_status==='confirmed'&&row.disposition!=='return_to_stock'?'Awaiting Physical Return · No Stock Action':row.return_status==='confirmed'?'Awaiting Physical Return':row.disposition!=='return_to_stock'?'No Stock Action':'Ready for Receipt';
+          const canReceive=row.disposition==='return_to_stock'&&available>0&&(!row.approval_status||['approved','legacy'].includes(row.approval_status));
+          const status=row.approval_status==='pending'?'Awaiting CN Approval':row.approval_status==='rejected'?'CN Rejected':row.request_id?'Receipt Approval Pending':row.return_status==='confirmed'&&row.disposition!=='return_to_stock'?'Awaiting Physical Return · No Stock Action':row.return_status==='confirmed'?'Awaiting Physical Return':row.disposition!=='return_to_stock'?'No Stock Action':'Ready for Receipt';
           return '<div class="flex flex-wrap justify-between items-center gap-3 border rounded-xl bg-white p-3">'+
            '<div><b class="text-xs">'+e(row.cn_no)+' · '+e(row.product_code||'')+'</b>'+
            '<div class="text-xs text-gray-700">'+e(row.item_name||'')+'</div>'+
@@ -160,7 +161,7 @@ window.renderCNStockReceiptApprovalPanel=async function(){
              ' · Awaiting approval '+fmt(row.pending_approval_qty)+' · Available '+fmt(available)+'</div></div>'+
            (canReceive?'<button type="button" onclick="openCNStockReceiptForItem(\''+e(row.return_item_id)+'\')" '+
              'class="px-3 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-xs font-bold">Confirm Physical Return</button>':
-             '<span class="text-xs font-semibold text-amber-700">'+(row.disposition!=='return_to_stock'?'Information Only':row.request_id?'Approval Pending':'Already Received')+'</span>')+'</div>'
+             '<span class="text-xs font-semibold text-amber-700">'+(row.approval_status==='pending'?'Waiting for Manager/Admin':row.approval_status==='rejected'?'Rejected by Management':row.disposition!=='return_to_stock'?'Information Only':row.request_id?'Approval Pending':'Already Received')+'</span>')+'</div>'
        }).join(''):'<div class="text-xs text-gray-500 py-2">No CN items awaiting stock receipt.</div>')+
        '</div></div>':'')+
      (history.length?'<details class="inv-card"><summary class="cursor-pointer text-xs font-semibold">CN Receipt History · '+history.length+' reviewed</summary>'+
