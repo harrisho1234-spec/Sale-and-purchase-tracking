@@ -32,7 +32,7 @@
      if(r.error)throw r.error;
      if(seq!==call||!panel.isConnected)return;
      const rows=(Array.isArray(r.data)?r.data:[]).filter(t=>(t.return_status==='confirmed'&&t.warehouse_stage!=='stock_received')||n(t.available_to_request)>0||n(t.pending_approval_qty)>0);
-     const ready=rows.filter(t=>t.disposition==='return_to_stock'&&t.return_status==='received'&&n(t.available_to_request)>0);
+     const ready=rows.filter(t=>t.disposition==='return_to_stock'&&n(t.available_to_request)>0&&t.approval_status!=='pending'&&t.approval_status!=='rejected');
       const awaiting=rows.filter(t=>t.return_status==='confirmed');
      const pending=rows.filter(t=>n(t.available_to_request)<=0&&n(t.pending_approval_qty)>0);
      const ids=[...new Set(rows.map(t=>t.product_id).filter(Boolean))].slice(0,40);
@@ -50,13 +50,13 @@
      panel.innerHTML='<div class="flex flex-wrap items-center justify-between gap-3 mb-3">'+
        '<div><div class="text-[10px] font-bold uppercase text-amber-700">Warehouse · Customer CN</div>'+
        '<h3 class="font-bold text-lg">CN Returns Pending <span class="text-amber-700">'+rows.length+'</span></h3>'+
-       '<p class="text-xs text-gray-500 mt-1">New submitted CNs appear immediately as Awaiting Physical Return. Warehouse confirms the goods and requests stock receipt; inventory changes only after approval.</p></div>'+
+       '<p class="text-xs text-gray-500 mt-1">Submitted CNs are visible immediately as Awaiting CN Approval. After Manager/Admin approves the CN, warehouse can inspect and receive the goods. Stock changes only after receipt approval.</p></div>'+
        '<button type="button" onclick="openCNReturnDashboard()" class="px-3 py-2 bg-[#211d18] text-white rounded-lg font-bold text-xs">View & Receive CN Returns →</button></div>'+
        (rows.length?'<div class="grid md:grid-cols-2 xl:grid-cols-3 gap-2">'+rows.slice(0,6).map(t=>
          '<button type="button" onclick="openCNReturnDashboard()" class="rounded-xl bg-white border p-3 text-left flex gap-3 hover:border-amber-300">'+
          img(t)+'<div class="min-w-0 flex-1"><div class="font-bold text-xs text-amber-700">'+x(t.cn_no)+' · '+x(t.product_code)+'</div>'+
          '<div class="text-xs font-medium truncate">'+x(t.item_name)+'</div>'+ '<div class="text-[10px] text-gray-600 truncate">Customer: '+x(t.customer_name||'—')+'</div>'+
-         '<div class="text-[10px] font-bold mt-1 '+(t.return_status==='confirmed'?'text-amber-700':'text-emerald-700')+'">'+(n(t.pending_approval_qty)>0?'Receipt Approval Pending':t.return_status==='confirmed'&&t.disposition!=='return_to_stock'?'Awaiting Physical Return · No Stock Action':t.return_status==='confirmed'?'Awaiting Physical Return':t.disposition!=='return_to_stock'?'Information Only':'Ready for Stock Receipt')+'</div>'+ 
+         '<div class="text-[10px] font-bold mt-1 '+(t.return_status==='confirmed'?'text-amber-700':'text-emerald-700')+'">'+(t.approval_status==='pending'?'Awaiting CN Approval':t.approval_status==='rejected'?'CN Rejected':n(t.pending_approval_qty)>0?'Receipt Approval Pending':t.return_status==='confirmed'&&t.disposition!=='return_to_stock'?'Awaiting Physical Return · No Stock Action':t.return_status==='confirmed'?'Awaiting Physical Return':t.disposition!=='return_to_stock'?'Information Only':'Ready for Stock Receipt')+'</div>'+ 
           '<div class="text-[10px] text-gray-500">'+x(asDate(t.return_date))+
          ' · CN Qty '+n(t.cn_qty)+(t.disposition==='return_to_stock'?' · To Receive '+n(t.available_to_request):' · '+x(String(t.disposition||'No Stock Action').replaceAll('_',' ')))+'</div>'+ 
          (n(t.pending_approval_qty)>0?'<div class="text-[10px] text-amber-700">Approval pending: '+n(t.pending_approval_qty)+'</div>':'')+
