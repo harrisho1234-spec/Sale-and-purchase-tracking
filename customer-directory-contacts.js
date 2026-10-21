@@ -54,6 +54,20 @@
     const map=new Map();for(const x of data||[]){if(!map.has(x.customer_id))map.set(x.customer_id,[]);map.get(x.customer_id).push(x)}window._customerContactsMap=map;
   }
 
+  function commercialStage(c){
+    return typeof window.customerCommercialStatus==='function'
+      ?window.customerCommercialStatus(c):'registered_prospect';
+  }
+  function commercialBadge(c){
+    const value=commercialStage(c);
+    const label=value==='buyer'?'Buyer · Invoiced':
+      value==='order_in_progress'?'Order In Progress':'Registered Prospect';
+    const colors=value==='buyer'?'border-green-200 bg-green-50 text-green-800':
+      value==='order_in_progress'?'border-blue-200 bg-blue-50 text-blue-800':
+      'border-gray-200 bg-gray-50 text-gray-700';
+    return '<span class="px-2 py-0.5 rounded-md border text-[9px] font-bold '+colors+
+      '" title="Commercial stage is derived from recorded Sales Orders and issued invoices, not from registering a customer">'+esc(label)+'</span>';
+  }
   function contactSummary(c){
     const cs=contactsFor(c.id);
     const source=cs.length?cs:[...(c.phone?[{contact_type:'phone',contact_value:c.phone}]:[]),...(c.email?[{contact_type:'email',contact_value:c.email}]:[])];
@@ -128,7 +142,7 @@
     root.innerHTML=pageRows.map(c=>{
       const note=String(c.notes||'').trim(),m=metricsFor(c.id);
       return `<div class="customer-edit-row bg-white border border-[#ece8e0] rounded-2xl px-4 py-3 grid lg:grid-cols-[1.12fr_1.18fr_1fr_.82fr_.72fr_.72fr_.72fr_1.05fr_auto] gap-3 lg:gap-4 items-center shadow-[0_3px_14px_rgba(31,25,18,.025)]">
-        <div class="min-w-0"><div class="flex flex-wrap items-center gap-2"><div class="font-bold text-[14px] truncate">${esc(c.name||'')}</div>${c.review_status==='pending'?'<span class="px-2 py-0.5 rounded-md border border-amber-200 bg-amber-50 text-[9px] font-bold text-amber-800">Pending Review</span>':''}</div><div class="flex flex-wrap gap-x-2 gap-y-0.5 mt-0.5 text-[9px] text-gray-400">${canSeeCustomerId()&&c.customer_code?`<span class="text-[#b3871e] font-bold">${esc(c.customer_code)}</span>`:''}<span>Since ${esc(fmtDate(c.customer_since||c.created_at))}</span></div></div>
+        <div class="min-w-0"><div class="flex flex-wrap items-center gap-2"><div class="font-bold text-[14px] truncate">${esc(c.name||'')}</div>${c.review_status==='pending'?'<span class="px-2 py-0.5 rounded-md border border-amber-200 bg-amber-50 text-[9px] font-bold text-amber-800">Pending Review</span>':''}${commercialBadge(c)}</div><div class="flex flex-wrap gap-x-2 gap-y-0.5 mt-0.5 text-[9px] text-gray-400">${canSeeCustomerId()&&c.customer_code?`<span class="text-[#b3871e] font-bold">${esc(c.customer_code)}</span>`:''}<span>Since ${esc(fmtDate(c.customer_since||c.created_at))}</span></div></div>
         <div class="min-w-0"><div class="lg:hidden text-[9px] uppercase text-gray-400 font-bold mb-1">Contacts</div>${contactSummary(c)}</div>
         <div class="text-[12px] text-gray-500 min-w-0"><div class="lg:hidden text-[9px] uppercase text-gray-400 font-bold mb-1">Address</div><div class="truncate">${esc(c.address||'-')}</div></div>
         <div class="min-w-0"><div class="lg:hidden text-[9px] uppercase text-gray-400 font-bold mb-1">Handled By</div><span class="inline-flex max-w-full px-2 py-1 rounded-lg border border-amber-100 bg-amber-50 text-[10px] font-bold text-amber-800 truncate">${esc(handlerName(c))}</span></div>
@@ -146,6 +160,7 @@
     customerPage=1;
     const q=(document.getElementById('customerSearch')?.value||'').trim().toLowerCase();
     const status=document.getElementById('customerStatusFilter')?.value||'all';
+    const commercial=document.getElementById('customerCommercialFilter')?.value||'all';
 
     const list=(state.customers||[]).filter(c=>{
       const x=metricsFor(c.id),contacts=contactsFor(c.id).flatMap(v=>[v.contact_type,v.label,v.contact_value]);
@@ -153,6 +168,7 @@
       const matchesSearch=!q||[c.name,(canSeeCustomerId()?c.customer_code:''),c.phone,c.email,c.address,c.notes,fmtDate(c.customer_since||c.created_at),x.sales,x.paid,x.ar,...contacts]
         .some(v=>String(v||'').toLowerCase().includes(q));
       if(!matchesSearch)return false;
+      if(commercial!=='all'&&commercialStage(c)!==commercial)return false;
 
       if(status==='active_ar')return Number(x.ar||0)>0.001;
       if(status==='pending_preorder')return Number(x.pending||0)>0.001;
