@@ -855,8 +855,14 @@ ${activityAllowed()?`          <select onchange="setActivityStatus(this.value)" 
       p_selected_lead_id:activitySelectedIdentity?.lead_id||null
     };
     const btn=e.target.querySelector('button');if(btn){btn.disabled=true;btn.textContent='Saving...'}
+    // A reported Buy by Sales atomically saves the activity and links/requests
+    // Customer Master. Reuse the existing phone/ownership/Pending Review rules.
+    const buyAuto=args.p_status==='Buy'&&(state.profile?.role||'')==='sales';
     let res;
-    if(row)res=await db.rpc('update_customer_activity_v3',{p_id:row.id,...args});
+    if(buyAuto)res=await db.rpc('save_customer_activity_buy',{
+      p_activity_id:row?.id||null,p_activity_type:activityState.type,...args
+    });
+    else if(row)res=await db.rpc('update_customer_activity_v3',{p_id:row.id,...args});
     else res=await db.rpc('create_customer_activity_v3',{p_activity_type:activityState.type,...args});
     if(res.error){
       if(btn){btn.disabled=false;btn.textContent=row?'Save Changes':'Save'}
@@ -864,7 +870,7 @@ ${activityAllowed()?`          <select onchange="setActivityStatus(this.value)" 
     }
     let assignmentError=null;
     if(requestedSalesId){
-      const activityId=row?.id||res.data;
+      const activityId=row?.id||(buyAuto?res.data?.activity_id:res.data);
       if(!activityId){
         assignmentError='Entry saved, but the ID was not returned. Use Request Assignment from the entry card.';
       }else{
@@ -880,6 +886,14 @@ ${activityAllowed()?`          <select onchange="setActivityStatus(this.value)" 
     closeModal();
     if(assignmentError)showToast('Entry saved, but assignment request was not submitted: '+assignmentError,'err');
     else if(requestedSalesId)showToast('Entry saved · Sales assignment is PENDING APPROVAL');
+    else if(buyAuto){
+      const outcome=res.data?.master||{};
+      if(outcome.action==='pending')showToast(outcome.message||'Buy saved. Customer Master created as Pending Review for Manager/Admin.');
+      else if(outcome.action==='ownership_request'||outcome.action==='crm_ownership_request')
+        showToast(outcome.message||'Buy saved. Customer ownership request submitted for Manager/Admin review.');
+      else if(outcome.action==='linked')showToast('Buy saved. Linked to existing Customer Master; ownership unchanged.');
+      else showToast('Buy saved. Customer Master registration updated.');
+    }
     else showToast(
       salesId
         ?(row?'Updated ':'Saved ')+activityTypeLabel(activityState.type)+' · '+(lockedOwner?'linked to '+lockedOwner:'assigned to '+(assignedUser?.display_name||assignedUser?.email||'selected Sales Rep'))
