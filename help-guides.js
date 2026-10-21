@@ -77,12 +77,18 @@ const permissionPage=id=>{
  if(!id||id==='help')return true;
  return typeof window.canAccessAppPage==='function'?window.canAccessAppPage(id):true;
 };
+function rolePage(g){
+  // DO and CN actions live in different areas for Sales and warehouse roles.
+  if(userRole()==='stock_controller'&&['request-do','return-cn'].includes(g.id))
+    return 'stock-inventory';
+  return g.page;
+}
 function visible(g){
  const role=userRole();
- return g.roles.includes(role)&&permissionPage(g.page);
+ return g.roles.includes(role)&&permissionPage(rolePage(g));
 }
 function guides(){
- return GUIDE_DATA.filter(visible).map(g=>({...g,...(model.edits.get(g.id)||{})}));
+ return GUIDE_DATA.filter(visible).map(g=>({...g,...(model.edits.get(g.id)||{}),page:rolePage(g)}));
 }
 function guide(id){return guides().find(x=>x.id===id)||null}
 const editAllowed=()=>userRole()==='super_admin' ||
