@@ -417,6 +417,13 @@
     </div>`).join('')+'</div>';
   }
 
+  function crmSrInvoiceLabel(o){
+    const original=String(o.sr_no||o.document_no||'Order').trim();
+    if(!original.toUpperCase().startsWith('SR'))return String(o.document_no||'Order');
+    const refs=[o.legacy_invoice_no,...(o.issued_tk_rk||[])].map(x=>String(x||'').trim()).filter(Boolean);
+    const unique=[...new Map(refs.map(x=>[x.toUpperCase(),x])).values()];
+    return original+(unique.length?' → '+unique.join(' · '):'');
+  }
   function salesHistoryHtml(rows,r,editable){
     if(!r.linked_customer_id){
       return '<div class="rounded-xl border border-dashed p-6 text-center text-xs text-gray-400">Customer is not linked to Customer Master yet.</div>';
@@ -427,7 +434,7 @@
       const items=Array.isArray(o.items)?o.items:[];
       return `<div class="rounded-xl border bg-white overflow-hidden">
         <div class="p-3 flex flex-wrap items-start justify-between gap-3 bg-[#faf9f6]">
-          <div><div class="text-[9px] uppercase font-bold text-gray-400">Invoice / Order</div><div class="font-bold mt-1">${esc(o.document_no||'Order')}</div><div class="text-[10px] text-gray-500 mt-1">${esc(fmtDate(o.order_date))} · ${esc(o.order_status||'-')}${o.customer_review_status==='pending'?' · Customer Review Pending':''}</div></div>
+          <div><div class="text-[9px] uppercase font-bold text-gray-400">Invoice / Order</div><div class="font-bold mt-1">${esc(crmSrInvoiceLabel(o))}</div><div class="text-[10px] text-gray-500 mt-1">${esc(fmtDate(o.order_date))} · ${esc(o.order_status||'-')}${o.customer_review_status==='pending'?' · Customer Review Pending':''}</div></div>
           <div class="grid grid-cols-3 gap-4 text-right text-xs"><div><div class="text-[9px] uppercase text-gray-400">Sales</div><b>${money(Number(o.order_total||0),o.currency||'USD')}</b></div><div><div class="text-[9px] uppercase text-gray-400">Received</div><b class="text-green-600">${money(Number(o.amount_paid||0),o.currency||'USD')}</b></div><div><div class="text-[9px] uppercase text-gray-400">Balance</div><b class="${Number(o.balance_due||0)>0?'text-red-500':'text-green-600'}">${money(Number(o.balance_due||0),o.currency||'USD')}</b></div></div>
         </div>
         <div class="p-3">
@@ -564,12 +571,14 @@
       <div id="leadStageHistorySection" class="border-t mt-5 pt-5"><div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">Stage History</h4><div class="text-[10px] text-gray-400">Approved and forward movement between CRM stages.</div></div></div><div class="py-6 text-center text-xs text-gray-400">Loading stage history...</div></div>
       <div id="leadActivityHistorySection" class="border-t mt-5 pt-5"><div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">Activity History</h4><div class="text-[10px] text-gray-400">Showroom Visit and Online logs for this customer.</div></div></div><div class="py-8 text-center text-xs text-gray-400">Loading activity history...</div></div>
     </div>`);
-    const [activityRes,stageRes,requestRes,followupRes,salesRes]=await Promise.all([
+    const [activityRes,stageRes,requestRes,followupRes,salesRes,invoiceRefsRes,srNosRes]=await Promise.all([
       db.rpc('get_customer_lead_activities',{p_lead_id:id}),
       db.rpc('get_customer_lead_stage_history',{p_lead_id:id}),
       db.rpc('get_customer_lead_stage_request_history',{p_lead_id:id}),
       db.rpc('get_customer_lead_followups',{p_lead_id:id}),
-      db.rpc('get_customer_lead_sales_history',{p_lead_id:id})
+      db.rpc('get_customer_lead_sales_history',{p_lead_id:id}),
+      r.linked_customer_id?db.rpc('get_visible_sr_split_invoice_list'):Promise.resolve({data:[],error:null}),
+      r.linked_customer_id?db.from('sales_order_summary').select('id,sr_no,order_no,sales_invoice_no').eq('customer_id',r.linked_customer_id):Promise.resolve({data:[],error:null})
     ]);
     const body=document.getElementById('leadDetailBody');
     if(!body)return;
@@ -583,8 +592,17 @@
       if(loading)loading.outerHTML=followupRes.error?`<div class="text-red-500 text-xs">${esc(followupRes.error.message)}</div>`:followupHistoryHtml(followupRes.data||[]);
     }
     if(salesHolder){
+      if(invoiceRefsRes.error)console.warn('CRM TK/RK references:',invoiceRefsRes.error.message);
+      if(srNosRes.error)console.warn('CRM original SR references:',srNosRes.error.message);
+      const invoiceMap=new Map((Array.isArray(invoiceRefsRes.data)?invoiceRefsRes.data:[]).map(x=>[String(x.sr_id),x]));
+      const originals=new Map((srNosRes.data||[]).map(x=>[String(x.id),x]));
+      const salesRows=(salesRes.data||[]).map(o=>{
+        const sr=originals.get(String(o.order_id))||{},linked=invoiceMap.get(String(o.order_id));
+        return {...o,sr_no:sr.sr_no||sr.order_no||'',legacy_invoice_no:sr.sales_invoice_no||null,
+          issued_tk_rk:(linked?.issued_numbers||[]).map(x=>x.no)};
+      });
       const loading=salesHolder.lastElementChild;
-      if(loading)loading.outerHTML=salesRes.error?`<div class="text-red-500 text-xs">${esc(salesRes.error.message)}</div>`:salesHistoryHtml(salesRes.data||[],r,editable);
+      if(loading)loading.outerHTML=salesRes.error?`<div class="text-red-500 text-xs">${esc(salesRes.error.message)}</div>`:salesHistoryHtml(salesRows,r,editable);
     }
     if(requestHolder){
       const loading=requestHolder.lastElementChild;
