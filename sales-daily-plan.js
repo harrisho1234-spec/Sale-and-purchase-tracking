@@ -8,6 +8,9 @@ const CATS=['Customer Follow-up','Showroom / Page','Online Inquiries','Product C
 const STATUSES=['Completed','Partially Completed','Pending','Rescheduled','Cancelled'];
 const h=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
 const today=()=>{const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Phnom_Penh',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());const m=Object.fromEntries(parts.filter(x=>x.type!=='literal').map(x=>[x.type,x.value]));return `${m.year}-${m.month}-${m.day}`;};
+const pmDeadline=(date)=>{const d=new Date(date+'T00:00:00Z');do{d.setUTCDate(d.getUTCDate()+1)}while(d.getUTCDay()===0);return d.toISOString().slice(0,10)+'T09:00:00+07:00';};
+const isOverdue=r=>r?.amStatus==='Submitted'&&r?.pmStatus!=='Submitted'&&Date.now()>Date.parse(r.pmDeadline||pmDeadline(r.date));
+const isLate=r=>r?.pmStatus==='Submitted'&&!!r.pmSubmittedAt&&Date.parse(r.pmSubmittedAt)>Date.parse(r.pmDeadline||pmDeadline(r.date));
 const backDays=(d,n)=>{const x=new Date(d+'T12:00:00Z');x.setUTCDate(x.getUTCDate()-n);return x.toISOString().slice(0,10)};
 const can=(key,roles)=>typeof window.hasAppPermission==='function'?!!window.hasAppPermission(key):roles.includes(state?.profile?.role||'');
 const sales=()=>state?.profile?.role==='sales'&&can('sales_daily.plan_own',['sales']);
@@ -176,7 +179,7 @@ function pmTask(t,i,locked){
   '<option value="">Choose result</option>'+
   STATUSES.map(s=>'<option '+(t.status===s?'selected':'')+'>'+h(s)+'</option>').join('')+
   '</select></label><label class="text-xs font-semibold">Next Follow-up Date<input data-field="nextFollowup" type="date" class="'+common+'" value="'+h(t.nextFollowup||'')+'" '+(locked?'disabled':'')+'></label></div>'+
-  '<label class="text-xs font-semibold block mt-3">Evening Result / Actual Outcome<textarea data-field="result" rows="2" maxlength="1500" class="'+common+'" '+(locked?'disabled':'')+' placeholder="Customer interested, awaiting reply, no chats today, video completed…">'+h(t.result||'')+'</textarea></label></div>';
+  '<label class="text-xs font-semibold block mt-3">Evening Result / Actual Outcome *<textarea data-field="result" rows="2" maxlength="1500" class="'+common+'" '+(locked?'disabled':'')+' placeholder="Customer interested, awaiting reply, no chats today, video completed…">'+h(t.result||'')+'</textarea></label></div>';
 }
 function capturePm(){
  return [...(root()?.querySelectorAll('.daily-result-row')||[])].map(row=>{
@@ -187,6 +190,7 @@ function capturePm(){
 window.saveSalesDailyEvening=async submit=>{
  if(ui.loading)return;
  const results=capturePm();if(submit&&results.some(x=>!x.status))return toast('Update the status of every planned task before submitting',true);
+ if(submit&&results.some(x=>!x.result.trim()))return toast('Write an actual outcome for every morning task before submitting',true);
  ui.loading=true;
  try{await api(submit?'submit_pm':'save_pm',{date:ui.date,results});toast(submit?'Evening results submitted':'Evening draft saved');await reload()}
  catch(e){toast(e.message,true)}finally{ui.loading=false}
@@ -203,6 +207,7 @@ function renderSalesHome(){
  '<span class="rounded-lg bg-blue-50 px-3 py-2 text-xs">PM: <b>'+h(report?.pmStatus||'Not Started')+'</b></span>'+
  '<span class="rounded-lg bg-gray-100 px-3 py-2 text-xs">Manager: <b>'+h(report?.reviewStatus||'Pending')+'</b></span></div></div>'+
  (report?.managerComment?'<div class="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs"><b>Manager note:</b> '+h(report.managerComment)+'</div>':'')+
+ (isOverdue(report)?'<div class="rounded-xl border border-red-200 bg-red-50 text-red-800 p-3 text-sm"><b>Overdue Evening Result:</b> This report was due by 9:00 AM the next working morning. Please submit an actual outcome for every task. Late submissions are recorded.</div>':'')+
  '<section class="space-y-3"><div class="flex flex-wrap justify-between items-center gap-2">'+
  '<h3 class="font-bold">Morning Plan</h3>'+(amLocked?'':'<button type="button" onclick="addSalesDailyTask()" class="'+lightButton+'">+ Add Task</button>')+'</div>'+
  '<div id="dailyPlanRows" class="grid gap-3">'+tasks.map((t,i)=>formTask(t,i,amLocked)).join('')+'</div>'+
@@ -235,14 +240,14 @@ async function renderManager(){
  '<div class="grid grid-cols-2 lg:grid-cols-4 gap-3">'+[
   ['Reports',reports.length],['Morning Plans Submitted',count('amStatus','Submitted')],
   ['Evening Results Submitted',count('pmStatus','Submitted')],
-  ['Manager Reviewed',count('reviewStatus','Reviewed')]
+  ['PM Overdue',reports.filter(isOverdue).length],['PM Submitted Late',reports.filter(isLate).length],['Awaiting Review',reports.filter(r=>r.pmStatus==='Submitted'&&r.reviewStatus!=='Reviewed').length],['Manager Reviewed',count('reviewStatus','Reviewed')]
  ].map(([n,v])=>'<div class="bg-white border rounded-2xl p-4"><div class="text-[10px] font-bold uppercase text-gray-500">'+n+'</div><div class="font-black text-2xl mt-2">'+v+'</div></div>').join('')+'</div>'+
  '<div data-daily-weekly>'+weeklyPanel()+'</div>'+'<section class="bg-white border rounded-2xl overflow-hidden">'+
  '<div class="p-4 border-b font-bold text-sm">Daily Reports · '+reports.length+'</div>'+
  (reports.length?'<div class="divide-y">'+reports.map(r=>'<div class="p-4 flex flex-wrap items-center gap-3">'+
  '<div class="flex-1 min-w-[210px]"><b class="text-sm">'+h(r.salesperson)+'</b><p class="text-xs text-gray-500 mt-1">'+h(r.date)+' · '+r.tasks.length+' tasks</p>'+
  '<p class="text-[11px] mt-1">AM: '+h(r.amStatus||'Draft')+' · PM: '+h(r.pmStatus||'Not Started')+
- ' · Review: '+h(r.reviewStatus||'Pending')+'</p></div>'+
+ ' · Review: '+h(r.reviewStatus||'Pending')+(isOverdue(r)?' · PM OVERDUE':isLate(r)?' · PM LATE':'')+'</p></div>'+
  '<button onclick="openDailyManagerReport(\''+h(r.id)+'\')" class="'+lightButton+'">View Plan & Result</button></div>').join('')+'</div>':
  '<div class="p-10 text-sm text-gray-500 text-center">No Sales reports found for the selected date range.</div>')+'</section></div>';
 }
