@@ -35,17 +35,16 @@ window.quickSalesTodo=id=>{
  const choice=['Pending','In Progress','Completed','Cancelled'];
  openModal('Quick Update · '+h(t.title),
  '<div class="space-y-4"><div class="text-xs text-gray-500">Change status and progress without reopening task details.</div>'+
- '<div class="grid grid-cols-2 sm:grid-cols-4 gap-2">'+choice.map(v=>'<button type="button" data-quick-status="'+h(v)+'" onclick="setQuickTodoStatus(this)" class="border rounded-xl px-2 py-3 text-xs font-semibold '+(t.status===v?'bg-amber-50 border-amber-500':'')+'">'+h(v)+'</button>').join('')+'</div>'+
+ '<label class="text-sm font-semibold block">Status<select id="todoQuickStatus" onchange="setQuickTodoStatus(this.value)" class="block w-full border rounded-xl p-3 mt-2 text-sm bg-white">'+choice.map(v=>'<option value="'+h(v)+'" '+(t.status===v?'selected':'')+'>'+h(v)+'</option>').join('')+'</select></label>'+
  '<label class="text-sm font-semibold block">Progress: <span id="todoQuickPercent">'+Number(t.progress||0)+'</span>%<input id="todoQuickProgress" type="range" min="0" max="100" step="5" value="'+Number(t.progress||0)+'" oninput="document.getElementById(\'todoQuickPercent\').textContent=this.value" class="w-full mt-3"></label>'+
  '<div class="flex flex-wrap gap-2">'+[0,25,50,75,100].map(n=>'<button type="button" class="rounded-lg border px-3 py-2 text-xs" onclick="setQuickTodoProgress('+n+')">'+n+'%</button>').join('')+'</div>'+
  '<label class="text-xs font-semibold block">Progress note / Cancellation reason<textarea id="todoQuickRemarks" rows="3" class="mt-1 block w-full border rounded-xl p-3" placeholder="What changed?">'+h(t.remarks||'')+'</textarea></label>'+
  '<div class="flex gap-2"><button id="todoQuickSave" class="bg-black text-white rounded-xl px-5 py-2.5" onclick="saveQuickSalesTodo(\''+h(t.id)+'\')">Save Progress</button><button class="border rounded-xl px-4 py-2" onclick="closeModal()">Cancel</button></div></div>');
  window.todoQuickStatus=t.status;
 };
-window.setQuickTodoStatus=button=>{
- window.todoQuickStatus=button.dataset.quickStatus;
- document.querySelectorAll('[data-quick-status]').forEach(b=>{b.classList.toggle('bg-amber-50',b===button);b.classList.toggle('border-amber-500',b===button)});
- if(window.todoQuickStatus==='Completed')window.setQuickTodoProgress(100);
+window.setQuickTodoStatus=value=>{
+ window.todoQuickStatus=value;
+ if(value==='Completed')window.setQuickTodoProgress(100);
 };
 window.setQuickTodoProgress=n=>{const slider=document.getElementById('todoQuickProgress');if(slider)slider.value=n;const label=document.getElementById('todoQuickPercent');if(label)label.textContent=n};
 window.saveQuickSalesTodo=async id=>{
