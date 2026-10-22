@@ -16,6 +16,8 @@ set search_path to 'public','auth','pg_temp'
 as $fn$
 declare r jsonb;v_id uuid;
 begin
+ if auth.uid() is null or coalesce(public.current_app_role(),'') not in ('sales','manager','admin','super_admin') then
+   raise exception 'Active Sales access required';end if;
  if p_first_contact_date is null then
    raise exception 'Please choose a First Contact Date';end if;
  if p_first_contact_date>(now() at time zone 'Asia/Phnom_Penh')::date then

@@ -21,12 +21,28 @@ const toast=(msg,error=false)=>showToast(msg,error?'err':undefined);
 const common='border rounded-xl px-3 py-2.5 w-full bg-white text-sm';
 const actionButton='px-4 py-2.5 rounded-xl bg-[#211d18] text-white text-xs font-bold disabled:opacity-50';
 const lightButton='px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold disabled:opacity-50';
+let accountId=null;
+function resetAccount(){
+ const id=state.user?.id||null;
+ if(accountId===id)return;
+ accountId=id;ui.seq++;ui.access=null;ui.config=null;ui.report=null;ui.reports=[];
+ ui.people=[];ui.customers=[];ui.tasks=[];ui.stats=null;ui.person='';
+ ui.date=today();ui.start=today();ui.end=today();
+}
+function weeklyPanel(){
+ const s=ui.stats;if(!s)return '';
+ return '<section class="rounded-2xl border bg-white p-4"><h3 class="font-bold text-sm">Last 7 days · '+h(backDays(state.page===P?ui.date:ui.end,6))+' – '+h(state.page===P?ui.date:ui.end)+'</h3>'+
+ '<p class="text-xs text-gray-500 mt-1">'+(state.page===P?'Your reports':ui.person?'Selected salesperson':'All authorized Sales staff')+'</p><div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">'+
+ [['AM submitted',s.amSubmitted],['PM submitted',s.pmSubmitted],['Reviewed',s.reviewed],['Planned tasks',s.plannedTasks],['Completed',s.completed],['Partially completed',s.partiallyCompleted],['Pending / rescheduled',s.pending],['Completion rate',s.plannedTasks?Math.round(100*s.completed/s.plannedTasks)+'%':'—']]
+ .map(([label,value])=>'<div><div class="text-[10px] text-gray-500">'+h(label)+'</div><b class="text-lg">'+h(value)+'</b></div>').join('')+'</div></section>';
+}
 function root(){return elem('content')}
 async function access(){
  if(ui.access&&ui.config)return;
+ const userId=state.user?.id;
  const [ar,cr]=await Promise.all([db.rpc('get_sales_daily_access'),db.rpc('get_sales_daily_connection')]);
  if(ar.error)throw ar.error;if(cr.error)throw cr.error;
- ui.access=ar.data;ui.config=cr.data;
+ if(state.user?.id===userId){ui.access=ar.data;ui.config=cr.data;}
 }
 async function api(action,payload){
  const r=await db.functions.invoke('sales-daily-google-proxy',{body:{action,payload}});
@@ -40,10 +56,11 @@ async function api(action,payload){
 }
 async function loadCustomers(){
  if(!sales()||ui.customers.length)return;
+ const userId=state.user?.id;
  let q=db.from('customers').select('id,name,assigned_sales_id').eq('active',true).order('name').limit(600);
  if(state?.profile?.role==='sales')q=q.eq('assigned_sales_id',state.user.id);
  const res=await q;
- if(!res.error)ui.customers=res.data||[];
+ if(!res.error&&state.user?.id===userId)ui.customers=res.data||[];
 }
 function header(title,sub){
  return '<div class="rounded-2xl border bg-white p-5 flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">'+
@@ -96,14 +113,14 @@ function captureAm(){
    const get=k=>row.querySelector('[data-field="'+k+'"]')?.value||'';
    const prev=ui.tasks[i]||{};
    const matched=ui.customers.find(c=>String(c.id)===get('customerId'));
-   return{id:prev.id||'',category:get('category'),plan:get('plan'),
+   return{id:prev.id||'',sourceTaskId:prev.sourceTaskId||'',category:get('category'),plan:get('plan'),
     customerId:get('customerId'),customerName:get('customerName')||(matched?.name||''),
     priority:get('priority'),plannedFollowup:get('plannedFollowup')};
  });
 }
 window.addSalesDailyTask=()=>{captureAm();if(ui.tasks.length>=20)return toast('Maximum 20 tasks per day',true);ui.tasks.push(empty());renderSalesHome()};
 window.removeSalesDailyTask=i=>{captureAm();if(ui.tasks.length<=1)return toast('Keep at least one planned task',true);ui.tasks.splice(i,1);renderSalesHome()};
-window.selectSalesDailyDate=async()=>{ui.date=elem('salesDailyDate')?.value||today();await reload()};
+window.selectSalesDailyDate=async()=>{if(ui.loading){elem('salesDailyDate').value=ui.date;return toast('Please wait for the current save to finish');}ui.date=elem('salesDailyDate')?.value||today();ui.report=null;ui.tasks=[];await reload()};
 async function activitySuggestions(){
  const r=await db.rpc('get_sales_activity_timeline',{
   p_start:ui.date,p_end:ui.date,p_actor:null,p_action:null,p_limit:100
@@ -133,13 +150,17 @@ async function saveAm(submit){
 }
 window.saveSalesDailyMorning=saveAm;
 window.carrySalesDailyTasks=async()=>{
+ if(ui.loading)return;
+ ui.loading=true;
  const from=elem('dailyCarryFrom')?.value||backDays(ui.date,1);
  try{captureAm();const r=await api('carry_forward',{from,to:ui.date});
-  const x=r.suggestions||[];if(!x.length)return toast('No unfinished tasks found for that day');
-  if(ui.tasks.length+x.length>20)return toast('Too many tasks; remove some first',true);
+  const imported=new Set(ui.tasks.map(t=>t.sourceTaskId).filter(Boolean));
+  const x=(r.suggestions||[]).filter(t=>!imported.has(t.sourceTaskId));if(!x.length)return toast('No new unfinished tasks found for that day');
+  if(ui.tasks.filter(t=>t.plan.trim()).length+x.length>20)return toast('Too many tasks; remove some first',true);
+  ui.tasks=ui.tasks.filter(t=>t.plan.trim());
   ui.tasks.push(...x.map(t=>({...empty(),...t,id:''})));renderSalesHome();
   toast(x.length+' unfinished tasks brought forward as editable plans');
- }catch(e){toast(e.message,true)}
+ }catch(e){toast(e.message,true)}finally{ui.loading=false}
 };
 function pmTask(t,i,locked){
  return '<div class="daily-result-row rounded-2xl bg-white border p-4" data-id="'+h(t.id)+'">'+
@@ -192,7 +213,7 @@ function renderSalesHome(){
  (!pmLocked?'<div class="flex flex-wrap gap-2"><button onclick="saveSalesDailyEvening(false)" class="'+lightButton+'">Save PM Draft</button>'+
  '<button onclick="saveSalesDailyEvening(true)" class="'+actionButton+'">Submit Evening Result</button></div>':
  '<p class="text-xs text-green-700">Evening results submitted. Manager can review and request corrections.</p>')+'</section>':'')+
- '<section class="rounded-2xl border bg-white p-4"><div class="flex justify-between gap-2 items-center"><div><b class="text-sm">Recorded activity in the app</b><p class="text-xs text-gray-500 mt-1">CRM follow-ups, Showroom/Online events and order activity. These do not automatically count as completed tasks.</p></div>'+
+ weeklyPanel()+'<section class="rounded-2xl border bg-white p-4"><div class="flex justify-between gap-2 items-center"><div><b class="text-sm">Recorded activity in the app</b><p class="text-xs text-gray-500 mt-1">CRM follow-ups, Showroom/Online events and order activity. These do not automatically count as completed tasks.</p></div>'+
  '<button onclick="showDailyActivitySuggestions()" class="'+lightButton+'">View Today’s Activity</button></div><div id="dailyActivitySuggestions" class="mt-3"></div></section></div>';
 }
 async function renderManager(){
@@ -211,7 +232,7 @@ async function renderManager(){
   ['Evening Results Submitted',count('pmStatus','Submitted')],
   ['Manager Reviewed',count('reviewStatus','Reviewed')]
  ].map(([n,v])=>'<div class="bg-white border rounded-2xl p-4"><div class="text-[10px] font-bold uppercase text-gray-500">'+n+'</div><div class="font-black text-2xl mt-2">'+v+'</div></div>').join('')+'</div>'+
- '<section class="bg-white border rounded-2xl overflow-hidden">'+
+ weeklyPanel()+'<section class="bg-white border rounded-2xl overflow-hidden">'+
  '<div class="p-4 border-b font-bold text-sm">Daily Reports · '+reports.length+'</div>'+
  (reports.length?'<div class="divide-y">'+reports.map(r=>'<div class="p-4 flex flex-wrap items-center gap-3">'+
  '<div class="flex-1 min-w-[210px]"><b class="text-sm">'+h(r.salesperson)+'</b><p class="text-xs text-gray-500 mt-1">'+h(r.date)+' · '+r.tasks.length+' tasks</p>'+
@@ -251,25 +272,30 @@ window.submitDailyManagerReview=async(id,decision)=>{
  catch(e){toast(e.message,true)}
 };
 async function reload(){
- const seq=++ui.seq;const page=state.page;if(!allowed(page))return toast('Daily Report permission required',true);
+ resetAccount();
+ const seq=++ui.seq;const page=state.page;const userId=state.user?.id;if(!allowed(page))return toast('Daily Report permission required',true);
  root().innerHTML='<div class="rounded-xl bg-white border p-8 text-sm text-gray-500">Loading Daily Reports from Google Sheets…</div>';
  try{
   await access();
+  if(seq!==ui.seq||state.page!==page||state.user?.id!==userId)return;
   if(!ui.config?.configured)return showSetup();
   if(page===P){
    await loadCustomers();
-   const res=await api('read',{date:ui.date,start:ui.date,end:ui.date});
-   if(seq!==ui.seq||state.page!==page)return;
+   if(seq!==ui.seq||state.page!==page||state.user?.id!==userId)return;
+   const [res,stats]=await Promise.all([api('read',{date:ui.date,start:ui.date,end:ui.date}),api('weekly',{start:backDays(ui.date,6),end:ui.date})]);
+   if(seq!==ui.seq||state.page!==page||state.user?.id!==userId)return;
    ui.report=(res.reports||[]).find(x=>x.userId===state.user?.id)||null;
-   ui.tasks=ui.report?.tasks?.length?ui.report.tasks:ui.tasks.length?ui.tasks:[empty()];
+   ui.stats=stats;
+   ui.tasks=ui.report?.tasks?.length?ui.report.tasks:[empty()];
    renderSalesHome();
   }else{
-   const res=await api('read',{start:ui.start,end:ui.end,userId:ui.person||null});
-   if(seq!==ui.seq||state.page!==page)return;
-   ui.reports=res.reports||[];ui.people=res.salesPeople||[];
+   const [res,stats]=await Promise.all([api('read',{start:ui.start,end:ui.end,userId:ui.person||null}),api('weekly',{start:backDays(ui.end,6),end:ui.end,userId:ui.person||null})]);
+   if(seq!==ui.seq||state.page!==page||state.user?.id!==userId)return;
+   ui.reports=res.reports||[];ui.people=res.salesPeople||[];ui.stats=stats;
    renderManager();
   }
  }catch(err){
+  if(seq!==ui.seq||state.page!==page||state.user?.id!==userId)return;
   root().innerHTML=header(page===P?'Daily Plan & Result':'Team Daily Review','Google Sheets')+
    '<div class="mt-3 rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-800">'+h(err.message||'Google Sheets unavailable')+
    '<div class="mt-3"><button onclick="reloadDailyReport()" class="'+lightButton+'">Retry</button></div></div>';

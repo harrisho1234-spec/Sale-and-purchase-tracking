@@ -2,7 +2,9 @@
 
 **Google Sheet:** https://docs.google.com/spreadsheets/d/1dDxwdTB59YZa1j3PilEjCTdfhG-zWWDgCMpQhdLmz9s/edit
 
-The app screens, native Google Sheet and authenticated API relay have been created. **One Google Apps Script deployment is still required** under the Google Sheet owner's account before staff can save daily plans. Neither reports nor tasks use Supabase Storage or Supabase database tables.
+The app uses an authenticated API relay and Google Sheets for reports and tasks. Neither reports nor tasks use Supabase Storage or Supabase database tables.
+
+The production connection was activated on 22 October 2026 with this [deployed endpoint](https://script.google.com/macros/s/AKfycbwWYiZUXqIyErU9C6xbQbbDODtvxTenXJTUpDlbCG2ytMqP344Qx2Y7BqTyXH9PHYp5/exec). The steps below are for a new installation or replacement deployment. The endpoint URL is public configuration; a live authorized login is still required for every report operation.
 
 ## One-time setup (Google Sheet owner / Super Admin)
 
@@ -23,6 +25,18 @@ Security: The Web App technically receives external HTTP requests but **rejects 
 Sales: Open **Daily Plan & Result**, select date, add planned tasks, optional customer links and follow-up date. **Save AM Draft**, then **Submit Morning Plan**. After submitting the AM plan, update each task with a result, status and next follow-up date; **Save PM Draft** or **Submit Evening Result**. Use **Import Pending Tasks** to carry forward unfinished tasks, and **View Today's Activity** for read-only CRM/Sales events.
 
 Manager: Open **Team Daily Review** to compare AM and PM by Salesperson/date and choose **Mark Reviewed** or **Request Corrections** with a comment. Request Corrections reopens the PM result only. Manager sees Sales-role staff, not unrelated departments.
+
+Both screens include a last-seven-days summary ending on the selected report date (Sales) or the To date (management). Management summaries respect the selected salesperson. Completion rate is completed tasks divided by all planned tasks, including drafts and cancelled tasks. The current access RPC defines the manager's team as all active Sales-role accounts; there is no separate manager-to-salesperson assignment model.
+
+Customer Database's **First Contact Date** is selectable when adding a customer. The server rejects future dates and dates before 1900, preserves the system creation timestamp, and requires an active Sales/Manager/Admin/Super Admin account. Sales and Manager creation retain the existing self-assignment rules.
+
+## Verification
+
+Run `node --test tests/sales-daily.test.cjs` for the AM/PM/review state transitions, ownership, weekly filters, carry-forward, date validation, blank sheet row handling, request validation, and UI date/account isolation. The Sheets API is simulated in these tests; they do not replace a signed-in live smoke test.
+
+Run `tests/sales-daily-access-rollback.sql` as a database administrator to check actual account access and selectable customer dates. Test customer changes are rolled back. Existing anonymous function grants remain revoked; the connection table has no direct client grants or policies and is exposed only through permission-checked RPCs.
+
+Writes are serialized by an Apps Script lock. All evening input is validated before writing any result. Google Sheets does not provide database transactions: an infrastructure failure during a multi-row write may still require retry/reconciliation. Audit records and manager reviews remain in the workbook.
 
 Roles and access: In **Users & Access**, permissions are Sales Daily Plan (Own), Daily Review Team (Manager), and Daily Review All (Admin/Super Admin). Supabase holds these permission settings and the Google connection URL, but **not daily report rows**.
 

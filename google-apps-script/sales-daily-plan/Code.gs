@@ -19,10 +19,14 @@ function respond(data){return ContentService.createTextOutput(JSON.stringify(dat
 function doGet(){return respond({ok:false,error:'Use the authenticated Sales & Order Management app to access Daily Reports.'})}
 function doPost(e){
  try{
-  const req=JSON.parse(String(e&&e.postData&&e.postData.contents||'{}'));
+  const raw=String(e&&e.postData&&e.postData.contents||'{}');
+  if(raw.length>45000)throw Error('Daily report request is too large');
+  const req=JSON.parse(raw);
+  if(!req||typeof req!=='object'||Array.isArray(req))throw Error('Invalid request');
   const actor=authenticate(req.token);
   const action=String(req.action||'');
   const payload=req.payload||{};
+  if(typeof payload!=='object'||Array.isArray(payload))throw Error('Invalid payload');
   if(!['ping','read','save_am','submit_am','save_pm','submit_pm','review','carry_forward','weekly'].includes(action))throw Error('Unknown action');
   const ss=SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('SHEET_ID'));
   const res=dispatch(ss,actor,action,payload);
@@ -62,13 +66,14 @@ function dispatch(ss,actor,action,p){
   if(action==='save_pm'||action==='submit_pm')return savePm(ss,actor,p,action==='submit_pm');
   if(action==='review')return reviewReport(ss,actor,p);
   throw Error('Unsupported operation');
- }finally{lock.releaseLock()}
+ }finally{try{SpreadsheetApp.flush()}finally{lock.releaseLock()}}
 }
 function tab(ss,key){const sheet=ss.getSheetByName(TAB[key]);if(!sheet)throw Error('Missing '+TAB[key]+' sheet. Verify the master workbook.');return sheet}
-function data(sheet){return sheet.getDataRange().getDisplayValues().slice(1).filter(r=>r[0])}
+// Preserve physical row positions even when a workbook owner leaves blank rows.
+function data(sheet){return sheet.getDataRange().getDisplayValues().slice(1)}
 function now(){return new Date().toISOString()}
 function today(){return Utilities.formatDate(new Date(),TZ,'yyyy-MM-dd')}
-function iso(d){d=String(d||'');if(!/^\d{4}-\d{2}-\d{2}$/.test(d)||!Number.isFinite(Date.parse(d+'T00:00:00+07:00')))throw Error('Select a valid date');return d}
+function iso(d){d=String(d||'');const parsed=new Date(d+'T00:00:00Z');if(!/^\d{4}-\d{2}-\d{2}$/.test(d)||!Number.isFinite(parsed.getTime())||parsed.toISOString().slice(0,10)!==d)throw Error('Select a valid date');return d}
 function dayWindow(d){const td=today();if(Math.abs(Date.parse(d)-Date.parse(td))>1000*60*60*24*45)throw Error('Daily Report date must be within 45 days of today')}
 function val(v,n=2000){v=String(v===null||v===undefined?'':v).trim();if(v.length>n)throw Error('Field exceeds '+n+' characters');return v}
 function saveText(v,n){const out=val(v,n);return /^[=+\-@]/.test(out)?"'"+out:out}
@@ -126,7 +131,7 @@ function saveAm(ss,a,p,submit){
  if(oldTasks.length)oldTasks.slice().sort((x,y)=>y.rowNo-x.rowNo).forEach(x=>tasks.deleteRow(x.rowNo));
  rows.forEach(row=>tasks.appendRow(row));
  const dateNow=now(),fresh=old?old.slice():new Array(15).fill('');
- fresh[0]=reportId;fresh[1]=date;fresh[2]=a.user_id;fresh[3]=a.display_name;fresh[4]=a.role;
+ fresh[0]=reportId;fresh[1]=date;fresh[2]=a.user_id;fresh[3]=saveText(a.display_name,200);fresh[4]=a.role;
  fresh[5]=submit?'Submitted':'Draft';fresh[6]=submit?dateNow:'';
  fresh[7]='Not Started';fresh[9]='Pending';fresh[13]=old?old[13]:dateNow;fresh[14]=dateNow;
  if(found.i<0)sh.appendRow(fresh);else sh.getRange(found.i,1,1,15).setValues([fresh]);
@@ -143,7 +148,9 @@ function savePm(ss,a,p,submit){
  const original=taskRows(tasks,found.row[0]),received=Array.isArray(p.results)?p.results:[];
  if(received.length!==original.length)throw Error('Update every planned task');
  const byId=new Map(received.map(t=>[String(t.id),t]));
- for(const entry of original){
+ // Validate the entire request before changing any task, so invalid later rows
+ // cannot leave earlier rows saved while the UI reports failure.
+ const updates=original.map(entry=>{
   const obj=byId.get(entry.row[0]);if(!obj)throw Error('Result missing for task '+entry.row[6]);
   const status=val(obj.status,35);if(status&&!RESULT_SET.includes(status))throw Error('Choose an allowed result status');
   if(submit&&!status)throw Error('All tasks need an evening status before submitting');
@@ -152,8 +159,9 @@ function savePm(ss,a,p,submit){
   const row=entry.row.slice();
   row[11]=status;row[12]=result;row[13]=next;
   row[14]=status==='Completed'?now():'';row[16]=now();
-  tasks.getRange(entry.rowNo,1,1,17).setValues([row]);
- }
+  return{rowNo:entry.rowNo,row};
+ });
+ updates.forEach(entry=>tasks.getRange(entry.rowNo,1,1,17).setValues([entry.row]));
  const report=found.row.slice();
  report[7]=submit?'Submitted':'Draft';report[8]=submit?now():'';report[9]='Pending';
  report[14]=now();
@@ -174,11 +182,11 @@ function reviewReport(ss,a,p){
  if(report[7]!=='Submitted')throw Error('The Salesperson has not submitted Evening Results');
  if(report[9]==='Reviewed')throw Error('This report was already reviewed');
  const old={reviewStatus:report[9],reviewedBy:report[11]};
- report[9]=decision;report[10]=comment;report[11]=a.display_name;
+ report[9]=decision;report[10]=comment;report[11]=saveText(a.display_name,200);
  report[12]=now();report[14]=now();
  if(decision==='Changes Requested'){report[7]='Draft';report[8]=''}
  sheet.getRange(idx+2,1,1,15).setValues([report]);
- tab(ss,'reviews').appendRow([uid(),id,report[1],a.user_id,a.display_name,decision,comment,now()]);
+ tab(ss,'reviews').appendRow([uid(),id,report[1],a.user_id,saveText(a.display_name,200),decision,comment,now()]);
  audit(ss,a,id,'MANAGER_'+decision.toUpperCase().replace(' ','_'),old,{comment});
  return{reportId:id,decision,reviewedBy:a.display_name};
 }
@@ -197,7 +205,7 @@ function carryForward(ss,a,p){
 function weekly(ss,a,p){
  const end=iso(p.end||today());const start=iso(p.start||today());
  if(start>end||Date.parse(end)-Date.parse(start)>42*86400000)throw Error('Choose a 42-day window or shorter');
- const reports=data(tab(ss,'reports')).filter(r=>r[1]>=start&&r[1]<=end&&visibleReport(a,r));
+ const reports=data(tab(ss,'reports')).filter(r=>r[1]>=start&&r[1]<=end&&visibleReport(a,r)&&(!p.userId||String(p.userId)===String(r[2])));
  const stats={reports:reports.length,amSubmitted:0,pmSubmitted:0,reviewed:0,
   plannedTasks:0,completed:0,partiallyCompleted:0,pending:0};
  const ids=new Set(reports.map(r=>r[0]));

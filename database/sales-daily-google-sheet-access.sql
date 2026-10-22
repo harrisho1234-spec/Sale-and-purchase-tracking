@@ -71,7 +71,7 @@ returns jsonb language plpgsql security definer
 set search_path='public','auth','pg_temp'
 as $fn$
 begin
- if public.current_app_role()<>'super_admin' then
+ if auth.uid() is null or public.current_app_role() is distinct from 'super_admin' then
   raise exception 'Only Super Admin can configure Daily Report Google Sheets';end if;
  if p_script_url is null then p_script_url:='';end if;
  p_script_url:=btrim(p_script_url);
