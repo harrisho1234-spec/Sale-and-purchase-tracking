@@ -48,6 +48,12 @@ const GUIDE_DATA=[
  {id:'approve-do-returns',section:'Management',title:'Approve DO and stock receipt requests',summary:'Review physical stock movements, DO release and customer return receipts.',roles:admins,page:'approvals',
   steps:['Open pending management approvals or Stock action approvals.','Review the requested DO quantity and the selected inventory location against available stock.','For a Credit Note return, check the original CN, product, actual received good quantity and receiving location.','Approve or reject the request; rejection returns it to the correction workflow.','Check the Movement History for the approved OUT or RETURN and confirm that no duplicate movement occurred.'],
   caution:'Do not approve damaged returned goods into saleable inventory; inspect and handle them separately.'},
+ {id:'sales-daily-plan',section:'Sales & Customers',title:'Daily Plan — Morning and Evening',summary:'Submit a morning plan, record evening results, carry forward pending tasks.',roles:['sales'],page:'sales-daily',
+  steps:['Open Sales & Customers → Daily Plan & Result and choose the correct Cambodia date.','Add planned work for customer follow-ups, page monitoring, showroom, content, quotations or other tasks. Link a Customer Master record when appropriate.','Save a morning draft, then Submit Morning Plan to lock the planned tasks.','During the day, use your normal CRM, Showroom and Online tabs; the recorded activity panel can help you recall what happened.','In the evening, fill the actual outcome and status for every planned task. Provide the next follow-up date for rescheduled work. Submit Evening Result.','To reuse incomplete work tomorrow, choose Import Pending Tasks from the previous day. Manager may Review or Request Corrections.'],
+  caution:'Daily reports are stored in a private Google Sheet, not Supabase Storage. Recorded CRM actions are suggestions; mark tasks complete only after confirming actual results.'},
+ {id:'sales-daily-review',section:'Management',title:'Team Daily Review',summary:'Managers compare Morning Plans with Evening Results and leave feedback.',roles:management,page:'sales-daily-review',
+  steps:['Open Management → Team Daily Review.','Filter by date and salesperson. Managers only see employees whose actual role is Sales.','Compare planned follow-ups, page monitoring and content with reported results.','Mark Reviewed after checking results, or Request Corrections with a comment so Sales can update and resubmit their evening results.','Review unfinished work and check whether it was carried into the next day.'],
+  caution:'The Manager cannot rewrite a Salesperson’s submitted Morning Plan. Data is stored in the Google Sheet with an audit trail. Super Admin must connect the Google Apps Script Web App once.'},
  {id:'management-activity',section:'Management',title:'Review daily Sales Activity',summary:'See recorded work by date, salesperson and action type.',roles:management,page:'sales-activity',
   steps:['Open Management → Sales Activity.','Select Today, 7 Days, 30 Days or your own date range.','Filter by salesperson and type such as customer follow-up, SR, payment or DO.','Open the relevant Sales Order or customer record for details when available.','Use the history for coaching and follow-up, not as proof that work outside the app did not happen.'],
   caution:'Manager permission is limited to Sales-role staff. Activities without a recorded actor or performed outside the app cannot be inferred.'},
@@ -69,7 +75,7 @@ const heading={dashboard:'getting-started',customers:'sales-customer','customer-
  'sales-orders':'sales-sr',tracking:'sr-tkrk', 'quotation-imports':'sales-quotation',
  'stock-inventory':'stock-operations','supplier-pos':'stock-po',procurement:'stock-po',
  'returns':'return-cn',payments:'payments',approvals:'approve-invoices',
- 'sales-activity':'management-activity',reports:'reports',users:'user-access',
+ 'sales-activity':'management-activity','sales-daily':'sales-daily-plan','sales-daily-review':'sales-daily-review',reports:'reports',users:'user-access',
  'sales-access':'user-access',help:'getting-started'};
 const html=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const model={tab:'all',query:'',open:null,edits:new Map(),progress:null,progressLoaded:false,progressError:false,
