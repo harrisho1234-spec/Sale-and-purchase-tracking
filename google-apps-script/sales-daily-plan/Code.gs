@@ -27,7 +27,7 @@ function doPost(e){
   const action=String(req.action||'');
   const payload=req.payload||{};
   if(typeof payload!=='object'||Array.isArray(payload))throw Error('Invalid payload');
-  if(!['ping','read','save_am','submit_am','save_pm','submit_pm','review','carry_forward','weekly','request_edit','decide_edit','delete_report','todo_list','todo_save'].includes(action))throw Error('Unknown action');
+  if(!['ping','read','save_am','submit_am','save_pm','submit_pm','review','carry_forward','weekly','request_edit','decide_edit','delete_report','todo_list','todo_save','todo_delete'].includes(action))throw Error('Unknown action');
   const ss=SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('SHEET_ID'));
   const res=dispatch(ss,actor,action,payload);
   return respond({ok:true,data:res});
@@ -58,6 +58,7 @@ function dispatch(ss,actor,action,p){
  if(action==='ping')return{connected:true,sheet:ss.getName(),role:actor.role};
  if(action==='todo_list')return todoList(ss,actor);
  if(action==='todo_save')return todoSave(ss,actor,p);
+ if(action==='todo_delete')return todoDelete(ss,actor,p);
  if(action==='read')return readReports(ss,actor,p);
  if(action==='weekly')return weekly(ss,actor,p);
  if(action==='carry_forward')return carryForward(ss,actor,p);
@@ -337,5 +338,20 @@ function todoSave(ss,a,p){
  if(existing)sh.getRange(ix+2,1,1,15).setValues([row]);else sh.appendRow(row);
  audit(ss,a,row[0],existing?'TODO_UPDATED':'TODO_CREATED',{task:existing||null},{task:row});
  return{id:row[0],saved:true};
+ }finally{SpreadsheetApp.flush();lock.releaseLock()}
+}
+
+function todoDelete(ss,a,p){
+ if(!a.can_review||!['manager','admin','super_admin'].includes(a.role))throw Error('Management permission required to delete tasks');
+ const id=val(p.id,80);if(!id)throw Error('Task ID required');
+ const lock=LockService.getScriptLock();lock.waitLock(15000);
+ try{
+  const sh=todoSheet(ss),rows=data(sh),ix=rows.findIndex(r=>String(r[0])===id);
+  if(ix<0)throw Error('Task not found');
+  const original=rows[ix];
+  if(!fetchTeam(a).has(String(original[3])))throw Error('Not authorized to delete this salesperson task');
+  audit(ss,a,id,'TODO_DELETED',{task:original},{deletedBy:a.user_id,deletedAt:now()});
+  sh.deleteRow(ix+2);
+  return{deleted:true,id};
  }finally{SpreadsheetApp.flush();lock.releaseLock()}
 }
