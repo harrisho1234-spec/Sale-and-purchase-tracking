@@ -22,10 +22,12 @@ const alertFor=t=>{
 };
 const field=(name,label,type='text',value='')=>'<label class="text-xs font-semibold">'+label+'<input id="todo_'+name+'" type="'+type+'" class="block border rounded-lg px-3 py-2 w-full mt-1 text-sm" value="'+h(value)+'"></label>';
 window.filterSalesTodo=()=>{
+ const active=document.activeElement?.id,caret=active==='todoSearch'?document.activeElement.selectionStart:null;
  query=document.getElementById('todoSearch')?.value||'';
  statusFilter=document.getElementById('todoStatusFilter')?.value||'Active';
  priorityFilter=document.getElementById('todoPriorityFilter')?.value||'All';
  sortMode=document.getElementById('todoSort')?.value||'due';render();
+ if(active==='todoSearch'){const input=document.getElementById('todoSearch');input?.focus();if(caret!==null)input?.setSelectionRange(caret,caret)}
 };
 window.openSalesTodoHistory=async id=>{
  try{const data=await api('todo_history',{id});const rows=data.events||[];
