@@ -150,7 +150,7 @@ function saveAm(ss,a,p,submit){
  fresh[7]='Not Started';fresh[9]='Pending';fresh[13]=old?old[13]:dateNow;fresh[14]=dateNow;
  if(found.i<0)sh.appendRow(fresh);else sh.getRange(found.i,1,1,15).setValues([fresh]);
  if(amApproved&&submit)closeEditApproval(ss,reportId,'AM');
- audit(ss,a,reportId,submit?'AM_SUBMITTED':'AM_DRAFT_SAVED',{taskCount:oldTasks.length},{taskCount:rows.length,date});
+ audit(ss,a,reportId,amApproved?(submit?'AM_REVISED_SUBMITTED':'AM_REVISION_DRAFT'):submit?'AM_SUBMITTED':'AM_DRAFT_SAVED',{tasks:oldTasks.map(x=>taskOutput(x.row))},{tasks:rows.map(taskOutput),date});
  return reportOutput(fresh,rows.map(taskOutput));
 }
 function savePm(ss,a,p,submit){
@@ -183,7 +183,8 @@ function savePm(ss,a,p,submit){
  report[7]=submit?'Submitted':'Draft';report[8]=submit?now():'';report[9]='Pending';
  report[14]=now();
  reports.getRange(found.i,1,1,15).setValues([report]);
- audit(ss,a,report[0],submit?(late?'PM_SUBMITTED_LATE':'PM_SUBMITTED'):'PM_DRAFT_SAVED',{tasks:original.length},{tasks:received.length,deadline:pmDeadline(date),submittedAt:report[8],late});
+ audit(ss,a,report[0],submit?(late?'PM_SUBMITTED_LATE':'PM_SUBMITTED'):'PM_DRAFT_SAVED',{tasks:original.map(x=>taskOutput(x.row))},{tasks:updates.map(x=>taskOutput(x.row)),deadline:pmDeadline(date),submittedAt:report[8],late});
+ if(submit)closeEditApproval(ss,report[0],'PM');
  return reportOutput(report,taskRows(tasks,report[0]).map(x=>taskOutput(x.row)));
 }
 function reviewReport(ss,a,p){
@@ -232,6 +233,7 @@ function editAction(ss,a,action,p){
   const report=records[idx].slice();
   if(!fetchTeam(a).has(String(report[2])))throw Error('Not authorized to review this salesperson');
   if(report[9]==='Reviewed'&&a.role!=='super_admin')throw Error('Only Super Admin can reopen a reviewed report');
+  if(decision==='Approved'&&entry.row[3]==='AM'&&report[7]==='Submitted')throw Error('Reopen the submitted Evening Result before approving Morning Plan changes');
   const row=entry.row.slice();row[5]=decision;row[7]=a.user_id;row[8]=now();row[9]=note;
   editSheet(ss).getRange(entry.n,1,1,10).setValues([row]);
   if(decision==='Approved'){
