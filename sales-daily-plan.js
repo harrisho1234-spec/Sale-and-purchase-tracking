@@ -218,7 +218,7 @@ function renderSalesHome(){
  (!pmLocked?'<div class="flex flex-wrap gap-2"><button onclick="saveSalesDailyEvening(false)" class="'+lightButton+'">Save PM Draft</button>'+
  '<button onclick="saveSalesDailyEvening(true)" class="'+actionButton+'">Submit Evening Result</button></div>':
  '<p class="text-xs text-green-700">Evening results submitted. Manager can review and request corrections.</p>')+'</section>':'')+
- weeklyPanel()+'<section class="rounded-2xl border bg-white p-4"><div class="flex justify-between gap-2 items-center"><div><b class="text-sm">Recorded activity in the app</b><p class="text-xs text-gray-500 mt-1">CRM follow-ups, Showroom/Online events and order activity. These do not automatically count as completed tasks.</p></div>'+
+ '<div data-daily-weekly>'+weeklyPanel()+'</div>'+'<section class="rounded-2xl border bg-white p-4"><div class="flex justify-between gap-2 items-center"><div><b class="text-sm">Recorded activity in the app</b><p class="text-xs text-gray-500 mt-1">CRM follow-ups, Showroom/Online events and order activity. These do not automatically count as completed tasks.</p></div>'+
  '<button onclick="showDailyActivitySuggestions()" class="'+lightButton+'">View Today’s Activity</button></div><div id="dailyActivitySuggestions" class="mt-3"></div></section></div>';
 }
 async function renderManager(){
@@ -237,7 +237,7 @@ async function renderManager(){
   ['Evening Results Submitted',count('pmStatus','Submitted')],
   ['Manager Reviewed',count('reviewStatus','Reviewed')]
  ].map(([n,v])=>'<div class="bg-white border rounded-2xl p-4"><div class="text-[10px] font-bold uppercase text-gray-500">'+n+'</div><div class="font-black text-2xl mt-2">'+v+'</div></div>').join('')+'</div>'+
- weeklyPanel()+'<section class="bg-white border rounded-2xl overflow-hidden">'+
+ '<div data-daily-weekly>'+weeklyPanel()+'</div>'+'<section class="bg-white border rounded-2xl overflow-hidden">'+
  '<div class="p-4 border-b font-bold text-sm">Daily Reports · '+reports.length+'</div>'+
  (reports.length?'<div class="divide-y">'+reports.map(r=>'<div class="p-4 flex flex-wrap items-center gap-3">'+
  '<div class="flex-1 min-w-[210px]"><b class="text-sm">'+h(r.salesperson)+'</b><p class="text-xs text-gray-500 mt-1">'+h(r.date)+' · '+r.tasks.length+' tasks</p>'+
@@ -288,9 +288,10 @@ async function reload(){
    await loadCustomers();
    if(seq!==ui.seq||state.page!==page||state.user?.id!==userId)return;
    // Do not hold up the report editor while the slower seven-day summary loads.
-   const summary=api('weekly',{start:backDays(ui.date,6),end:ui.date}).then(stats=>{
+   let reportLoaded=false;
+   api('weekly',{start:backDays(ui.date,6),end:ui.date}).then(stats=>{
      if(seq!==ui.seq||state.page!==page||state.user?.id!==userId)return;
-     ui.stats=stats;if(root()?.querySelector('.daily-task-row')){const box=root().querySelector('section'); /* retain in-progress form input */}else renderSalesHome();
+     ui.stats=stats;if(reportLoaded){const target=root()?.querySelector('[data-daily-weekly]');if(target)target.outerHTML='<div data-daily-weekly>'+weeklyPanel()+'</div>';}
    }).catch(err=>{
      if(seq===ui.seq&&state.page===page&&state.user?.id===userId)
        console.warn('Daily summary unavailable:',err.message);
@@ -299,19 +300,20 @@ async function reload(){
    if(seq!==ui.seq||state.page!==page||state.user?.id!==userId)return;
    ui.report=(res.reports||[]).find(x=>x.userId===state.user?.id)||null;
    ui.tasks=ui.report?.tasks?.length?ui.report.tasks:[empty()];
-   renderSalesHome();
+   reportLoaded=true;renderSalesHome();
   }else{
    // Render report rows as soon as available; summary runs independently.
+   let reportLoaded=false;
    api('weekly',{start:backDays(ui.end,6),end:ui.end,userId:ui.person||null}).then(stats=>{
      if(seq!==ui.seq||state.page!==page||state.user?.id!==userId)return;
-     ui.stats=stats;renderManager();
+     ui.stats=stats;if(reportLoaded){const target=root()?.querySelector('[data-daily-weekly]');if(target)target.outerHTML='<div data-daily-weekly>'+weeklyPanel()+'</div>';}
    }).catch(err=>{
      if(seq===ui.seq&&state.page===page&&state.user?.id===userId)
        console.warn('Daily summary unavailable:',err.message);
    });
    const res=await api('read',{start:ui.start,end:ui.end,userId:ui.person||null});
    if(seq!==ui.seq||state.page!==page||state.user?.id!==userId)return;
-   ui.reports=res.reports||[];ui.people=res.salesPeople||[];renderManager();
+   ui.reports=res.reports||[];ui.people=res.salesPeople||[];reportLoaded=true;renderManager();
   }
  }catch(err){
   if(seq!==ui.seq||state.page!==page||state.user?.id!==userId)return;
