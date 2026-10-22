@@ -136,6 +136,9 @@
         {key:'approvals.manage',label:'Approve / reject requests',description:'Take action on permitted approval requests.'},
         {key:'sales_access.manage',label:'Manage Sales Access',description:'Grant Sales users access to extra customers or orders.'},
         {key:'sales_activity.view_own',label:'View Own Sales Activity',description:'See your own recorded actions by date and activity type.'},
+        {key:'sales_daily.plan_own',label:'Submit Own Daily Plan & Result',description:'Create your morning plans, update evening results and carry forward unfinished tasks.'},
+        {key:'sales_daily.review_team',label:'Review Sales Team Daily Reports',description:'Managers review plans and results from Sales-role staff only.'},
+        {key:'sales_daily.review_all',label:'Review All Sales Daily Reports',description:'Admin-level review across all Sales-role staff.'},
         {key:'sales_activity.view_team',label:'View Team Sales Activity',description:'See recorded actions by Sales staff (and your own). Team is currently all Sales-role accounts.'},
         {key:'sales_activity.view_all',label:'View All Sales Activity',description:'See recorded actions by all sales and authorized management staff.'},
         {key:'stock_locations.manage',label:'Manage Stock Locations',description:'Create and maintain stock locations.'},
@@ -170,10 +173,10 @@
   };
 
   const ROLE_FALLBACK={
-    sales:new Set(['customers.view','customers.create','customers.edit','sales_orders.view','sales_orders.create','sales_orders.edit','sales_orders.convert_request','sales_orders.print','quotations.view','quotations.create','tracking.view','tracking.edit','payments.view','returns.view','returns.create','products.view','products.sales_price_view','reports.view','targets.view_own','sales_activity.view_own']),
+    sales:new Set(['customers.view','customers.create','customers.edit','sales_orders.view','sales_orders.create','sales_orders.edit','sales_orders.convert_request','sales_orders.print','quotations.view','quotations.create','tracking.view','tracking.edit','payments.view','returns.view','returns.create','products.view','products.sales_price_view','reports.view','targets.view_own','sales_activity.view_own','sales_daily.plan_own']),
     accountant:new Set(['customers.view','sales_orders.view','quotations.view','tracking.view','payments.view','payments.create','payments.edit','returns.view','products.view','products.sales_price_view','inventory.view','inventory.reports','reports.view','reports.export','finance.ar_view','finance.cost_margin_view','finance.payment_records']),
     stock_controller:new Set(['products.view','inventory.view','inventory.operate','inventory.transfer','inventory.count','inventory.reports','procurement.view','procurement.po_receive']),
-    manager:new Set(['customers.view','customers.create','customers.edit','sales_orders.view','sales_orders.create','sales_orders.edit','sales_orders.convert_approve','sales_orders.print','sales_orders.export','sales.view_all','quotations.view','quotations.create','tracking.view','tracking.edit','payments.view','payments.create','payments.edit','returns.view','returns.create','returns.edit','products.view','products.sales_price_view','inventory.view','inventory.reports','reports.view','reports.export','finance.ar_view','approvals.view','approvals.manage','sales_access.manage','targets.view_own','targets.view_team','sales_activity.view_own','sales_activity.view_team']),
+    manager:new Set(['customers.view','customers.create','customers.edit','sales_orders.view','sales_orders.create','sales_orders.edit','sales_orders.convert_approve','sales_orders.print','sales_orders.export','sales.view_all','quotations.view','quotations.create','tracking.view','tracking.edit','payments.view','payments.create','payments.edit','returns.view','returns.create','returns.edit','products.view','products.sales_price_view','inventory.view','inventory.reports','reports.view','reports.export','finance.ar_view','approvals.view','approvals.manage','sales_access.manage','targets.view_own','targets.view_team','sales_activity.view_own','sales_activity.view_team','sales_daily.review_team']),
     admin:new Set(AREAS.flatMap(a=>a.activities.map(x=>x.key)).filter(k=>!['users.manage','products.delete','products.tax_manage','activity_logs.view'].includes(k))),
     super_admin:new Set(AREAS.flatMap(a=>a.activities.map(x=>x.key)))
   };
