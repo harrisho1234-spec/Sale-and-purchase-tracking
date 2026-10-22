@@ -73,6 +73,10 @@ function tab(ss,key){const sheet=ss.getSheetByName(TAB[key]);if(!sheet)throw Err
 function data(sheet){return sheet.getDataRange().getDisplayValues().slice(1)}
 function now(){return new Date().toISOString()}
 function today(){return Utilities.formatDate(new Date(),TZ,'yyyy-MM-dd')}
+// Default working calendar: Monday-Saturday; deadline 09:00 on next working morning, Phnom Penh time.
+function pmDeadline(date){const d=new Date(iso(date)+'T00:00:00Z');do{d.setUTCDate(d.getUTCDate()+1)}while(d.getUTCDay()===0);return Utilities.formatDate(d,TZ,'yyyy-MM-dd')+'T09:00:00+07:00'}
+function pmLate(report){return report[5]==='Submitted'&&report[7]!=='Submitted'&&new Date().getTime()>Date.parse(pmDeadline(report[1]))}
+function pmSubmittedLate(report){return report[7]==='Submitted'&&!!report[8]&&Date.parse(report[8])>Date.parse(pmDeadline(report[1]))}
 function iso(d){d=String(d||'');const parsed=new Date(d+'T00:00:00Z');if(!/^\d{4}-\d{2}-\d{2}$/.test(d)||!Number.isFinite(parsed.getTime())||parsed.toISOString().slice(0,10)!==d)throw Error('Select a valid date');return d}
 function dayWindow(d){const td=today();if(Math.abs(Date.parse(d)-Date.parse(td))>1000*60*60*24*45)throw Error('Daily Report date must be within 45 days of today')}
 function val(v,n=2000){v=String(v===null||v===undefined?'':v).trim();if(v.length>n)throw Error('Field exceeds '+n+' characters');return v}
@@ -84,7 +88,7 @@ function ensureReview(a){if(!a.can_review||!['manager','admin','super_admin'].in
 function reportFor(sheet,date,id){const rows=data(sheet);const i=rows.findIndex(r=>r[1]===date&&r[2]===id);return{i:i<0?-1:i+2,row:i<0?null:rows[i]}}
 function taskRows(sheet,reportId){return data(sheet).map((r,i)=>({rowNo:i+2,row:r})).filter(x=>x.row[1]===reportId)}
 function taskOutput(r){return{id:r[0],reportId:r[1],date:r[2],userId:r[3],sort:Number(r[4]||0),category:r[5],plan:r[6],customerId:r[7],customerName:r[8],priority:r[9],plannedFollowup:r[10],status:r[11],result:r[12],nextFollowup:r[13],completedAt:r[14]}}
-function reportOutput(r,tasks){return{id:r[0],date:r[1],userId:r[2],salesperson:r[3],amStatus:r[5],amSubmittedAt:r[6],pmStatus:r[7],pmSubmittedAt:r[8],reviewStatus:r[9],managerComment:r[10],reviewedBy:r[11],reviewedAt:r[12],tasks}}
+function reportOutput(r,tasks){return{id:r[0],date:r[1],userId:r[2],salesperson:r[3],amStatus:r[5],amSubmittedAt:r[6],pmStatus:r[7],pmSubmittedAt:r[8],reviewStatus:r[9],managerComment:r[10],reviewedBy:r[11],reviewedAt:r[12],pmDeadline:pmDeadline(r[1]),pmOverdue:pmLate(r),pmSubmittedLate:pmSubmittedLate(r),tasks}}
 function visibleActor(a,id){return a.can_review?true:String(id)===String(a.user_id)}
 function fetchTeam(a){return new Set((a.sales_people||[]).map(x=>String(x.user_id)))}
 function visibleReport(a,r){if(!a.can_review)return r[2]===a.user_id;return fetchTeam(a).has(String(r[2]))}
@@ -155,6 +159,7 @@ function savePm(ss,a,p,submit){
   const status=val(obj.status,35);if(status&&!RESULT_SET.includes(status))throw Error('Choose an allowed result status');
   if(submit&&!status)throw Error('All tasks need an evening status before submitting');
   const result=saveText(obj.result,1500),next=obj.nextFollowup?iso(obj.nextFollowup):'';
+  if(submit&&!result.trim())throw Error('Write an actual evening outcome for every planned task');
   if(submit&&status==='Rescheduled'&&!next)throw Error('Rescheduled tasks require a next follow-up date');
   const row=entry.row.slice();
   row[11]=status;row[12]=result;row[13]=next;
@@ -163,10 +168,11 @@ function savePm(ss,a,p,submit){
  });
  updates.forEach(entry=>tasks.getRange(entry.rowNo,1,1,17).setValues([entry.row]));
  const report=found.row.slice();
+ const late=submit&&new Date().getTime()>Date.parse(pmDeadline(date));
  report[7]=submit?'Submitted':'Draft';report[8]=submit?now():'';report[9]='Pending';
  report[14]=now();
  reports.getRange(found.i,1,1,15).setValues([report]);
- audit(ss,a,report[0],submit?'PM_SUBMITTED':'PM_DRAFT_SAVED',{tasks:original.length},{tasks:received.length});
+ audit(ss,a,report[0],submit?(late?'PM_SUBMITTED_LATE':'PM_SUBMITTED'):'PM_DRAFT_SAVED',{tasks:original.length},{tasks:received.length,deadline:pmDeadline(date),submittedAt:report[8],late});
  return reportOutput(report,taskRows(tasks,report[0]).map(x=>taskOutput(x.row)));
 }
 function reviewReport(ss,a,p){
