@@ -316,7 +316,7 @@ function todoSave(ss,a,p){
  const sh=todoSheet(ss),rows=data(sh),id=val(p.id,80),ix=rows.findIndex(r=>r[0]===id),existing=ix<0?null:rows[ix];
  const manager=!!a.can_review&&['manager','admin','super_admin'].includes(a.role);
  if(existing&&String(existing[3])!==String(a.user_id)&&!manager)throw Error('You may update only your own tasks');
- if(!existing&&!manager)throw Error('Only management can assign new tasks');
+ if(!existing&&!manager&&a.role!=='sales')throw Error('Only Sales or management can create tasks');
  const title=saveText(p.title||existing?.[1],200);if(!title)throw Error('Task title is required');
  const assigneeId=manager?val(p.assigneeId||existing?.[3],80):a.user_id;
  if(manager&&!fetchTeam(a).has(String(assigneeId)))throw Error('Choose an authorized Sales employee');
