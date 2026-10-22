@@ -1,7 +1,7 @@
 // Authenticated proxy only. Reports and tasks are stored in Google Sheets,
 // NEVER in a Supabase database table or Supabase Storage bucket.
 const ORIGINS=new Set(["https://harrisho1234-spec.github.io","http://localhost:3000","http://localhost:5173"]);
-const permitted=new Set(["ping","read","save_am","submit_am","save_pm","submit_pm","review","carry_forward","weekly","request_edit","decide_edit","delete_report","todo_list","todo_save","todo_delete"]);
+const permitted=new Set(["ping","read","save_am","submit_am","save_pm","submit_pm","review","carry_forward","weekly","request_edit","decide_edit","delete_report","todo_list","todo_save","todo_delete","todo_history"]);
 const asJson=(value,status=200,origin="")=>new Response(JSON.stringify(value),{status,headers:{
  "Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store",
  ...(ORIGINS.has(origin)?{"Access-Control-Allow-Origin":origin,"Vary":"Origin"}:{})
