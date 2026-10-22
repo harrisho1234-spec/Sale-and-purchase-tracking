@@ -51,7 +51,12 @@ async function api(action,payload){
    try{if(r.error.context?.json){const x=await r.error.context.json();detail=x.error||detail}}catch(_){}
    throw Error(detail);
  }
- if(!r.data?.ok)throw Error(r.data?.error||'Could not save to Google Sheets');
+ if(!r.data?.ok){
+   const message=String(r.data?.error||'Could not save to Google Sheets');
+   if(message.includes('Use the authenticated Sales & Order Management app'))
+     throw Error('Google Apps Script received a browser GET instead of an authenticated report request. Please retry inside this page; if it continues, the Apps Script deployment or redirect needs checking.');
+   throw Error(message);
+ }
  return r.data.data;
 }
 async function loadCustomers(){
@@ -282,17 +287,31 @@ async function reload(){
   if(page===P){
    await loadCustomers();
    if(seq!==ui.seq||state.page!==page||state.user?.id!==userId)return;
-   const [res,stats]=await Promise.all([api('read',{date:ui.date,start:ui.date,end:ui.date}),api('weekly',{start:backDays(ui.date,6),end:ui.date})]);
+   // Do not hold up the report editor while the slower seven-day summary loads.
+   const summary=api('weekly',{start:backDays(ui.date,6),end:ui.date}).then(stats=>{
+     if(seq!==ui.seq||state.page!==page||state.user?.id!==userId)return;
+     ui.stats=stats;if(root()?.querySelector('.daily-task-row')){const box=root().querySelector('section'); /* retain in-progress form input */}else renderSalesHome();
+   }).catch(err=>{
+     if(seq===ui.seq&&state.page===page&&state.user?.id===userId)
+       console.warn('Daily summary unavailable:',err.message);
+   });
+   const res=await api('read',{date:ui.date,start:ui.date,end:ui.date});
    if(seq!==ui.seq||state.page!==page||state.user?.id!==userId)return;
    ui.report=(res.reports||[]).find(x=>x.userId===state.user?.id)||null;
-   ui.stats=stats;
    ui.tasks=ui.report?.tasks?.length?ui.report.tasks:[empty()];
    renderSalesHome();
   }else{
-   const [res,stats]=await Promise.all([api('read',{start:ui.start,end:ui.end,userId:ui.person||null}),api('weekly',{start:backDays(ui.end,6),end:ui.end,userId:ui.person||null})]);
+   // Render report rows as soon as available; summary runs independently.
+   api('weekly',{start:backDays(ui.end,6),end:ui.end,userId:ui.person||null}).then(stats=>{
+     if(seq!==ui.seq||state.page!==page||state.user?.id!==userId)return;
+     ui.stats=stats;renderManager();
+   }).catch(err=>{
+     if(seq===ui.seq&&state.page===page&&state.user?.id===userId)
+       console.warn('Daily summary unavailable:',err.message);
+   });
+   const res=await api('read',{start:ui.start,end:ui.end,userId:ui.person||null});
    if(seq!==ui.seq||state.page!==page||state.user?.id!==userId)return;
-   ui.reports=res.reports||[];ui.people=res.salesPeople||[];ui.stats=stats;
-   renderManager();
+   ui.reports=res.reports||[];ui.people=res.salesPeople||[];renderManager();
   }
  }catch(err){
   if(seq!==ui.seq||state.page!==page||state.user?.id!==userId)return;
