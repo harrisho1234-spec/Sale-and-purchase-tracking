@@ -27,7 +27,7 @@ function doPost(e){
   const action=String(req.action||'');
   const payload=req.payload||{};
   if(typeof payload!=='object'||Array.isArray(payload))throw Error('Invalid payload');
-  if(!['ping','read','save_am','submit_am','save_pm','submit_pm','review','carry_forward','weekly','request_edit','decide_edit'].includes(action))throw Error('Unknown action');
+  if(!['ping','read','save_am','submit_am','save_pm','submit_pm','review','carry_forward','weekly','request_edit','decide_edit','delete_report'].includes(action))throw Error('Unknown action');
   const ss=SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('SHEET_ID'));
   const res=dispatch(ss,actor,action,payload);
   return respond({ok:true,data:res});
@@ -60,6 +60,7 @@ function dispatch(ss,actor,action,p){
  if(action==='weekly')return weekly(ss,actor,p);
  if(action==='carry_forward')return carryForward(ss,actor,p);
  if(action==='request_edit'||action==='decide_edit')return editAction(ss,actor,action,p);
+ if(action==='delete_report')return deleteReport(ss,actor,p);
  const lock=LockService.getScriptLock();
  lock.waitLock(15000);
  try{
@@ -243,6 +244,26 @@ function editAction(ss,a,action,p){
   }
   audit(ss,a,report[0],'EDIT_'+decision.toUpperCase(),{requestId,section:entry.row[3],reason:entry.row[4]},{note});
   return{requestId,status:decision};
+ }finally{SpreadsheetApp.flush();lock.releaseLock()}
+}
+function deleteReport(ss,a,p){
+ if(a.role!=='super_admin'||!a.can_review)throw Error('Only Super Admin can delete a daily report');
+ const id=val(p.reportId,80),confirm=val(p.confirm,20);
+ if(confirm!=='DELETE')throw Error('Type DELETE to confirm');
+ const lock=LockService.getScriptLock();lock.waitLock(15000);
+ try{
+  const sh=tab(ss,'reports'),all=data(sh),index=all.findIndex(r=>r[0]===id);
+  if(index<0)throw Error('Report not found');
+  const report=all[index];
+  if(!fetchTeam(a).has(String(report[2])))throw Error('Report is not associated with an authorized Sales account');
+  const relatedTasks=taskRows(tab(ss,'tasks'),id),relatedReviews=data(tab(ss,'reviews')).map((r,i)=>({row:r,n:i+2})).filter(x=>x.row[1]===id),relatedEdits=editRows(ss).filter(x=>x.row[1]===id);
+  // Log before deleting; keep audit entries as permanent trace without storing reports in Supabase.
+  audit(ss,a,id,'REPORT_DELETED',{report:report,tasks:relatedTasks.map(x=>x.row),reviews:relatedReviews.map(x=>x.row),editRequests:relatedEdits.map(x=>x.row)},{deletedBy:a.user_id,deletedAt:now()});
+  relatedTasks.sort((a,b)=>b.rowNo-a.rowNo).forEach(x=>tab(ss,'tasks').deleteRow(x.rowNo));
+  relatedReviews.sort((a,b)=>b.n-a.n).forEach(x=>tab(ss,'reviews').deleteRow(x.n));
+  relatedEdits.sort((a,b)=>b.n-a.n).forEach(x=>editSheet(ss).deleteRow(x.n));
+  sh.deleteRow(index+2);
+  return{deleted:true,reportId:id,date:report[1],salesperson:report[3]};
  }finally{SpreadsheetApp.flush();lock.releaseLock()}
 }
 function carryForward(ss,a,p){
