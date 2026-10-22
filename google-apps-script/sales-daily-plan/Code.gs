@@ -12,7 +12,7 @@
  * verifies Supabase session and calls a permission-checked RPC.
  */
 const TZ='Asia/Phnom_Penh';
-const TAB={reports:'Daily Reports',tasks:'Plan Tasks',reviews:'Manager Reviews',audit:'Audit Log'};
+const TAB={reports:'Daily Reports',tasks:'Plan Tasks',reviews:'Manager Reviews',audit:'Audit Log',edits:'Daily Edit Requests'};
 const RESULT_SET=['Completed','Partially Completed','Pending','Rescheduled','Cancelled'];
 const CATEGORY_SET=['Customer Follow-up','Showroom / Page','Online Inquiries','Product Content','Quotation / SR','Other'];
 function respond(data){return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON)}
@@ -27,7 +27,7 @@ function doPost(e){
   const action=String(req.action||'');
   const payload=req.payload||{};
   if(typeof payload!=='object'||Array.isArray(payload))throw Error('Invalid payload');
-  if(!['ping','read','save_am','submit_am','save_pm','submit_pm','review','carry_forward','weekly'].includes(action))throw Error('Unknown action');
+  if(!['ping','read','save_am','submit_am','save_pm','submit_pm','review','carry_forward','weekly','request_edit','decide_edit'].includes(action))throw Error('Unknown action');
   const ss=SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('SHEET_ID'));
   const res=dispatch(ss,actor,action,payload);
   return respond({ok:true,data:res});
@@ -59,6 +59,7 @@ function dispatch(ss,actor,action,p){
  if(action==='read')return readReports(ss,actor,p);
  if(action==='weekly')return weekly(ss,actor,p);
  if(action==='carry_forward')return carryForward(ss,actor,p);
+ if(action==='request_edit'||action==='decide_edit')return editAction(ss,actor,action,p);
  const lock=LockService.getScriptLock();
  lock.waitLock(15000);
  try{
@@ -68,6 +69,9 @@ function dispatch(ss,actor,action,p){
   throw Error('Unsupported operation');
  }finally{try{SpreadsheetApp.flush()}finally{lock.releaseLock()}}
 }
+function editSheet(ss){return ss.getSheetByName(TAB.edits)||ss.insertSheet(TAB.edits).appendRow(['ID','Report ID','User ID','Section','Reason','Status','Requested At','Decided By','Decided At','Decision Note'])&&ss.getSheetByName(TAB.edits)}
+function editRows(ss){return data(editSheet(ss)).map((row,i)=>({row,n:i+2})).filter(x=>x.row[0])}
+function editState(ss,reportId){return editRows(ss).filter(x=>x.row[1]===reportId).map(x=>({id:x.row[0],section:x.row[3],reason:x.row[4],status:x.row[5],requestedAt:x.row[6],decisionNote:x.row[9]}))}
 function tab(ss,key){const sheet=ss.getSheetByName(TAB[key]);if(!sheet)throw Error('Missing '+TAB[key]+' sheet. Verify the master workbook.');return sheet}
 // Preserve physical row positions even when a workbook owner leaves blank rows.
 function data(sheet){return sheet.getDataRange().getDisplayValues().slice(1)}
@@ -98,7 +102,8 @@ function readReports(ss,a,p){
  const all=data(tab(ss,'reports')).filter(r=>r[1]>=begin&&r[1]<=end&&visibleReport(a,r)
   &&(!p.userId||String(p.userId)===String(r[2])));
  const taskIndex={};data(tab(ss,'tasks')).forEach(r=>(taskIndex[r[1]]||(taskIndex[r[1]]=[])).push(taskOutput(r)));
- return{reports:all.map(r=>reportOutput(r,(taskIndex[r[0]]||[]).sort((x,y)=>x.sort-y.sort))),
+ const editIndex={};editRows(ss).forEach(x=>(editIndex[x.row[1]]||(editIndex[x.row[1]]=[])).push({id:x.row[0],section:x.row[3],reason:x.row[4],status:x.row[5],requestedAt:x.row[6],decisionNote:x.row[9]}));
+ return{reports:all.map(r=>({...reportOutput(r,(taskIndex[r[0]]||[]).sort((x,y)=>x.sort-y.sort)),editRequests:editIndex[r[0]]||[]})),
  salesPeople:a.can_review?a.sales_people||[]:[],today:today()};
 }
 function buildTask(t,date,user,reportId,sort,old){
@@ -123,7 +128,9 @@ function saveAm(ss,a,p,submit){
  if(!Array.isArray(p.tasks)||p.tasks.length<1||p.tasks.length>20)throw Error('Add between 1 and 20 planned tasks');
  const sh=tab(ss,'reports'),tasks=tab(ss,'tasks');
  const found=reportFor(sh,date,a.user_id),old=found.row;
- if(old&&old[5]==='Submitted')throw Error('Morning plan has already been submitted. Manager can review it.');
+ const amApproved=old&&editState(ss,old[0]).some(x=>x.section==='AM'&&x.status==='Approved');
+ if(old&&old[5]==='Submitted'&&!amApproved)throw Error('Request approval to edit the submitted Morning Plan.');
+ if(old&&old[7]==='Submitted')throw Error('Evening Result already submitted. Request the manager to reopen PM before changing the morning tasks.');
  const reportId=old?old[0]:uid();
  const oldTasks=taskRows(tasks,reportId);
  const used=new Set();
@@ -132,6 +139,9 @@ function saveAm(ss,a,p,submit){
   if(original){if(used.has(original[0]))throw Error('Duplicate task ID');used.add(original[0])}
   return buildTask(t,date,a.user_id,reportId,i+1,original);
  });
+ if(old&&old[5]==='Submitted'&&oldTasks.some(x=>x.row[11]||x.row[12])&&
+    (rows.length!==oldTasks.length||rows.some((r,i)=>r[0]!==oldTasks[i]?.row[0])))
+   throw Error('Cannot add or remove tasks after evening outcomes exist. Contact Super Admin for reconciliation.');
  if(oldTasks.length)oldTasks.slice().sort((x,y)=>y.rowNo-x.rowNo).forEach(x=>tasks.deleteRow(x.rowNo));
  rows.forEach(row=>tasks.appendRow(row));
  const dateNow=now(),fresh=old?old.slice():new Array(15).fill('');
@@ -139,6 +149,7 @@ function saveAm(ss,a,p,submit){
  fresh[5]=submit?'Submitted':'Draft';fresh[6]=submit?dateNow:'';
  fresh[7]='Not Started';fresh[9]='Pending';fresh[13]=old?old[13]:dateNow;fresh[14]=dateNow;
  if(found.i<0)sh.appendRow(fresh);else sh.getRange(found.i,1,1,15).setValues([fresh]);
+ if(amApproved&&submit)closeEditApproval(ss,reportId,'AM');
  audit(ss,a,reportId,submit?'AM_SUBMITTED':'AM_DRAFT_SAVED',{taskCount:oldTasks.length},{taskCount:rows.length,date});
  return reportOutput(fresh,rows.map(taskOutput));
 }
@@ -195,6 +206,42 @@ function reviewReport(ss,a,p){
  tab(ss,'reviews').appendRow([uid(),id,report[1],a.user_id,saveText(a.display_name,200),decision,comment,now()]);
  audit(ss,a,id,'MANAGER_'+decision.toUpperCase().replace(' ','_'),old,{comment});
  return{reportId:id,decision,reviewedBy:a.display_name};
+}
+function closeEditApproval(ss,id,section){editRows(ss).filter(x=>x.row[1]===id&&x.row[3]===section&&x.row[5]==='Approved').forEach(x=>editSheet(ss).getRange(x.n,6).setValue('Used'))}
+function editAction(ss,a,action,p){
+ const lock=LockService.getScriptLock();lock.waitLock(15000);
+ try{
+  const sh=tab(ss,'reports'),records=data(sh);
+  if(action==='request_edit'){
+   ensureWrite(a);const section=val(p.section,2),reason=saveText(p.reason,750),id=val(p.reportId,80);
+   if(!['AM','PM'].includes(section)||!reason)throw Error('Select a section and provide a reason');
+   const found=records.find(x=>x[0]===id&&x[2]===a.user_id);
+   if(!found)throw Error('Report not found for your account');
+   if(section==='AM'&&found[5]!=='Submitted')throw Error('Morning Plan is still editable');
+   if(section==='PM'&&found[7]!=='Submitted')throw Error('Evening Result is still editable');
+   if(editState(ss,id).some(x=>x.section===section&&x.status==='Pending'))throw Error('An edit request is already pending');
+   const requestId=uid();editSheet(ss).appendRow([requestId,id,a.user_id,section,reason,'Pending',now(),'','','']);
+   audit(ss,a,id,'EDIT_REQUESTED',{section},{requestId,reason});
+   return{requestId,status:'Pending'};
+  }
+  ensureReview(a);const requestId=val(p.requestId,80),decision=val(p.decision,10),note=saveText(p.note,750);
+  if(!['Approved','Rejected'].includes(decision))throw Error('Invalid edit request decision');
+  const entry=editRows(ss).find(x=>x.row[0]===requestId);
+  if(!entry||entry.row[5]!=='Pending')throw Error('Pending request not found');
+  const idx=records.findIndex(x=>x[0]===entry.row[1]);if(idx<0)throw Error('Report not found');
+  const report=records[idx].slice();
+  if(!fetchTeam(a).has(String(report[2])))throw Error('Not authorized to review this salesperson');
+  if(report[9]==='Reviewed'&&a.role!=='super_admin')throw Error('Only Super Admin can reopen a reviewed report');
+  const row=entry.row.slice();row[5]=decision;row[7]=a.user_id;row[8]=now();row[9]=note;
+  editSheet(ss).getRange(entry.n,1,1,10).setValues([row]);
+  if(decision==='Approved'){
+   if(entry.row[3]==='PM'){report[7]='Draft';report[8]=''}
+   if(report[9]==='Reviewed')report[9]='Changes Requested';
+   report[14]=now();sh.getRange(idx+2,1,1,15).setValues([report]);
+  }
+  audit(ss,a,report[0],'EDIT_'+decision.toUpperCase(),{requestId,section:entry.row[3],reason:entry.row[4]},{note});
+  return{requestId,status:decision};
+ }finally{SpreadsheetApp.flush();lock.releaseLock()}
 }
 function carryForward(ss,a,p){
  ensureWrite(a);
