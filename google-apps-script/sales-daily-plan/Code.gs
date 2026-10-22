@@ -330,11 +330,13 @@ function todoSave(ss,a,p){
  const start=p.startDate?iso(p.startDate):existing?.[5]||today();
  const due=p.dueDate?iso(p.dueDate):existing?.[6]||'';
  if(due&&start>due)throw Error('Deadline must be on or after start date');
+ const remarks=saveText(p.remarks===undefined?existing?.[10]:p.remarks,1500);
+ if(status==='Cancelled'&&!remarks.trim())throw Error('Cancellation reason is required in Remarks');
  const completed=status==='Completed'?(existing?.[11]||now()):'';
  const name=(a.sales_people||[]).find(x=>String(x.user_id)===String(assigneeId));
  const row=[existing?.[0]||id||uid(),title,saveText(p.description===undefined?existing?.[2]:p.description,1500),assigneeId,
  name?.name||name?.display_name||existing?.[4]||a.display_name,start,due,priority,status,status==='Completed'?100:progress,
- saveText(p.remarks===undefined?existing?.[10]:p.remarks,1500),completed,existing?.[12]||a.user_id,existing?.[13]||now(),now()];
+ remarks,completed,existing?.[12]||a.user_id,existing?.[13]||now(),now()];
  if(existing)sh.getRange(ix+2,1,1,15).setValues([row]);else sh.appendRow(row);
  audit(ss,a,row[0],existing?'TODO_UPDATED':'TODO_CREATED',{task:existing||null},{task:row});
  return{id:row[0],saved:true};
