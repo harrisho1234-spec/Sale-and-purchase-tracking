@@ -128,6 +128,7 @@ function captureAm(){
 }
 window.addSalesDailyTask=()=>{captureAm();if(ui.tasks.length>=20)return toast('Maximum 20 tasks per day',true);ui.tasks.push(empty());renderSalesHome()};
 window.removeSalesDailyTask=i=>{captureAm();if(ui.tasks.length<=1)return toast('Keep at least one planned task',true);ui.tasks.splice(i,1);renderSalesHome()};
+window.openOverdueSalesDaily=async date=>{if(ui.loading)return;ui.date=date;ui.report=null;ui.tasks=[];await reload()};
 window.selectSalesDailyDate=async()=>{if(ui.loading){elem('salesDailyDate').value=ui.date;return toast('Please wait for the current save to finish');}ui.date=elem('salesDailyDate')?.value||today();ui.report=null;ui.tasks=[];await reload()};
 async function activitySuggestions(){
  const r=await db.rpc('get_sales_activity_timeline',{
@@ -208,6 +209,7 @@ function renderSalesHome(){
  '<span class="rounded-lg bg-gray-100 px-3 py-2 text-xs">Manager: <b>'+h(report?.reviewStatus||'Pending')+'</b></span></div></div>'+
  (report?.managerComment?'<div class="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs"><b>Manager note:</b> '+h(report.managerComment)+'</div>':'')+
  (isOverdue(report)?'<div class="rounded-xl border border-red-200 bg-red-50 text-red-800 p-3 text-sm"><b>Overdue Evening Result:</b> This report was due by 9:00 AM the next working morning. Please submit an actual outcome for every task. Late submissions are recorded.</div>':'')+
+ '<div id="salesDailyPriorReminder"></div>'+
  '<section class="space-y-3"><div class="flex flex-wrap justify-between items-center gap-2">'+
  '<h3 class="font-bold">Morning Plan</h3>'+(amLocked?'':'<button type="button" onclick="addSalesDailyTask()" class="'+lightButton+'">+ Add Task</button>')+'</div>'+
  '<div id="dailyPlanRows" class="grid gap-3">'+tasks.map((t,i)=>formTask(t,i,amLocked)).join('')+'</div>'+
@@ -310,6 +312,13 @@ async function reload(){
    ui.report=(res.reports||[]).find(x=>x.userId===state.user?.id)||null;
    ui.tasks=ui.report?.tasks?.length?ui.report.tasks:[empty()];
    reportLoaded=true;renderSalesHome();
+   // Background reminder: check previously submitted mornings without blocking today's editor.
+   api('read',{start:backDays(ui.date,7),end:backDays(ui.date,1)}).then(history=>{
+     if(seq!==ui.seq||state.page!==P||state.user?.id!==userId)return;
+     const missed=(history.reports||[]).filter(r=>r.userId===userId&&isOverdue(r)).sort((a,b)=>b.date.localeCompare(a.date));
+     const holder=elem('salesDailyPriorReminder');
+     if(holder&&missed.length)holder.innerHTML='<div class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"><b>'+missed.length+' overdue Evening Result'+(missed.length===1?'':'s')+'</b><p class="mt-1">Your previous morning plans are waiting for evening outcomes. Open the oldest outstanding report and submit the actual results.</p><button type="button" onclick="openOverdueSalesDaily(\''+h(missed[missed.length-1].date)+'\')" class="'+lightButton+' mt-2">Open '+h(missed[missed.length-1].date)+'</button></div>';
+   }).catch(err=>console.warn('Previous daily report reminders unavailable:',err.message));
   }else{
    // Render report rows as soon as available; summary runs independently.
    let reportLoaded=false;
