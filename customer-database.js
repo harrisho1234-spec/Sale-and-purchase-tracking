@@ -317,6 +317,7 @@
       <div><label class="text-xs font-semibold">Business</label><select id="newLeadBusiness" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="">Unassigned</option><option value="RK">LP Home · RK</option><option value="TK">L'Imperial Luxury · TK</option></select></div>
       <div><label class="text-xs font-semibold">Current Stage</label><select id="newLeadStage" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${STAGES.map(x=>`<option value="${x}" ${x==='Contacting'?'selected':''}>${x}</option>`).join('')}</select></div>
       <div><label class="text-xs font-semibold">Assigned Sales</label>${newLeadSalesField()}</div>
+      <div><label class="text-xs font-semibold">First Contact Date</label><input id="newLeadFirstContact" type="date" required value="${todayIso()}" max="${todayIso()}" class="mt-1 w-full border rounded-xl px-3 py-2.5"><p class="mt-1 text-[10px] text-gray-500">Choose when you first contacted this customer. System creation time stays unchanged.</p></div>
       <div><label class="text-xs font-semibold">Next Follow-up</label><input id="newLeadFollowup" type="date" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
       <div class="md:col-span-2"><label class="text-xs font-semibold">Interest</label><input id="newLeadInterest" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Sofa, chandelier, bedroom set..."></div>
       <div class="md:col-span-2"><label class="text-xs font-semibold">Customer Note</label><textarea id="newLeadNotes" rows="3" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="What the customer needs / next action..."></textarea></div>
@@ -331,7 +332,7 @@
     const btn=e.target.querySelector('button');if(btn){btn.disabled=true;btn.textContent='Adding Customer...'}
     const scopeId=crmScopeSalesId();
     const assigned=document.getElementById('newLeadSalesRep')?.value||scopeId||null;
-    const {data,error}=await db.rpc('create_customer_lead_manual',{
+    const {data,error}=await db.rpc('create_customer_lead_manual_dated',{
       p_customer_name:document.getElementById('newLeadName').value.trim(),
       p_phone:document.getElementById('newLeadPhone').value.trim()||null,
       p_customer_category:document.getElementById('newLeadCategory').value||null,
@@ -340,7 +341,8 @@
       p_interest:document.getElementById('newLeadInterest').value.trim()||null,
       p_next_follow_up_date:document.getElementById('newLeadFollowup').value||null,
       p_notes:document.getElementById('newLeadNotes').value.trim()||null,
-      p_assigned_sales_id:assigned
+      p_assigned_sales_id:assigned,
+      p_first_contact_date:document.getElementById('newLeadFirstContact').value
     });
     if(error){if(btn){btn.disabled=false;btn.textContent='Add Customer'}return showToast(error.message,'err')}
     const out=data||{};
