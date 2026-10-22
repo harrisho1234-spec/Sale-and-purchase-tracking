@@ -196,12 +196,32 @@ window.saveSalesDailyEvening=async submit=>{
  try{await api(submit?'submit_pm':'save_pm',{date:ui.date,results});toast(submit?'Evening results submitted':'Evening draft saved');await reload()}
  catch(e){toast(e.message,true)}finally{ui.loading=false}
 };
+window.closeSalesDailyShare=()=>document.getElementById('salesDailyShareOverlay')?.remove();
+window.openSalesDailyShare=section=>{
+ const r=ui.report;if(!r||!(section==='AM'?r.amStatus==='Submitted':r.pmStatus==='Submitted'))return toast('Submit before sharing',true);
+ window.closeSalesDailyShare();const pm=section==='PM';
+ const rows=(r.tasks||[]).map((t,i)=>'<div style="padding:9px 0;border-bottom:1px solid #e5e7eb;break-inside:avoid"><b>'+(i+1)+'. '+h(t.plan)+'</b>'+
+ (t.customerName?'<div style="font-size:12px;color:#666">Customer: '+h(t.customerName)+'</div>':'')+
+ (pm?'<div style="font-size:12px;margin-top:4px"><b>'+h(t.status||'Pending')+'</b> · '+h(t.result||'—')+'</div>'+
+ (t.nextFollowup?'<div style="font-size:11px;color:#666">Next: '+h(t.nextFollowup)+'</div>':''):
+ '<div style="font-size:11px;color:#666">'+h(t.category)+' · '+h(t.priority)+(t.plannedFollowup?' · '+h(t.plannedFollowup):'')+'</div>')+'</div>').join('');
+ const panel=document.createElement('div');panel.id='salesDailyShareOverlay';panel.style.cssText='position:fixed;inset:0;z-index:99999;background:#0009;overflow:auto;padding:16px';
+ panel.innerHTML='<div style="max-width:760px;margin:auto"><div data-share-tools style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px"><button onclick="window.print()" style="background:white;padding:9px 14px;border-radius:8px">Print / PDF</button><button onclick="closeSalesDailyShare()" style="background:white;padding:9px 14px;border-radius:8px">Close</button></div>'+
+ '<div id="salesDailyShareCard" style="background:white;color:#242424;padding:22px;border-radius:12px;box-shadow:0 8px 32px #0002;font-family:Arial,sans-serif">'+
+ '<div style="border-bottom:2px solid #a77824;padding-bottom:12px"><div style="font-size:10px;font-weight:bold;letter-spacing:1px;color:#a77824">L’IMPERIAL · SALES DAILY REPORT</div>'+
+ '<div style="font-size:22px;font-weight:bold;margin:6px 0">'+(pm?'Evening Result':'Morning Plan')+'</div>'+
+ '<div style="font-size:13px">'+h(r.salesperson||state.profile?.full_name||state.profile?.name||'Sales')+' · '+h(r.date)+' · '+(r.tasks||[]).length+' tasks</div></div>'+
+ rows+'<div style="margin-top:12px;font-size:11px;color:#777">Submitted: '+h(pm?r.pmSubmittedAt:r.amSubmittedAt)+' · '+h(r.reviewStatus||'Pending review')+'</div></div></div>';
+ document.body.appendChild(panel);panel.addEventListener('click',e=>{if(e.target===panel)window.closeSalesDailyShare()});
+ if(!document.getElementById('salesDailySharePrintStyle')){const st=document.createElement('style');st.id='salesDailySharePrintStyle';st.textContent='@media print{body>*:not(#salesDailyShareOverlay){display:none!important}#salesDailyShareOverlay{position:static!important;background:white!important;overflow:visible!important;padding:0!important}#salesDailyShareOverlay [data-share-tools]{display:none!important}#salesDailyShareCard{box-shadow:none!important}}';document.head.appendChild(st)}
+};
 function renderSalesHome(){
  if(state.page!==P)return;
  const report=ui.report,amLocked=report?.amStatus==='Submitted'&&!report?.editRequests?.some(x=>x.section==='AM'&&x.status==='Approved'),pmLocked=report?.pmStatus==='Submitted'||report?.reviewStatus==='Reviewed';
  const tasks=amLocked?report.tasks:ui.tasks.length?ui.tasks:[empty()];
  ui.tasks=tasks;
  root().innerHTML='<div class="max-w-6xl mx-auto space-y-4">'+header('Daily Plan & Result','One report per day · Morning plan and evening results stay together')+
+ '<div class="flex flex-wrap gap-2">'+(report?.amStatus==='Submitted'?'<button onclick="openSalesDailyShare(\'AM\')" class="'+lightButton+'">Compact Morning Share View</button>':'')+(report?.pmStatus==='Submitted'?'<button onclick="openSalesDailyShare(\'PM\')" class="'+lightButton+'">Compact Evening Share View</button>':'')+'</div>'+
  '<div class="rounded-2xl border bg-white p-4 flex flex-wrap gap-3 items-end justify-between">'+
  '<label class="text-xs font-bold">Report Date<input id="salesDailyDate" type="date" class="'+common+'" value="'+h(ui.date)+'" onchange="selectSalesDailyDate()"></label>'+
  '<div class="flex flex-wrap gap-2"><span class="rounded-lg bg-amber-50 px-3 py-2 text-xs">AM: <b>'+h(report?.amStatus||'Not Started')+'</b></span>'+
