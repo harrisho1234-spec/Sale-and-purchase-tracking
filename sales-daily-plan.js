@@ -230,6 +230,10 @@ async function renderManager(){
  const reports=ui.reports,people=ui.people;
  const count=(k,v)=>reports.filter(x=>x[k]===v).length;
  const to=ui.end,from=ui.start;
+ const compliance=people.map(person=>{const rows=reports.filter(r=>r.userId===person.user_id&&r.amStatus==='Submitted');return{name:person.name,plans:rows.length,pm:rows.filter(r=>r.pmStatus==='Submitted').length,overdue:rows.filter(isOverdue).length,late:rows.filter(isLate).length};}).filter(x=>x.plans);
+ const compliancePanel='<section class="rounded-2xl border bg-white p-4"><h3 class="font-bold text-sm mb-2">Salesperson Submission Compliance</h3><p class="text-xs text-gray-500 mb-3">Based on morning plans in the selected date range. Missing mornings are not counted as compliant days.</p>'+
+ '<div class="overflow-x-auto"><table class="text-xs w-full text-left"><thead><tr class="border-b"><th class="p-2">Salesperson</th><th class="p-2">AM Plans</th><th class="p-2">PM Submitted</th><th class="p-2">PM Overdue</th><th class="p-2">Late PM</th><th class="p-2">PM Submission Rate</th></tr></thead><tbody>'+
+ (compliance.length?compliance.map(x=>'<tr class="border-b"><td class="p-2">'+h(x.name)+'</td><td class="p-2">'+x.plans+'</td><td class="p-2">'+x.pm+'</td><td class="p-2">'+x.overdue+'</td><td class="p-2">'+x.late+'</td><td class="p-2">'+Math.round(x.pm/x.plans*100)+'%</td></tr>').join(''):'<tr><td colspan="6" class="p-3 text-gray-500">No submitted morning plans for this range.</td></tr>')+'</tbody></table></div></section>';
  root().innerHTML='<div class="max-w-7xl mx-auto space-y-4">'+header('Team Daily Review','Compare morning plans and evening results for Sales-role staff only')+
  '<div class="rounded-2xl border bg-white p-4 flex flex-wrap items-end gap-3">'+
  '<label class="text-xs font-semibold">From<input id="dailyReviewFrom" class="'+common+'" type="date" value="'+h(from)+'"></label>'+
@@ -242,7 +246,7 @@ async function renderManager(){
   ['Evening Results Submitted',count('pmStatus','Submitted')],
   ['PM Overdue',reports.filter(isOverdue).length],['PM Submitted Late',reports.filter(isLate).length],['Awaiting Review',reports.filter(r=>r.pmStatus==='Submitted'&&r.reviewStatus!=='Reviewed').length],['Manager Reviewed',count('reviewStatus','Reviewed')]
  ].map(([n,v])=>'<div class="bg-white border rounded-2xl p-4"><div class="text-[10px] font-bold uppercase text-gray-500">'+n+'</div><div class="font-black text-2xl mt-2">'+v+'</div></div>').join('')+'</div>'+
- '<div data-daily-weekly>'+weeklyPanel()+'</div>'+'<section class="bg-white border rounded-2xl overflow-hidden">'+
+ '<div data-daily-weekly>'+weeklyPanel()+'</div>'+compliancePanel+'<section class="bg-white border rounded-2xl overflow-hidden">'+
  '<div class="p-4 border-b font-bold text-sm">Daily Reports · '+reports.length+'</div>'+
  (reports.length?'<div class="divide-y">'+reports.map(r=>'<div class="p-4 flex flex-wrap items-center gap-3">'+
  '<div class="flex-1 min-w-[210px]"><b class="text-sm">'+h(r.salesperson)+'</b><p class="text-xs text-gray-500 mt-1">'+h(r.date)+' · '+r.tasks.length+' tasks</p>'+
