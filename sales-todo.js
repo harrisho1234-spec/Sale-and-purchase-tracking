@@ -5,7 +5,7 @@ const PAGE='sales-todo';
 const h=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
 const manager=()=>['manager','admin','super_admin'].includes(state?.profile?.role||'');
 const permitted=()=>manager()||state?.profile?.role==='sales';
-let items=[],people=[],loaded=false;
+let items=[],people=[],loaded=false,saving=false,newTaskId='';
 const api=async(action,payload={})=>{const r=await db.functions.invoke('sales-daily-google-proxy',{body:{action,payload}});if(r.error)throw Error(r.error.message||'Connection error');if(!r.data?.ok)throw Error(r.data?.error||'Unable to load tasks');return r.data.data};
 const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Phnom_Penh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const box=()=>document.getElementById('content');
@@ -19,6 +19,7 @@ function render(){
 }
 window.openSalesTodo=id=>{
  const t=items.find(x=>x.id===id)||{},newTask=!t.id;
+ newTaskId=newTask?(crypto?.randomUUID?.()||('todo-'+Date.now()+'-'+Math.random().toString(36).slice(2))):'';
  if(newTask&&!permitted())return;
  const sel=(id,label,values,current)=>'<label class="text-xs font-semibold">'+label+'<select id="todo_'+id+'" class="block border rounded-lg px-3 py-2 w-full mt-1 text-sm">'+values.map(v=>'<option value="'+h(v.value??v)+'" '+((v.value??v)===current?'selected':'')+'>'+h(v.label??v)+'</option>').join('')+'</select></label>';
  const opts=people.map(p=>({value:p.id,label:p.name}));
@@ -27,13 +28,15 @@ window.openSalesTodo=id=>{
  sel('priority','Priority',['High','Medium','Low'],t.priority||'Medium')+sel('status','Status',['Pending','In Progress','Completed','Cancelled'],t.status||'Pending')+field('progress','Progress %','number',t.progress??0)+'</div>'+
  '<label class="text-xs font-semibold block mt-3">Description<textarea id="todo_description" class="block border rounded-lg p-2 w-full mt-1">'+h(t.description||'')+'</textarea></label>'+
  '<label class="text-xs font-semibold block mt-3">Remarks<textarea id="todo_remarks" class="block border rounded-lg p-2 w-full mt-1">'+h(t.remarks||'')+'</textarea></label>'+
- '<div class="mt-4 flex gap-2"><button class="bg-black text-white rounded-xl px-4 py-2" onclick="saveSalesTodo(\''+h(t.id||'')+'\')">Save Task</button><button class="border rounded-xl px-4 py-2" onclick="closeModal()">Cancel</button></div>');
+ '<div class="mt-4 flex gap-2"><button id="todoSaveButton" class="bg-black text-white rounded-xl px-4 py-2 disabled:opacity-50" onclick="saveSalesTodo(\''+h(t.id||'')+'\')">Save Task</button><button class="border rounded-xl px-4 py-2" onclick="closeModal()">Cancel</button></div>');
 };
 window.saveSalesTodo=async id=>{
+ if(saving)return;
  const get=k=>document.getElementById('todo_'+k)?.value||'';
- const payload={id,title:get('title'),startDate:get('startDate'),dueDate:get('dueDate'),assigneeId:get('assigneeId'),priority:get('priority'),status:get('status'),progress:Number(get('progress')),description:get('description'),remarks:get('remarks')};
+ const payload={id:id||newTaskId,title:get('title'),startDate:get('startDate'),dueDate:get('dueDate'),assigneeId:get('assigneeId'),priority:get('priority'),status:get('status'),progress:Number(get('progress')),description:get('description'),remarks:get('remarks')};
  if(!payload.title.trim())return showToast('Task title required','err');
- try{await api('todo_save',payload);closeModal();showToast('Task saved');await window.loadSalesTodo()}catch(e){showToast(e.message,'err')}
+ saving=true;const btn=document.getElementById('todoSaveButton');if(btn){btn.disabled=true;btn.textContent='Saving…'}
+ try{await api('todo_save',payload);closeModal();newTaskId='';showToast('Task saved');await window.loadSalesTodo()}catch(e){showToast(e.message,'err')}finally{saving=false;if(btn){btn.disabled=false;btn.textContent='Save Task'}}
 };
 window.loadSalesTodo=async()=>{if(state.page!==PAGE)return;box().innerHTML='<div class="p-8">Loading Sales To-Do from Google Sheets…</div>';try{const x=await api('todo_list');items=x.items||[];people=x.people||[];loaded=true;render()}catch(e){box().innerHTML='<div class="p-5 bg-red-50 border text-red-700">'+h(e.message)+' <button onclick="loadSalesTodo()" class="underline">Retry</button></div>'}};
 const oldNav=window.navItems;if(typeof oldNav==='function')window.navItems=function(){const list=oldNav.apply(this,arguments)||[];if(permitted()&&!list.some(x=>x[0]===PAGE))list.push([PAGE,'Sales To-Do','☑']);return list};
