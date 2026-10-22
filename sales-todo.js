@@ -28,8 +28,36 @@ function render(){
  box().innerHTML='<div class="max-w-6xl mx-auto space-y-4"><div class="bg-white rounded-2xl border p-4 flex flex-wrap justify-between gap-3"><div><h2 class="text-xl font-bold">Sales To-Do List</h2><p class="text-xs text-gray-500">Assignments, deadlines and progress · Google Sheets</p></div>'+'<button class="bg-black text-white rounded-xl px-4 py-2 text-sm" onclick="openSalesTodo()">+ Add Task</button>'+'</div>'+
  alertPanel+'<div class="grid grid-cols-3 gap-2">'+[['Total',items.length],['Completed',items.filter(x=>x.status==='Completed').length],['Overdue',items.filter(overdue).length]].map(([k,v])=>'<div class="bg-white border rounded-xl p-3"><div class="text-xs text-gray-500">'+k+'</div><b class="text-xl">'+v+'</b></div>').join('')+'</div>'+
  '<div class="grid gap-3">'+(items.length?items.map(t=>'<div class="bg-white rounded-xl border p-4"><div class="flex justify-between gap-2"><div><b>'+h(t.title)+'</b><div class="text-xs text-gray-500 mt-1">'+h(t.assignee)+' · '+h(t.startDate)+' → '+h(t.dueDate||'No deadline')+'</div></div><span class="text-xs font-bold '+(overdue(t)?'text-red-600':'text-gray-600')+'">'+(overdue(t)?'OVERDUE':h(t.priority))+'</span></div>'+
- (t.description?'<p class="text-sm mt-2">'+h(t.description)+'</p>':'')+'<div class="flex items-center justify-between gap-2 text-xs mt-3"><span>'+h(t.status)+' · '+t.progress+'%</span><div class="flex gap-2"><button class="border rounded-lg px-3 py-1.5" onclick="openSalesTodo(\''+h(t.id)+'\')">Update</button>'+(manager()?'<button class="border border-red-200 text-red-700 rounded-lg px-3 py-1.5" onclick="deleteSalesTodo(\''+h(t.id)+'\')">Delete</button>':'')+'</div></div><div class="h-2 bg-gray-100 rounded-full mt-2 overflow-hidden"><div class="h-full bg-amber-600 rounded-full" style="width:'+t.progress+'%"></div></div>'+(t.remarks?'<p class="text-xs text-gray-500 mt-2">'+h(t.remarks)+'</p>':'')+'</div>').join(''):'<div class="bg-white border rounded-xl p-8 text-gray-500 text-center">No assigned tasks yet.</div>')+'</div></div>';
+ (t.description?'<p class="text-sm mt-2">'+h(t.description)+'</p>':'')+'<div class="flex items-center justify-between gap-2 text-xs mt-3"><span>'+h(t.status)+' · '+t.progress+'%</span><div class="flex gap-2"><button class="bg-[#211d18] text-white rounded-lg px-3 py-1.5" onclick="quickSalesTodo(\''+h(t.id)+'\')">Quick Update</button><button class="border rounded-lg px-3 py-1.5" onclick="openSalesTodo(\''+h(t.id)+'\')">Edit Details</button>'+(manager()?'<button class="border border-red-200 text-red-700 rounded-lg px-3 py-1.5" onclick="deleteSalesTodo(\''+h(t.id)+'\')">Delete</button>':'')+'</div></div><div class="h-2 bg-gray-100 rounded-full mt-2 overflow-hidden"><div class="h-full bg-amber-600 rounded-full" style="width:'+t.progress+'%"></div></div>'+(t.remarks?'<p class="text-xs text-gray-500 mt-2">'+h(t.remarks)+'</p>':'')+'</div>').join(''):'<div class="bg-white border rounded-xl p-8 text-gray-500 text-center">No assigned tasks yet.</div>')+'</div></div>';
 }
+window.quickSalesTodo=id=>{
+ const t=items.find(x=>x.id===id);if(!t)return;
+ const choice=['Pending','In Progress','Completed','Cancelled'];
+ openModal('Quick Update · '+h(t.title),
+ '<div class="space-y-4"><div class="text-xs text-gray-500">Change status and progress without reopening task details.</div>'+
+ '<div class="grid grid-cols-2 sm:grid-cols-4 gap-2">'+choice.map(v=>'<button type="button" data-quick-status="'+h(v)+'" onclick="setQuickTodoStatus(this)" class="border rounded-xl px-2 py-3 text-xs font-semibold '+(t.status===v?'bg-amber-50 border-amber-500':'')+'">'+h(v)+'</button>').join('')+'</div>'+
+ '<label class="text-sm font-semibold block">Progress: <span id="todoQuickPercent">'+Number(t.progress||0)+'</span>%<input id="todoQuickProgress" type="range" min="0" max="100" step="5" value="'+Number(t.progress||0)+'" oninput="document.getElementById(\'todoQuickPercent\').textContent=this.value" class="w-full mt-3"></label>'+
+ '<div class="flex flex-wrap gap-2">'+[0,25,50,75,100].map(n=>'<button type="button" class="rounded-lg border px-3 py-2 text-xs" onclick="setQuickTodoProgress('+n+')">'+n+'%</button>').join('')+'</div>'+
+ '<label class="text-xs font-semibold block">Progress note / Cancellation reason<textarea id="todoQuickRemarks" rows="3" class="mt-1 block w-full border rounded-xl p-3" placeholder="What changed?">'+h(t.remarks||'')+'</textarea></label>'+
+ '<div class="flex gap-2"><button id="todoQuickSave" class="bg-black text-white rounded-xl px-5 py-2.5" onclick="saveQuickSalesTodo(\''+h(t.id)+'\')">Save Progress</button><button class="border rounded-xl px-4 py-2" onclick="closeModal()">Cancel</button></div></div>');
+ window.todoQuickStatus=t.status;
+};
+window.setQuickTodoStatus=button=>{
+ window.todoQuickStatus=button.dataset.quickStatus;
+ document.querySelectorAll('[data-quick-status]').forEach(b=>{b.classList.toggle('bg-amber-50',b===button);b.classList.toggle('border-amber-500',b===button)});
+ if(window.todoQuickStatus==='Completed')window.setQuickTodoProgress(100);
+};
+window.setQuickTodoProgress=n=>{const slider=document.getElementById('todoQuickProgress');if(slider)slider.value=n;const label=document.getElementById('todoQuickPercent');if(label)label.textContent=n};
+window.saveQuickSalesTodo=async id=>{
+ if(saving)return;
+ const t=items.find(x=>x.id===id);if(!t)return;
+ const status=window.todoQuickStatus||t.status,progress=Number(document.getElementById('todoQuickProgress')?.value||0);
+ const remarks=document.getElementById('todoQuickRemarks')?.value.trim()||'';
+ if(status==='Cancelled'&&!remarks)return showToast('Cancellation reason required','err');
+ saving=true;const button=document.getElementById('todoQuickSave');if(button){button.disabled=true;button.textContent='Saving…'}
+ try{await api('todo_save',{id,status,progress,remarks});closeModal();showToast('Progress updated');await window.loadSalesTodo()}
+ catch(e){showToast(e.message,'err')}finally{saving=false;if(button){button.disabled=false;button.textContent='Save Progress'}}
+};
 window.openSalesTodo=id=>{
  const t=items.find(x=>x.id===id)||{},newTask=!t.id;
  newTaskId=newTask?(crypto?.randomUUID?.()||('todo-'+Date.now()+'-'+Math.random().toString(36).slice(2))):'';
