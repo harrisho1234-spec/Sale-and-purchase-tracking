@@ -334,6 +334,18 @@ async function reload(){
    if(seq!==ui.seq||state.page!==page||state.user?.id!==userId)return;
    ui.report=(res.reports||[]).find(x=>x.userId===state.user?.id)||null;
    ui.tasks=ui.report?.tasks?.length?ui.report.tasks:[empty()];
+   // To-Do linkage only creates a local unsaved Morning Plan draft, never submits.
+   const todoDraft=sessionStorage.getItem('salesDailyTodoDraft');
+   if(todoDraft&&ui.report?.amStatus!=='Submitted'){
+     try{
+       const task=JSON.parse(todoDraft);
+       if(task.sourceTaskId&&!ui.tasks.some(t=>t.sourceTaskId===task.sourceTaskId)){
+         if(ui.tasks.length===1&&!ui.tasks[0].plan)ui.tasks=[];
+         if(ui.tasks.length<20)ui.tasks.push({...empty(),...task,id:''});
+       }
+       sessionStorage.removeItem('salesDailyTodoDraft');
+     }catch(_){sessionStorage.removeItem('salesDailyTodoDraft')}
+   }
    reportLoaded=true;renderSalesHome();
    // Background reminder: check previously submitted mornings without blocking today's editor.
    api('read',{start:backDays(ui.date,7),end:backDays(ui.date,1)}).then(history=>{
