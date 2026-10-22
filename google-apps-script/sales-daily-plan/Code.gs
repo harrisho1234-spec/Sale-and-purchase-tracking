@@ -27,7 +27,7 @@ function doPost(e){
   const action=String(req.action||'');
   const payload=req.payload||{};
   if(typeof payload!=='object'||Array.isArray(payload))throw Error('Invalid payload');
-  if(!['ping','read','save_am','submit_am','save_pm','submit_pm','review','carry_forward','weekly','request_edit','decide_edit','delete_report'].includes(action))throw Error('Unknown action');
+  if(!['ping','read','save_am','submit_am','save_pm','submit_pm','review','carry_forward','weekly','request_edit','decide_edit','delete_report','todo_list','todo_save'].includes(action))throw Error('Unknown action');
   const ss=SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('SHEET_ID'));
   const res=dispatch(ss,actor,action,payload);
   return respond({ok:true,data:res});
@@ -56,6 +56,8 @@ function authenticate(token){
 }
 function dispatch(ss,actor,action,p){
  if(action==='ping')return{connected:true,sheet:ss.getName(),role:actor.role};
+ if(action==='todo_list')return todoList(ss,actor);
+ if(action==='todo_save')return todoSave(ss,actor,p);
  if(action==='read')return readReports(ss,actor,p);
  if(action==='weekly')return weekly(ss,actor,p);
  if(action==='carry_forward')return carryForward(ss,actor,p);
@@ -292,4 +294,47 @@ function weekly(ss,a,p){
   else if(['Pending','Rescheduled'].includes(r[11]))stats.pending++;
  });
  return stats;
+}
+
+function todoSheet(ss){
+ let sh=ss.getSheetByName('Sales To-Do');
+ if(!sh){sh=ss.insertSheet('Sales To-Do');sh.appendRow(['ID','Title','Description','Assignee ID','Assignee Name','Start Date','Due Date','Priority','Status','Progress','Remarks','Completed At','Created By','Created At','Updated At'])}
+ return sh;
+}
+function todoList(ss,a){
+ if(!a.can_write&&!a.can_review)throw Error('Sales task access denied');
+ const people=(a.sales_people||[]).map(x=>({id:String(x.user_id),name:String(x.name||x.display_name||x.user_id)}));
+ const items=data(todoSheet(ss)).filter(r=>r[0]&&(a.can_review?fetchTeam(a).has(String(r[3])):String(r[3])===String(a.user_id))).map(r=>({
+ id:r[0],title:r[1],description:r[2],assigneeId:r[3],assignee:r[4],startDate:r[5],dueDate:r[6],priority:r[7],status:r[8],progress:Number(r[9]||0),remarks:r[10],completedAt:r[11],createdBy:r[12],createdAt:r[13],updatedAt:r[14]
+ }));
+ return{items,people:a.can_review?people:[],today:today()};
+}
+function todoSave(ss,a,p){
+ if(!a.can_write&&!a.can_review)throw Error('Sales task access denied');
+ const lock=LockService.getScriptLock();lock.waitLock(15000);
+ try{
+ const sh=todoSheet(ss),rows=data(sh),id=val(p.id,80),ix=rows.findIndex(r=>r[0]===id),existing=ix<0?null:rows[ix];
+ const manager=!!a.can_review&&['manager','admin','super_admin'].includes(a.role);
+ if(existing&&String(existing[3])!==String(a.user_id)&&!manager)throw Error('You may update only your own tasks');
+ if(!existing&&!manager)throw Error('Only management can assign new tasks');
+ const title=saveText(p.title||existing?.[1],200);if(!title)throw Error('Task title is required');
+ const assigneeId=manager?val(p.assigneeId||existing?.[3],80):a.user_id;
+ if(manager&&!fetchTeam(a).has(String(assigneeId)))throw Error('Choose an authorized Sales employee');
+ const status=val(p.status||existing?.[8]||'Pending',30);
+ if(!['Pending','In Progress','Completed','Cancelled'].includes(status))throw Error('Invalid status');
+ const progress=integer(p.progress===undefined?(existing?.[9]||0):p.progress,0,100);
+ const priority=val(p.priority||existing?.[7]||'Medium',20);
+ if(!['High','Medium','Low'].includes(priority))throw Error('Invalid priority');
+ const start=p.startDate?iso(p.startDate):existing?.[5]||today();
+ const due=p.dueDate?iso(p.dueDate):existing?.[6]||'';
+ if(due&&start>due)throw Error('Deadline must be on or after start date');
+ const completed=status==='Completed'?(existing?.[11]||now()):'';
+ const name=(a.sales_people||[]).find(x=>String(x.user_id)===String(assigneeId));
+ const row=[existing?.[0]||uid(),title,saveText(p.description===undefined?existing?.[2]:p.description,1500),assigneeId,
+ name?.name||name?.display_name||existing?.[4]||a.display_name,start,due,priority,status,status==='Completed'?100:progress,
+ saveText(p.remarks===undefined?existing?.[10]:p.remarks,1500),completed,existing?.[12]||a.user_id,existing?.[13]||now(),now()];
+ if(existing)sh.getRange(ix+2,1,1,15).setValues([row]);else sh.appendRow(row);
+ audit(ss,a,row[0],existing?'TODO_UPDATED':'TODO_CREATED',{task:existing||null},{task:row});
+ return{id:row[0],saved:true};
+ }finally{SpreadsheetApp.flush();lock.releaseLock()}
 }
