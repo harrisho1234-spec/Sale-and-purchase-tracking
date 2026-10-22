@@ -30,6 +30,12 @@ window.openSalesTodo=id=>{
  '<label class="text-xs font-semibold block mt-3">Remarks<textarea id="todo_remarks" class="block border rounded-lg p-2 w-full mt-1">'+h(t.remarks||'')+'</textarea></label>'+
  '<div class="mt-4 flex gap-2"><button id="todoSaveButton" class="bg-black text-white rounded-xl px-4 py-2 disabled:opacity-50" onclick="saveSalesTodo(\''+h(t.id||'')+'\')">Save Task</button><button class="border rounded-xl px-4 py-2" onclick="closeModal()">Cancel</button></div>');
 };
+window.deleteSalesTodo=async id=>{
+ if(!manager())return showToast('Management permission required','err');
+ const item=items.find(t=>t.id===id);if(!item)return;
+ if(!confirm('Delete task: '+item.title+'? This cannot be undone.'))return;
+ try{await api('todo_delete',{id});showToast('Task deleted; audit retained');await window.loadSalesTodo()}catch(e){showToast(e.message,'err')}
+};
 window.saveSalesTodo=async id=>{
  if(saving)return;
  const get=k=>document.getElementById('todo_'+k)?.value||'';
