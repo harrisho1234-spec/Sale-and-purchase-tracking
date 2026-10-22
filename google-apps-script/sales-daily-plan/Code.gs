@@ -314,6 +314,7 @@ function todoSave(ss,a,p){
  const lock=LockService.getScriptLock();lock.waitLock(15000);
  try{
  const sh=todoSheet(ss),rows=data(sh),id=val(p.id,80),ix=rows.findIndex(r=>r[0]===id),existing=ix<0?null:rows[ix];
+ if(!existing&&id&&!/^[0-9a-f-]{36}$/i.test(id)&&!/^todo-[0-9]+-[a-z0-9]+$/.test(id))throw Error('Invalid task identifier');
  const manager=!!a.can_review&&['manager','admin','super_admin'].includes(a.role);
  if(existing&&String(existing[3])!==String(a.user_id)&&!manager)throw Error('You may update only your own tasks');
  if(!existing&&!manager&&a.role!=='sales')throw Error('Only Sales or management can create tasks');
@@ -330,7 +331,7 @@ function todoSave(ss,a,p){
  if(due&&start>due)throw Error('Deadline must be on or after start date');
  const completed=status==='Completed'?(existing?.[11]||now()):'';
  const name=(a.sales_people||[]).find(x=>String(x.user_id)===String(assigneeId));
- const row=[existing?.[0]||uid(),title,saveText(p.description===undefined?existing?.[2]:p.description,1500),assigneeId,
+ const row=[existing?.[0]||id||uid(),title,saveText(p.description===undefined?existing?.[2]:p.description,1500),assigneeId,
  name?.name||name?.display_name||existing?.[4]||a.display_name,start,due,priority,status,status==='Completed'?100:progress,
  saveText(p.remarks===undefined?existing?.[10]:p.remarks,1500),completed,existing?.[12]||a.user_id,existing?.[13]||now(),now()];
  if(existing)sh.getRange(ix+2,1,1,15).setValues([row]);else sh.appendRow(row);
