@@ -17,13 +17,17 @@ Deno.serve(async(req)=>{
  if(origin&&!ORIGINS.has(origin))return asJson({error:"Unrecognized site origin"},403,origin);
  const auth=req.headers.get("authorization")||"";
  const jwt=auth.replace(/^Bearer\s+/i,"");
- if(!jwt||jwt.length>6000)return asJson({error:"Sign in to use Daily Reports"},401,origin);
+ if(!/^Bearer\s+\S+$/i.test(auth)||!jwt||jwt.length>6000)return asJson({error:"Sign in to use Daily Reports"},401,origin);
  const url=Deno.env.get("SUPABASE_URL"),anon=Deno.env.get("SUPABASE_ANON_KEY");
  if(!url||!anon)return asJson({error:"Daily Reports authentication is not configured"},503,origin);
  try{
   const raw=await req.text();
   if(raw.length>45000)return asJson({error:"Daily report request is too large"},413,origin);
-  const body=JSON.parse(raw);
+  let body;
+  try{body=JSON.parse(raw)}catch(_){return asJson({error:"Invalid JSON request"},400,origin)}
+  if(!body||typeof body!=="object"||Array.isArray(body)||
+     (body.payload!=null&&(typeof body.payload!=="object"||Array.isArray(body.payload))))
+   return asJson({error:"Invalid Daily Reports request"},400,origin);
   const action=String(body.action||"");
   if(!permitted.has(action))return asJson({error:"Unknown Daily Reports action"},400,origin);
   const h={apikey:anon,Authorization:"Bearer "+jwt};
@@ -48,6 +52,7 @@ Deno.serve(async(req)=>{
     return asJson({error:"Google Apps Script is not returning a valid API response. Check deployment access and /exec URL."},502,origin);
    let result;
    try{result=JSON.parse(out)}catch(_){return asJson({error:"Invalid Google Apps Script response. Check deployment."},502,origin)}
+   if(!result||typeof result.ok!=="boolean")return asJson({error:"Invalid Google Apps Script response. Check deployment."},502,origin);
    return asJson(result,result.ok===false?400:200,origin);
   }finally{clearTimeout(timer)}
  }catch(err){return asJson({error:err?.name==="AbortError"?"Google Sheets timed out. Please retry.":"Could not connect to Google Sheets: "+String(err?.message||err)},502,origin)}
