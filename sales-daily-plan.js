@@ -198,7 +198,7 @@ window.saveSalesDailyEvening=async submit=>{
 };
 function renderSalesHome(){
  if(state.page!==P)return;
- const report=ui.report,amLocked=report?.amStatus==='Submitted',pmLocked=report?.pmStatus==='Submitted'||report?.reviewStatus==='Reviewed';
+ const report=ui.report,amLocked=report?.amStatus==='Submitted'&&!report?.editRequests?.some(x=>x.section==='AM'&&x.status==='Approved'),pmLocked=report?.pmStatus==='Submitted'||report?.reviewStatus==='Reviewed';
  const tasks=amLocked?report.tasks:ui.tasks.length?ui.tasks:[empty()];
  ui.tasks=tasks;
  root().innerHTML='<div class="max-w-6xl mx-auto space-y-4">'+header('Daily Plan & Result','One report per day · Morning plan and evening results stay together')+
@@ -218,13 +218,14 @@ function renderSalesHome(){
  '<button type="button" onclick="carrySalesDailyTasks()" class="'+lightButton+'">Import Pending Tasks</button></div>'+
  '<div class="flex flex-wrap gap-2"><button onclick="saveSalesDailyMorning(false)" class="'+lightButton+'">Save AM Draft</button>'+
  '<button onclick="saveSalesDailyMorning(true)" class="'+actionButton+'">Submit Morning Plan</button></div>':
- '<p class="text-xs text-green-700">Morning plan submitted at '+h(report?.amSubmittedAt||'')+'. Changes are recorded in the audit log.</p>')+'</section>'+
+ '<div class="flex items-center flex-wrap gap-2"><p class="text-xs text-green-700">Morning plan submitted at '+h(report?.amSubmittedAt||'')+'. Changes are recorded in the audit log.</p><button onclick="requestSalesDailyEdit(\'AM\')" class="'+lightButton+'">Request Morning Edit</button></div>')+'</section>'+
  (amLocked?'<section class="space-y-3 border-t pt-5"><h3 class="font-bold">Evening Result</h3>'+
  '<p class="text-xs text-gray-500">Update what actually happened, and choose the next follow-up date when necessary.</p>'+
  '<div class="grid gap-3">'+(report.tasks||[]).map((t,i)=>pmTask(t,i,pmLocked)).join('')+'</div>'+
  (!pmLocked?'<div class="flex flex-wrap gap-2"><button onclick="saveSalesDailyEvening(false)" class="'+lightButton+'">Save PM Draft</button>'+
  '<button onclick="saveSalesDailyEvening(true)" class="'+actionButton+'">Submit Evening Result</button></div>':
- '<p class="text-xs text-green-700">Evening results submitted. Manager can review and request corrections.</p>')+'</section>':'')+
+ '<div class="flex items-center flex-wrap gap-2"><p class="text-xs text-green-700">Evening results submitted. Manager can review and request corrections.</p><button onclick="requestSalesDailyEdit(\'PM\')" class="'+lightButton+'">Request Evening Edit</button></div>')+'</section>':'')+
+ (report?.editRequests?.length?'<div class="rounded-xl border bg-white p-3"><b class="text-sm">Edit Requests</b>'+report.editRequests.map(x=>'<p class="text-xs mt-2">'+h(x.section)+' · '+h(x.status)+' · '+h(x.reason)+(x.decisionNote?' · '+h(x.decisionNote):'')+'</p>').join('')+'</div>':'')+
  '<div data-daily-weekly>'+weeklyPanel()+'</div>'+'<section class="rounded-2xl border bg-white p-4"><div class="flex justify-between gap-2 items-center"><div><b class="text-sm">Recorded activity in the app</b><p class="text-xs text-gray-500 mt-1">CRM follow-ups, Showroom/Online events and order activity. These do not automatically count as completed tasks.</p></div>'+
  '<button onclick="showDailyActivitySuggestions()" class="'+lightButton+'">View Today’s Activity</button></div><div id="dailyActivitySuggestions" class="mt-3"></div></section></div>';
 }
@@ -265,6 +266,8 @@ window.reloadSalesDailyReview=async()=>{
 };
 window.openDailyManagerReport=id=>{
  const r=ui.reports.find(x=>x.id===id);if(!r)return;
+ const editRequests=(r.editRequests||[]).filter(x=>x.status==='Pending');
+ const requestActions=editRequests.map(x=>'<div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs"><b>'+h(x.section==='AM'?'Morning Plan':'Evening Result')+' edit request</b><p class="my-2">'+h(x.reason)+'</p><div class="flex gap-2"><button class="'+lightButton+'" onclick="decideSalesDailyEdit(\''+h(x.id)+'\',\'Rejected\')">Reject</button><button class="'+actionButton+'" onclick="decideSalesDailyEdit(\''+h(x.id)+'\',\'Approved\')">Approve</button></div></div>').join('');
  const rows=r.tasks.map((t,i)=>'<div class="rounded-xl border p-3 bg-white"><b class="text-xs">'+(i+1)+'. '+h(t.plan)+'</b>'+
  '<div class="text-[11px] text-gray-500 mt-1">'+h(t.category)+(t.customerName?' · '+h(t.customerName):'')+'</div>'+
  '<div class="grid sm:grid-cols-2 gap-2 mt-2 text-xs"><div><b>Planned:</b> '+h(t.plannedFollowup||'No date')+'</div>'+
@@ -272,7 +275,7 @@ window.openDailyManagerReport=id=>{
  '<div class="text-xs mt-2"><b>Actual result:</b> '+h(t.result||'Not submitted')+'</div>'+
  (t.nextFollowup?'<div class="text-xs text-blue-700 mt-2">Next follow-up: '+h(t.nextFollowup)+'</div>':'')+'</div>').join('');
  openModal('Daily Plan & Result — '+h(r.salesperson)+' · '+h(r.date),
- '<div class="space-y-4"><div class="rounded-xl bg-gray-50 p-3 text-xs">AM: '+h(r.amStatus)+' · PM: '+h(r.pmStatus)+
+ '<div class="space-y-4">'+requestActions+'<div class="rounded-xl bg-gray-50 p-3 text-xs">AM: '+h(r.amStatus)+' · PM: '+h(r.pmStatus)+
  ' · Review: '+h(r.reviewStatus||'Pending')+'</div>'+rows+
  (r.managerComment?'<p class="text-xs text-gray-600">Previous Manager comment: '+h(r.managerComment)+'</p>':'')+
  (r.pmStatus==='Submitted'&&r.reviewStatus!=='Reviewed'?
@@ -353,6 +356,18 @@ if(typeof oldNav==='function')window.navItems=function(){
   items.splice(i<0?items.length:i+1,0,[R,'Team Daily Review','☷']);
  }
  return items;
+};
+window.requestSalesDailyEdit=async section=>{
+ const report=ui.report;if(!report)return;
+ const reason=prompt('Reason to edit submitted '+(section==='AM'?'Morning Plan':'Evening Result')+':');
+ if(reason===null)return;if(!reason.trim())return toast('Enter a reason for the edit request',true);
+ try{await api('request_edit',{reportId:report.id,section,reason:reason.trim()});toast('Edit request sent for management approval');await reload()}
+ catch(e){toast(e.message,true)}
+};
+window.decideSalesDailyEdit=async(requestId,decision)=>{
+ const note=prompt('Optional management note:');if(note===null)return;
+ try{await api('decide_edit',{requestId,decision,note});closeModal();toast('Edit request '+decision.toLowerCase());await reload()}
+ catch(e){toast(e.message,true)}
 };
 const previousGo=window.go;
 window.go=async function(page){
