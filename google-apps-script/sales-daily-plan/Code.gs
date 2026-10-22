@@ -27,7 +27,7 @@ function doPost(e){
   const action=String(req.action||'');
   const payload=req.payload||{};
   if(typeof payload!=='object'||Array.isArray(payload))throw Error('Invalid payload');
-  if(!['ping','read','save_am','submit_am','save_pm','submit_pm','review','carry_forward','weekly','request_edit','decide_edit','delete_report','todo_list','todo_save','todo_delete'].includes(action))throw Error('Unknown action');
+  if(!['ping','read','save_am','submit_am','save_pm','submit_pm','review','carry_forward','weekly','request_edit','decide_edit','delete_report','todo_list','todo_save','todo_delete','todo_history'].includes(action))throw Error('Unknown action');
   const ss=SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('SHEET_ID'));
   const res=dispatch(ss,actor,action,payload);
   return respond({ok:true,data:res});
@@ -57,6 +57,7 @@ function authenticate(token){
 function dispatch(ss,actor,action,p){
  if(action==='ping')return{connected:true,sheet:ss.getName(),role:actor.role};
  if(action==='todo_list')return todoList(ss,actor);
+ if(action==='todo_history')return todoHistory(ss,actor,p);
  if(action==='todo_save')return todoSave(ss,actor,p);
  if(action==='todo_delete')return todoDelete(ss,actor,p);
  if(action==='read')return readReports(ss,actor,p);
@@ -310,6 +311,20 @@ function todoList(ss,a){
  }));
  return{items,people:a.can_review?people:[],today:today()};
 }
+function todoHistorySheet(ss){
+ let sh=ss.getSheetByName('Sales To-Do History');
+ if(!sh){sh=ss.insertSheet('Sales To-Do History');sh.appendRow(['Task ID','Time','Actor ID','Actor Name','Status','Progress','Remarks','Previous Status','Previous Progress'])}
+ return sh;
+}
+function todoHistory(ss,a,p){
+ if(!a.can_write&&!a.can_review)throw Error('Sales task access denied');
+ const id=val(p.id,80),record=data(todoSheet(ss)).find(r=>r[0]===id);
+ if(!record)throw Error('Task not found');
+ const management=a.can_review&&['manager','admin','super_admin'].includes(a.role);
+ if(!management&&String(record[3])!==String(a.user_id))throw Error('Task access denied');
+ if(management&&!fetchTeam(a).has(String(record[3])))throw Error('Sales assignment is not authorized');
+ return{events:data(todoHistorySheet(ss)).filter(r=>r[0]===id).map(r=>({timestamp:r[1],actor:r[3],status:r[4],progress:Number(r[5]||0),remarks:r[6],previousStatus:r[7],previousProgress:Number(r[8]||0)})).reverse().slice(0,100)};
+}
 function todoSave(ss,a,p){
  if(!a.can_write&&!a.can_review)throw Error('Sales task access denied');
  const lock=LockService.getScriptLock();lock.waitLock(15000);
@@ -338,6 +353,7 @@ function todoSave(ss,a,p){
  name?.name||name?.display_name||existing?.[4]||a.display_name,start,due,priority,status,status==='Completed'?100:progress,
  remarks,completed,existing?.[12]||a.user_id,existing?.[13]||now(),now()];
  if(existing)sh.getRange(ix+2,1,1,15).setValues([row]);else sh.appendRow(row);
+ todoHistorySheet(ss).appendRow([row[0],now(),a.user_id,saveText(a.display_name,200),row[8],row[9],row[10],existing?.[8]||'',existing?.[9]||'']);
  audit(ss,a,row[0],existing?'TODO_UPDATED':'TODO_CREATED',{task:existing||null},{task:row});
  return{id:row[0],saved:true};
  }finally{SpreadsheetApp.flush();lock.releaseLock()}
