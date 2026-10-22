@@ -275,7 +275,7 @@ async function renderManager(){
  '<div class="flex-1 min-w-[210px]"><b class="text-sm">'+h(r.salesperson)+'</b><p class="text-xs text-gray-500 mt-1">'+h(r.date)+' · '+r.tasks.length+' tasks</p>'+
  '<p class="text-[11px] mt-1">AM: '+h(r.amStatus||'Draft')+' · PM: '+h(r.pmStatus||'Not Started')+
  ' · Review: '+h(r.reviewStatus||'Pending')+(isOverdue(r)?' · PM OVERDUE':isLate(r)?' · PM LATE':'')+'</p></div>'+
- '<button onclick="openDailyManagerReport(\''+h(r.id)+'\')" class="'+lightButton+'">View Plan & Result</button></div>').join('')+'</div>':
+ '<button onclick="openDailyManagerReport(\''+h(r.id)+'\')" class="'+lightButton+'">View Plan & Result</button>'+(state.profile?.role==='super_admin'?'<button onclick="deleteSalesDailyReport(\''+h(r.id)+'\')" class="px-3 py-2 rounded-xl border border-red-200 text-red-700 text-xs font-bold">Delete</button>':'')+'</div>').join('')+'</div>':
  '<div class="p-10 text-sm text-gray-500 text-center">No Sales reports found for the selected date range.</div>')+'</section></div>';
 }
 window.reloadSalesDailyReview=async()=>{
@@ -376,6 +376,14 @@ if(typeof oldNav==='function')window.navItems=function(){
   items.splice(i<0?items.length:i+1,0,[R,'Team Daily Review','☷']);
  }
  return items;
+};
+window.deleteSalesDailyReport=async id=>{
+ if(state.profile?.role!=='super_admin')return toast('Super Admin only',true);
+ const r=ui.reports.find(x=>x.id===id);if(!r)return toast('Report not found',true);
+ const phrase=prompt('Permanently delete the Daily Plan and Evening Result for '+r.salesperson+' on '+r.date+'? This cannot be undone. Type DELETE to confirm:');
+ if(phrase!=='DELETE')return;
+ try{await api('delete_report',{reportId:id,confirm:'DELETE'});toast('Report deleted; audit retained');await reload()}
+ catch(e){toast(e.message,true)}
 };
 window.requestSalesDailyEdit=async section=>{
  const report=ui.report;if(!report)return;
