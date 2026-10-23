@@ -261,16 +261,19 @@ window.openSalesDailyShare=section=>{
  const customerCats=['Customer Follow-up','Online Inquiries','Quotation / SR'];
  const isCustomer=t=>!t.todoTaskId&&(!!t.customerId||!!t.customerName||customerCats.includes(t.category));
  const customer=(r.tasks||[]).filter(isCustomer),other=(r.tasks||[]).filter(t=>!isCustomer(t));
- const taskLine=t=>'<div style="padding:6px 0;border-bottom:1px solid #eee;break-inside:avoid">'+
- '<div style="font-weight:600;font-size:13px">• '+h(t.plan)+'</div>'+
- (t.customerName?'<div style="color:#666;font-size:11px;padding-left:11px">Customer: '+h(t.customerName)+'</div>':'')+
- (t.todoTaskId?'<span style="font-size:10px;color:#926315;padding-left:11px;font-weight:bold">To-Do task</span>':'')+
- (pm?'<div style="padding-left:11px;font-size:12px;margin-top:3px"><b>'+h(t.status||'Not updated')+'</b> — '+h(t.result||'No outcome recorded')+'</div>'+
- (t.nextFollowup?'<div style="padding-left:11px;font-size:11px;color:#666">Next follow-up: '+h(t.nextFollowup)+'</div>':''):'')+'</div>';
- const tableSection=(label,list)=>'<tr style="vertical-align:top"><th style="width:28%;padding:12px 10px;border:1px solid #bbb;text-align:left;font-size:13px;background:#f8f8f6">'+label+'</th><td style="padding:4px 12px;border:1px solid #bbb">'+(list.length?list.map(taskLine).join(''):'<span style="color:#888;font-size:12px">No tasks</span>')+'</td></tr>';
+ const planCell=t=>'<div style="font-size:12px;padding:5px 0;border-bottom:1px solid #eee;break-inside:avoid"><b>• '+h(t.plan)+'</b>'+
+ (t.customerName?'<div style="font-size:11px;color:#666;padding-left:10px">Customer: '+h(t.customerName)+'</div>':'')+
+ (t.todoTaskId?'<div style="font-size:10px;color:#926315;padding-left:10px">To-Do task</div>':'')+'</div>';
+ const resultCell=t=>'<div style="font-size:12px;padding:5px 0;border-bottom:1px solid #eee;break-inside:avoid"><b>'+h(t.status||'Not updated')+'</b> — '+h(t.result||'No outcome recorded')+
+ (t.nextFollowup?'<div style="font-size:11px;color:#666">Next: '+h(t.nextFollowup)+'</div>':'')+'</div>';
+ const tableSection=(label,list)=>'<tr style="vertical-align:top"><th style="width:'+(pm?'21':'28')+'%;padding:10px 8px;border:1px solid #bbb;text-align:left;font-size:12px;background:#f8f8f6">'+label+'</th>'+
+ '<td style="width:'+(pm?'39.5':'72')+'%;padding:4px 9px;border:1px solid #bbb">'+(list.length?list.map(planCell).join(''):'<span style="font-size:11px;color:#888">No tasks</span>')+'</td>'+
+ (pm?'<td style="width:39.5%;padding:4px 9px;border:1px solid #bbb">'+(list.length?list.map(resultCell).join(''):'—')+'</td>':'')+'</tr>';
  const extras=pm?(r.additionalActivities||[]):[];
  const extraBlock=extras.length?'<div style="margin-top:12px;border:1px solid #bbb;padding:10px"><b style="font-size:13px">Additional Activities (Unplanned)</b>'+extras.map(x=>'<div style="font-size:12px;padding:5px 0;border-bottom:1px solid #eee">• '+h(x.category)+(x.customerName?' — '+h(x.customerName):'')+'<div style="padding-left:12px">'+h(x.result||'')+'</div></div>').join('')+'</div>':'';
- const rows='<table style="border-collapse:collapse;width:100%;table-layout:fixed;margin-top:12px">'+tableSection('Customer Tasks',customer)+tableSection('Other Tasks / To-Do',other)+'</table>';
+ const rows='<table style="border-collapse:collapse;width:100%;table-layout:fixed;margin-top:12px">'+
+ (pm?'<tr style="background:#e3eedf"><th style="border:1px solid #bbb;padding:9px;font-size:12px;text-align:left">Category</th><th style="border:1px solid #bbb;padding:9px;font-size:12px;text-align:left">Morning Plan</th><th style="border:1px solid #bbb;padding:9px;font-size:12px;text-align:left">Evening Result</th></tr>':'')+
+ tableSection('Customer Tasks',customer)+tableSection('Other Tasks / To-Do',other)+'</table>';
  const panel=document.createElement('div');panel.id='salesDailyShareOverlay';panel.style.cssText='position:fixed;inset:0;z-index:99999;background:#0009;overflow:auto;padding:16px';
  panel.innerHTML='<div style="max-width:760px;margin:auto"><div data-share-tools style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px"><button onclick="window.print()" style="background:white;padding:9px 14px;border-radius:8px">Print / PDF</button><button onclick="closeSalesDailyShare()" style="background:white;padding:9px 14px;border-radius:8px">Close</button></div>'+
  '<div id="salesDailyShareCard" style="background:white;color:#242424;padding:22px;border-radius:12px;box-shadow:0 8px 32px #0002;font-family:Arial,sans-serif">'+
