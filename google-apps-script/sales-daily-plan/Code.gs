@@ -241,7 +241,7 @@ function savePm(ss,a,p,submit){
  const extrasSheet=additionalSheet(ss),previous=data(extrasSheet).map((r,i)=>({r,n:i+2})).filter(x=>x.r[1]===found.row[0]);
  previous.reverse().forEach(x=>extrasSheet.deleteRow(x.n));
  cleaned.forEach(r=>extrasSheet.appendRow(r));
- updates.forEach(entry=>tasks.getRange(entry.rowNo,1,1,17).setValues([entry.row]));
+ updates.forEach(entry=>tasks.getRange(entry.rowNo,1,1,entry.row.length).setValues([entry.row]));
  const report=found.row.slice();
  const late=submit&&new Date().getTime()>Date.parse(pmDeadline(date));
  report[7]=submit?'Submitted':'Draft';report[8]=submit?now():'';report[9]='Pending';
