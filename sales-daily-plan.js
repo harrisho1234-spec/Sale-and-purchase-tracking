@@ -220,7 +220,7 @@ function capturePm(){
   return{id:row.dataset.id,status:get('status'),result:get('result'),nextFollowup:get('nextFollowup')};
  });
 }
-let additionalDraft=[];
+let additionalDraft=[],additionalDraftDate='';
 const additionalCats=['Customer Visit','Customer Follow-up','Online Inquiry','Quotation','Sales Order','Showroom Work','Other'];
 function captureAdditional(){
  const rows=root()?.querySelectorAll('.additional-daily-row')||[];
@@ -228,6 +228,7 @@ function captureAdditional(){
  return additionalDraft;
 }
 function additionalEditor(locked){
+ if(additionalDraftDate!==ui.date){additionalDraftDate=ui.date;additionalDraft=[];}
  const data=additionalDraft.length?additionalDraft:(ui.report?.additionalActivities||[]);
  return '<div class="space-y-3 border-t pt-4"><h4 class="font-bold">Additional Activities (Unplanned)</h4><p class="text-xs text-gray-500">Record unexpected showroom visits, inquiries, quotations, or other work. These do not count toward Morning Plan completion.</p>'+
  data.map((x,i)=>'<div class="additional-daily-row border rounded-xl p-3 bg-white"><div class="flex justify-between gap-2 items-center mb-2"><b class="text-xs">Additional activity '+(i+1)+'</b>'+(!locked?'<button class="text-xs text-red-600" onclick="removeAdditionalDaily('+i+')">Remove</button>':'')+'</div><div class="grid sm:grid-cols-2 gap-2"><label class="text-xs">Activity type<select data-extra="category" class="'+common+'" '+(locked?'disabled':'')+'>'+additionalCats.map(v=>'<option '+(x.category===v?'selected':'')+'>'+h(v)+'</option>').join('')+'</select></label><label class="text-xs">Customer name (optional)<input data-extra="customerName" class="'+common+'" value="'+h(x.customerName||'')+'" '+(locked?'disabled':'')+'></label></div><label class="text-xs block mt-2">Actual outcome<textarea data-extra="result" class="'+common+'" rows="2" '+(locked?'disabled':'')+'>'+h(x.result||'')+'</textarea></label><label class="text-xs block mt-2">Next follow-up date<input data-extra="nextFollowup" type="date" class="'+common+'" value="'+h(x.nextFollowup||'')+'" '+(locked?'disabled':'')+'></label></div>').join('')+
@@ -359,6 +360,7 @@ window.openDailyManagerReport=id=>{
  openModal('Daily Plan & Result — '+h(r.salesperson)+' · '+h(r.date),
  '<div class="space-y-4">'+requestActions+'<div class="rounded-xl bg-gray-50 p-3 text-xs">AM: '+h(r.amStatus)+' · PM: '+h(r.pmStatus)+
  ' · Review: '+h(r.reviewStatus||'Pending')+'</div>'+rows+
+ ((r.additionalActivities||[]).length?'<div class="rounded-xl border p-3"><b class="text-sm">Additional Activities (Unplanned)</b>'+(r.additionalActivities||[]).map(x=>'<div class="text-xs border-b py-2"><b>'+h(x.category)+'</b>'+(x.customerName?' · '+h(x.customerName):'')+'<div>'+h(x.result)+'</div>'+(x.nextFollowup?'<div>Next follow-up: '+h(x.nextFollowup)+'</div>':'')+'</div>').join('')+'</div>':'')+
  (r.managerComment?'<p class="text-xs text-gray-600">Previous Manager comment: '+h(r.managerComment)+'</p>':'')+
  (r.pmStatus==='Submitted'&&r.reviewStatus!=='Reviewed'?
  '<label class="block text-xs font-bold">Manager comments<textarea id="dailyManagerComment" rows="3" maxlength="1500" class="'+common+' mt-1">'+h(r.managerComment||'')+'</textarea></label>'+
