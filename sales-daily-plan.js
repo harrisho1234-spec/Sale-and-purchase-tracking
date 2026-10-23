@@ -241,7 +241,7 @@ function preserveEveningInputs(){const values=capturePm();if(ui.report?.tasks)va
 window.openDailyActivitySource=(type,id)=>{
  if(!['online','showroom_visit'].includes(type)||!id)return;
  sessionStorage.setItem('dailyActivitySourceOpen',JSON.stringify({type,id}));
- if(typeof window.go==='function')window.go(type==='online'?'online-inquiries':'showroom-visits');
+ if(typeof window.go==='function')window.go(type==='online'?'online':'showroom-visit');
 };
 window.importRecordedDailyActivities=async()=>{
  if(ui.report?.pmStatus==='Submitted')return toast('Evening Result is locked',true);
