@@ -238,6 +238,11 @@ function additionalEditor(locked){
  (!locked?'<div class="flex flex-wrap gap-2"><button class="'+lightButton+'" onclick="addAdditionalDaily()">+ Add Additional Activity</button><button class="'+lightButton+'" onclick="importRecordedDailyActivities()">Import Showroom / Online</button></div>':'')+'</div>';
 }
 function preserveEveningInputs(){const values=capturePm();if(ui.report?.tasks)values.forEach(v=>{const t=ui.report.tasks.find(x=>x.id===v.id);if(t)Object.assign(t,v)})}
+window.openDailyActivitySource=(type,id)=>{
+ if(!['online','showroom_visit'].includes(type)||!id)return;
+ sessionStorage.setItem('dailyActivitySourceOpen',JSON.stringify({type,id}));
+ if(typeof window.go==='function')window.go(type==='online'?'online-inquiries':'showroom-visits');
+};
 window.importRecordedDailyActivities=async()=>{
  if(ui.report?.pmStatus==='Submitted')return toast('Evening Result is locked',true);
  preserveEveningInputs();captureAdditional();
@@ -307,7 +312,7 @@ window.openSalesDailyShare=section=>{
  '<td style="width:'+(pm?'39.5':'72')+'%;padding:4px 9px;border:1px solid #bbb">'+(list.length?list.map(planCell).join(''):'<span style="font-size:11px;color:#888">No planned tasks</span>')+
  (pm?unplanned.map(() => '<div style="padding:6px 0;border-bottom:1px solid #eee;color:#999;font-size:12px">—</div>').join(''):'')+'</td>'+
  (pm?'<td style="width:39.5%;padding:4px 9px;border:1px solid #bbb">'+list.map(resultCell).join('')+
- unplanned.map(x=>'<div style="font-size:12px;padding:6px 0;border-bottom:1px solid #eee"><b>• '+h(x.category)+(x.customerName?' — '+h(x.customerName):'')+'</b><div>'+h(x.result||'')+'</div>'+(x.nextFollowup?'<div style="color:#666;font-size:11px">Next: '+h(x.nextFollowup)+'</div>':'')+'</div>').join('')+'</td>':'')+'</tr>';
+ unplanned.map(x=>'<div style="font-size:12px;padding:6px 0;border-bottom:1px solid #eee"><b>• '+h(x.category)+(x.customerName?' — '+h(x.customerName):'')+'</b><div>'+h(x.result||'')+'</div>'+(x.nextFollowup?'<div style="color:#666;font-size:11px">Next: '+h(x.nextFollowup)+'</div>':'')+(x.sourceId?'<div style="font-size:10px;color:#666">Linked '+h(x.sourceType==='online'?'Online Inquiry':'Showroom Visit')+' · '+h(x.sourceId.slice(0,8))+'</div>':'')+'</div>').join('')+'</td>':'')+'</tr>';
  const extraBlock='';
  const rows='<table style="border-collapse:collapse;width:100%;table-layout:fixed;margin-top:12px">'+
  (pm?'<tr style="background:#e3eedf"><th style="border:1px solid #bbb;padding:9px;font-size:12px;text-align:left">Category</th><th style="border:1px solid #bbb;padding:9px;font-size:12px;text-align:left">Morning Plan</th><th style="border:1px solid #bbb;padding:9px;font-size:12px;text-align:left">Evening Result</th></tr>':'')+
@@ -402,7 +407,7 @@ window.openDailyManagerReport=id=>{
  openModal('Daily Plan & Result — '+h(r.salesperson)+' · '+h(r.date),
  '<div class="space-y-4">'+requestActions+'<div class="rounded-xl bg-gray-50 p-3 text-xs">AM: '+h(r.amStatus)+' · PM: '+h(r.pmStatus)+
  ' · Review: '+h(r.reviewStatus||'Pending')+'</div>'+rows+
- ((r.additionalActivities||[]).length?'<div class="rounded-xl border p-3"><b class="text-sm">Additional Activities (Unplanned)</b>'+(r.additionalActivities||[]).map(x=>'<div class="text-xs border-b py-2"><b>'+h(x.category)+'</b>'+(x.customerName?' · '+h(x.customerName):'')+'<div>'+h(x.result)+'</div>'+(x.nextFollowup?'<div>Next follow-up: '+h(x.nextFollowup)+'</div>':'')+'</div>').join('')+'</div>':'')+
+ ((r.additionalActivities||[]).length?'<div class="rounded-xl border p-3"><b class="text-sm">Additional Activities (Unplanned)</b>'+(r.additionalActivities||[]).map(x=>'<div class="text-xs border-b py-2"><b>'+h(x.category)+'</b>'+(x.customerName?' · '+h(x.customerName):'')+'<div>'+h(x.result)+'</div>'+(x.nextFollowup?'<div>Next follow-up: '+h(x.nextFollowup)+'</div>':'')+(x.sourceId?'<button class="underline text-blue-700" onclick="openDailyActivitySource(\''+h(x.sourceType)+'\',\''+h(x.sourceId)+'\')">Open original activity ↗</button>':'')+'</div>').join('')+'</div>':'')+
  (r.managerComment?'<p class="text-xs text-gray-600">Previous Manager comment: '+h(r.managerComment)+'</p>':'')+
  (r.pmStatus==='Submitted'&&r.reviewStatus!=='Reviewed'?
  '<label class="block text-xs font-bold">Manager comments<textarea id="dailyManagerComment" rows="3" maxlength="1500" class="'+common+' mt-1">'+h(r.managerComment||'')+'</textarea></label>'+
