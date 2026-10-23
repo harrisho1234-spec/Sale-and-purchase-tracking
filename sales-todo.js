@@ -83,7 +83,7 @@ window.saveQuickSalesTodo=async id=>{
  const remarks=document.getElementById('todoQuickRemarks')?.value.trim()||'';
  if(status==='Cancelled'&&!remarks)return showToast('Cancellation reason required','err');
  saving=true;const button=document.getElementById('todoQuickSave');if(button){button.disabled=true;button.textContent='Saving…'}
- try{await api('todo_save',{id,status,progress,remarks});closeModal();showToast('Progress updated');await window.loadSalesTodo()}
+ try{await api('todo_save',{id,status,progress,remarks});closeModal();showToast('Progress updated');await window.loadSalesTodo(true)}
  catch(e){showToast(e.message,'err')}finally{saving=false;if(button){button.disabled=false;button.textContent='Save Progress'}}
 };
 window.openSalesTodo=id=>{
@@ -114,7 +114,12 @@ window.saveSalesTodo=async id=>{
  saving=true;const btn=document.getElementById('todoSaveButton');if(btn){btn.disabled=true;btn.textContent='Saving…'}
  try{await api('todo_save',payload);closeModal();newTaskId='';showToast('Task saved');await window.loadSalesTodo()}catch(e){showToast(e.message,'err')}finally{saving=false;if(btn){btn.disabled=false;btn.textContent='Save Task'}}
 };
-window.loadSalesTodo=async()=>{if(state.page!==PAGE)return;if(!loaded){box().innerHTML='<div class="max-w-6xl mx-auto space-y-4 animate-pulse" aria-label="Loading tasks"><div class="bg-gray-100 rounded-xl h-20"></div><div class="grid grid-cols-3 gap-3"><div class="bg-gray-100 rounded-xl h-20"></div><div class="bg-gray-100 rounded-xl h-20"></div><div class="bg-gray-100 rounded-xl h-20"></div></div><div class="bg-gray-100 rounded-xl h-36"></div></div>';} try{const x=await api('todo_list');items=x.items||[];people=x.people||[];loaded=true;render()}catch(e){box().innerHTML='<div class="p-5 bg-red-50 border text-red-700">'+h(e.message)+' <button onclick="loadSalesTodo()" class="underline">Retry</button></div>'}};
+window.loadSalesTodo=async(force=false)=>{if(state.page!==PAGE)return;
+ const user=state.user?.id||null;
+ if(cacheUser!==user){cacheUser=user;items=[];people=[];loaded=false;lastLoaded=0;loadPromise=null;}
+ if(loaded){render();if(!force&&Date.now()-lastLoaded<FRESH_MS)return;}
+ if(loadPromise)return loadPromise;
+ if(!loaded){box().innerHTML='<div class="max-w-6xl mx-auto space-y-4 animate-pulse" aria-label="Loading tasks"><div class="bg-gray-100 rounded-xl h-20"></div><div class="grid grid-cols-3 gap-3"><div class="bg-gray-100 rounded-xl h-20"></div><div class="bg-gray-100 rounded-xl h-20"></div><div class="bg-gray-100 rounded-xl h-20"></div></div><div class="bg-gray-100 rounded-xl h-36"></div></div>';} loadPromise=(async()=>{try{const x=await api('todo_list');if(state.user?.id!==user||state.page!==PAGE)return;items=x.items||[];people=x.people||[];loaded=true;lastLoaded=Date.now();render()}catch(e){if(state.user?.id!==user||state.page!==PAGE)return;if(!loaded)box().innerHTML='<div class="p-5 bg-red-50 border text-red-700">'+h(e.message)+' <button onclick="loadSalesTodo(true)" class="underline">Retry</button></div>';else showToast('Could not refresh tasks: '+e.message,'err')}finally{loadPromise=null}})();return loadPromise};
 const oldNav=window.navItems;if(typeof oldNav==='function')window.navItems=function(){const list=oldNav.apply(this,arguments)||[];if(permitted()&&!list.some(x=>x[0]===PAGE))list.push([PAGE,'Sales To-Do','☑']);return list};
 const oldGo=window.go;window.go=async function(page){if(page!==PAGE)return oldGo.apply(this,arguments);if(!permitted())return;state.page=PAGE;renderNav();document.getElementById('pageTitle').textContent='Sales To-Do';document.getElementById('pageSubtitle').textContent='Assigned tasks and progress';await window.loadSalesTodo()};
 })();
