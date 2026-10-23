@@ -97,6 +97,9 @@ window.saveSalesDailyEndpoint=async()=>{
  ui.config=r.data;toast('Connection saved. Testing Google Sheet access…');
  try{await api('ping',{});await reload()}catch(e){toast('Connection saved, but Google Apps Script test failed: '+e.message,true)}
 };
+function compactSubmittedTask(t,i){
+ return '<div class="border rounded-xl bg-white px-3 py-2 flex gap-3"><span class="text-xs text-gray-500">'+(i+1)+'.</span><div class="flex-1"><div class="text-sm font-semibold">'+h(t.plan)+'</div><div class="text-[11px] text-gray-500">'+h(t.category)+(t.customerName?' · '+h(t.customerName):'')+(t.todoTaskId?' · Linked To-Do':'')+(t.plannedFollowup?' · Due '+h(t.plannedFollowup):'')+'</div></div></div>';
+}
 function formTask(t,i,readonly=false){
  const cs='<option value="">No linked customer</option>'+ui.customers.map(c=>
  '<option value="'+h(c.id)+'" '+(String(t.customerId||'')===String(c.id)?'selected':'')+'>'+h(c.name)+'</option>').join('');
@@ -334,7 +337,7 @@ function renderSalesHome(){
  '<div id="salesDailyPriorReminder"></div>'+
  '<section class="space-y-3"><div class="flex flex-wrap justify-between items-center gap-2">'+
  '<h3 class="font-bold">Morning Plan</h3>'+(amLocked?'':'<button type="button" onclick="addSalesDailyTask()" class="'+lightButton+'">+ Add Task</button>')+'</div>'+
- '<div id="dailyPlanRows" class="grid gap-3">'+tasks.map((t,i)=>formTask(t,i,amLocked)).join('')+'</div>'+
+ '<div id="dailyPlanRows" class="grid gap-2">'+tasks.map((t,i)=>amLocked?compactSubmittedTask(t,i):formTask(t,i,false)).join('')+'</div>'+
  (!amLocked?'<div class="rounded-xl bg-[#fdfbf6] border p-3 flex flex-wrap gap-2 items-end">'+
  '<label class="text-xs font-semibold">Carry forward unfinished plans from<input id="dailyCarryFrom" type="date" value="'+h(backDays(ui.date,1))+'" class="'+common+' mt-1"></label>'+
  '<button type="button" onclick="carrySalesDailyTasks()" class="'+lightButton+'">Preview Unfinished Plans</button></div>'+
