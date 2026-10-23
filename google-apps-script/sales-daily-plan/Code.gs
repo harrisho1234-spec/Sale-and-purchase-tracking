@@ -109,7 +109,7 @@ function readReports(ss,a,p){
   &&(!p.userId||String(p.userId)===String(r[2])));
  const taskIndex={};data(tab(ss,'tasks')).forEach(r=>(taskIndex[r[1]]||(taskIndex[r[1]]=[])).push(taskOutput(r)));
  const amended=new Set(data(tab(ss,'audit')).filter(r=>r[5]==='AM_TODO_APPENDED').map(r=>String(r[3])));
- const extraIndex={};data(additionalSheet(ss)).forEach(r=>(extraIndex[r[1]]||(extraIndex[r[1]]=[])).push({id:r[0],category:r[4],customerName:r[5],result:r[6],nextFollowup:r[7]}));
+ const extraIndex={};data(additionalSheet(ss)).forEach(r=>(extraIndex[r[1]]||(extraIndex[r[1]]=[])).push({id:r[0],category:r[4],customerName:r[5],result:r[6],nextFollowup:r[7],sourceType:r[9]||'',sourceId:r[10]||''}));
  const editIndex={};editRows(ss).forEach(x=>(editIndex[x.row[1]]||(editIndex[x.row[1]]=[])).push({id:x.row[0],section:x.row[3],reason:x.row[4],status:x.row[5],requestedAt:x.row[6],decisionNote:x.row[9]}));
  return{reports:all.map(r=>({...reportOutput(r,(taskIndex[r[0]]||[]).sort((x,y)=>x.sort-y.sort)),editRequests:editIndex[r[0]]||[],amTodoAmended:amended.has(String(r[0])),additionalActivities:extraIndex[r[0]]||[]})),
  salesPeople:a.can_review?a.sales_people||[]:[],today:today()};
@@ -202,7 +202,7 @@ function saveAm(ss,a,p,submit){
  audit(ss,a,reportId,amApproved?(submit?'AM_REVISED_SUBMITTED':'AM_REVISION_DRAFT'):submit?'AM_SUBMITTED':'AM_DRAFT_SAVED',{tasks:oldTasks.map(x=>taskOutput(x.row))},{tasks:rows.map(taskOutput),date});
  return reportOutput(fresh,rows.map(taskOutput));
 }
-function additionalSheet(ss){let sh=ss.getSheetByName('Daily Additional Activities');if(!sh){sh=ss.insertSheet('Daily Additional Activities');sh.appendRow(['ID','Report ID','Date','User ID','Category','Customer','Outcome','Next Follow-up','Created At'])}return sh}
+function additionalSheet(ss){let sh=ss.getSheetByName('Daily Additional Activities');if(!sh){sh=ss.insertSheet('Daily Additional Activities');sh.appendRow(['ID','Report ID','Date','User ID','Category','Customer','Outcome','Next Follow-up','Created At','Source Type','Source ID'])}return sh}
 function additionalRows(ss,id){return data(additionalSheet(ss)).filter(r=>r[1]===id).map(r=>({id:r[0],category:r[4],customerName:r[5],result:r[6],nextFollowup:r[7]}))}
 function savePm(ss,a,p,submit){
  ensureWrite(a);
@@ -215,11 +215,16 @@ function savePm(ss,a,p,submit){
  const categories=['Customer Visit','Customer Follow-up','Online Inquiry','Quotation','Sales Order','Showroom Work','Other'];
  const extras=Array.isArray(p.additionalActivities)?p.additionalActivities:[];
  if(extras.length>30)throw Error('Too many additional activities');
+ const usedSources=new Set();
  const cleaned=extras.map((x,i)=>{
   const category=val(x.category||'Other',40),result=saveText(x.result,1500);
   if(!categories.includes(category))throw Error('Invalid activity category');
   if(submit&&!result)throw Error('Additional activity '+(i+1)+' requires an outcome');
-  return [val(x.id,80)||uid(),found.row[0],date,a.user_id,category,saveText(x.customerName,150),result,x.nextFollowup?iso(x.nextFollowup):'',now()];
+  const sourceType=val(x.sourceType,40),sourceId=val(x.sourceId,100);
+  if(sourceType&&!['online','showroom_visit'].includes(sourceType))throw Error('Invalid imported activity type');
+  if(Boolean(sourceType)!==Boolean(sourceId))throw Error('Incomplete imported activity reference');
+  if(sourceId){const key=sourceType+':'+sourceId;if(usedSources.has(key))throw Error('Duplicate imported activity');usedSources.add(key)}
+  return [val(x.id,80)||uid(),found.row[0],date,a.user_id,category,saveText(x.customerName,150),result,x.nextFollowup?iso(x.nextFollowup):'',now(),sourceType,sourceId];
  });
 
  if(received.length!==original.length)throw Error('Update every planned task');
