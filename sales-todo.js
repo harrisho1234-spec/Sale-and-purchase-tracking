@@ -132,6 +132,8 @@ window.loadSalesTodo=async(force=false)=>{
   ]);
   if(seq!==todoRequestSequence||state.page!==PAGE||state.user?.id!==user)return;
   items=result.items||[];people=result.people||[];loaded=true;lastLoaded=Date.now();render();
+  const linked=sessionStorage.getItem('salesDailyOpenTodo');
+  if(linked){sessionStorage.removeItem('salesDailyOpenTodo');if(items.some(x=>x.id===linked))window.openSalesTodoHistory(linked);else showToast('Linked To-Do task is not available to this account','err');}
  }catch(err){
   if(seq!==todoRequestSequence||state.page!==PAGE||state.user?.id!==user)return;
   if(loaded){render();showToast('Task refresh failed: '+err.message,'err')}
