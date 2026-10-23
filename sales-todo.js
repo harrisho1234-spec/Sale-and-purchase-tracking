@@ -114,12 +114,28 @@ window.saveSalesTodo=async id=>{
  saving=true;const btn=document.getElementById('todoSaveButton');if(btn){btn.disabled=true;btn.textContent='Saving…'}
  try{await api('todo_save',payload);closeModal();newTaskId='';showToast('Task saved');await window.loadSalesTodo()}catch(e){showToast(e.message,'err')}finally{saving=false;if(btn){btn.disabled=false;btn.textContent='Save Task'}}
 };
-window.loadSalesTodo=async(force=false)=>{if(state.page!==PAGE)return;
+let todoRequestSequence=0;
+window.loadSalesTodo=async(force=false)=>{
+ if(state.page!==PAGE)return;
  const user=state.user?.id||null;
- if(cacheUser!==user){cacheUser=user;items=[];people=[];loaded=false;lastLoaded=0;loadPromise=null;}
+ if(cacheUser!==user){cacheUser=user;items=[];people=[];loaded=false;lastLoaded=0;todoRequestSequence++;}
  if(loaded){render();if(!force&&Date.now()-lastLoaded<FRESH_MS)return;}
- if(loadPromise)return loadPromise;
- if(!loaded){box().innerHTML='<div class="max-w-6xl mx-auto space-y-4 animate-pulse" aria-label="Loading tasks"><div class="bg-gray-100 rounded-xl h-20"></div><div class="grid grid-cols-3 gap-3"><div class="bg-gray-100 rounded-xl h-20"></div><div class="bg-gray-100 rounded-xl h-20"></div><div class="bg-gray-100 rounded-xl h-20"></div></div><div class="bg-gray-100 rounded-xl h-36"></div></div>';} loadPromise=(async()=>{try{const x=await api('todo_list');if(state.user?.id!==user||state.page!==PAGE)return;items=x.items||[];people=x.people||[];loaded=true;lastLoaded=Date.now();render()}catch(e){if(state.user?.id!==user||state.page!==PAGE)return;if(!loaded)box().innerHTML='<div class="p-5 bg-red-50 border text-red-700">'+h(e.message)+' <button onclick="loadSalesTodo(true)" class="underline">Retry</button></div>';else showToast('Could not refresh tasks: '+e.message,'err')}finally{loadPromise=null}})();return loadPromise};
+ const seq=++todoRequestSequence;
+ if(!loaded)box().innerHTML='<div class="max-w-6xl mx-auto space-y-3 p-4"><div class="text-sm text-gray-500">Opening your tasks…</div><button class="border rounded-lg px-3 py-2 text-sm" onclick="loadSalesTodo(true)">Retry loading</button></div>';
+ let timer;
+ try{
+  const result=await Promise.race([
+   api('todo_list'),
+   new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Google Sheets is taking too long to respond. Please retry.')),18000)})
+  ]);
+  if(seq!==todoRequestSequence||state.page!==PAGE||state.user?.id!==user)return;
+  items=result.items||[];people=result.people||[];loaded=true;lastLoaded=Date.now();render();
+ }catch(err){
+  if(seq!==todoRequestSequence||state.page!==PAGE||state.user?.id!==user)return;
+  if(loaded){render();showToast('Task refresh failed: '+err.message,'err')}
+  else box().innerHTML='<div class="max-w-6xl mx-auto bg-white rounded-xl border p-6"><b>Unable to load Sales To-Do</b><p class="text-sm text-gray-600 mt-2">'+h(err.message)+'</p><button onclick="loadSalesTodo(true)" class="mt-3 border rounded-lg px-4 py-2">Retry</button></div>';
+ }finally{clearTimeout(timer)}
+};
 const oldNav=window.navItems;if(typeof oldNav==='function')window.navItems=function(){const list=oldNav.apply(this,arguments)||[];if(permitted()&&!list.some(x=>x[0]===PAGE))list.push([PAGE,'Sales To-Do','☑']);return list};
 const oldGo=window.go;window.go=async function(page){
  if(page!==PAGE)return oldGo.apply(this,arguments);
@@ -128,9 +144,6 @@ const oldGo=window.go;window.go=async function(page){
  renderNav();
  document.getElementById('pageTitle').textContent='Sales To-Do';
  document.getElementById('pageSubtitle').textContent='Assigned tasks and progress';
- // Always replace previous page immediately, even when a cached list is available.
- const container=box();
- if(container)container.innerHTML='<div class="max-w-6xl mx-auto space-y-4 animate-pulse" aria-label="Loading Sales To-Do"><div class="bg-gray-100 rounded-xl h-20"></div><div class="grid grid-cols-3 gap-3"><div class="bg-gray-100 rounded-xl h-20"></div><div class="bg-gray-100 rounded-xl h-20"></div><div class="bg-gray-100 rounded-xl h-20"></div></div></div>';
  await window.loadSalesTodo();
 };
 })();
