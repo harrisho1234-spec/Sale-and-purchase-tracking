@@ -162,14 +162,34 @@ window.carrySalesDailyTasks=async()=>{
  if(ui.loading)return;
  ui.loading=true;
  const from=elem('dailyCarryFrom')?.value||backDays(ui.date,1);
- try{captureAm();const r=await api('carry_forward',{from,to:ui.date});
+ try{
+  captureAm();
+  const r=await api('carry_forward',{from,to:ui.date});
   const imported=new Set(ui.tasks.map(t=>t.sourceTaskId).filter(Boolean));
-  const x=(r.suggestions||[]).filter(t=>!imported.has(t.sourceTaskId));if(!x.length)return toast('No new unfinished tasks found for that day');
-  if(ui.tasks.filter(t=>t.plan.trim()).length+x.length>20)return toast('Too many tasks; remove some first',true);
-  ui.tasks=ui.tasks.filter(t=>t.plan.trim());
-  ui.tasks.push(...x.map(t=>({...empty(),...t,id:''})));renderSalesHome();
-  toast(x.length+' unfinished tasks brought forward as editable plans');
+  const suggestions=(r.suggestions||[]).filter(t=>t.sourceTaskId&&!imported.has(t.sourceTaskId));
+  if(!suggestions.length)return toast('No new unfinished tasks found for that day');
+  const available=20-ui.tasks.filter(t=>t.plan.trim()).length;
+  const body='<p class="text-xs text-gray-500 mb-3">Select unfinished tasks from '+h(from)+' to add to your '+h(ui.date)+' Morning Plan draft. Nothing is submitted automatically.</p>'+
+    '<div class="space-y-2 max-h-[55vh] overflow-auto">'+suggestions.map((t,i)=>'<label class="flex items-start gap-3 border rounded-xl p-3 text-sm"><input type="checkbox" class="daily-carry-check mt-1" value="'+i+'" checked><span><b>'+h(t.plan)+'</b><span class="block text-xs text-gray-500 mt-1">'+h(t.category||'Other')+' · '+h(t.priority||'Medium')+(t.customerName?' · '+h(t.customerName):'')+'</span></span></label>').join('')+'</div>'+
+    '<div class="flex gap-2 mt-4"><button class="'+actionButton+'" onclick="confirmDailyCarryForward()">Add Selected to Plan</button><button class="'+lightButton+'" onclick="closeModal()">Cancel</button></div>';
+  window.dailyCarrySuggestions=suggestions;
+  window.dailyCarryTargetDate=ui.date;
+  window.dailyCarryAvailable=available;
+  openModal('Carry Forward Unfinished Plans',body);
  }catch(e){toast(e.message,true)}finally{ui.loading=false}
+};
+window.confirmDailyCarryForward=()=>{
+ if(ui.date!==window.dailyCarryTargetDate)return toast('Report date changed. Please preview again.',true);
+ const choices=[...document.querySelectorAll('.daily-carry-check:checked')].map(e=>window.dailyCarrySuggestions[Number(e.value)]).filter(Boolean);
+ if(!choices.length)return toast('Select at least one task to import',true);
+ captureAm();
+ const current=ui.tasks.filter(t=>t.plan.trim());
+ const existing=new Set(current.map(t=>t.sourceTaskId).filter(Boolean));
+ const unique=choices.filter(t=>!existing.has(t.sourceTaskId));
+ if(current.length+unique.length>20)return toast('Maximum 20 tasks per day. Select fewer tasks.',true);
+ ui.tasks=[...current,...unique.map(t=>({...empty(),...t,id:''}))];
+ closeModal();renderSalesHome();
+ toast(unique.length+' unfinished task(s) added to your Morning Plan draft');
 };
 function pmTask(t,i,locked){
  return '<div class="daily-result-row rounded-2xl bg-white border p-4" data-id="'+h(t.id)+'">'+
@@ -244,8 +264,8 @@ function renderSalesHome(){
  '<h3 class="font-bold">Morning Plan</h3>'+(amLocked?'':'<button type="button" onclick="addSalesDailyTask()" class="'+lightButton+'">+ Add Task</button>')+'</div>'+
  '<div id="dailyPlanRows" class="grid gap-3">'+tasks.map((t,i)=>formTask(t,i,amLocked)).join('')+'</div>'+
  (!amLocked?'<div class="rounded-xl bg-[#fdfbf6] border p-3 flex flex-wrap gap-2 items-end">'+
- '<label class="text-xs font-semibold">Carry forward unfinished tasks from<input id="dailyCarryFrom" type="date" value="'+h(backDays(ui.date,1))+'" class="'+common+' mt-1"></label>'+
- '<button type="button" onclick="carrySalesDailyTasks()" class="'+lightButton+'">Import Pending Tasks</button></div>'+
+ '<label class="text-xs font-semibold">Carry forward unfinished plans from<input id="dailyCarryFrom" type="date" value="'+h(backDays(ui.date,1))+'" class="'+common+' mt-1"></label>'+
+ '<button type="button" onclick="carrySalesDailyTasks()" class="'+lightButton+'">Preview Unfinished Plans</button></div>'+
  '<div class="flex flex-wrap gap-2"><button onclick="saveSalesDailyMorning(false)" class="'+lightButton+'">Save AM Draft</button>'+
  '<button onclick="saveSalesDailyMorning(true)" class="'+actionButton+'">Submit Morning Plan</button></div>':
  '<div class="flex items-center flex-wrap gap-2"><p class="text-xs text-green-700">Morning plan submitted at '+h(report?.amSubmittedAt||'')+'. Changes are recorded in the audit log.</p><button onclick="requestSalesDailyEdit(\'AM\')" class="'+lightButton+'">Request Morning Edit</button></div>')+'</section>'+
