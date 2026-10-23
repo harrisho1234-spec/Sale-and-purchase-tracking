@@ -108,8 +108,9 @@ function readReports(ss,a,p){
  const all=data(tab(ss,'reports')).filter(r=>r[1]>=begin&&r[1]<=end&&visibleReport(a,r)
   &&(!p.userId||String(p.userId)===String(r[2])));
  const taskIndex={};data(tab(ss,'tasks')).forEach(r=>(taskIndex[r[1]]||(taskIndex[r[1]]=[])).push(taskOutput(r)));
+ const amended=new Set(data(tab(ss,'audit')).filter(r=>r[5]==='AM_TODO_APPENDED').map(r=>String(r[3])));
  const editIndex={};editRows(ss).forEach(x=>(editIndex[x.row[1]]||(editIndex[x.row[1]]=[])).push({id:x.row[0],section:x.row[3],reason:x.row[4],status:x.row[5],requestedAt:x.row[6],decisionNote:x.row[9]}));
- return{reports:all.map(r=>({...reportOutput(r,(taskIndex[r[0]]||[]).sort((x,y)=>x.sort-y.sort)),editRequests:editIndex[r[0]]||[]})),
+ return{reports:all.map(r=>({...reportOutput(r,(taskIndex[r[0]]||[]).sort((x,y)=>x.sort-y.sort)),editRequests:editIndex[r[0]]||[],amTodoAmended:amended.has(String(r[0]))})),
  salesPeople:a.can_review?a.sales_people||[]:[],today:today()};
 }
 function buildTask(t,date,user,reportId,sort,old){
