@@ -24,6 +24,7 @@ function doPost(e){
   const req=JSON.parse(raw);
   if(!req||typeof req!=='object'||Array.isArray(req))throw Error('Invalid request');
   const actor=authenticate(req.token);
+  actor._verifiedToken=String(req.token);
   const action=String(req.action||'');
   const payload=req.payload||{};
   if(typeof payload!=='object'||Array.isArray(payload))throw Error('Invalid payload');
@@ -204,6 +205,26 @@ function saveAm(ss,a,p,submit){
 }
 function additionalSheet(ss){let sh=ss.getSheetByName('Daily Additional Activities');if(!sh){sh=ss.insertSheet('Daily Additional Activities');sh.appendRow(['ID','Report ID','Date','User ID','Category','Customer','Outcome','Next Follow-up','Created At','Source Type','Source ID'])}return sh}
 function additionalRows(ss,id){return data(additionalSheet(ss)).filter(r=>r[1]===id).map(r=>({id:r[0],category:r[4],customerName:r[5],result:r[6],nextFollowup:r[7]}))}
+function verifyImportedActivities(a,entries,date){
+ const links=entries.filter(x=>x[9]&&x[10]);if(!links.length)return;
+ const settings=PropertiesService.getScriptProperties();
+ const base=settings.getProperty('SUPABASE_URL'),key=settings.getProperty('SUPABASE_ANON_KEY');
+ const headers={Authorization:'Bearer '+a._verifiedToken,apikey:key};
+ const available=new Set();
+ ['showroom_visit','online'].forEach(type=>{
+  if(!links.some(x=>x[9]===type))return;
+  const response=UrlFetchApp.fetch(base+'/rest/v1/rpc/get_customer_activity_rows',{
+   method:'post',contentType:'application/json',headers,
+   payload:JSON.stringify({p_activity_type:type}),muteHttpExceptions:true
+  });
+  if(response.getResponseCode()!==200)throw Error('Unable to verify linked customer activities');
+  JSON.parse(response.getContentText()).forEach(r=>{
+   if(String(r.assigned_sales_id)===String(a.user_id)&&String(r.activity_date)===date)
+    available.add(type+':'+String(r.id));
+  });
+ });
+ links.forEach(x=>{if(!available.has(x[9]+':'+x[10]))throw Error('Imported '+x[9]+' activity is not assigned to this Sales account or does not match the report date')});
+}
 function savePm(ss,a,p,submit){
  ensureWrite(a);
  const date=iso(p.date||today());dayWindow(date);
@@ -227,6 +248,7 @@ function savePm(ss,a,p,submit){
   return [val(x.id,80)||uid(),found.row[0],date,a.user_id,category,saveText(x.customerName,150),result,x.nextFollowup?iso(x.nextFollowup):'',now(),sourceType,sourceId];
  });
 
+ verifyImportedActivities(a,cleaned,date);
  if(received.length!==original.length)throw Error('Update every planned task');
  const byId=new Map(received.map(t=>[String(t.id),t]));
  // Validate the entire request before changing any task, so invalid later rows
