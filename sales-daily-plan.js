@@ -100,7 +100,7 @@ window.saveSalesDailyEndpoint=async()=>{
 function formTask(t,i,readonly=false){
  const cs='<option value="">No linked customer</option>'+ui.customers.map(c=>
  '<option value="'+h(c.id)+'" '+(String(t.customerId||'')===String(c.id)?'selected':'')+'>'+h(c.name)+'</option>').join('');
- return '<div class="daily-task-row border rounded-2xl bg-white p-4" data-index="'+i+'">'+
+ return '<div class="daily-task-row border rounded-2xl bg-white p-4" data-index="'+i+'" data-todo-task-id="'+h(t.todoTaskId||'')+'" data-source-task-id="'+h(t.sourceTaskId||'')+'">'+
  '<div class="flex justify-between items-center gap-2 mb-3"><b class="text-sm">Task '+(i+1)+(t.todoTaskId?' · Linked To-Do':t.sourceTaskId?' · Carried forward':'')+'</b>'+
  (!readonly?(t.todoTaskId||t.sourceTaskId?'<button type="button" onclick="unlinkSalesDailyTask('+i+')" class="border px-2.5 py-1.5 rounded-lg text-[11px]">Unlink task</button>':'')+'<button type="button" onclick="removeSalesDailyTask('+i+')" class="border border-red-100 text-red-600 px-2.5 py-1.5 rounded-lg text-[11px]">Remove</button>':'')+'</div>'+
  '<div class="grid sm:grid-cols-3 gap-3">'+
@@ -121,7 +121,7 @@ function captureAm(){
    const get=k=>row.querySelector('[data-field="'+k+'"]')?.value||'';
    const prev=ui.tasks[i]||{};
    const matched=ui.customers.find(c=>String(c.id)===get('customerId'));
-   return{id:prev.id||'',sourceTaskId:prev.sourceTaskId||'',todoTaskId:prev.todoTaskId||'',category:get('category'),plan:get('plan'),
+   return{id:prev.id||'',sourceTaskId:row.dataset.sourceTaskId||prev.sourceTaskId||'',todoTaskId:row.dataset.todoTaskId||prev.todoTaskId||'',category:get('category'),plan:get('plan'),
     customerId:get('customerId'),customerName:get('customerName')||(matched?.name||''),
     priority:get('priority'),plannedFollowup:get('plannedFollowup')};
  });
@@ -161,7 +161,11 @@ async function saveAm(submit){
  ui.loading=true;
  try{
   const r=await api(submit?'submit_am':'save_am',{date:ui.date,tasks:ui.tasks});
-  ui.report=r;ui.tasks=r.tasks||[];toast(submit?'Morning plan submitted':'Morning draft saved');
+  const linked=ui.tasks.filter(t=>t.todoTaskId).map(t=>t.todoTaskId);
+  const retained=new Set((r.tasks||[]).map(t=>t.todoTaskId).filter(Boolean));
+  ui.report=r;ui.tasks=r.tasks||[];
+  if(linked.some(id=>!retained.has(id)))toast('Plan saved, but the To-Do link was not retained. Update your Google Apps Script deployment to enable the compact-view label.',true);
+  else toast(submit?'Morning plan submitted':'Morning draft saved');
   await reload();
  }catch(e){toast(e.message,true)}finally{ui.loading=false}
 }
