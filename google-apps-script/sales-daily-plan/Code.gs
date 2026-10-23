@@ -139,11 +139,18 @@ function saveAm(ss,a,p,submit){
  const reportId=old?old[0]:uid();
  const oldTasks=taskRows(tasks,reportId);
  const used=new Set();
- const sourceIds=[...new Set(p.tasks.map(t=>String(t.todoTaskId||'').trim()).filter(Boolean))];
- if(sourceIds.length){
-  const owned=new Set(data(todoSheet(ss)).filter(r=>String(r[3])===String(a.user_id)).map(r=>String(r[0])));
-  sourceIds.forEach(id=>{if(!owned.has(id))throw Error('Linked To-Do task is not owned by this Sales account')});
- }
+ // Carry-forward sourceTaskId is a Daily Plan task ID, never a To-Do ID.
+ // Validate both references independently without exposing another salesperson's records.
+ const dayRows=data(tasks);
+ const todoIds=[...new Set(p.tasks.map(t=>String(t.todoTaskId||'').trim()).filter(Boolean))];
+ const ownedTodos=todoIds.length?new Set(data(todoSheet(ss)).filter(r=>String(r[3])===String(a.user_id)).map(r=>String(r[0]))):new Set();
+ p.tasks.forEach((t,i)=>{
+  const todoId=String(t.todoTaskId||'').trim(),dailyId=String(t.sourceTaskId||'').trim();
+  if(todoId&&!ownedTodos.has(todoId))
+   throw Error('Task '+(i+1)+' ("'+saveText(t.plan,70)+'"): its linked To-Do task is unavailable or belongs to another account. Remove and re-add this task manually, or import your own To-Do task again.');
+  if(dailyId&&!dayRows.some(r=>String(r[0])===dailyId&&String(r[3])===String(a.user_id)&&String(r[2])<date))
+   throw Error('Task '+(i+1)+' ("'+saveText(t.plan,70)+'"): its previous Daily Plan reference cannot be verified. Please preview and carry forward the task again.');
+ });
  const rows=p.tasks.map((t,i)=>{
   const original=oldTasks.find(x=>String(x.row[0])===String(t.id||''))?.row;
   if(original){if(used.has(original[0]))throw Error('Duplicate task ID');used.add(original[0])}
