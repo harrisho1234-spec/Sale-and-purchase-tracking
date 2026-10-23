@@ -385,11 +385,10 @@ async function reload(){
        const locked=ui.report?.amStatus==='Submitted'&&!approved;
        if(locked){
          window.pendingSalesDailyTodo=task;
-         const reviewed=ui.report?.reviewStatus==='Reviewed';
-         openModal('Morning Plan already submitted',
-           '<p class="text-sm mb-3">Your Morning Plan for '+h(ui.date)+' has already been submitted. The To-Do task <b>'+h(task.plan)+'</b> has not been added.</p>'+
-           '<p class="text-xs text-gray-500 mb-4">'+(reviewed?'A reviewed report can only be reopened with Super Admin approval.':'Request approval to edit this plan, or select another report date.')+'</p>'+
-           '<div class="flex flex-wrap gap-2"><button class="'+actionButton+'" onclick="requestPendingTodoMorningEdit()">Request Morning Edit</button><button class="'+lightButton+'" onclick="choosePendingTodoDate()">Choose Another Date</button><button class="'+lightButton+'" onclick="closeModal()">Close</button></div>');
+         openModal('Add To-Do to submitted Morning Plan',
+           '<p class="text-sm mb-3">Add <b>'+h(task.plan)+'</b> as a new Morning Plan task for '+h(ui.date)+'?</p>'+
+           '<p class="text-xs text-gray-500 mb-4">No approval is needed. Management will see the revised report and the amendment will be recorded in the audit log. Existing morning tasks and evening results stay unchanged.</p>'+
+           '<div class="flex flex-wrap gap-2"><button class="'+actionButton+'" onclick="appendPendingDailyTodo()">Add and Record Revision</button><button class="'+lightButton+'" onclick="choosePendingTodoDate()">Choose Another Date</button><button class="'+lightButton+'" onclick="closeModal()">Close</button></div>');
        }else if(task.sourceTaskId&&!ui.tasks.some(t=>t.todoTaskId===task.sourceTaskId)){
          if(ui.tasks.length===1&&!ui.tasks[0].plan)ui.tasks=[];
          if(ui.tasks.length<20){ui.tasks.push({...empty(),...task,todoTaskId:task.sourceTaskId,sourceTaskId:'',id:''});sessionStorage.removeItem('salesDailyTodoDraft')}
@@ -447,6 +446,16 @@ window.deleteSalesDailyReport=async id=>{
  if(phrase!=='DELETE')return;
  try{await api('delete_report',{reportId:id,confirm:'DELETE'});toast('Report deleted; audit retained');await reload()}
  catch(e){toast(e.message,true)}
+};
+window.appendPendingDailyTodo=async()=>{
+ const task=window.pendingSalesDailyTodo;if(!task?.sourceTaskId)return toast('No To-Do task selected',true);
+ if(ui.loading)return;ui.loading=true;
+ try{
+  const r=await api('append_todo_am',{date:ui.date,todoTaskId:task.sourceTaskId});
+  sessionStorage.removeItem('salesDailyTodoDraft');window.pendingSalesDailyTodo=null;closeModal();
+  toast(r.alreadyAdded?'This To-Do is already included in the Morning Plan':'To-Do added. Management can see the amended report.');
+  await reload();
+ }catch(e){toast(e.message,true)}finally{ui.loading=false}
 };
 window.requestPendingTodoMorningEdit=()=>{
  closeModal();
