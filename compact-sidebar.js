@@ -87,7 +87,18 @@
       writeCollapsed(false);
       applyCollapsed(false);
     }
-    return go(id);
+    // Use the final registered page handler rather than an older captured router.
+    if(id==='sales-todo' && typeof window.loadSalesTodo==='function'){
+      state.page=id;
+      if(typeof renderNav==='function')renderNav();
+      var title=document.getElementById('pageTitle'),subtitle=document.getElementById('pageSubtitle');
+      if(title)title.textContent='Sales To-Do';
+      if(subtitle)subtitle.textContent='Assigned tasks and progress';
+      var root=document.getElementById('content');
+      if(root)root.innerHTML='<div data-sales-todo-root class="p-5 text-sm text-gray-500">Opening tasks…</div>';
+      return window.loadSalesTodo(true);
+    }
+    return window.go(id);
   };
 
   function approvalBadge(id){
