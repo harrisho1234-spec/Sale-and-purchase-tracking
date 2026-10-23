@@ -143,14 +143,17 @@ function installTodoGuard(){
  const container=box();
  if(todoGuard||!container)return;
  todoGuard=new MutationObserver(()=>{
-  if(state.page!==PAGE||restoringTodo||container.querySelector('[data-sales-todo-root]'))return;
+  if(state.page!==PAGE||restoringTodo)return;
+  // An earlier page might append content without clearing the To-Do root.
+  const roots=container.querySelectorAll(':scope > [data-sales-todo-root]');
+  if(roots.length===1&&container.children.length===1)return;
   restoringTodo=true;
   try{
    if(loaded)render();
    else container.innerHTML='<div data-sales-todo-root class="max-w-6xl mx-auto bg-white rounded-xl border p-5 text-sm">Opening Sales To-Do… <button onclick="loadSalesTodo(true)" class="underline ml-2">Retry</button></div>';
   }finally{restoringTodo=false}
  });
- todoGuard.observe(container,{childList:true});
+ todoGuard.observe(container,{childList:true,subtree:true});
 }
 const oldNav=window.navItems;if(typeof oldNav==='function')window.navItems=function(){const list=oldNav.apply(this,arguments)||[];if(permitted()&&!list.some(x=>x[0]===PAGE))list.push([PAGE,'Sales To-Do','☑']);return list};
 const oldGo=window.go;window.go=async function(page){
