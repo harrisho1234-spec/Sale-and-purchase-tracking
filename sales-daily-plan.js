@@ -378,14 +378,23 @@ async function reload(){
    ui.tasks=ui.report?.tasks?.length?ui.report.tasks:[empty()];
    // To-Do linkage only creates a local unsaved Morning Plan draft, never submits.
    const todoDraft=sessionStorage.getItem('salesDailyTodoDraft');
-   if(todoDraft&&ui.report?.amStatus!=='Submitted'){
+   if(todoDraft){
      try{
        const task=JSON.parse(todoDraft);
-       if(task.sourceTaskId&&!ui.tasks.some(t=>t.todoTaskId===task.sourceTaskId)){
+       const approved=ui.report?.editRequests?.some(x=>x.section==='AM'&&x.status==='Approved');
+       const locked=ui.report?.amStatus==='Submitted'&&!approved;
+       if(locked){
+         window.pendingSalesDailyTodo=task;
+         const reviewed=ui.report?.reviewStatus==='Reviewed';
+         openModal('Morning Plan already submitted',
+           '<p class="text-sm mb-3">Your Morning Plan for '+h(ui.date)+' has already been submitted. The To-Do task <b>'+h(task.plan)+'</b> has not been added.</p>'+
+           '<p class="text-xs text-gray-500 mb-4">'+(reviewed?'A reviewed report can only be reopened with Super Admin approval.':'Request approval to edit this plan, or select another report date.')+'</p>'+
+           '<div class="flex flex-wrap gap-2"><button class="'+actionButton+'" onclick="requestPendingTodoMorningEdit()">Request Morning Edit</button><button class="'+lightButton+'" onclick="choosePendingTodoDate()">Choose Another Date</button><button class="'+lightButton+'" onclick="closeModal()">Close</button></div>');
+       }else if(task.sourceTaskId&&!ui.tasks.some(t=>t.todoTaskId===task.sourceTaskId)){
          if(ui.tasks.length===1&&!ui.tasks[0].plan)ui.tasks=[];
-         if(ui.tasks.length<20)ui.tasks.push({...empty(),...task,todoTaskId:task.sourceTaskId,sourceTaskId:'',id:''});
-       }
-       sessionStorage.removeItem('salesDailyTodoDraft');
+         if(ui.tasks.length<20){ui.tasks.push({...empty(),...task,todoTaskId:task.sourceTaskId,sourceTaskId:'',id:''});sessionStorage.removeItem('salesDailyTodoDraft')}
+         else toast('Morning Plan has reached the 20-task limit. The To-Do task was not imported.',true);
+       }else if(task.sourceTaskId)sessionStorage.removeItem('salesDailyTodoDraft');
      }catch(_){sessionStorage.removeItem('salesDailyTodoDraft')}
    }
    reportLoaded=true;renderSalesHome();
@@ -438,6 +447,17 @@ window.deleteSalesDailyReport=async id=>{
  if(phrase!=='DELETE')return;
  try{await api('delete_report',{reportId:id,confirm:'DELETE'});toast('Report deleted; audit retained');await reload()}
  catch(e){toast(e.message,true)}
+};
+window.requestPendingTodoMorningEdit=()=>{
+ closeModal();
+ if(typeof window.requestSalesDailyEdit==='function')window.requestSalesDailyEdit('AM');
+};
+window.choosePendingTodoDate=()=>{
+ closeModal();
+ const next=prompt('Choose another report date (YYYY-MM-DD):',today());
+ if(!next)return;
+ if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(next))return toast('Enter a date as YYYY-MM-DD',true);
+ ui.date=next;ui.report=null;ui.tasks=[];reload();
 };
 window.requestSalesDailyEdit=async section=>{
  const report=ui.report;if(!report)return;
