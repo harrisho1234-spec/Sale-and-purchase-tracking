@@ -316,7 +316,7 @@ async function renderManager(){
  (reports.length?'<div class="divide-y">'+reports.map(r=>'<div class="p-4 flex flex-wrap items-center gap-3">'+
  '<div class="flex-1 min-w-[210px]"><b class="text-sm">'+h(r.salesperson)+'</b><p class="text-xs text-gray-500 mt-1">'+h(r.date)+' · '+r.tasks.length+' tasks</p>'+
  '<p class="text-[11px] mt-1">AM: '+h(r.amStatus||'Draft')+' · PM: '+h(r.pmStatus||'Not Started')+
- ' · Review: '+h(r.reviewStatus||'Pending')+(isOverdue(r)?' · PM OVERDUE':isLate(r)?' · PM LATE':'')+'</p></div>'+
+ ' · Review: '+h(r.reviewStatus||'Pending')+(r.amTodoAmended?' · AM REVISED (TO-DO)':'')+(isOverdue(r)?' · PM OVERDUE':isLate(r)?' · PM LATE':'')+'</p></div>'+
  '<button onclick="openDailyManagerReport(\''+h(r.id)+'\')" class="'+lightButton+'">View Plan & Result</button>'+(state.profile?.role==='super_admin'?'<button onclick="deleteSalesDailyReport(\''+h(r.id)+'\')" class="px-3 py-2 rounded-xl border border-red-200 text-red-700 text-xs font-bold">Delete</button>':'')+'</div>').join('')+'</div>':
  '<div class="p-10 text-sm text-gray-500 text-center">No Sales reports found for the selected date range.</div>')+'</section></div>';
 }
