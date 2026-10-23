@@ -390,6 +390,21 @@ ${activityAllowed()?`          <select onchange="setActivityStatus(this.value)" 
     activityState.rows=[...live,...groupedHistory].sort((a,b)=>String(b.activity_date||'').localeCompare(String(a.activity_date||'')));
     if(!activityCanFilterSales())activityState.salesRep='all';
     if(activityState.dateRange==='today'&&live.length===0&&groupedHistory.length>0)activityState.dateRange='all';
+    const pending=sessionStorage.getItem('dailyActivitySourceOpen');
+    if(pending){
+      sessionStorage.removeItem('dailyActivitySourceOpen');
+      try{
+        const link=JSON.parse(pending);
+        if(link.type===type){
+          const record=activityState.rows.find(x=>String(x.id)===String(link.id));
+          if(record){
+            activityState.dateRange='all';
+            activityState.search=record.customer_name||'';
+            activityState.page=1;
+          }else if(typeof showToast==='function')showToast('The original activity is not available to this account','err');
+        }
+      }catch(_){}
+    }
     renderActivityBody();
   }
 
