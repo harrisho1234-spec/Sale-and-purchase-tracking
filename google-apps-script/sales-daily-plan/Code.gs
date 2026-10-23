@@ -96,7 +96,7 @@ function ensureWrite(a){if(!a.can_write||a.role!=='sales')throw Error('This acco
 function ensureReview(a){if(!a.can_review||!['manager','admin','super_admin'].includes(a.role))throw Error('Only authorized management can review Sales reports')}
 function reportFor(sheet,date,id){const rows=data(sheet);const i=rows.findIndex(r=>r[1]===date&&r[2]===id);return{i:i<0?-1:i+2,row:i<0?null:rows[i]}}
 function taskRows(sheet,reportId){return data(sheet).map((r,i)=>({rowNo:i+2,row:r})).filter(x=>x.row[1]===reportId)}
-function taskOutput(r){return{id:r[0],reportId:r[1],date:r[2],userId:r[3],sort:Number(r[4]||0),category:r[5],plan:r[6],customerId:r[7],customerName:r[8],priority:r[9],plannedFollowup:r[10],status:r[11],result:r[12],nextFollowup:r[13],completedAt:r[14],sourceTaskId:r[17]||''}}
+function taskOutput(r){return{id:r[0],reportId:r[1],date:r[2],userId:r[3],sort:Number(r[4]||0),category:r[5],plan:r[6],customerId:r[7],customerName:r[8],priority:r[9],plannedFollowup:r[10],status:r[11],result:r[12],nextFollowup:r[13],completedAt:r[14],todoTaskId:r[17]||''}}
 function reportOutput(r,tasks){return{id:r[0],date:r[1],userId:r[2],salesperson:r[3],amStatus:r[5],amSubmittedAt:r[6],pmStatus:r[7],pmSubmittedAt:r[8],reviewStatus:r[9],managerComment:r[10],reviewedBy:r[11],reviewedAt:r[12],pmDeadline:pmDeadline(r[1]),pmOverdue:pmLate(r),pmSubmittedLate:pmSubmittedLate(r),tasks}}
 function visibleActor(a,id){return a.can_review?true:String(id)===String(a.user_id)}
 function fetchTeam(a){return new Set((a.sales_people||[]).map(x=>String(x.user_id)))}
@@ -120,7 +120,7 @@ function buildTask(t,date,user,reportId,sort,old){
  return[
   old?.[0]||uid(),reportId,date,user,sort,category,plan,
   saveText(t.customerId,64),saveText(t.customerName,140),priority,due,
-  old?.[11]||'',old?.[12]||'',old?.[13]||'',old?.[14]||'',old?.[15]||now(),now(),old?.[17]||saveText(t.sourceTaskId,80)
+  old?.[11]||'',old?.[12]||'',old?.[13]||'',old?.[14]||'',old?.[15]||now(),now(),old?.[17]||saveText(t.todoTaskId,80)
  ];
 }
 function audit(ss,actor,report,action,before,after,task=''){
@@ -139,7 +139,7 @@ function saveAm(ss,a,p,submit){
  const reportId=old?old[0]:uid();
  const oldTasks=taskRows(tasks,reportId);
  const used=new Set();
- const sourceIds=[...new Set(p.tasks.map(t=>String(t.sourceTaskId||'').trim()).filter(Boolean))];
+ const sourceIds=[...new Set(p.tasks.map(t=>String(t.todoTaskId||'').trim()).filter(Boolean))];
  if(sourceIds.length){
   const owned=new Set(data(todoSheet(ss)).filter(r=>String(r[3])===String(a.user_id)).map(r=>String(r[0])));
   sourceIds.forEach(id=>{if(!owned.has(id))throw Error('Linked To-Do task is not owned by this Sales account')});
