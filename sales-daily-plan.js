@@ -266,14 +266,18 @@ window.openSalesDailyShare=section=>{
  (t.todoTaskId?'<div style="font-size:10px;color:#926315;padding-left:10px">To-Do task</div>':'')+'</div>';
  const resultCell=t=>'<div style="font-size:12px;padding:5px 0;border-bottom:1px solid #eee;break-inside:avoid"><b>'+h(t.status||'Not updated')+'</b> — '+h(t.result||'No outcome recorded')+
  (t.nextFollowup?'<div style="font-size:11px;color:#666">Next: '+h(t.nextFollowup)+'</div>':'')+'</div>';
- const tableSection=(label,list)=>'<tr style="vertical-align:top"><th style="width:'+(pm?'21':'28')+'%;padding:10px 8px;border:1px solid #bbb;text-align:left;font-size:12px;background:#f8f8f6">'+label+'</th>'+
- '<td style="width:'+(pm?'39.5':'72')+'%;padding:4px 9px;border:1px solid #bbb">'+(list.length?list.map(planCell).join(''):'<span style="font-size:11px;color:#888">No tasks</span>')+'</td>'+
- (pm?'<td style="width:39.5%;padding:4px 9px;border:1px solid #bbb">'+(list.length?list.map(resultCell).join(''):'—')+'</td>':'')+'</tr>';
  const extras=pm?(r.additionalActivities||[]):[];
- const extraBlock=extras.length?'<div style="margin-top:12px;border:1px solid #bbb;padding:10px"><b style="font-size:13px">Additional Activities (Unplanned)</b>'+extras.map(x=>'<div style="font-size:12px;padding:5px 0;border-bottom:1px solid #eee">• '+h(x.category)+(x.customerName?' — '+h(x.customerName):'')+'<div style="padding-left:12px">'+h(x.result||'')+'</div></div>').join('')+'</div>':'';
+ const customerExtra=extras.filter(x=>['Customer Visit','Customer Follow-up','Online Inquiry','Quotation','Sales Order'].includes(x.category));
+ const otherExtra=extras.filter(x=>!customerExtra.includes(x));
+ const tableSection=(label,list,unplanned)=>'<tr style="vertical-align:top"><th style="width:'+(pm?'21':'28')+'%;padding:10px 8px;border:1px solid #bbb;text-align:left;font-size:12px;background:#f8f8f6">'+label+'</th>'+
+ '<td style="width:'+(pm?'39.5':'72')+'%;padding:4px 9px;border:1px solid #bbb">'+(list.length?list.map(planCell).join(''):'<span style="font-size:11px;color:#888">No planned tasks</span>')+
+ (pm?unplanned.map(() => '<div style="padding:6px 0;border-bottom:1px solid #eee;color:#999;font-size:12px">—</div>').join(''):'')+'</td>'+
+ (pm?'<td style="width:39.5%;padding:4px 9px;border:1px solid #bbb">'+list.map(resultCell).join('')+
+ unplanned.map(x=>'<div style="font-size:12px;padding:6px 0;border-bottom:1px solid #eee"><b>• '+h(x.category)+(x.customerName?' — '+h(x.customerName):'')+'</b><div>'+h(x.result||'')+'</div>'+(x.nextFollowup?'<div style="color:#666;font-size:11px">Next: '+h(x.nextFollowup)+'</div>':'')+'</div>').join('')+'</td>':'')+'</tr>';
+ const extraBlock='';
  const rows='<table style="border-collapse:collapse;width:100%;table-layout:fixed;margin-top:12px">'+
  (pm?'<tr style="background:#e3eedf"><th style="border:1px solid #bbb;padding:9px;font-size:12px;text-align:left">Category</th><th style="border:1px solid #bbb;padding:9px;font-size:12px;text-align:left">Morning Plan</th><th style="border:1px solid #bbb;padding:9px;font-size:12px;text-align:left">Evening Result</th></tr>':'')+
- tableSection('Customer Tasks',customer)+tableSection('Other Tasks / To-Do',other)+'</table>';
+ tableSection('Customer Tasks',customer,customerExtra)+tableSection('Other Tasks / To-Do',other,otherExtra)+'</table>';
  const panel=document.createElement('div');panel.id='salesDailyShareOverlay';panel.style.cssText='position:fixed;inset:0;z-index:99999;background:#0009;overflow:auto;padding:16px';
  panel.innerHTML='<div style="max-width:760px;margin:auto"><div data-share-tools style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px"><button onclick="window.print()" style="background:white;padding:9px 14px;border-radius:8px">Print / PDF</button><button onclick="closeSalesDailyShare()" style="background:white;padding:9px 14px;border-radius:8px">Close</button></div>'+
  '<div id="salesDailyShareCard" style="background:white;color:#242424;padding:22px;border-radius:12px;box-shadow:0 8px 32px #0002;font-family:Arial,sans-serif">'+
