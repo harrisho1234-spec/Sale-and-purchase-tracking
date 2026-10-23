@@ -121,7 +121,7 @@ function captureAm(){
    const get=k=>row.querySelector('[data-field="'+k+'"]')?.value||'';
    const prev=ui.tasks[i]||{};
    const matched=ui.customers.find(c=>String(c.id)===get('customerId'));
-   return{id:prev.id||'',sourceTaskId:prev.sourceTaskId||'',category:get('category'),plan:get('plan'),
+   return{id:prev.id||'',sourceTaskId:prev.sourceTaskId||'',todoTaskId:prev.todoTaskId||'',category:get('category'),plan:get('plan'),
     customerId:get('customerId'),customerName:get('customerName')||(matched?.name||''),
     priority:get('priority'),plannedFollowup:get('plannedFollowup')};
  });
@@ -209,7 +209,7 @@ window.openSalesDailyShare=section=>{
  const r=ui.report;if(!r||!(section==='AM'?r.amStatus==='Submitted':r.pmStatus==='Submitted'))return toast('Submit before sharing',true);
  window.closeSalesDailyShare();const pm=section==='PM';
  const rows=(r.tasks||[]).map((t,i)=>'<div style="padding:9px 0;border-bottom:1px solid #e5e7eb;break-inside:avoid"><b>'+(i+1)+'. '+h(t.plan)+'</b>'+
- (t.sourceTaskId?'<button type="button" onclick="openLinkedDailyTodo(\''+h(t.sourceTaskId)+'\')" style="display:inline-block;margin:4px 0;font-size:10px;font-weight:bold;padding:3px 8px;border-radius:5px;background:#fff5df;color:#926315">TO-DO ↗</button>':'')+
+ (t.todoTaskId?'<button type="button" onclick="openLinkedDailyTodo(\''+h(t.todoTaskId)+'\')" style="display:inline-block;margin:4px 0;font-size:10px;font-weight:bold;padding:3px 8px;border-radius:5px;background:#fff5df;color:#926315">TO-DO ↗</button>':'')+
  (t.customerName?'<div style="font-size:12px;color:#666">Customer: '+h(t.customerName)+'</div>':'')+
  (pm?'<div style="font-size:12px;margin-top:4px"><b>'+h(t.status||'Pending')+'</b> · '+h(t.result||'—')+'</div>'+
  (t.nextFollowup?'<div style="font-size:11px;color:#666">Next: '+h(t.nextFollowup)+'</div>':''):
@@ -348,9 +348,9 @@ async function reload(){
    if(todoDraft&&ui.report?.amStatus!=='Submitted'){
      try{
        const task=JSON.parse(todoDraft);
-       if(task.sourceTaskId&&!ui.tasks.some(t=>t.sourceTaskId===task.sourceTaskId)){
+       if(task.sourceTaskId&&!ui.tasks.some(t=>t.todoTaskId===task.sourceTaskId)){
          if(ui.tasks.length===1&&!ui.tasks[0].plan)ui.tasks=[];
-         if(ui.tasks.length<20)ui.tasks.push({...empty(),...task,id:''});
+         if(ui.tasks.length<20)ui.tasks.push({...empty(),...task,todoTaskId:task.sourceTaskId,sourceTaskId:'',id:''});
        }
        sessionStorage.removeItem('salesDailyTodoDraft');
      }catch(_){sessionStorage.removeItem('salesDailyTodoDraft')}
