@@ -101,8 +101,8 @@ function formTask(t,i,readonly=false){
  const cs='<option value="">No linked customer</option>'+ui.customers.map(c=>
  '<option value="'+h(c.id)+'" '+(String(t.customerId||'')===String(c.id)?'selected':'')+'>'+h(c.name)+'</option>').join('');
  return '<div class="daily-task-row border rounded-2xl bg-white p-4" data-index="'+i+'">'+
- '<div class="flex justify-between items-center gap-2 mb-3"><b class="text-sm">Task '+(i+1)+'</b>'+
- (!readonly?'<button type="button" onclick="removeSalesDailyTask('+i+')" class="border border-red-100 text-red-600 px-2.5 py-1.5 rounded-lg text-[11px]">Remove</button>':'')+'</div>'+
+ '<div class="flex justify-between items-center gap-2 mb-3"><b class="text-sm">Task '+(i+1)+(t.todoTaskId?' · Linked To-Do':t.sourceTaskId?' · Carried forward':'')+'</b>'+
+ (!readonly?(t.todoTaskId||t.sourceTaskId?'<button type="button" onclick="unlinkSalesDailyTask('+i+')" class="border px-2.5 py-1.5 rounded-lg text-[11px]">Unlink task</button>':'')+'<button type="button" onclick="removeSalesDailyTask('+i+')" class="border border-red-100 text-red-600 px-2.5 py-1.5 rounded-lg text-[11px]">Remove</button>':'')+'</div>'+
  '<div class="grid sm:grid-cols-3 gap-3">'+
  '<label class="text-xs font-semibold">Category<select data-field="category" class="'+common+'" '+(readonly?'disabled':'')+'>'+
  CATS.map(c=>'<option value="'+h(c)+'" '+(t.category===c?'selected':'')+'>'+h(c)+'</option>').join('')+'</select></label>'+
@@ -126,6 +126,14 @@ function captureAm(){
     priority:get('priority'),plannedFollowup:get('plannedFollowup')};
  });
 }
+window.unlinkSalesDailyTask=i=>{
+ captureAm();
+ if(!ui.tasks[i])return;
+ ui.tasks[i].todoTaskId='';
+ ui.tasks[i].sourceTaskId='';
+ renderSalesHome();
+ toast('Task link cleared. The plan text remains; you can submit it as a manual task.');
+};
 window.addSalesDailyTask=()=>{captureAm();if(ui.tasks.length>=20)return toast('Maximum 20 tasks per day',true);ui.tasks.push(empty());renderSalesHome()};
 window.removeSalesDailyTask=i=>{captureAm();if(ui.tasks.length<=1)return toast('Keep at least one planned task',true);ui.tasks.splice(i,1);renderSalesHome()};
 window.openOverdueSalesDaily=async date=>{if(ui.loading)return;ui.date=date;ui.report=null;ui.tasks=[];await reload()};
