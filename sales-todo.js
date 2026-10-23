@@ -136,34 +136,14 @@ window.loadSalesTodo=async(force=false)=>{
   else box().innerHTML='<div data-sales-todo-root class="max-w-6xl mx-auto bg-white rounded-xl border p-6"><b>Unable to load Sales To-Do</b><p class="text-sm text-gray-600 mt-2">'+h(err.message)+'</p><button onclick="loadSalesTodo(true)" class="mt-3 border rounded-lg px-4 py-2">Retry</button></div>';
  }finally{clearTimeout(timer)}
 };
-// Other legacy screens render asynchronously and may finish after navigation.
-// Keep Sales To-Do visible if an older page replaces its content.
-let todoGuard=null,restoringTodo=false;
-function installTodoGuard(){
- const container=box();
- if(todoGuard||!container)return;
- todoGuard=new MutationObserver(()=>{
-  if(state.page!==PAGE||restoringTodo)return;
-  // An earlier page might append content without clearing the To-Do root.
-  const roots=container.querySelectorAll(':scope > [data-sales-todo-root]');
-  if(roots.length===1&&container.children.length===1)return;
-  restoringTodo=true;
-  try{
-   if(loaded)render();
-   else container.innerHTML='<div data-sales-todo-root class="max-w-6xl mx-auto bg-white rounded-xl border p-5 text-sm">Opening Sales To-Do… <button onclick="loadSalesTodo(true)" class="underline ml-2">Retry</button></div>';
-  }finally{restoringTodo=false}
- });
- todoGuard.observe(container,{childList:true,subtree:true});
-}
 const oldNav=window.navItems;if(typeof oldNav==='function')window.navItems=function(){const list=oldNav.apply(this,arguments)||[];if(permitted()&&!list.some(x=>x[0]===PAGE))list.push([PAGE,'Sales To-Do','☑']);return list};
 const oldGo=window.go;window.go=async function(page){
  if(page!==PAGE)return oldGo.apply(this,arguments);
  if(!permitted())return;
  state.page=PAGE;
- installTodoGuard();
  renderNav();
  document.getElementById('pageTitle').textContent='Sales To-Do';
  document.getElementById('pageSubtitle').textContent='Assigned tasks and progress';
- await window.loadSalesTodo();
+ try{await window.loadSalesTodo(true)}catch(err){const root=box();if(root)root.innerHTML='<div class="bg-red-50 border rounded-xl p-5">Could not open tasks: '+h(err?.message||err)+'</div>'}
 };
 })();
