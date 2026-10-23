@@ -241,18 +241,21 @@ window.openLinkedDailyTodo=id=>{
 window.openSalesDailyShare=section=>{
  const r=ui.report;if(!r||!(section==='AM'?r.amStatus==='Submitted':r.pmStatus==='Submitted'))return toast('Submit before sharing',true);
  window.closeSalesDailyShare();const pm=section==='PM';
- const rows=(r.tasks||[]).map((t,i)=>'<div style="padding:9px 0;border-bottom:1px solid #e5e7eb;break-inside:avoid"><b>'+(i+1)+'. '+h(t.plan)+'</b>'+
- (t.todoTaskId?'<button type="button" onclick="openLinkedDailyTodo(\''+h(t.todoTaskId)+'\')" style="display:inline-block;margin:4px 0;font-size:10px;font-weight:bold;padding:3px 8px;border-radius:5px;background:#fff5df;color:#926315">TO-DO ↗</button>':'')+
- (t.customerName?'<div style="font-size:12px;color:#666">Customer: '+h(t.customerName)+'</div>':'')+
- (pm?'<div style="font-size:12px;margin-top:4px"><b>'+h(t.status||'Pending')+'</b> · '+h(t.result||'—')+'</div>'+
- (t.nextFollowup?'<div style="font-size:11px;color:#666">Next: '+h(t.nextFollowup)+'</div>':''):
- '<div style="font-size:11px;color:#666">'+h(t.category)+' · '+h(t.priority)+(t.plannedFollowup?' · '+h(t.plannedFollowup):'')+'</div>')+'</div>').join('');
+ const customerCats=['Customer Follow-up','Online Inquiries','Quotation / SR'];
+ const isCustomer=t=>!t.todoTaskId&&(!!t.customerId||!!t.customerName||customerCats.includes(t.category));
+ const customer=(r.tasks||[]).filter(isCustomer),other=(r.tasks||[]).filter(t=>!isCustomer(t));
+ const taskLine=t=>'<div style="padding:6px 0;border-bottom:1px solid #eee;break-inside:avoid">'+
+ '<div style="font-weight:600;font-size:13px">• '+h(t.plan)+'</div>'+
+ (t.customerName?'<div style="color:#666;font-size:11px;padding-left:11px">Customer: '+h(t.customerName)+'</div>':'')+
+ (t.todoTaskId?'<span style="font-size:10px;color:#926315;padding-left:11px;font-weight:bold">To-Do task</span>':'')+
+ (pm?'<div style="padding-left:11px;font-size:12px;margin-top:3px"><b>'+h(t.status||'Not updated')+'</b> — '+h(t.result||'No outcome recorded')+'</div>'+
+ (t.nextFollowup?'<div style="padding-left:11px;font-size:11px;color:#666">Next follow-up: '+h(t.nextFollowup)+'</div>':''):'')+'</div>';
+ const tableSection=(label,list)=>'<tr style="vertical-align:top"><th style="width:28%;padding:12px 10px;border:1px solid #bbb;text-align:left;font-size:13px;background:#f8f8f6">'+label+'</th><td style="padding:4px 12px;border:1px solid #bbb">'+(list.length?list.map(taskLine).join(''):'<span style="color:#888;font-size:12px">No tasks</span>')+'</td></tr>';
+ const rows='<table style="border-collapse:collapse;width:100%;table-layout:fixed;margin-top:12px">'+tableSection('Customer Tasks',customer)+tableSection('Other Tasks / To-Do',other)+'</table>';
  const panel=document.createElement('div');panel.id='salesDailyShareOverlay';panel.style.cssText='position:fixed;inset:0;z-index:99999;background:#0009;overflow:auto;padding:16px';
  panel.innerHTML='<div style="max-width:760px;margin:auto"><div data-share-tools style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px"><button onclick="window.print()" style="background:white;padding:9px 14px;border-radius:8px">Print / PDF</button><button onclick="closeSalesDailyShare()" style="background:white;padding:9px 14px;border-radius:8px">Close</button></div>'+
  '<div id="salesDailyShareCard" style="background:white;color:#242424;padding:22px;border-radius:12px;box-shadow:0 8px 32px #0002;font-family:Arial,sans-serif">'+
- '<div style="border-bottom:2px solid #a77824;padding-bottom:12px"><div style="font-size:10px;font-weight:bold;letter-spacing:1px;color:#a77824">L’IMPERIAL · SALES DAILY REPORT</div>'+
- '<div style="font-size:22px;font-weight:bold;margin:6px 0">'+(pm?'Evening Result':'Morning Plan')+'</div>'+
- '<div style="font-size:13px">'+h(r.salesperson||state.profile?.full_name||state.profile?.name||'Sales')+' · '+h(r.date)+' · '+(r.tasks||[]).length+' tasks</div></div>'+
+ '<div style="border:1px solid #b4cbb1;background:#e3eedf;padding:12px"><div style="font-weight:700;font-size:15px">'+(pm?'Evening Result':'Morning Plan')+'</div><div style="font-size:13px;margin-top:4px"><b>Date:</b> '+h(r.date)+' &nbsp; <b>Name:</b> '+h(r.salesperson||state.profile?.full_name||state.profile?.name||'Sales')+'</div></div>'+
  rows+'<div style="margin-top:12px;font-size:11px;color:#777">Submitted: '+h(pm?r.pmSubmittedAt:r.amSubmittedAt)+' · '+h(r.reviewStatus||'Pending review')+'</div></div></div>';
  document.body.appendChild(panel);panel.addEventListener('click',e=>{if(e.target===panel)window.closeSalesDailyShare()});
  if(!document.getElementById('salesDailySharePrintStyle')){const st=document.createElement('style');st.id='salesDailySharePrintStyle';st.textContent='@media print{body>*:not(#salesDailyShareOverlay){display:none!important}#salesDailyShareOverlay{position:static!important;background:white!important;overflow:visible!important;padding:0!important}#salesDailyShareOverlay [data-share-tools]{display:none!important}#salesDailyShareCard{box-shadow:none!important}}';document.head.appendChild(st)}
