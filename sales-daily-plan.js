@@ -100,20 +100,20 @@ window.saveSalesDailyEndpoint=async()=>{
 function formTask(t,i,readonly=false){
  const cs='<option value="">No linked customer</option>'+ui.customers.map(c=>
  '<option value="'+h(c.id)+'" '+(String(t.customerId||'')===String(c.id)?'selected':'')+'>'+h(c.name)+'</option>').join('');
- return '<div class="daily-task-row border rounded-2xl bg-white p-4" data-index="'+i+'" data-todo-task-id="'+h(t.todoTaskId||'')+'" data-source-task-id="'+h(t.sourceTaskId||'')+'">'+
- '<div class="flex justify-between items-center gap-2 mb-3"><b class="text-sm">Task '+(i+1)+(t.todoTaskId?' · Linked To-Do':t.sourceTaskId?' · Carried forward':'')+'</b>'+
+ return '<div class="daily-task-row border rounded-xl bg-white px-3 py-2.5" data-index="'+i+'" data-todo-task-id="'+h(t.todoTaskId||'')+'" data-source-task-id="'+h(t.sourceTaskId||'')+'">'+
+ '<div class="flex justify-between items-center gap-2 mb-2"><b class="text-sm">Task '+(i+1)+(t.todoTaskId?' · Linked To-Do':t.sourceTaskId?' · Carried forward':'')+'</b>'+
  (!readonly?(t.todoTaskId||t.sourceTaskId?'<button type="button" onclick="unlinkSalesDailyTask('+i+')" class="border px-2.5 py-1.5 rounded-lg text-[11px]">Unlink task</button>':'')+'<button type="button" onclick="removeSalesDailyTask('+i+')" class="border border-red-100 text-red-600 px-2.5 py-1.5 rounded-lg text-[11px]">Remove</button>':'')+'</div>'+
- '<div class="grid sm:grid-cols-3 gap-3">'+
+ '<div class="grid sm:grid-cols-3 gap-2">'+
  '<label class="text-xs font-semibold">Category<select data-field="category" class="'+common+'" '+(readonly?'disabled':'')+'>'+
  CATS.map(c=>'<option value="'+h(c)+'" '+(t.category===c?'selected':'')+'>'+h(c)+'</option>').join('')+'</select></label>'+
  '<label class="text-xs font-semibold">Priority<select data-field="priority" class="'+common+'" '+(readonly?'disabled':'')+'>'+
  ['High','Medium','Low'].map(v=>'<option '+(v===t.priority?'selected':'')+'>'+v+'</option>').join('')+'</select></label>'+
  '<label class="text-xs font-semibold">Planned Follow-up<input type="date" data-field="plannedFollowup" class="'+common+'" value="'+h(t.plannedFollowup||'')+'" '+(readonly?'disabled':'')+'></label>'+
  '</div>'+
- '<label class="text-xs font-semibold block mt-3">Morning Plan <span class="text-red-500">*</span>'+
- '<textarea data-field="plan" maxlength="1000" rows="2" required class="'+common+'" '+(readonly?'disabled':'')+' placeholder="What will you do?">'+h(t.plan||'')+'</textarea></label>'+
- '<div class="grid sm:grid-cols-2 gap-3 mt-3"><label class="text-xs font-semibold">Link Customer Master<select data-field="customerId" class="'+common+'" '+(readonly?'disabled':'')+'>'+cs+'</select></label>'+
- '<label class="text-xs font-semibold">Customer name (optional)<input data-field="customerName" maxlength="140" class="'+common+'" '+(readonly?'disabled':'')+' value="'+h(t.customerName||'')+'" placeholder="Customer if not registered"></label></div></div>';
+ '<label class="text-xs font-semibold block mt-2">Morning Plan <span class="text-red-500">*</span>'+
+ '<textarea data-field="plan" maxlength="1000" rows="1" required class="'+common+'" '+(readonly?'disabled':'')+' placeholder="What will you do?">'+h(t.plan||'')+'</textarea></label>'+
+ '<details class="mt-2 text-xs" '+(t.customerId||t.customerName?'open':'')+'><summary class="cursor-pointer text-amber-800 font-semibold py-1">Customer details (optional)</summary><div class="grid sm:grid-cols-2 gap-2 mt-2"><label class="text-xs font-semibold">Link Customer Master<select data-field="customerId" class="'+common+'" '+(readonly?'disabled':'')+'>'+cs+'</select></label>'+
+ '<label class="text-xs font-semibold">Customer name (optional)<input data-field="customerName" maxlength="140" class="'+common+'" '+(readonly?'disabled':'')+' value="'+h(t.customerName||'')+'" placeholder="Customer if not registered"></label></div></details></div>';
 }
 function captureAm(){
  if(!root())return;
@@ -204,15 +204,15 @@ window.confirmDailyCarryForward=()=>{
  toast(unique.length+' unfinished task(s) added to your Morning Plan draft');
 };
 function pmTask(t,i,locked){
- return '<div class="daily-result-row rounded-2xl bg-white border p-4" data-id="'+h(t.id)+'">'+
+ return '<div class="daily-result-row rounded-xl bg-white border px-3 py-2.5" data-id="'+h(t.id)+'">'+
   '<div class="text-[10px] uppercase font-bold text-[#a18239]">'+h(t.category)+'</div>'+
   '<div class="font-semibold text-sm mt-1">'+h(t.plan)+'</div>'+
   (t.customerName?'<div class="text-xs text-gray-500 mt-1">Customer: '+h(t.customerName)+'</div>':'')+
-  '<div class="grid sm:grid-cols-2 gap-3 mt-3"><label class="text-xs font-semibold">Evening status<select data-field="status" class="'+common+'" '+(locked?'disabled':'')+'>'+
+  '<div class="grid sm:grid-cols-2 gap-3 mt-2"><label class="text-xs font-semibold">Evening status<select data-field="status" class="'+common+'" '+(locked?'disabled':'')+'>'+
   '<option value="">Choose result</option>'+
   STATUSES.map(s=>'<option '+(t.status===s?'selected':'')+'>'+h(s)+'</option>').join('')+
   '</select></label><label class="text-xs font-semibold">Next Follow-up Date<input data-field="nextFollowup" type="date" class="'+common+'" value="'+h(t.nextFollowup||'')+'" '+(locked?'disabled':'')+'></label></div>'+
-  '<label class="text-xs font-semibold block mt-3">Evening Result / Actual Outcome *<textarea data-field="result" rows="2" maxlength="1500" class="'+common+'" '+(locked?'disabled':'')+' placeholder="Customer interested, awaiting reply, no chats today, video completed…">'+h(t.result||'')+'</textarea></label></div>';
+  '<label class="text-xs font-semibold block mt-2">Evening Result / Actual Outcome *<textarea data-field="result" rows="1" maxlength="1500" class="'+common+'" '+(locked?'disabled':'')+' placeholder="Customer interested, awaiting reply, no chats today, video completed…">'+h(t.result||'')+'</textarea></label></div>';
 }
 function capturePm(){
  return [...(root()?.querySelectorAll('.daily-result-row')||[])].map(row=>{
