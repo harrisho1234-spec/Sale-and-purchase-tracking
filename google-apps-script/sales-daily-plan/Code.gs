@@ -27,7 +27,7 @@ function doPost(e){
   const action=String(req.action||'');
   const payload=req.payload||{};
   if(typeof payload!=='object'||Array.isArray(payload))throw Error('Invalid payload');
-  if(!['ping','read','save_am','submit_am','save_pm','submit_pm','review','carry_forward','weekly','request_edit','decide_edit','delete_report','todo_list','todo_save','todo_delete','todo_history'].includes(action))throw Error('Unknown action');
+  if(!['ping','read','save_am','submit_am','append_todo_am','save_pm','submit_pm','review','carry_forward','weekly','request_edit','decide_edit','delete_report','todo_list','todo_save','todo_delete','todo_history'].includes(action))throw Error('Unknown action');
   const ss=SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('SHEET_ID'));
   const res=dispatch(ss,actor,action,payload);
   return respond({ok:true,data:res});
@@ -56,6 +56,7 @@ function authenticate(token){
 }
 function dispatch(ss,actor,action,p){
  if(action==='ping')return{connected:true,sheet:ss.getName(),role:actor.role};
+ if(action==='append_todo_am')return appendTodoAm(ss,actor,p);
  if(action==='todo_list')return todoList(ss,actor);
  if(action==='todo_history')return todoHistory(ss,actor,p);
  if(action==='todo_save')return todoSave(ss,actor,p);
@@ -126,6 +127,35 @@ function buildTask(t,date,user,reportId,sort,old){
 function audit(ss,actor,report,action,before,after,task=''){
  tab(ss,'audit').appendRow([uid(),now(),actor.user_id,report,task,action,
   JSON.stringify(before||{}).slice(0,7000),JSON.stringify(after||{}).slice(0,7000)]);
+}
+// Append-only amendment: never overwrite submitted Morning/Evening task content.
+function appendTodoAm(ss,a,p){
+ ensureWrite(a);
+ const date=iso(p.date||today());dayWindow(date);
+ const id=val(p.todoTaskId,80),reportSheet=tab(ss,'reports'),taskSheet=tab(ss,'tasks');
+ const found=reportFor(reportSheet,date,a.user_id);
+ if(!found.row||found.row[5]!=='Submitted')throw Error('Submit your Morning Plan before adding a To-Do amendment');
+ const task=data(todoSheet(ss)).find(r=>String(r[0])===id&&String(r[3])===String(a.user_id));
+ if(!task)throw Error('This To-Do task is not available to your Sales account');
+ const reportId=found.row[0],existing=taskRows(taskSheet,reportId);
+ if(existing.some(x=>String(x.row[17]||'')===id))return{alreadyAdded:true,report:reportOutput(found.row,existing.map(x=>taskOutput(x.row)))};
+ if(existing.length>=20)throw Error('Maximum 20 Morning Plan tasks');
+ const plan={plan:task[1],category:'Other',priority:task[7],plannedFollowup:task[6],todoTaskId:id};
+ const row=buildTask(plan,date,a.user_id,reportId,existing.length+1,null);
+ const lock=LockService.getScriptLock();lock.waitLock(15000);
+ try{
+  // Recheck under lock to avoid concurrent duplicate amendments.
+  const latest=taskRows(taskSheet,reportId);
+  if(latest.some(x=>String(x.row[17]||'')===id))return{alreadyAdded:true,report:reportOutput(found.row,latest.map(x=>taskOutput(x.row)))};
+  if(latest.length>=20)throw Error('Maximum 20 Morning Plan tasks');
+  row[4]=latest.length+1;
+  taskSheet.appendRow(row);
+  const stamp=now();
+  reportSheet.getRange(found.i,15).setValue(stamp);
+  audit(ss,a,reportId,'AM_TODO_APPENDED',{taskCount:latest.length,amSubmittedAt:found.row[6],pmStatus:found.row[7],reviewStatus:found.row[9]},{task:taskOutput(row),taskCount:latest.length+1,updatedAt:stamp});
+  const updated=found.row.slice();updated[14]=stamp;
+  return{added:true,report:reportOutput(updated,[...latest.map(x=>taskOutput(x.row)),taskOutput(row)])};
+ }finally{SpreadsheetApp.flush();lock.releaseLock()}
 }
 function saveAm(ss,a,p,submit){
  ensureWrite(a);
