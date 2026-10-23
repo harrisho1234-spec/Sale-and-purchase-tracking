@@ -197,10 +197,19 @@ window.saveSalesDailyEvening=async submit=>{
  catch(e){toast(e.message,true)}finally{ui.loading=false}
 };
 window.closeSalesDailyShare=()=>document.getElementById('salesDailyShareOverlay')?.remove();
+window.openLinkedDailyTodo=id=>{
+ if(!id)return;
+ if(typeof window.go==='function'){
+   window.closeSalesDailyShare?.();
+   window.go('sales-todo');
+   // Original task remains accessible under the current account's To-Do permissions.
+ }
+};
 window.openSalesDailyShare=section=>{
  const r=ui.report;if(!r||!(section==='AM'?r.amStatus==='Submitted':r.pmStatus==='Submitted'))return toast('Submit before sharing',true);
  window.closeSalesDailyShare();const pm=section==='PM';
  const rows=(r.tasks||[]).map((t,i)=>'<div style="padding:9px 0;border-bottom:1px solid #e5e7eb;break-inside:avoid"><b>'+(i+1)+'. '+h(t.plan)+'</b>'+
+ (t.sourceTaskId?'<span style="display:inline-block;margin:4px 0;font-size:10px;font-weight:bold;padding:2px 7px;border-radius:5px;background:#fff5df;color:#926315">TO-DO</span>':'')+
  (t.customerName?'<div style="font-size:12px;color:#666">Customer: '+h(t.customerName)+'</div>':'')+
  (pm?'<div style="font-size:12px;margin-top:4px"><b>'+h(t.status||'Pending')+'</b> · '+h(t.result||'—')+'</div>'+
  (t.nextFollowup?'<div style="font-size:11px;color:#666">Next: '+h(t.nextFollowup)+'</div>':''):
