@@ -220,12 +220,27 @@ function capturePm(){
   return{id:row.dataset.id,status:get('status'),result:get('result'),nextFollowup:get('nextFollowup')};
  });
 }
+let additionalDraft=[];
+const additionalCats=['Customer Visit','Customer Follow-up','Online Inquiry','Quotation','Sales Order','Showroom Work','Other'];
+function captureAdditional(){
+ const rows=root()?.querySelectorAll('.additional-daily-row')||[];
+ if(rows.length)additionalDraft=[...rows].map((row,i)=>({id:additionalDraft[i]?.id||'',category:row.querySelector('[data-extra="category"]')?.value||'Other',customerName:row.querySelector('[data-extra="customerName"]')?.value||'',result:row.querySelector('[data-extra="result"]')?.value||'',nextFollowup:row.querySelector('[data-extra="nextFollowup"]')?.value||''}));
+ return additionalDraft;
+}
+function additionalEditor(locked){
+ const data=additionalDraft.length?additionalDraft:(ui.report?.additionalActivities||[]);
+ return '<div class="space-y-3 border-t pt-4"><h4 class="font-bold">Additional Activities (Unplanned)</h4><p class="text-xs text-gray-500">Record unexpected showroom visits, inquiries, quotations, or other work. These do not count toward Morning Plan completion.</p>'+
+ data.map((x,i)=>'<div class="additional-daily-row border rounded-xl p-3 bg-white"><div class="flex justify-between gap-2 items-center mb-2"><b class="text-xs">Additional activity '+(i+1)+'</b>'+(!locked?'<button class="text-xs text-red-600" onclick="removeAdditionalDaily('+i+')">Remove</button>':'')+'</div><div class="grid sm:grid-cols-2 gap-2"><label class="text-xs">Activity type<select data-extra="category" class="'+common+'" '+(locked?'disabled':'')+'>'+additionalCats.map(v=>'<option '+(x.category===v?'selected':'')+'>'+h(v)+'</option>').join('')+'</select></label><label class="text-xs">Customer name (optional)<input data-extra="customerName" class="'+common+'" value="'+h(x.customerName||'')+'" '+(locked?'disabled':'')+'></label></div><label class="text-xs block mt-2">Actual outcome<textarea data-extra="result" class="'+common+'" rows="2" '+(locked?'disabled':'')+'>'+h(x.result||'')+'</textarea></label><label class="text-xs block mt-2">Next follow-up date<input data-extra="nextFollowup" type="date" class="'+common+'" value="'+h(x.nextFollowup||'')+'" '+(locked?'disabled':'')+'></label></div>').join('')+
+ (!locked?'<button class="'+lightButton+'" onclick="addAdditionalDaily()">+ Add Additional Activity</button>':'')+'</div>';
+}
+window.addAdditionalDaily=()=>{captureAdditional();if(additionalDraft.length>=30)return toast('Maximum 30 additional activities',true);additionalDraft.push({category:'Customer Visit',customerName:'',result:'',nextFollowup:''});renderSalesHome()};
+window.removeAdditionalDaily=i=>{captureAdditional();additionalDraft.splice(i,1);renderSalesHome()};
 window.saveSalesDailyEvening=async submit=>{
  if(ui.loading)return;
- const results=capturePm();if(submit&&results.some(x=>!x.status))return toast('Update the status of every planned task before submitting',true);
+ const results=capturePm();const additionalActivities=captureAdditional();if(submit&&results.some(x=>!x.status))return toast('Update the status of every planned task before submitting',true);
  if(submit&&results.some(x=>!x.result.trim()))return toast('Write an actual outcome for every morning task before submitting',true);
  ui.loading=true;
- try{await api(submit?'submit_pm':'save_pm',{date:ui.date,results});toast(submit?'Evening results submitted':'Evening draft saved');await reload()}
+ try{await api(submit?'submit_pm':'save_pm',{date:ui.date,results,additionalActivities});toast(submit?'Evening results submitted':'Evening draft saved');await reload()}
  catch(e){toast(e.message,true)}finally{ui.loading=false}
 };
 window.closeSalesDailyShare=()=>document.getElementById('salesDailyShareOverlay')?.remove();
@@ -251,12 +266,14 @@ window.openSalesDailyShare=section=>{
  (pm?'<div style="padding-left:11px;font-size:12px;margin-top:3px"><b>'+h(t.status||'Not updated')+'</b> — '+h(t.result||'No outcome recorded')+'</div>'+
  (t.nextFollowup?'<div style="padding-left:11px;font-size:11px;color:#666">Next follow-up: '+h(t.nextFollowup)+'</div>':''):'')+'</div>';
  const tableSection=(label,list)=>'<tr style="vertical-align:top"><th style="width:28%;padding:12px 10px;border:1px solid #bbb;text-align:left;font-size:13px;background:#f8f8f6">'+label+'</th><td style="padding:4px 12px;border:1px solid #bbb">'+(list.length?list.map(taskLine).join(''):'<span style="color:#888;font-size:12px">No tasks</span>')+'</td></tr>';
+ const extras=pm?(r.additionalActivities||[]):[];
+ const extraBlock=extras.length?'<div style="margin-top:12px;border:1px solid #bbb;padding:10px"><b style="font-size:13px">Additional Activities (Unplanned)</b>'+extras.map(x=>'<div style="font-size:12px;padding:5px 0;border-bottom:1px solid #eee">• '+h(x.category)+(x.customerName?' — '+h(x.customerName):'')+'<div style="padding-left:12px">'+h(x.result||'')+'</div></div>').join('')+'</div>':'';
  const rows='<table style="border-collapse:collapse;width:100%;table-layout:fixed;margin-top:12px">'+tableSection('Customer Tasks',customer)+tableSection('Other Tasks / To-Do',other)+'</table>';
  const panel=document.createElement('div');panel.id='salesDailyShareOverlay';panel.style.cssText='position:fixed;inset:0;z-index:99999;background:#0009;overflow:auto;padding:16px';
  panel.innerHTML='<div style="max-width:760px;margin:auto"><div data-share-tools style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px"><button onclick="window.print()" style="background:white;padding:9px 14px;border-radius:8px">Print / PDF</button><button onclick="closeSalesDailyShare()" style="background:white;padding:9px 14px;border-radius:8px">Close</button></div>'+
  '<div id="salesDailyShareCard" style="background:white;color:#242424;padding:22px;border-radius:12px;box-shadow:0 8px 32px #0002;font-family:Arial,sans-serif">'+
  '<div style="border:1px solid #b4cbb1;background:#e3eedf;padding:12px"><div style="font-weight:700;font-size:15px">'+(pm?'Evening Result':'Morning Plan')+'</div><div style="font-size:13px;margin-top:4px"><b>Date:</b> '+h(r.date)+' &nbsp; <b>Name:</b> '+h(r.salesperson||state.profile?.full_name||state.profile?.name||'Sales')+'</div></div>'+
- rows+'<div style="margin-top:12px;font-size:11px;color:#777">Submitted: '+h(pm?r.pmSubmittedAt:r.amSubmittedAt)+' · '+h(r.reviewStatus||'Pending review')+'</div></div></div>';
+ rows+extraBlock+'<div style="margin-top:12px;font-size:11px;color:#777">Submitted: '+h(pm?r.pmSubmittedAt:r.amSubmittedAt)+' · '+h(r.reviewStatus||'Pending review')+'</div></div></div>';
  document.body.appendChild(panel);panel.addEventListener('click',e=>{if(e.target===panel)window.closeSalesDailyShare()});
  if(!document.getElementById('salesDailySharePrintStyle')){const st=document.createElement('style');st.id='salesDailySharePrintStyle';st.textContent='@media print{body>*:not(#salesDailyShareOverlay){display:none!important}#salesDailyShareOverlay{position:static!important;background:white!important;overflow:visible!important;padding:0!important}#salesDailyShareOverlay [data-share-tools]{display:none!important}#salesDailyShareCard{box-shadow:none!important}}';document.head.appendChild(st)}
 };
@@ -286,7 +303,7 @@ function renderSalesHome(){
  '<div class="flex items-center flex-wrap gap-2"><p class="text-xs text-green-700">Morning plan submitted at '+h(report?.amSubmittedAt||'')+'. Changes are recorded in the audit log.</p><button onclick="requestSalesDailyEdit(\'AM\')" class="'+lightButton+'">Request Morning Edit</button></div>')+'</section>'+
  (amLocked?'<section class="space-y-3 border-t pt-5"><h3 class="font-bold">Evening Result</h3>'+
  '<p class="text-xs text-gray-500">Update what actually happened, and choose the next follow-up date when necessary.</p>'+
- '<div class="grid gap-3">'+(report.tasks||[]).map((t,i)=>pmTask(t,i,pmLocked)).join('')+'</div>'+
+ '<div class="grid gap-3">'+(report.tasks||[]).map((t,i)=>pmTask(t,i,pmLocked)).join('')+'</div>'+ additionalEditor(pmLocked)+
  (!pmLocked?'<div class="flex flex-wrap gap-2"><button onclick="saveSalesDailyEvening(false)" class="'+lightButton+'">Save PM Draft</button>'+
  '<button onclick="saveSalesDailyEvening(true)" class="'+actionButton+'">Submit Evening Result</button></div>':
  '<div class="flex items-center flex-wrap gap-2"><p class="text-xs text-green-700">Evening results submitted. Manager can review and request corrections.</p><button onclick="requestSalesDailyEdit(\'PM\')" class="'+lightButton+'">Request Evening Edit</button></div>')+'</section>':'')+
