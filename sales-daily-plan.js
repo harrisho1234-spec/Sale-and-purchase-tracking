@@ -201,6 +201,7 @@ window.openLinkedDailyTodo=id=>{
  if(!id)return;
  if(typeof window.go==='function'){
    window.closeSalesDailyShare?.();
+   sessionStorage.setItem('salesDailyOpenTodo',id);
    window.go('sales-todo');
    // The original To-Do remains independent from the Daily Plan outcome.
  }
