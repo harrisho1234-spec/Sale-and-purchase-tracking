@@ -224,7 +224,7 @@ let additionalDraft=[],additionalDraftDate='';
 const additionalCats=['Customer Visit','Customer Follow-up','Online Inquiry','Quotation','Sales Order','Showroom Work','Other'];
 function captureAdditional(){
  const rows=root()?.querySelectorAll('.additional-daily-row')||[];
- if(rows.length)additionalDraft=[...rows].map((row,i)=>({id:additionalDraft[i]?.id||'',category:row.querySelector('[data-extra="category"]')?.value||'Other',customerName:row.querySelector('[data-extra="customerName"]')?.value||'',result:row.querySelector('[data-extra="result"]')?.value||'',nextFollowup:row.querySelector('[data-extra="nextFollowup"]')?.value||''}));
+ if(rows.length)additionalDraft=[...rows].map((row,i)=>({id:additionalDraft[i]?.id||'',category:row.querySelector('[data-extra="category"]')?.value||'Other',customerName:row.querySelector('[data-extra="customerName"]')?.value||'',result:row.querySelector('[data-extra="result"]')?.value||'',nextFollowup:row.querySelector('[data-extra="nextFollowup"]')?.value||'',sourceType:additionalDraft[i]?.sourceType||'',sourceId:additionalDraft[i]?.sourceId||''}));
  return additionalDraft;
 }
 function additionalEditor(locked){
@@ -232,9 +232,34 @@ function additionalEditor(locked){
  const data=additionalDraft.length?additionalDraft:(ui.report?.additionalActivities||[]);
  return '<div class="space-y-3 border-t pt-4"><h4 class="font-bold">Additional Activities (Unplanned)</h4><p class="text-xs text-gray-500">Record unexpected showroom visits, inquiries, quotations, or other work. These do not count toward Morning Plan completion.</p>'+
  data.map((x,i)=>'<div class="additional-daily-row border rounded-xl p-3 bg-white"><div class="flex justify-between gap-2 items-center mb-2"><b class="text-xs">Additional activity '+(i+1)+'</b>'+(!locked?'<button class="text-xs text-red-600" onclick="removeAdditionalDaily('+i+')">Remove</button>':'')+'</div><div class="grid sm:grid-cols-2 gap-2"><label class="text-xs">Activity type<select data-extra="category" class="'+common+'" '+(locked?'disabled':'')+'>'+additionalCats.map(v=>'<option '+(x.category===v?'selected':'')+'>'+h(v)+'</option>').join('')+'</select></label><label class="text-xs">Customer name (optional)<input data-extra="customerName" class="'+common+'" value="'+h(x.customerName||'')+'" '+(locked?'disabled':'')+'></label></div><label class="text-xs block mt-2">Actual outcome<textarea data-extra="result" class="'+common+'" rows="2" '+(locked?'disabled':'')+'>'+h(x.result||'')+'</textarea></label><label class="text-xs block mt-2">Next follow-up date<input data-extra="nextFollowup" type="date" class="'+common+'" value="'+h(x.nextFollowup||'')+'" '+(locked?'disabled':'')+'></label></div>').join('')+
- (!locked?'<button class="'+lightButton+'" onclick="addAdditionalDaily()">+ Add Additional Activity</button>':'')+'</div>';
+ (!locked?'<div class="flex flex-wrap gap-2"><button class="'+lightButton+'" onclick="addAdditionalDaily()">+ Add Additional Activity</button><button class="'+lightButton+'" onclick="importRecordedDailyActivities()">Import Showroom / Online</button></div>':'')+'</div>';
 }
 function preserveEveningInputs(){const values=capturePm();if(ui.report?.tasks)values.forEach(v=>{const t=ui.report.tasks.find(x=>x.id===v.id);if(t)Object.assign(t,v)})}
+window.importRecordedDailyActivities=async()=>{
+ if(ui.report?.pmStatus==='Submitted')return toast('Evening Result is locked',true);
+ preserveEveningInputs();captureAdditional();
+ try{
+  const [a,b]=await Promise.all(['showroom_visit','online'].map(type=>db.rpc('get_customer_activity_rows',{p_activity_type:type})));
+  if(a.error||b.error)throw Error(a.error?.message||b.error?.message);
+  const own=state.user?.id;
+  const rows=[...(a.data||[]),...(b.data||[])].filter(x=>String(x.assigned_sales_id)===String(own)&&String(x.activity_date||'').slice(0,10)===ui.date);
+  window.dailyImportCandidates=rows.filter(x=>!additionalDraft.some(t=>t.sourceId===String(x.id)&&t.sourceType===x.activity_type));
+  if(!window.dailyImportCandidates.length)return toast('No new Showroom or Online activities assigned to you for this date');
+  const body='<p class="text-xs mb-3">Select existing records. Importing here will not create another customer visit or inquiry.</p>'+
+  window.dailyImportCandidates.map((x,i)=>'<label class="block border rounded-lg p-2 text-xs mb-2"><input type="checkbox" class="daily-activity-import" value="'+i+'"> <b>'+h(x.activity_type==='online'?'Online Inquiry':'Showroom Visit')+'</b> — '+h(x.customer_name||'Unnamed customer')+'<div class="text-gray-500">'+h(x.remark||x.interest||'')+'</div></label>').join('')+
+  '<button class="'+actionButton+'" onclick="confirmRecordedDailyActivities()">Import Selected</button>';
+  openModal('Import Showroom / Online Activities',body);
+ }catch(e){toast(e.message,true)}
+};
+window.confirmRecordedDailyActivities=()=>{
+ const chosen=[...document.querySelectorAll('.daily-activity-import:checked')].map(el=>window.dailyImportCandidates[Number(el.value)]).filter(Boolean);
+ const known=new Set(additionalDraft.map(x=>x.sourceType+':'+x.sourceId));
+ for(const x of chosen){
+  const key=x.activity_type+':'+x.id;if(known.has(key))continue;known.add(key);
+  additionalDraft.push({category:x.activity_type==='online'?'Online Inquiry':'Customer Visit',customerName:x.customer_name||'',result:x.remark||x.interest||'',nextFollowup:x.follow_up_date||'',sourceType:x.activity_type,sourceId:String(x.id)});
+ }
+ closeModal();renderSalesHome();toast(chosen.length+' activities added to the draft. Please review their outcomes.');
+};
 window.addAdditionalDaily=()=>{preserveEveningInputs();captureAdditional();if(additionalDraft.length>=30)return toast('Maximum 30 additional activities',true);additionalDraft.push({category:'Customer Visit',customerName:'',result:'',nextFollowup:''});renderSalesHome()};
 window.removeAdditionalDaily=i=>{preserveEveningInputs();captureAdditional();additionalDraft.splice(i,1);renderSalesHome()};
 window.saveSalesDailyEvening=async submit=>{
