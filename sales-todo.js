@@ -6,6 +6,8 @@ const h=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt
 const manager=()=>['manager','admin','super_admin'].includes(state?.profile?.role||'');
 const permitted=()=>manager()||state?.profile?.role==='sales';
 let items=[],people=[],loaded=false,saving=false,newTaskId='',query='',statusFilter='Active',priorityFilter='All',sortMode='due';
+let cacheUser=null,lastLoaded=0;
+const FRESH_MS=20000;
 const api=async(action,payload={})=>{const r=await db.functions.invoke('sales-daily-google-proxy',{body:{action,payload}});if(r.error)throw Error(r.error.message||'Connection error');if(!r.data?.ok)throw Error(r.data?.error||'Unable to load tasks');return r.data.data};
 const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Phnom_Penh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const box=()=>document.getElementById('content');
