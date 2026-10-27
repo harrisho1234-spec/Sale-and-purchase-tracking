@@ -297,6 +297,15 @@
             </div>
           </div>
 
+          <div class="rounded-xl border p-4 mb-3 bg-amber-50/40">
+            <div class="text-[10px] uppercase font-bold text-gray-500 mb-2">Invoice Discount Breakdown</div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div><div class="text-gray-500">Before Discounts</div><div class="font-semibold">${money(items.reduce((sum,i)=>sum+Number(i.qty||0)*Number(i.unit_price||0),0),o.currency)}</div></div>
+              <div><div class="text-gray-500">Item Discounts</div><div class="font-semibold text-amber-700">-${money(items.reduce((sum,i)=>sum+Number(i.discount_amount||0),0),o.currency)}</div></div>
+              <div><div class="text-gray-500">Order Discount</div><div class="font-semibold text-amber-700">-${money(Number(o.order_discount||0),o.currency)}</div></div>
+              <div><div class="text-gray-500">Order Total</div><div class="font-bold">${money(o.order_total,o.currency)}</div></div>
+            </div>
+          </div>
           <div class="grid sm:grid-cols-3 gap-3">
             <div class="rounded-xl border p-4"><div class="text-[9px] uppercase font-bold text-gray-400">Order Total</div><div class="text-xl font-bold mt-1">${money(o.order_total,o.currency)}</div></div>
             <div class="rounded-xl border p-4"><div class="text-[9px] uppercase font-bold text-gray-400">Deposit / Paid</div><div class="text-xl font-bold text-green-600 mt-1">${money(o.amount_paid,o.currency)}</div></div>
