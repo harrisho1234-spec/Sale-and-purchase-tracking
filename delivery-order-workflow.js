@@ -153,6 +153,7 @@
         '</button>'+
         '<div class="flex flex-wrap items-center gap-2 lg:justify-end lg:pl-3">'+
           '<div class="text-xs text-right mr-1"><div class="text-gray-400">Requested / OUT</div><b>'+qty(req.total_requested_qty)+' / '+qty(req.total_delivered_qty)+'</b></div>'+
+          (hasDo&&canOperate()&&items.some(x=>num(x.remaining_qty)>0)?'<button type="button" onclick="openDoReleaseAll(&quot;'+esc(id)+'&quot;)" class="px-3 py-2 rounded-lg border border-green-700 bg-green-700 text-white text-[10px] font-bold">'+(role()==='stock_controller'?'Request All OUT':'Release All')+'</button>':'')+
           (hasDo?'<button type="button" onclick="exportStockDeliveryOrder(\''+esc(id)+'\')" class="px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-800 text-[10px] font-bold" title="Open the official Delivery Order, then print or save as PDF">↧ Export DO / PDF</button>':'')+
           (canAccessDoEdit()?'<button type="button" onclick="openDeliveryOrderEdit(\''+esc(id)+'\')" class="px-3 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-[10px] font-bold" title="'+(canDirectDoEdit()?'Apply DO corrections with audit history':'Submit changes for review')+'">'+(canDirectDoEdit()?'Edit DO':'Request Edit')+'</button>':'')+
           (canEditDoNumber()?'<button type="button" onclick="assignDeliveryOrderNo(\''+esc(id)+'\')" class="px-3 py-2 rounded-lg border '+(hasDo?'border-purple-200 bg-purple-50 text-purple-700':'border-[#d8c28a] bg-[#fffaf0] text-[#8a6a1f]')+' text-[10px] font-bold">'+(hasDo?'Correct DO No.':'Assign Missing DO No.')+'</button>':'')+
@@ -176,7 +177,7 @@
     const cards=rows.map(requestCard).join('');
     const expandedCount=rows.filter(r=>D.expandedRequests.has(String(r.delivery_request_id))).length;
     el.innerHTML=navHtml(rows.length,history.length)+
-      '<div class="rounded-xl border border-amber-100 bg-amber-50/40 p-3 mb-3 text-xs text-amber-900"><b>DO workflow:</b> the official DO number is generated automatically when Sales submits the request (DOYYMM-001, resetting each month). Stock OUT from this section records that number with the movement. Only Admin/Super Admin can correct an unused number.</div>'+
+      '<div class="rounded-xl border border-amber-100 bg-amber-50/40 p-3 mb-3 text-xs text-amber-900"><b>DO workflow:</b> the official DO number is generated automatically when Sales submits the request (DOYYMM-001, resetting each month). Stock Controller releases are submitted for approval; stock and DO History update only after Admin/Super Admin approval. Only Admin/Super Admin can correct an unused number.</div>'+
       '<div class="mb-3 flex flex-wrap items-center justify-between gap-2">'+
         '<div class="text-xs text-gray-500">'+rows.length+' DO request'+(rows.length===1?'':'s')+' · '+expandedCount+' expanded</div>'+
         '<div class="flex flex-wrap gap-2">'+
@@ -328,6 +329,62 @@
       showToast('Item linked to Stock.');
       if(typeof window.renderStockInventory==='function')await window.renderStockInventory();
     }catch(err){showToast(err.message||'Could not link Sales item to Stock.','err')}
+  };
+
+
+  // Bulk DO operation uses the existing per-line, server-validated release/approval RPCs.
+  // This is not an atomic database batch: if a later line fails, earlier lines remain recorded.
+  let doBulkBusy=false;
+  window.openDoReleaseAll=async function(requestId){
+    if(!canOperate()||doBulkBusy)return;
+    doBulkBusy=true;
+    try{
+      await loadRequests('');
+      const req=D.requests.find(x=>String(x.delivery_request_id)===String(requestId));
+      if(!req||!req.do_no)throw new Error('Official DO request was not found.');
+      const items=(req.items||[]).filter(x=>num(x.remaining_qty)>0);
+      if(!items.length)throw new Error('No outstanding quantities in this DO.');
+      if(items.some(x=>!x.inventory_tracking_enabled))throw new Error('Link every remaining DO item to Stock before using Release All.');
+      const allocations=[],reserved=new Map();
+      for(const item of items){
+        const sr=await db.rpc('get_inventory_item_status_for_stock',{p_sales_order_item_id:item.sales_order_item_id});
+        if(sr.error)throw sr.error;
+        const arrived=(sr.data||[]).filter(x=>String(x.status||'').toLowerCase()==='arrived').reduce((a,x)=>a+num(x.qty),0);
+        const needed=num(item.remaining_qty);
+        if(!Number.isInteger(needed)||needed<=0||arrived<needed)throw new Error((item.product_code||item.item_name||'Item')+': insufficient Arrived quantity for Release All.');
+        const br=await db.from('inventory_product_balance').select('*').eq('product_id',item.product_id).maybeSingle();
+        if(br.error)throw br.error;
+        const locations=(br.data&&Array.isArray(br.data.locations)?br.data.locations:[]);
+        const loc=locations.find(l=>{
+          const key=String(item.product_id)+'|'+String(l.location_id);
+          return num(l.qty)-(reserved.get(key)||0)>=needed;
+        });
+        if(!loc)throw new Error((item.product_code||item.item_name||'Item')+': no single stock location has the entire remaining quantity. Use individual releases to split locations.');
+        const key=String(item.product_id)+'|'+String(loc.location_id);
+        reserved.set(key,(reserved.get(key)||0)+needed);
+        allocations.push({item,needed,location:loc});
+      }
+      const controller=role()==='stock_controller';
+      const summary=allocations.map(a=>(a.item.product_code||a.item.item_name||'Item')+' × '+qty(a.needed)+' · '+(a.location.code||a.location.name||'Location')).join('\n');
+      const message=(controller?'Submit all DO OUT lines for approval? No stock will be deducted until Admin/Super Admin approves.':'Release every remaining DO line and deduct approved stock now?')+'\n\n'+req.do_no+'\n'+summary+'\n\nEach line is processed separately. If an error occurs, previously processed lines remain recorded.';
+      if(!window.confirm(message))return;
+      const date=new Date().toLocaleDateString('en-CA');
+      let completed=0;
+      for(const a of allocations){
+        const payload={delivery_request_item_id:a.item.delivery_request_item_id,qty:a.needed,location_id:a.location.location_id,delivery_date:date,note:'Bulk DO '+req.do_no};
+        const result=controller
+          ? await db.rpc('submit_stock_action_request',{p_action_type:'do_delivery',p_payload:payload,p_reason:payload.note})
+          : await db.rpc('release_sales_stock_do',{p_delivery_request_item_id:payload.delivery_request_item_id,p_qty:payload.qty,p_location_id:payload.location_id,p_delivery_date:payload.delivery_date,p_note:payload.note});
+        if(result.error)throw new Error(completed+' of '+allocations.length+' lines processed. '+result.error.message+' Refresh before retrying to avoid duplicate requests.');
+        completed++;
+      }
+      showToast(controller?completed+' DO lines submitted for Admin approval; stock is unchanged.':completed+' DO lines released successfully.');
+      if(typeof window.invalidateInventoryCache==='function')window.invalidateInventoryCache();
+      if(typeof window.renderStockInventory==='function')await window.renderStockInventory();
+    }catch(err){
+      showToast(err.message||'Release All could not finish. Check existing approvals and DO status before retrying.','err');
+      if(typeof window.renderStockInventory==='function')await window.renderStockInventory().catch(()=>{});
+    }finally{doBulkBusy=false;}
   };
 
   window.openDoStockRelease=async function(requestId,requestItemId){
