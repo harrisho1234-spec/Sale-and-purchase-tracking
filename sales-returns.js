@@ -122,13 +122,13 @@
     const root=document.getElementById('salesReturnRows');if(!root)return;
     if(!rows.length){root.innerHTML=empty('No Credit Notes yet.');return;}
     root.innerHTML=rows.map(r=>`<div class="bg-white border border-[#ece8e0] rounded-2xl px-4 py-3 shadow-[0_3px_14px_rgba(31,25,18,.025)]">
-      <div class="grid md:grid-cols-2 xl:grid-cols-[.8fr_1.25fr_.9fr_.85fr_.85fr_auto] gap-3 xl:gap-4 items-center">
-        <div><div class="font-bold text-[15px]">${esc(r.cn_no||'')}</div><div class="text-[10px] text-gray-400 mt-0.5">${esc(fmtDate(r.return_date))}</div></div>
+      <div class="grid md:grid-cols-2 xl:grid-cols-[150px_minmax(170px,1.3fr)_90px_minmax(180px,1.2fr)_120px_minmax(125px,auto)] gap-3 xl:gap-4 items-center">
+        <div><div class="font-bold text-[12px] whitespace-nowrap tracking-tight">${esc(r.cn_no||'')}</div><div class="text-[10px] text-gray-400 mt-0.5">${esc(fmtDate(r.return_date))}</div></div>
         <div class="min-w-0"><div class="font-semibold text-sm truncate">${esc(r.customer_name||'')}</div><div class="text-[10px] text-gray-400 truncate">Invoice(s): ${esc(r.original_document_no||'-')}</div></div>
         <div><div class="text-[9px] uppercase font-bold text-gray-400">Action</div><div class="text-xs font-semibold mt-1">${esc(actionLabel(r.action))}</div></div>
         <div class="flex flex-col items-start gap-1">${statusBadge(r.status)}${pendingReceiptBadge(r.return_id)}${r.reason?`<div class="text-[10px] text-gray-400 truncate mt-1" title="${esc(r.reason)}">${esc(r.reason)}</div>`:''}</div>
         <div><div class="text-[9px] uppercase font-bold text-gray-400">Net Return Value</div><div class="text-sm font-bold mt-1">${money(r.return_value)}</div><div class="text-[9px] text-gray-400">${Number(r.item_count||0)} item(s) · after discount</div></div>
-        <div class="flex justify-end gap-2 flex-wrap">
+        <div class="flex justify-end gap-1 flex-wrap max-w-[190px] xl:ml-auto">
           <button onclick="viewSalesReturn('${r.return_id}')" class="px-3 py-2 border rounded-lg text-xs font-semibold">View</button>
           ${canEditCN()&&r.status!=='cancelled'?`<button onclick="openEditSalesReturn('${r.return_id}')" class="px-3 py-2 border border-amber-200 bg-amber-50 text-amber-800 rounded-lg text-xs font-semibold">Edit</button>`:''}
           ${canChangeCNStatus()&&r.status==='confirmed'?`<button onclick="setSalesReturnStatus('${r.return_id}','received')" class="px-3 py-2 border border-green-200 bg-green-50 text-green-700 rounded-lg text-xs font-semibold">Received</button><button onclick="setSalesReturnStatus('${r.return_id}','cancelled')" class="px-3 py-2 border border-red-100 text-red-500 rounded-lg text-xs font-semibold">Cancel</button>`:''}
