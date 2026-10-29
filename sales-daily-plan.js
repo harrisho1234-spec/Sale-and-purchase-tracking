@@ -294,16 +294,24 @@ const formatDailySubmittedAt=value=>{
  if(Number.isNaN(date.getTime()))return String(value);
  return new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Phnom_Penh',day:'2-digit',month:'short',year:'numeric',hour:'numeric',minute:'2-digit',hour12:true}).format(date)+' (Phnom Penh)';
 };
+// Use a Khmer-capable face in both the on-screen share card and printed/PDF output.
+function ensureDailyKhmerFont(){
+ if(document.getElementById('salesDailyKhmerFont'))return;
+ const link=document.createElement('link');
+ link.id='salesDailyKhmerFont';link.rel='stylesheet';
+ link.href='https://fonts.googleapis.com/css2?family=Noto+Sans+Khmer:wght@400;500;600;700&display=swap';
+ document.head.appendChild(link);
+}
 window.openSalesDailyShare=section=>{
  const r=ui.report;if(!r||!(section==='AM'?r.amStatus==='Submitted':r.pmStatus==='Submitted'))return toast('Submit before sharing',true);
- window.closeSalesDailyShare();const pm=section==='PM';
+ window.closeSalesDailyShare();ensureDailyKhmerFont();const pm=section==='PM';
  const customerCats=['Customer Follow-up','Online Inquiries','Quotation / SR'];
  const isCustomer=t=>!t.todoTaskId&&(!!t.customerId||!!t.customerName||customerCats.includes(t.category));
  const customer=(r.tasks||[]).filter(isCustomer),other=(r.tasks||[]).filter(t=>!isCustomer(t));
- const planCell=t=>'<div style="font-size:12px;padding:5px 0;border-bottom:1px solid #eee;break-inside:avoid"><b>• '+h(t.plan)+'</b>'+
+ const planCell=t=>'<div style="font-size:12px;line-height:1.85;padding:7px 0;border-bottom:1px solid #eee;break-inside:avoid"><b>• '+h(t.plan)+'</b>'+
  (t.customerName?'<div style="font-size:11px;color:#666;padding-left:10px">Customer: '+h(t.customerName)+'</div>':'')+
  (t.todoTaskId?'<div style="font-size:10px;color:#926315;padding-left:10px">To-Do task</div>':'')+'</div>';
- const resultCell=t=>'<div style="font-size:12px;padding:5px 0;border-bottom:1px solid #eee;break-inside:avoid"><b>'+h(t.status||'Not updated')+'</b> — '+h(t.result||'No outcome recorded')+
+ const resultCell=t=>'<div style="font-size:12px;line-height:1.85;padding:7px 0;border-bottom:1px solid #eee;break-inside:avoid"><b>'+h(t.status||'Not updated')+'</b> — '+h(t.result||'No outcome recorded')+
  (t.nextFollowup?'<div style="font-size:11px;color:#666">Next: '+h(t.nextFollowup)+'</div>':'')+'</div>';
  const extras=pm?(r.additionalActivities||[]):[];
  const customerExtra=extras.filter(x=>['Customer Visit','Customer Follow-up','Online Inquiry','Quotation','Sales Order'].includes(x.category));
@@ -319,7 +327,7 @@ window.openSalesDailyShare=section=>{
  tableSection('Customer Tasks',customer,customerExtra)+tableSection('Other Tasks / To-Do',other,otherExtra)+'</table>';
  const panel=document.createElement('div');panel.id='salesDailyShareOverlay';panel.style.cssText='position:fixed;inset:0;z-index:99999;background:#0009;overflow:auto;padding:16px';
  panel.innerHTML='<div style="max-width:760px;margin:auto"><div data-share-tools style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px"><button onclick="window.print()" style="background:white;padding:9px 14px;border-radius:8px">Print / PDF</button><button onclick="closeSalesDailyShare()" style="background:white;padding:9px 14px;border-radius:8px">Close</button></div>'+
- '<div id="salesDailyShareCard" style="background:white;color:#242424;padding:22px;border-radius:12px;box-shadow:0 8px 32px #0002;font-family:Arial,sans-serif">'+
+ '<div id="salesDailyShareCard" style="background:white;color:#242424;padding:22px;border-radius:12px;box-shadow:0 8px 32px #0002;font-family:'Noto Sans Khmer',Arial,sans-serif;line-height:1.75">'+
  '<div style="border:1px solid #b4cbb1;background:#e3eedf;padding:12px"><div style="font-weight:700;font-size:15px">'+(pm?'Evening Result':'Morning Plan')+'</div><div style="font-size:13px;margin-top:4px"><b>Date:</b> '+h(r.date)+' &nbsp; <b>Name:</b> '+h(r.salesperson||state.profile?.full_name||state.profile?.name||'Sales')+'</div></div>'+
  rows+extraBlock+'<div style="margin-top:12px;font-size:11px;color:#777">Submitted: '+h(formatDailySubmittedAt(pm?r.pmSubmittedAt:r.amSubmittedAt))+' · '+h(r.reviewStatus||'Pending review')+'</div></div></div>';
  document.body.appendChild(panel);panel.addEventListener('click',e=>{if(e.target===panel)window.closeSalesDailyShare()});
