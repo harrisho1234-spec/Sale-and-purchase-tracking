@@ -30,9 +30,13 @@ function actions(){
    if(!id)return;
    const c=get(id);if(!c)return;
    row.querySelectorAll('[data-cn-case]').forEach(x=>x.remove());
-   const approvalBadge=document.createElement('div');approvalBadge.dataset.cnCase='1';approvalBadge.innerHTML=badge(c);
+   const approvalBadge=document.createElement('div');approvalBadge.dataset.cnCase='1';
+   const approval=c.approval_status==='approved'?'Approved':c.approval_status==='pending'?'Pending Approval':c.approval_status==='rejected'?'Rejected':'Unknown';
+   const approvalTone=c.approval_status==='approved'?'bg-green-50 text-green-800 border-green-200':c.approval_status==='rejected'?'bg-red-50 text-red-800 border-red-200':'bg-amber-50 text-amber-900 border-amber-300';
+   approvalBadge.innerHTML='<div class="text-[9px] uppercase font-bold text-gray-500 mb-1">CN Approval</div><span class="inline-flex rounded-md border px-2 py-1 text-[10px] font-bold '+approvalTone+'">'+text(approval)+'</span><div class="mt-1">'+badge(c)+'</div>';
    const statusHolder=[...row.querySelectorAll('div')].find(x=>x.classList.contains('flex-col')&&x.classList.contains('items-start'));
    if(statusHolder)statusHolder.prepend(approvalBadge);
+   if(c.approval_status==='pending')row.classList.add('border-amber-300');
    const buttons=trigger.parentElement;
    if(!buttons)return;
    // Old "Received" button bypasses approval. The new process uses warehouse receipt.
@@ -78,7 +82,7 @@ if(typeof priorRender==='function')window.renderReturnsPage=async function(){
       panel.className='mb-4 p-4 rounded-xl border border-amber-200 bg-amber-50 flex flex-wrap justify-between items-center gap-3';
       panel.innerHTML='<div><b class="text-sm text-amber-900">Pending CN Approvals · '+pending.length+'</b>'+
        '<div class="text-xs text-amber-800 mt-1">These Credit Notes are already visible to Stock, but warehouse receipt is blocked until Manager/Admin approval.</div></div>'+
-       '<div class="text-xs text-amber-700">'+pending.map(c=>text(c.cn_no)).join(' · ')+'</div>';
+       '<div class="text-xs text-amber-700 font-semibold">'+pending.map(c=>text(c.cn_no)).join(' · ')+'</div>';
       root.insertBefore(panel,root.firstChild);
     }
   }
