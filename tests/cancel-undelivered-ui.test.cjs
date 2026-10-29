@@ -1,0 +1,48 @@
+const {JSDOM}=require('jsdom');
+const fs=require('node:fs');const path=require('node:path');const assert=require('node:assert/strict');
+const dom=new JSDOM('<div id="modalBody"></div>',{runScripts:'outside-only',url:'https://example.test'});
+const w=dom.window,calls=[],toasts=[];let releaseSave,saveCalls=0;
+w.state={profile:{role:'sales'},user:{id:'preparer'}};
+w.esc=v=>String(v??'');w.titleCase=v=>v;w.money=v=>String(v);w.closeModal=()=>{};w.showToast=(...x)=>toasts.push(x);
+w.openModal=(title,body)=>{w.document.getElementById('modalBody').innerHTML=body};
+w.db={rpc:async(name,args)=>{
+ calls.push({name,args});
+ if(name==='get_returnable_sales_orders')return {data:[{order_id:'order1',customer_id:'customer1',document_no:'INV1'}]};
+ if(['get_returnable_order_items','get_cancellable_order_items'].includes(name))return {data:[{sales_order_item_id:'item1',qty_sold:10,qty_available:name==='get_cancellable_order_items'?3:10,qty_returned:0,item_name:'Lamp'}]};
+ if(name==='create_undelivered_cancellation'){saveCalls++;return new Promise(resolve=>{releaseSave=resolve})}
+ return {data:[]};
+}};
+w.eval(fs.readFileSync(path.join(__dirname,'../sales-returns.js'),'utf8'));
+w.renderReturnsPage=async()=>{};
+(async()=>{
+ await w.openNewSalesReturn();
+ const action=w.document.getElementById('returnAction');
+ assert.ok([...action.options].some(x=>x.value==='exchange'));
+ assert.ok([...action.options].some(x=>x.value==='cancel_undelivered'));
+ await w.chooseReturnOrder('order1');
+ action.value='cancel_undelivered';await action.onchange({target:action});
+ assert.equal(calls.at(-1).name,'get_cancellable_order_items');
+ assert.equal(w.document.querySelector('.sales-return-item').dataset.max,'3');
+ assert.equal(w.document.querySelector('.return-item-disposition').value,'no_stock_action');
+ assert.equal(w.document.querySelector('.return-item-disposition').disabled,true);
+ assert.match(w.document.querySelector('.return-handling-hint').textContent,/No physical receipt/);
+ const form=w.document.getElementById('salesReturnForm');
+ w.document.querySelector('.return-item-check').checked=true;
+ w.document.querySelector('.return-item-qty').value='4';
+ await form.onsubmit({target:form,preventDefault(){}});
+ assert.equal(saveCalls,0);assert.match(toasts.at(-1)[0],/between 1 and 3/);
+ w.document.querySelector('.return-item-qty').value='2';
+ const save=form.onsubmit({target:form,preventDefault(){}});
+ await form.onsubmit({target:form,preventDefault(){}});
+ assert.equal(saveCalls,1);
+ const first=calls.at(-1);assert.ok(first.args.p_request_id);assert.equal(first.args.p_items[0].disposition,'no_stock_action');
+ releaseSave({error:{message:'Network response lost'}});await save;
+ const retry=form.onsubmit({target:form,preventDefault(){}});
+ assert.equal(calls.at(-1).args.p_request_id,first.args.p_request_id);
+ releaseSave({data:[{cn_no:'CN-TEST'}]});await retry;
+ action.value='exchange';await action.onchange({target:action});
+ assert.equal(calls.at(-1).name,'get_returnable_order_items');
+ assert.equal(w.document.querySelector('.return-item-disposition').disabled,false);
+ assert.equal(w.document.querySelector('.return-item-disposition').value,'exchange');
+ console.log('PASS: cancellation form, delivery limits, stock handling, duplicate submit, retry ID, and Exchange regression.');
+})().catch(e=>{console.error(e);process.exitCode=1}).finally(()=>dom.window.close());

@@ -103,10 +103,10 @@ if(typeof priorView==='function')window.viewSalesReturn=async function(id){
  panel.innerHTML='<div class="flex flex-wrap justify-between gap-2 items-center"><b class="text-sm">CN Approval & Case Progress</b>'+badge(c)+'</div>'+
   '<div class="grid sm:grid-cols-3 gap-2 text-xs">'+
   '<div class="bg-white border rounded-lg p-3"><div class="text-[10px] text-gray-500">Management Approval</div><b>'+text(c.approval_status)+'</b></div>'+
-  '<div class="bg-white border rounded-lg p-3"><div class="text-[10px] text-gray-500">Stock Receipt</div><b>'+(c.stock_complete?'Completed':'Pending')+'</b></div>'+
+  '<div class="bg-white border rounded-lg p-3"><div class="text-[10px] text-gray-500">Stock Receipt</div><b>'+(cancellation?'Not required':c.stock_complete?'Completed':'Pending')+'</b></div>'+
   '<div class="bg-white border rounded-lg p-3"><div class="text-[10px] text-gray-500">Customer Credit Decision</div><b>'+text(c.financial_decision==='no_credit'?'No Credit':c.financial_decision==='credit_ar'?'Credit Approved':'Pending')+'</b></div></div>'+
   (c.approval_note?'<p class="text-xs text-gray-600">Manager note: '+text(c.approval_note)+'</p>':'')+
-  '<p class="text-[11px] text-gray-600">Stock sees the CN immediately, but can receive saleable items only after Manager/Admin approves. The case closes after required stock receipts and an explicit credit/no-credit decision.</p>'+
+  '<p class="text-[11px] text-gray-600">'+(cancellation?'Approval cancels undelivered quantities, releases reservations, and applies credit to source invoices. Excess remains customer credit. No stock receipt; deposits and payments are preserved.':'Stock sees the CN immediately, but can receive saleable items only after Manager/Admin approves. The case closes after required stock receipts and an explicit credit/no-credit decision.')+'</p>'+
   '<div class="flex flex-wrap gap-2" id="cnCaseDetailActions"></div>';
  body.prepend(panel);
  const b=panel.querySelector('#cnCaseDetailActions');
@@ -134,12 +134,13 @@ if(typeof priorView==='function')window.viewSalesReturn=async function(id){
 window.reviewCNCase=async function(id,approve){
  if(!canApprove())return showToast('Manager/Admin CN approval is required.','err');
  const h=(window._visibleSalesReturns||[]).find(x=>x.return_id===id);
- if(!confirm((approve?'Approve':'Reject')+' CN '+(h?.cn_no||'')+'? Stock receipt cannot start before approval.'))return;
+ const cancellation=h?.action==='cancel_undelivered';
+ if(!confirm((approve?'Approve':'Reject')+' CN '+(h?.cn_no||'')+'? '+(cancellation?'Approval releases undelivered reservations and applies credit to source invoices. Excess remains customer credit; payments stay unchanged.':'Stock receipt cannot start before approval.')))return;
  const note=prompt(approve?'Optional approval note:':'Reason for rejection:')||'';
  if(!approve&&!note.trim())return showToast('Enter a rejection reason.','err');
  const r=await db.rpc('review_cn_case',{p_return_id:id,p_approve:approve,p_note:note||null});
  if(r.error)return showToast(r.error.message,'err');
- closeModal();showToast(approve?'CN approved; Stock may now receive eligible returned goods.':'CN rejected; Stock cannot receive it.');
+ closeModal();showToast(approve?(cancellation?'Cancellation approved: reservations released and invoice credit applied.':'CN approved; Stock may now receive eligible returned goods.'):'CN rejected.');
  await window.renderReturnsPage();
 };
 window.resubmitCNCase=async function(id){
