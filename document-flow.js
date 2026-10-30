@@ -11,7 +11,7 @@
   function stockControllerTrackingRole(){return (state.profile?.role||'')==='stock_controller'}
   function salesTimelineOnly(){return (state.profile?.role||'')==='sales'}
   function canRequestInvoice(){return ['sales','manager','admin','super_admin'].includes(state.profile?.role)}
-  function canPrepareSr(){return state.profile?.role==='sales' && (typeof window.hasAppPermission==='function'
+  function canPrepareSr(){return ['sales','admin','super_admin'].includes(state.profile?.role) && (typeof window.hasAppPermission==='function'
     ?window.hasAppPermission('sales_orders.convert_request'):false)}
   function conversionFor(id){return df.conversions.get(String(id))||null}
   function issuedTkRkNumbers(o){
