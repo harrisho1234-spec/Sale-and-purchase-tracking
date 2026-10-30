@@ -218,12 +218,17 @@ function verifyImportedActivities(a,entries,date){
    payload:JSON.stringify({p_activity_type:type}),muteHttpExceptions:true
   });
   if(response.getResponseCode()!==200)throw Error('Unable to verify linked customer activities');
-  JSON.parse(response.getContentText()).forEach(r=>{
-   if(String(r.assigned_sales_id)===String(a.user_id)&&String(r.activity_date)===date)
+  const records=JSON.parse(response.getContentText());
+  if(!Array.isArray(records))throw Error('Unable to verify linked customer activities');
+  records.forEach(r=>{
+   // The app permits Sales to view these activity records regardless of PIC.
+   // Verify real record ID, type and report date using the caller's own token.
+   // Do not assign, modify or take ownership of any imported customer record.
+   if(String(r.activity_date||'').slice(0,10)===date)
     available.add(type+':'+String(r.id));
   });
  });
- links.forEach(x=>{if(!available.has(x[9]+':'+x[10]))throw Error('Imported '+x[9]+' activity is not assigned to this Sales account or does not match the report date')});
+ links.forEach(x=>{if(!available.has(x[9]+':'+x[10]))throw Error('Imported '+x[9]+' activity does not exist, is not visible to your account, or does not match the report date')});
 }
 function savePm(ss,a,p,submit){
  ensureWrite(a);
