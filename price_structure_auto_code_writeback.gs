@@ -84,30 +84,48 @@ function protectQtyLookup_(sheet,row,originalCode) {
   // Named variable marker makes future edits idempotent.
   return newFormula;
 }
-function protectCostLookup_(sheet) {
+
+function protectItemListLocation_(sheet,row,originalCode) {
+  const formula=sheet.getRange(row,13).getFormula();
+  if(!formula)return null; // Literal locations remain intact.
+  if(formula.indexOf('LIMP_CODE_ALIAS_LOC')>=0)return null;
+  if(!/XLOOKUP\s*\(/i.test(formula) ||
+     formula.indexOf('Item List!A4:A')<0||formula.indexOf('Item List!G4:G')<0 ||
+     !new RegExp('\\bB'+row+'\\b','i').test(formula)){
+    throw new Error('Location M'+row+' is not a recognized Item List lookup. No code changed.');
+  }
+  const original=String(originalCode).replace(/"/g,'""');
+  const source='"'+LIMP_CODE_WRITEBACK_STOCK_SOURCE.replace(/"/g,'""')+'"';
+  return '=LET(LIMP_CODE_ALIAS_LOC,B'+row+
+    ',codes,IMPORTRANGE('+source+',"Item List!A4:A"),'+
+    'loc,IMPORTRANGE('+source+',"Item List!G4:G"),'+
+    'IFNA(XLOOKUP(LIMP_CODE_ALIAS_LOC,codes,loc),'+
+    'IFNA(XLOOKUP("'+original+'",codes,loc),"Sold Out")))';
+}
+function protectCostOrBrandLookup_(sheet,column,lookupRange,position,label) {
   const end=Math.min(30,Math.max(sheet.getLastRow(),1));
-  const formulas=sheet.getRange(1,8,end,1).getFormulas().map(function(r){return r[0]||'';});
+  const formulas=sheet.getRange(1,column,end,1).getFormulas().map(function(r){return r[0]||'';});
   const anchors=[];
   formulas.forEach(function(f,i){
-    if(/ARRAYFORMULA\s*\(/i.test(f)&&/Costing!\$?B:?\$?D/i.test(f))anchors.push({row:i+1,formula:f});
+    if(/ARRAYFORMULA\s*\(/i.test(f) && f.indexOf('Costing!')>=0)
+      anchors.push({row:i+1,formula:f});
   });
-  if(anchors.length>1)throw new Error('Multiple Costing array anchors found; review manually.');
-  if(anchors.length===0){
-    // This brand tab may use static cost cells; don't touch them.
-    return null;
-  }
+  if(anchors.length>1)throw new Error('Multiple '+label+' array anchors found; review manually.');
+  if(anchors.length===0)return null; // Static value or other valid setup.
   const anchor=anchors[0];
   if(anchor.formula.indexOf('Product Code Master')>=0)return null;
-  const expected=new RegExp('VLOOKUP\\s*\\(\\s*B'+anchor.row+':B\\s*,\\s*Costing!\\s*B:D\\s*,\\s*3\\s*,\\s*FALSE\\s*\\)','i');
-  if(!expected.test(anchor.formula))throw new Error('Costing array formula structure differs from supported pattern. Review manually.');
-  // Preserve the ARRAYFORMULA cost result, with fallback to the original
-  // Price Structure code stored in Product Code Master.
+  const expected=new RegExp(
+    'VLOOKUP\\s*\\(\\s*B'+anchor.row+':B\\s*,\\s*Costing!\\s*'+
+      lookupRange+'\\s*,\\s*'+position+'\\s*,\\s*FALSE\\s*\\)','i');
+  if(!expected.test(anchor.formula)){
+    throw new Error(label+' array formula differs from supported pattern. Review manually.');
+  }
   const r=anchor.row;
   const fallback="IFNA(VLOOKUP(B"+r+":B,'Product Code Master'!B:D,3,FALSE),B"+r+":B)";
   const formula='=ARRAYFORMULA(IF(B'+r+':B="",,'+
-    'IFERROR(VLOOKUP(B'+r+':B,Costing!B:D,3,FALSE),'+
-    'IFERROR(VLOOKUP('+fallback+',Costing!B:D,3,FALSE),0))))';
-  return {cell:sheet.getRange(r,8),formula:formula};
+    'IFERROR(VLOOKUP(B'+r+':B,Costing!'+lookupRange+','+position+',FALSE),'+
+    'IFERROR(VLOOKUP('+fallback+',Costing!'+lookupRange+','+position+',FALSE),0))))';
+  return {cell:sheet.getRange(r,column),formula:formula};
 }
 function applyOneProductCodeWriteback_(book,job) {
   const oldCode=String(job.old_code||'').trim();
@@ -132,7 +150,9 @@ function applyOneProductCodeWriteback_(book,job) {
 
   // Preflight all edits BEFORE changing any cell.
   const qtyFormula=protectQtyLookup_(target.sheet,target.row,original);
-  const cost=protectCostLookup_(target.sheet);
+  const locationFormula=protectItemListLocation_(target.sheet,target.row,original);
+  const cost=protectCostOrBrandLookup_(target.sheet,8,'B:D',3,'Costing');
+  const brand=protectCostOrBrandLookup_(target.sheet,16,'B:E',4,'Brand');
   const beforeCode=normProductCode_(codeCell.getDisplayValue());
   if(beforeCode!==normProductCode_(oldFound?oldCode:newCode))
     throw new Error('Brand code changed during the writeback; retry next run.');
@@ -140,7 +160,9 @@ function applyOneProductCodeWriteback_(book,job) {
   // First protect dependent formulas, then rename Code. Source stock
   // Item List, Stock Movement, Costing, and All are never directly edited.
   if(cost)cost.cell.setFormula(cost.formula);
+  if(brand)brand.cell.setFormula(brand.formula);
   if(qtyFormula)target.sheet.getRange(target.row,7).setFormula(qtyFormula);
+  if(locationFormula)target.sheet.getRange(target.row,13).setFormula(locationFormula);
   if(oldFound)codeCell.setValue(newCode);
   SpreadsheetApp.flush();
   if(normProductCode_(codeCell.getDisplayValue())!==normProductCode_(newCode))
@@ -174,7 +196,7 @@ function syncProductCodeWritebacks() {
         // Fail closed: don't continue changing other rows if this one is uncertain.
         // Preflight conflicts are marked for admin review; network failures
         // are retried (left pending) on the next trigger.
-        const reviewable=/multiple brand rows|Both old and new codes|Neither old nor new code|formula-driven|not the recognized|does not reference|Multiple Costing|Costing array formula|Missing product-code|identical/i.test(message);
+        const reviewable=/multiple brand rows|Both old and new codes|Neither old nor new code|formula-driven|not the recognized|does not reference|Location M|Multiple Costing|Multiple Brand|Costing array formula|Brand array formula|Missing product-code|identical/i.test(message);
         if(reviewable){
           try{
             postProductCodeWriteback_({
