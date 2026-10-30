@@ -249,24 +249,45 @@ window.importRecordedDailyActivities=async()=>{
  try{
   const [a,b]=await Promise.all(['showroom_visit','online'].map(type=>db.rpc('get_customer_activity_rows',{p_activity_type:type})));
   if(a.error||b.error)throw Error(a.error?.message||b.error?.message);
-  const own=state.user?.id;
-  const rows=[...(a.data||[]).map(x=>({...x,activity_type:'showroom_visit'})),...(b.data||[]).map(x=>({...x,activity_type:'online'}))].filter(x=>String(x.assigned_sales_id)===String(own)&&String(x.activity_date||'').slice(0,10)===ui.date);
-  window.dailyImportCandidates=rows.filter(x=>!additionalDraft.some(t=>t.sourceId===String(x.id)&&t.sourceType===x.activity_type));
-  if(!window.dailyImportCandidates.length)return toast('No new Showroom or Online activities assigned to you for this date');
-  const body='<p class="text-xs mb-3">Select existing records. Importing here will not create another customer visit or inquiry.</p>'+
-  window.dailyImportCandidates.map((x,i)=>'<label class="block border rounded-lg p-2 text-xs mb-2"><input type="checkbox" class="daily-activity-import" value="'+i+'"> <b>'+h(x.activity_type==='online'?'Online Inquiry':'Showroom Visit')+'</b> — '+h(x.customer_name||'Unnamed customer')+'<div class="text-gray-500">'+h(x.remark||x.interest||'')+'</div></label>').join('')+
-  '<button class="'+actionButton+'" onclick="confirmRecordedDailyActivities()">Import Selected</button>';
+  // Daily import is a record picker, not a customer assignment/CRM ownership action.
+  // Include every visible activity on the selected report date, regardless of
+  // who is assigned (including records without an assigned salesperson).
+  const own=String(state.user?.id||''),date=ui.date;
+  const rows=[...(a.data||[]).map(x=>({...x,activity_type:'showroom_visit'})),...(b.data||[]).map(x=>({...x,activity_type:'online'}))]
+    .filter(x=>String(x.activity_date||'').slice(0,10)===date);
+  const already=new Set(additionalDraft.filter(t=>t.sourceType&&t.sourceId).map(t=>t.sourceType+':'+t.sourceId));
+  window.dailyImportCandidates=rows.filter(x=>!already.has(x.activity_type+':'+x.id));
+  window.dailyImportSelectedDate=date;
+  if(!window.dailyImportCandidates.length)return toast('No new Showroom or Online activities for '+date);
+  const body='<p class="text-xs mb-3">All Showroom and Online records for <b>'+h(date)+'</b> are available, including unassigned and other Sales visits. Selecting one adds a reference to <b>your Evening Result only</b>; it does not change the customer assignment or create a new visit.</p>'+
+  '<div class="max-h-[50vh] overflow-auto space-y-2">'+
+  window.dailyImportCandidates.map((x,i)=>{
+    const owner=!x.assigned_sales_id?'Unassigned':String(x.assigned_sales_id)===own?'Assigned to you':'Assigned: '+(x.sales_rep_name||'Another salesperson');
+    return '<label class="flex items-start gap-2 border rounded-lg p-3 text-xs cursor-pointer hover:bg-gray-50"><input type="checkbox" class="daily-activity-import mt-0.5" value="'+i+'"><span class="min-w-0"><b>'+h(x.activity_type==='online'?'Online Inquiry':'Showroom Visit')+'</b> · '+h(x.customer_name||'Unnamed customer')+
+      '<span class="ml-2 text-[10px] text-gray-500">'+h(x.business_code||'')+'</span>'+
+      '<span class="block text-[10px] text-gray-500 mt-1">'+h(owner)+'</span>'+
+      '<span class="block text-gray-600 mt-1">'+h(x.remark||x.interest||'')+'</span></span></label>';
+  }).join('')+'</div>'+
+  '<button class="'+actionButton+' mt-3" onclick="confirmRecordedDailyActivities()">Import Selected</button>';
   openModal('Import Showroom / Online Activities',body);
  }catch(e){toast(e.message,true)}
 };
 window.confirmRecordedDailyActivities=()=>{
- const chosen=[...document.querySelectorAll('.daily-activity-import:checked')].map(el=>window.dailyImportCandidates[Number(el.value)]).filter(Boolean);
- const known=new Set(additionalDraft.map(x=>x.sourceType+':'+x.sourceId));
- for(const x of chosen){
-  const key=x.activity_type+':'+x.id;if(known.has(key))continue;known.add(key);
+ if(window.dailyImportSelectedDate!==ui.date)return toast('Daily report date changed. Open the import list again.',true);
+ preserveEveningInputs();captureAdditional();
+ const chosen=[...document.querySelectorAll('.daily-activity-import:checked')].map(el=>window.dailyImportCandidates?.[Number(el.value)]).filter(Boolean);
+ const known=new Set(additionalDraft.filter(x=>x.sourceId&&x.sourceType).map(x=>x.sourceType+':'+x.sourceId));
+ const fresh=chosen.filter(x=>{
+   const key=x.activity_type+':'+x.id;
+   if(known.has(key))return false;
+   known.add(key);return true;
+ });
+ if(!fresh.length)return toast('Select at least one activity not already in your draft.',true);
+ if(additionalDraft.length+fresh.length>30)return toast('Maximum 30 additional activities per day. Select fewer records.',true);
+ for(const x of fresh){
   additionalDraft.push({category:x.activity_type==='online'?'Online Inquiry':'Customer Visit',customerName:x.customer_name||'',result:x.remark||x.interest||'',nextFollowup:x.follow_up_date||'',sourceType:x.activity_type,sourceId:String(x.id)});
  }
- closeModal();renderSalesHome();toast(chosen.length+' activities added to the draft. Please review their outcomes.');
+ closeModal();renderSalesHome();toast(fresh.length+' activities added to your Evening Result draft. Original customer assignments were not changed.');
 };
 window.addAdditionalDaily=()=>{preserveEveningInputs();captureAdditional();if(additionalDraft.length>=30)return toast('Maximum 30 additional activities',true);additionalDraft.push({category:'Customer Visit',customerName:'',result:'',nextFollowup:''});renderSalesHome()};
 window.removeAdditionalDaily=i=>{preserveEveningInputs();captureAdditional();additionalDraft.splice(i,1);renderSalesHome()};
