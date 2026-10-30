@@ -91,7 +91,7 @@
     const conversion=conversionFor(o.id);
     const pendingConversion=(conversion?.status==='pending'&&!o.sales_invoice_no)||Number(srSplit?.pending_count||0)>0;
     const srUninvoiced=srSplit?Math.max(0,Number(srSplit.total_qty||0)-Number(srSplit.issued_qty||0)-Number(srSplit.pending_qty||0)):null;
-    const splitSummary=srSplit?('TK/RK '+Number(srSplit.issued_count||0)+' issued'+(Number(srSplit.pending_count||0)?', '+srSplit.pending_count+' pending':'')+' · '+srUninvoiced+' qty uninvoiced'):null;
+    const splitSummary=srSplit?('TK/RK '+Number(srSplit.issued_count||0)+' issued'+(Number(srSplit.pending_count||0)?', '+srSplit.pending_count+' pending':'')+' · '+srUninvoiced+' SR qty not yet invoiced'):null;
     let steps='';
     if(pre){
       steps=[
@@ -118,6 +118,14 @@
     const poBadges=pos.length?pos.map(p=>`<span class="lr-badge lr-badge-blue">${esc(p.no)} · ${esc(titleCase(p.status||'placed'))}${p.eta?' · '+esc(fmtDate(p.eta)):''}</span>`).join(' '):'<span class="text-[10px] text-gray-400">No supplier PO linked yet.</span>';
     const controls=[`<button onclick="openDocumentFlowDetails('${o.id}')" class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">View Details</button>`];
     if(pre&&isAdminRole())controls.push(`<button onclick="openLinkPOItems('${o.id}')" class="px-3 py-2 rounded-lg border text-xs font-semibold">Link PO Items</button>`);
+    // A pre-order may request DO only through its officially issued TK/RK
+    // invoice, never from the SR or an unapproved invoice.
+    const canRequestIssuedDo=pre&&issued&&canRequestInvoice()&&norm(o.status)!=='cancelled';
+    const issuedLabel=(srSplit?.issued_numbers||[]).length===1
+      ?String(srSplit.issued_numbers[0]?.no||'Issued TK/RK'):'Issued TK/RK';
+    if(canRequestIssuedDo){
+      controls.push(`<button type="button" onclick="openSrIssuedDoAction('${o.id}')" class="px-3 py-2.5 rounded-lg border border-blue-300 bg-blue-700 text-white text-xs font-bold shadow-sm">Request DO · ${esc(issuedLabel)}</button>`);
+    }
     if(pre&&!o.sales_invoice_no&&(srUninvoiced==null||srUninvoiced>0)&&!pendingConversion
        &&(canPrepareSr()&&String(o.sales_rep_id||'')===String(state.user?.id||'')
            || ['manager','admin','super_admin'].includes(state.profile?.role||''))){
@@ -136,7 +144,10 @@
         <b>Linked TK/RK invoices:</b> ${esc(splitSummary||'1 issued · original SR retained')}
         ${o.sales_invoice_no?`<div class="mt-1 flex flex-wrap gap-1"><span class="rounded-md border bg-white px-2 py-1 font-semibold">${esc(o.sales_invoice_no)} · Issued</span></div>`:''}
         ${(srSplit?.issued_numbers||[]).length?`<div class="mt-1 flex flex-wrap gap-1">${srSplit.issued_numbers.map(i=>`<span class="rounded-md border bg-white px-2 py-1 font-semibold">${esc(i.no)} · Issued</span>`).join('')}</div>`:''}
-        ${srSplit?`<button type="button" onclick="openSrInvoiceOverview('${o.id}')" class="mt-2 font-bold underline">View invoices and remaining quantities →</button>`:`<p class="text-[10px] mt-2">Historical single-invoice conversion · Original SR and TK/RK are linked above.</p>`}
+        ${srSplit?`<div class="mt-2 flex flex-wrap gap-2 items-center">
+          <button type="button" onclick="openSrInvoiceOverview('${o.id}')" class="font-bold underline">View invoices and remaining quantities →</button>
+          ${canRequestIssuedDo?'<button type="button" onclick="openSrIssuedDoAction(\''+o.id+'\')" class="px-3 py-2 rounded-lg bg-blue-700 text-white font-bold">Request DO from Issued TK/RK</button>':''}
+        </div>`:`<p class="text-[10px] mt-2">Historical single-invoice conversion · Original SR and TK/RK are linked above.</p>`}
       </div>`:''}
       ${pre&&conversion&&!srSplit?`<div class="rounded-xl border p-3 mb-3 text-xs ${conversion.status==='pending'?'border-amber-200 bg-amber-50 text-amber-800':conversion.status==='approved'?'border-green-200 bg-green-50 text-green-800':'border-red-200 bg-red-50 text-red-700'}">
         <b>TK/RK Conversion: ${esc(titleCase(conversion.status))}</b> · ${esc(conversion.invoice_no||'')}
