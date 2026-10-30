@@ -98,8 +98,13 @@ async function openProductDetail(id){
 async function openProductCodeHistory(id){
   if(!isAdmin())return showToast('Admin or Super Admin access required.','err');
   try{
-    const r=await db.rpc('get_product_code_history',{p_product_id:id});
+    const [r,w]=await Promise.all([
+      db.rpc('get_product_code_history',{p_product_id:id}),
+      db.rpc('get_product_code_sheet_writeback_status',{p_product_id:id})
+    ]);
     if(r.error)throw r.error;
+    if(w.error)throw w.error;
+    const writeback=w.data||{status:'not_required'};
     const data=r.data||{},changes=Array.isArray(data.changes)?data.changes:[],aliases=Array.isArray(data.aliases)?data.aliases:[];
     const history=changes.length
       ?changes.map(x=>'<div class="rounded-xl border p-3 space-y-1">'+
@@ -116,6 +121,7 @@ async function openProductCodeHistory(id){
           <div class="text-xs text-blue-800 mt-2">One permanent product ID · older codes remain aliases, not separate stock or products.</div>
         </div>
         ${data.source_original_code?'<div class="text-xs text-gray-600">Original Price Structure source code: <b class="font-mono">'+esc(data.source_original_code)+'</b></div>':''}
+        ${writeback.status!=='not_required'?'<div class="text-xs border rounded-xl p-3 '+(writeback.status==='applied'?'border-green-200 bg-green-50 text-green-800':writeback.status==='needs_review'?'border-red-200 bg-red-50 text-red-700':'border-amber-200 bg-amber-50 text-amber-800')+'"><b>Price Structure sheet:</b> '+(writeback.status==='applied'?'Updated':writeback.status==='needs_review'?'Needs review':'Queued for automatic update')+(writeback.note?'<div class="mt-1">'+esc(writeback.note)+'</div>':'')+'</div>':''}
         <div><div class="text-xs font-bold mb-2">All historical codes</div><div class="flex flex-wrap gap-2">${legacy}</div></div>
         <div><div class="text-xs font-bold mb-2">Code change history</div><div class="space-y-2 max-h-[45vh] overflow-y-auto">${history}</div></div>
       </div>`);
@@ -132,7 +138,7 @@ async function openChangeProductCode(id){
       <b>Rename the existing product — do not recreate it.</b> Inventory and linked sales/PO items keep the same internal product ID.
       Previously issued documents retain their original code snapshots. Old codes cannot be reassigned to a different product.
     </div>
-    ${priceManaged?'<div class="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900"><b>Price Structure synchronized product.</b> This change updates the code in Sales & Order Management, while retaining the original Price Structure source identity. Future imports of the old code will update this SAME product, not create another. The code shown in your external Price Structure or Showroom files will not change automatically; update those separately if you want them to display the new code.</div>':''}
+    ${priceManaged?'<div class="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900"><b>Price Structure synchronized product.</b> This change updates the code in Sales & Order Management, while retaining the original Price Structure source identity. Future imports of the old code will update this SAME product, not create another. A secure writeback job will update the corresponding Price Structure brand row when the five-minute Apps Script trigger is installed. Old inventory and costing codes remain linked by lookups. The separate Showroom catalog may need its own refresh.</div>':''}
     <div><label class="text-xs font-bold">Current Code</label><div class="mt-1 border bg-gray-50 rounded-xl p-3 font-mono text-sm">${esc(p.code)}</div></div>
     <label class="block text-xs font-bold">New Product Code<input id="productNewCode" required maxlength="100" class="mt-1 w-full border rounded-xl p-3" value="${esc(p.code)}"></label>
     <label class="block text-xs font-bold">Reason for Change *<textarea id="productCodeReason" rows="2" maxlength="1000" required placeholder="Wrong code, updated manufacturer number..." class="mt-1 w-full border rounded-xl p-3"></textarea></label>
@@ -155,7 +161,7 @@ async function openChangeProductCode(id){
       const r=await db.rpc('admin_change_product_code',{p_product_id:id,p_new_code:code,p_reason:reason});
       if(r.error)throw r.error;
       closeModal();
-      showToast('Product code changed to '+String(r.data)+'. Old code reserved for sync and history.');
+      showToast('Product code changed to '+String(r.data)+'. '+(priceManaged?'Price Structure update queued. View Code History for status.':'Old code saved in history.'));
       if(typeof loadProducts==='function')await loadProducts();
       if(typeof renderProducts==='function')await renderProducts();
     }catch(err){btn.disabled=false;btn.textContent='Confirm Code Change';showToast(err.message||'Could not change code.','err')}
