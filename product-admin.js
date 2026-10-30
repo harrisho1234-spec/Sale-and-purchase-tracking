@@ -9,8 +9,9 @@ async function lookupProductCodeConflict(code,excludeId=null){
 }
 
 function productCodeConflictMessage(x,typed){
-  return 'Product Code "'+(x?.code||typed||'')+'" already exists'
-    +(x?.item_name?' as "'+x.item_name+'"':'')
+  return 'Product Code "'+(x?.code||typed||'')+'" '+(x?.legacy_alias?'was previously used and is reserved':'already exists')
+    +(x?.item_name?' for "'+x.item_name+'"':'')
+    +(x?.legacy_alias&&x?.current_code?' (now '+x.current_code+')':'')
     +'. Use the existing product instead of creating another code.';
 }
 
@@ -96,14 +97,13 @@ async function openChangeProductCode(id){
   if(!isAdmin())return showToast('Admin or Super Admin access required.','err');
   const p=productById(id);
   if(!p)return showToast('Product not found. Refresh Products.','err');
-  if(p.source_system==='price_structure_v3_private_push'||String(p.source_row_key||'').startsWith('price:')){
-    return showToast('This code is controlled by Price Structure. Update the source catalog and sync first to avoid duplicates.','err');
-  }
+  const priceManaged=p.source_system==='price_structure_v3_private_push'||String(p.source_row_key||'').startsWith('price:');
   openModal('Change Product Code',`<form id="productCodeChangeForm" class="space-y-4">
     <div class="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900">
       <b>Rename the existing product — do not recreate it.</b> Inventory and linked sales/PO items keep the same internal product ID.
       Previously issued documents retain their original code snapshots. Old codes cannot be reassigned to a different product.
     </div>
+    ${priceManaged?'<div class="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900"><b>Price Structure synchronized product.</b> This change updates the code in Sales & Order Management, while retaining the original Price Structure source identity. Future imports of the old code will update this SAME product, not create another. The code shown in your external Price Structure or Showroom files will not change automatically; update those separately if you want them to display the new code.</div>':''}
     <div><label class="text-xs font-bold">Current Code</label><div class="mt-1 border bg-gray-50 rounded-xl p-3 font-mono text-sm">${esc(p.code)}</div></div>
     <label class="block text-xs font-bold">New Product Code<input id="productNewCode" required maxlength="100" class="mt-1 w-full border rounded-xl p-3" value="${esc(p.code)}"></label>
     <label class="block text-xs font-bold">Reason for Change *<textarea id="productCodeReason" rows="2" maxlength="1000" required placeholder="Wrong code, updated manufacturer number..." class="mt-1 w-full border rounded-xl p-3"></textarea></label>
@@ -115,14 +115,18 @@ async function openChangeProductCode(id){
     const reason=document.getElementById('productCodeReason').value.trim();
     if(!code||!reason)return showToast('New code and change reason are required.','err');
     if(code.toLowerCase()===String(p.code||'').toLowerCase())return showToast('Enter a different product code.','err');
-    if(!confirm('Change product code from '+p.code+' to '+code+'? This keeps historical document codes unchanged.'))return;
+    try{
+      const existing=await lookupProductCodeConflict(code,id);
+      if(existing)return showToast(productCodeConflictMessage(existing,code),'err');
+    }catch(error){return showToast(error.message||'Could not validate product code.','err');}
+    if(!confirm('Change product code from '+p.code+' to '+code+'? The existing product, inventory and historical documents remain linked.'))return;
     const btn=document.getElementById('productCodeSaveBtn');
     btn.disabled=true;btn.textContent='Updating code...';
     try{
       const r=await db.rpc('admin_change_product_code',{p_product_id:id,p_new_code:code,p_reason:reason});
       if(r.error)throw r.error;
       closeModal();
-      showToast('Product code changed to '+String(r.data)+'. Original documents were preserved.');
+      showToast('Product code changed to '+String(r.data)+'. Old code reserved for sync and history.');
       if(typeof loadProducts==='function')await loadProducts();
       if(typeof renderProducts==='function')await renderProducts();
     }catch(err){btn.disabled=false;btn.textContent='Confirm Code Change';showToast(err.message||'Could not change code.','err')}
