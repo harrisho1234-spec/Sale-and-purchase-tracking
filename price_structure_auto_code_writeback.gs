@@ -127,6 +127,56 @@ function protectCostOrBrandLookup_(sheet,column,lookupRange,position,label) {
     'IFERROR(VLOOKUP('+fallback+',Costing!'+lookupRange+','+position+',FALSE),0))))';
   return {cell:sheet.getRange(r,column),formula:formula};
 }
+
+function applyExistingDualRowRename_(oldRow,newRow,job){
+  // Only merge two rows after a high-confidence identity comparison.
+  // A matching name and photograph prevent accidental stock assignment to
+  // another similar-looking furniture/lighting product.
+  const oldName=normProductCode_(oldRow.sheet.getRange(oldRow.row,3).getDisplayValue());
+  const newName=normProductCode_(newRow.sheet.getRange(newRow.row,3).getDisplayValue());
+  const oldPhoto=String(oldRow.sheet.getRange(oldRow.row,5).getDisplayValue()||'').trim();
+  const newPhoto=String(newRow.sheet.getRange(newRow.row,5).getDisplayValue()||'').trim();
+  if(!oldName || !newName || oldName!==newName ||
+     oldPhoto.length<25 || oldPhoto!==newPhoto){
+    throw new Error('Old and new brand rows have different product names/photos. Review identity before merging stock.');
+  }
+  writebackFormulaCell_(oldRow.sheet.getRange(oldRow.row,2));
+  writebackFormulaCell_(newRow.sheet.getRange(newRow.row,2));
+  const oldQty=oldRow.sheet.getRange(oldRow.row,7),oldLocation=oldRow.sheet.getRange(oldRow.row,13);
+  const prevQty=oldQty.getFormula(),prevLocation=oldLocation.getFormula();
+  if(prevQty && !/^\s*=\s*0\s*$/.test(prevQty) &&
+     (!/XLOOKUP\s*\(/i.test(prevQty)||
+      prevQty.indexOf('Item List!A:A')<0||
+      !new RegExp('\\bB'+oldRow.row+'\\b','i').test(prevQty))){
+    throw new Error('Old-row QTY formula is not a supported stock lookup. Review before archiving.');
+  }
+  if(prevLocation && !/XLOOKUP\s*\(/i.test(prevLocation)){
+    throw new Error('Old-row Location formula is not a supported lookup. Review before archiving.');
+  }
+  const newQtyFormula=protectQtyLookup_(newRow.sheet,newRow.row,job.source_original_code);
+  const newLocationFormula=protectItemListLocation_(newRow.sheet,newRow.row,job.source_original_code);
+  const newCost=protectCostOrBrandLookup_(newRow.sheet,8,'B:D',3,'Costing');
+  const newBrand=protectCostOrBrandLookup_(newRow.sheet,16,'B:E',4,'Brand');
+  // Preflight complete. Never update Item List or Stock Movements.
+  if(newCost)newCost.cell.setFormula(newCost.formula);
+  if(newBrand)newBrand.cell.setFormula(newBrand.formula);
+  if(newQtyFormula)newRow.sheet.getRange(newRow.row,7).setFormula(newQtyFormula);
+  if(newLocationFormula)newRow.sheet.getRange(newRow.row,13).setFormula(newLocationFormula);
+  if(!/^\s*=\s*0\s*$/.test(prevQty))oldQty.setFormula('=0');
+  oldLocation.setValue('Historical → '+String(job.new_code));
+  const codeCell=oldRow.sheet.getRange(oldRow.row,2);
+  const priorNote=codeCell.getNote()||'';
+  const note='Historical code for '+String(job.new_code)+' (same product ID '+String(job.product_id)+'). Stock is shown on the active code row.';
+  if(priorNote.indexOf(note)<0)codeCell.setNote((priorNote?priorNote+'\n':'')+note);
+  SpreadsheetApp.flush();
+  if(normProductCode_(newRow.sheet.getRange(newRow.row,2).getDisplayValue())!==normProductCode_(job.new_code)||
+     normProductCode_(codeCell.getDisplayValue())!==normProductCode_(job.old_code)){
+    throw new Error('Dual-row post-save identity check failed.');
+  }
+  return newRow.sheet.getName()+'!B'+newRow.row+
+    ' (old '+oldRow.sheet.getName()+'!B'+oldRow.row+' retained with zero QTY)';
+}
+
 function applyOneProductCodeWriteback_(book,job) {
   const oldCode=String(job.old_code||'').trim();
   const newCode=String(job.new_code||'').trim();
@@ -138,8 +188,9 @@ function applyOneProductCodeWriteback_(book,job) {
   const matches=findWritebackMatches_(book,oldCode,newCode);
   if(matches.oldMatches.length>1)throw new Error('Old code appears on multiple brand rows. Resolve duplicates manually.');
   if(matches.newMatches.length>1)throw new Error('New code appears on multiple brand rows. Resolve duplicates manually.');
-  if(matches.oldMatches.length&&matches.newMatches.length)
-    throw new Error('Both old and new codes exist on brand rows. Do not duplicate; review manually.');
+  if(matches.oldMatches.length===1&&matches.newMatches.length===1){
+    return applyExistingDualRowRename_(matches.oldMatches[0],matches.newMatches[0],job);
+  }
   if(!matches.oldMatches.length&&!matches.newMatches.length)
     throw new Error('Neither old nor new code appears in an approved brand tab.');
 
@@ -196,7 +247,7 @@ function syncProductCodeWritebacks() {
         // Fail closed: don't continue changing other rows if this one is uncertain.
         // Preflight conflicts are marked for admin review; network failures
         // are retried (left pending) on the next trigger.
-        const reviewable=/multiple brand rows|Both old and new codes|Neither old nor new code|formula-driven|not the recognized|does not reference|Location M|Multiple Costing|Multiple Brand|Costing array formula|Brand array formula|Missing product-code|identical/i.test(message);
+        const reviewable=/multiple brand rows|Old and new brand rows|Old-row QTY|Old-row Location|Neither old nor new code|formula-driven|not the recognized|does not reference|Location M|Multiple Costing|Multiple Brand|Costing array formula|Brand array formula|Missing product-code|identical/i.test(message);
         if(reviewable){
           try{
             postProductCodeWriteback_({
