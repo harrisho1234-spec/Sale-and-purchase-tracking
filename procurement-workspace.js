@@ -150,8 +150,86 @@
   async function renderAllocations(){
     const r=await db.from('fulfillment_links').select('id,qty_allocated,created_at,sales_order_items!inner(id,product_code_snapshot,item_name_snapshot,sales_orders!inner(id,order_no,sr_no,customer_id,customers(name))),supplier_po_items!inner(id,product_code_snapshot,item_name_snapshot,supplier_pos!inner(id,po_number,po_pending_reference,vendor_name,status,estimated_arrival))').order('created_at',{ascending:false});
     if(r.error)throw r.error;const q=pw.search.toLowerCase();const rows=(r.data||[]).filter(x=>{const so=x.sales_order_items?.sales_orders,pi=x.supplier_po_items?.supplier_pos;return !q||[so?.sr_no,so?.order_no,so?.customers?.name,x.sales_order_items?.product_code_snapshot,x.sales_order_items?.item_name_snapshot,poLabel(pi),x.supplier_po_items?.product_code_snapshot].filter(Boolean).join(' ').toLowerCase().includes(q)});
-    return `<div class="rounded-xl bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800 mb-4">This shows how supplier PO items are allocated to customer SR items. Create the SR first, then use <b>Link PO Items</b> from the expanded SR in Sales Tracking.</div><div class="card rounded-2xl overflow-hidden"><div class="divide-y">${rows.length?rows.map(x=>{const so=x.sales_order_items?.sales_orders,pi=x.supplier_po_items?.supplier_pos;return `<div class="pw-row grid lg:grid-cols-[1.2fr_1.4fr_40px_1.2fr_1.4fr_90px] gap-3 items-center"><div><b>${esc(so?.sr_no||so?.order_no||'SR')}</b><div class="pw-mini">${esc(so?.customers?.name||'')}</div></div><div><div class="text-xs font-bold">${esc(x.sales_order_items?.product_code_snapshot||'')}</div><div class="text-xs text-gray-500">${esc(x.sales_order_items?.item_name_snapshot||'')}</div></div><div class="text-center">→</div><div><b>${esc(poLabel(pi))}</b><div class="pw-mini">${esc(pi?.vendor_name||'')}</div></div><div><div class="text-xs font-bold">${esc(x.supplier_po_items?.product_code_snapshot||'')}</div><div class="text-xs text-gray-500">${esc(x.supplier_po_items?.item_name_snapshot||'')}</div></div><div class="text-right text-xs">Qty <b>${Number(x.qty_allocated||0)}</b></div></div>`}).join(''):empty('No SR allocations yet.')}</div></div>`;
+    return `<div class="rounded-xl bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800 mb-4">This shows how supplier PO items are allocated to customer SR items. Create the SR first, then use <b>Link PO Items</b> from the expanded SR in Sales Tracking.</div><div class="card rounded-2xl overflow-hidden"><div class="divide-y">${rows.length?rows.map(x=>{const so=x.sales_order_items?.sales_orders,pi=x.supplier_po_items?.supplier_pos;return `<div data-po-allocation-id="${esc(x.id)}" class="pw-row grid lg:grid-cols-[1.2fr_1.4fr_40px_1.2fr_1.4fr_90px] gap-3 items-center"><div><b>${esc(so?.sr_no||so?.order_no||'SR')}</b><div class="pw-mini">${esc(so?.customers?.name||'')}</div></div><div><div class="text-xs font-bold">${esc(x.sales_order_items?.product_code_snapshot||'')}</div><div class="text-xs text-gray-500">${esc(x.sales_order_items?.item_name_snapshot||'')}</div></div><div class="text-center">→</div><div><b>${esc(poLabel(pi))}</b><div class="pw-mini">${esc(pi?.vendor_name||'')}</div></div><div><div class="text-xs font-bold">${esc(x.supplier_po_items?.product_code_snapshot||'')}</div><div class="text-xs text-gray-500">${esc(x.supplier_po_items?.item_name_snapshot||'')}</div></div><div class="text-right text-xs">Qty <b>${Number(x.qty_allocated||0)}</b></div></div>`}).join(''):empty('No SR allocations yet.')}</div></div>`;
   }
+
+
+  window.openAdminRelinkPOAllocation=async function(linkId){
+    if(!['admin','super_admin'].includes(String(state?.profile?.role||''))){
+      return showToast('Only Admin and Super Admin can relink PO allocations.','err');
+    }
+    try{
+      const l=await db.from('fulfillment_links')
+        .select('id,sales_order_item_id,supplier_po_item_id,qty_allocated,supplier_po_items(product_id,product_code_snapshot),sales_order_items(product_id,product_code_snapshot)')
+        .eq('id',linkId).single();
+      if(l.error)throw l.error;
+      const link=l.data||{};
+      const productId=link.supplier_po_items?.product_id||link.sales_order_items?.product_id;
+      const code=link.supplier_po_items?.product_code_snapshot||link.sales_order_items?.product_code_snapshot;
+      if(!productId&&!code)throw new Error('No product can be identified for this allocation.');
+      let salesQuery=db.from('sales_order_items')
+        .select('id,product_id,product_code_snapshot,item_name_snapshot,qty,sales_orders!inner(id,order_no,sr_no,sales_flow_type,status)')
+        .limit(300);
+      let poQuery=db.from('supplier_po_items')
+        .select('id,product_id,product_code_snapshot,item_name_snapshot,qty,supplier_pos!inner(id,po_number,po_pending_reference,status)')
+        .limit(300);
+      if(productId){
+        salesQuery=salesQuery.eq('product_id',productId);
+        poQuery=poQuery.eq('product_id',productId);
+      }else{
+        salesQuery=salesQuery.eq('product_code_snapshot',code);
+        poQuery=poQuery.eq('product_code_snapshot',code);
+      }
+      const [sales,po]=await Promise.all([salesQuery,poQuery]);
+      if(sales.error)throw sales.error;
+      if(po.error)throw po.error;
+      const salesRows=(sales.data||[]).filter(x=>x.sales_orders?.sales_flow_type==='pre_order'&&x.sales_orders?.status!=='cancelled');
+      const poRows=(po.data||[]).filter(x=>x.supplier_pos?.status!=='cancelled');
+      const originalSales=String(link.sales_order_item_id||'');
+      const originalPo=String(link.supplier_po_item_id||'');
+      if(!salesRows.some(x=>x.id===originalSales)||!poRows.some(x=>x.id===originalPo)){
+        throw new Error('The original SR or PO line is not eligible. Review the original transaction.');
+      }
+      openModal('Relink PO / SR Allocation',
+        '<form id="adminPoRelinkForm" class="space-y-4">'+
+        '<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">'+
+          '<b>Correct a linked allocation.</b> Allowed after PO Arrived, including items not yet received. This does not create or reverse physical inventory receipts. Issued invoices or active DOs require separate corrections first.'+
+        '</div>'+
+        '<label class="block text-xs font-bold">SR Item<select id="adminRelinkSR" class="mt-1 w-full border rounded-lg p-3 bg-white">'+
+          salesRows.map(x=>'<option value="'+esc(x.id)+'"'+(String(x.id)===originalSales?' selected':'')+'>'+
+            esc(x.sales_orders?.sr_no||x.sales_orders?.order_no||'SR')+' · '+esc(x.product_code_snapshot||'')+
+            ' · '+esc(x.item_name_snapshot||'')+' · '+Number(x.qty||0)+' pcs</option>').join('')+
+        '</select></label>'+
+        '<label class="block text-xs font-bold">Supplier PO Item<select id="adminRelinkPO" class="mt-1 w-full border rounded-lg p-3 bg-white">'+
+          poRows.map(x=>'<option value="'+esc(x.id)+'"'+(String(x.id)===originalPo?' selected':'')+'>'+
+            esc(x.supplier_pos?.po_number||x.supplier_pos?.po_pending_reference||'PO')+' · '+esc(x.product_code_snapshot||'')+
+            ' · '+esc(x.item_name_snapshot||'')+' · '+Number(x.qty||0)+' pcs</option>').join('')+
+        '</select></label>'+
+        '<label class="block text-xs font-bold">Allocated Quantity<input id="adminRelinkQty" type="number" required min="0.01" step="0.01" value="'+Number(link.qty_allocated||0)+'" class="mt-1 w-full border rounded-lg p-3"></label>'+
+        '<label class="block text-xs font-bold">Reason for Correction *<textarea id="adminRelinkReason" required maxlength="1000" rows="2" class="mt-1 w-full border rounded-lg p-3" placeholder="Original PO/SR linked incorrectly"></textarea></label>'+
+        '<button id="adminRelinkSave" type="submit" class="w-full rounded-xl bg-[#211d18] text-white font-bold py-3">Confirm Relink</button>'+
+        '</form>');
+      document.getElementById('adminPoRelinkForm').onsubmit=async e=>{
+        e.preventDefault();
+        const newSr=document.getElementById('adminRelinkSR').value;
+        const newPo=document.getElementById('adminRelinkPO').value;
+        const qty=Number(document.getElementById('adminRelinkQty').value);
+        const reason=document.getElementById('adminRelinkReason').value.trim();
+        if(!reason||!Number.isFinite(qty)||qty<=0)return showToast('Quantity and correction reason are required.','err');
+        if(!confirm('Update PO / SR allocation? Existing stock movements and invoices will not be rewritten.'))return;
+        const btn=document.getElementById('adminRelinkSave');
+        if(btn.disabled)return;
+        btn.disabled=true;btn.textContent='Saving correction...';
+        const r=await db.rpc('admin_relink_po_allocation',{
+          p_link_id:linkId,p_new_sales_item_id:newSr,p_new_po_item_id:newPo,p_qty:qty,p_reason:reason
+        });
+        if(r.error){btn.disabled=false;btn.textContent='Confirm Relink';return showToast(r.error.message,'err')}
+        closeModal();showToast('PO allocation relinked and audited. Verify SR fulfillment status.');
+        if(window.documentFlowState)window.documentFlowState.loaded=false;
+        await window.renderProcurementWorkspace();
+      };
+    }catch(err){showToast(err.message||'Unable to load PO allocation.','err')}
+  };
 
   window.syncSupplierPaymentCurrency=function(){
     const pos=window._procurementPOOptions||[];
@@ -470,6 +548,18 @@
       else if(pw.tab==='flow'&&typeof renderProcurementDocumentFlow==='function')html=await renderProcurementDocumentFlow(pw.search);
       else html='<div class="card rounded-xl p-5 text-gray-400">Document flow is unavailable.</div>';
       document.getElementById('procurementWorkspaceBody').innerHTML=html;
+      if(pw.tab==='allocations'&&['admin','super_admin'].includes(String(state?.profile?.role||''))){
+        document.querySelectorAll('[data-po-allocation-id]').forEach(row=>{
+          const id=row.getAttribute('data-po-allocation-id');
+          const action=row.lastElementChild;
+          if(!action||!id)return;
+          const btn=document.createElement('button');
+          btn.type='button';btn.className='mt-2 block ml-auto px-2 py-1 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 text-[11px] font-bold';
+          btn.textContent='Relink / Edit';
+          btn.onclick=()=>window.openAdminRelinkPOAllocation(id);
+          action.appendChild(btn);
+        });
+      }
     }catch(err){document.getElementById('procurementWorkspaceBody').innerHTML=`<div class="card rounded-xl p-5 text-red-600">Error: ${esc(err.message)}</div>`}
   };
 
