@@ -31,6 +31,7 @@ async function snapshot(table){return scalar(`select coalesce(jsonb_agg(t order 
 (async()=>{
  await db.exec(fs.readFileSync(path.join(__dirname,'fixtures/cn-contract.sql'),'utf8'));
  await db.exec(fs.readFileSync(path.join(__dirname,'fixtures/cn-reservations.sql'),'utf8'));
+ await db.exec(fs.readFileSync(path.join(__dirname,'fixtures/cn-live-credit-guard.sql'),'utf8'));
  await db.exec("create function public.can_operate_inventory() returns boolean language sql stable as $$select current_user_has_permission('inventory.operate')$$");
  await db.exec('set check_function_bodies=on');
  // A historical sentinel exists before deployment. Applying DDL must not rewrite it.
