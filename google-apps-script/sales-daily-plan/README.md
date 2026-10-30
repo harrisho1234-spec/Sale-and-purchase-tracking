@@ -44,4 +44,13 @@ Google Sheets tabs: Daily Reports, Plan Tasks, Manager Reviews, Audit Log, Overv
 
 When updating Code.gs, go to **Deploy → Manage deployments → Edit → New version → Deploy** so the active deployment uses the updated code.
 
+### Import all same-day Showroom / Online records (30 Oct 2026 update)
+
+**Daily Plan & Result → Evening Result → Additional Activities → Import Showroom / Online** now lists all viewable Showroom Visits and Online Inquiries for the selected report date, including **Unassigned** and records assigned to other Sales staff. The picker shows the assigned Sales name where present. Importing adds a reference to *the submitting salesperson's own Evening Result only*. It does **not** reassign the customer, modify the source visit/inquiry or create a second customer record.
+
+The Apps Script `verifyImportedActivities` function now checks that each imported ID and type actually exists, is visible to the authenticated account and matches the selected report date; it no longer requires the source visit to be assigned to the submitting salesperson. Duplicate source IDs are blocked within the same Evening Result and the existing limit of 30 additional activities remains. Staff must still review the outcome before submitting.
+
+**Important: the Google Apps Script web app uses versioned deployments.** Updating GitHub alone does not update your running Apps Script. In the existing bound project, update the `verifyImportedActivities` function in `Code.gs` to match the current [source](./Code.gs), **save**, then choose **Deploy → Manage deployments → Edit existing deployment → Version: New version → Deploy**. Do not create a second deployment or change the existing /exec URL. Leave any unrelated custom Apps Script functions unchanged.
+
+
 Telegram submission reminders and automated task completion based on other system actions are not enabled in this initial version. The recorded activity panel is advisory: staff still confirm actual results.
