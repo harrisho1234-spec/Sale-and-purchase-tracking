@@ -35,7 +35,7 @@
        '<summary class="list-none cursor-pointer p-3 flex flex-wrap justify-between gap-3 items-center">'+
          '<div><div class="text-xs font-bold">'+h(i.invoice_no||'Pending invoice')+' · '+h(String(i.status||'unknown').toUpperCase())+'</div>'+
          '<div class="text-[10px] text-gray-500">'+lines.map(l=>h(l.code||l.product_code||'Item')+' × '+safeCount(l.qty)).join(' · ')+'</div></div>'+
-         '<div class="text-right"><div class="text-sm font-bold">'+(knownNumber(i.total)?moneyN(i.total):'Total unavailable')+'</div><div class="text-[10px] text-blue-700">View Invoice Breakdown ▾</div></div>'+
+         '<div class="text-right"><div class="text-sm font-bold">'+(knownNumber(i.total)?moneyN(i.total):'Total unavailable')+'</div><div class="text-[10px] text-blue-700">'+(i.status==='issued'?'Expand for DO request ▾':'View Invoice Breakdown ▾')+'</div></div>'+
        '</summary>'+
        '<div class="border-t px-3 py-3 space-y-2">'+
          '<div class="text-[10px] font-bold uppercase text-gray-500">Invoice items</div>'+
@@ -59,6 +59,36 @@
    }).join('')+'</div>':
    '<div class="text-xs text-gray-500">No split TK/RK invoices requested yet.</div>';
  };
+
+ // Prominent DO shortcut for an SR that already has issued TK/RK invoices.
+ // Select only an issued invoice; never submit a DO from the SR itself.
+ window.openSrIssuedDoAction=async function(orderId){
+   if(!['sales','manager','admin','super_admin'].includes(String(state?.profile?.role||'')))
+     return showToast('Sales or Management access is required.','err');
+   try{
+     const [summary,availability]=await Promise.all([
+       db.rpc('get_sr_split_invoice_summary',{p_order_id:orderId}),
+       db.rpc('get_sales_order_do_request_status',{p_sales_order_id:orderId})
+     ]);
+     if(summary.error)throw summary.error;
+     if(availability.error)throw availability.error;
+     const invoices=(summary.data?.invoices||[]).filter(i=>i.status==='issued'&&i.id);
+     if(!invoices.length)return showToast('An officially issued TK/RK invoice is required before requesting DO.','err');
+     const left=new Map((availability.data||[]).map(x=>[String(x.sales_order_item_id),Math.max(0,Number(x.available_do_qty||0))]));
+     const availableInvoices=invoices.filter(i=>(i.lines||[]).some(l=>
+       l.item_id&&Math.min(Number(l.qty||0),left.get(String(l.item_id))||0)>0));
+     if(!availableInvoices.length){
+       return showToast('No requestable DO quantity remains on the issued TK/RK invoices. Check DO History or any delivered quantities.','err');
+     }
+     if(availableInvoices.length===1){
+       return window.openIssuedTkRkDoRequest(orderId,availableInvoices[0].id);
+     }
+     // Multiple issued invoices: make their separate allocations visible.
+     await window.openSrInvoiceOverview(orderId);
+     showToast('Expand an issued TK/RK invoice to request its DO quantities.');
+   }catch(err){showToast(err.message||'Unable to find issued invoice DO quantities.','err')}
+ };
+
  window.openSrInvoiceOverview=async function(orderId){
    const r=await db.rpc('get_sr_split_invoice_summary',{p_order_id:orderId});
    if(r.error)return showToast(r.error.message,'err');
