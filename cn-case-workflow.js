@@ -13,7 +13,7 @@ const badge=c=>{
  if(!c)return '';
  const closed=!!c.closed_at,pending=c.approval_status==='pending',
  rejected=c.approval_status==='rejected';
- const label=closed?'Case Closed':pending?'Awaiting CN Approval':rejected?'CN Rejected':!c.stock_complete?'Awaiting Stock Receipt':'Awaiting Financial Decision';
+ const label=closed?'Case Closed':pending?'Awaiting CN Approval':rejected?'CN Rejected':!c.stock_complete?(c.action==='cancel_undelivered'?'Awaiting Reservation Release':'Awaiting Stock Receipt'):'Awaiting Financial Decision';
  const cls=closed?'bg-green-50 border-green-200 text-green-800':rejected?'bg-red-50 border-red-200 text-red-700':pending?'bg-amber-50 border-amber-200 text-amber-800':'bg-blue-50 border-blue-200 text-blue-800';
  return '<span class="inline-flex text-[10px] font-bold px-2.5 py-1 rounded-lg border '+cls+'">'+text(label)+'</span>';
 };
@@ -97,16 +97,17 @@ if(typeof priorView==='function')window.viewSalesReturn=async function(id){
  await priorView.apply(this,arguments);
  const c=get(id);if(!c)return;
  const body=document.getElementById('modalBody');if(!body)return;
+ const cancellation=c.action==='cancel_undelivered';
  body.querySelectorAll('[data-cn-case-detail]').forEach(x=>x.remove());
  const panel=document.createElement('section');panel.dataset.cnCaseDetail='1';
  panel.className='rounded-xl border border-blue-200 bg-[#f9fbff] p-4 space-y-3';
  panel.innerHTML='<div class="flex flex-wrap justify-between gap-2 items-center"><b class="text-sm">CN Approval & Case Progress</b>'+badge(c)+'</div>'+
   '<div class="grid sm:grid-cols-3 gap-2 text-xs">'+
   '<div class="bg-white border rounded-lg p-3"><div class="text-[10px] text-gray-500">Management Approval</div><b>'+text(c.approval_status)+'</b></div>'+
-  '<div class="bg-white border rounded-lg p-3"><div class="text-[10px] text-gray-500">Stock Receipt</div><b>'+(cancellation?'Not required':c.stock_complete?'Completed':'Pending')+'</b></div>'+
+  '<div class="bg-white border rounded-lg p-3"><div class="text-[10px] text-gray-500">Stock Task</div><b>'+(cancellation?(c.stock_complete?'Reservation Released':'Release Reservation Pending'):c.stock_complete?'Completed':'Pending')+'</b></div>'+
   '<div class="bg-white border rounded-lg p-3"><div class="text-[10px] text-gray-500">Customer Credit Decision</div><b>'+text(c.financial_decision==='no_credit'?'No Credit':c.financial_decision==='credit_ar'?'Credit Approved':'Pending')+'</b></div></div>'+
   (c.approval_note?'<p class="text-xs text-gray-600">Manager note: '+text(c.approval_note)+'</p>':'')+
-  '<p class="text-[11px] text-gray-600">'+(cancellation?'Approval cancels undelivered quantities, releases reservations, and applies credit to source invoices. Excess remains customer credit. No stock receipt; deposits and payments are preserved.':'Stock sees the CN immediately, but can receive saleable items only after Manager/Admin approves. The case closes after required stock receipts and an explicit credit/no-credit decision.')+'</p>'+
+  '<p class="text-[11px] text-gray-600">'+(cancellation?'Approval applies credit to source invoices and creates a Stock Controller reservation release task. Excess remains customer credit. No stock receipt; deposits and payments are preserved.':'Stock sees the CN immediately, but can receive saleable items only after Manager/Admin approves. The case closes after required stock receipts and an explicit credit/no-credit decision.')+'</p>'+
   '<div class="flex flex-wrap gap-2" id="cnCaseDetailActions"></div>';
  body.prepend(panel);
  const b=panel.querySelector('#cnCaseDetailActions');
@@ -135,12 +136,12 @@ window.reviewCNCase=async function(id,approve){
  if(!canApprove())return showToast('Manager/Admin CN approval is required.','err');
  const h=(window._visibleSalesReturns||[]).find(x=>x.return_id===id);
  const cancellation=h?.action==='cancel_undelivered';
- if(!confirm((approve?'Approve':'Reject')+' CN '+(h?.cn_no||'')+'? '+(cancellation?'Approval releases undelivered reservations and applies credit to source invoices. Excess remains customer credit; payments stay unchanged.':'Stock receipt cannot start before approval.')))return;
+ if(!confirm((approve?'Approve':'Reject')+' CN '+(h?.cn_no||'')+'? '+(cancellation?'Approval applies invoice credit and creates a Release Reservation task for Stock. Excess remains customer credit; payments stay unchanged.':'Stock receipt cannot start before approval.')))return;
  const note=prompt(approve?'Optional approval note:':'Reason for rejection:')||'';
  if(!approve&&!note.trim())return showToast('Enter a rejection reason.','err');
  const r=await db.rpc('review_cn_case',{p_return_id:id,p_approve:approve,p_note:note||null});
  if(r.error)return showToast(r.error.message,'err');
- closeModal();showToast(approve?(cancellation?'Cancellation approved: reservations released and invoice credit applied.':'CN approved; Stock may now receive eligible returned goods.'):'CN rejected.');
+ closeModal();showToast(approve?(cancellation?'Cancellation approved: invoice credit applied; Stock must release the reservation.':'CN approved; Stock may now receive eligible returned goods.'):'CN rejected.');
  await window.renderReturnsPage();
 };
 window.resubmitCNCase=async function(id){

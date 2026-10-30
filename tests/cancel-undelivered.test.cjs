@@ -24,14 +24,17 @@ async function create(f,qty,action='cancel_undelivered',disposition='no_stock_ac
  await user();
  return (await q("select * from create_sales_return_multi($1::uuid[],null,current_date,$2,'Test',null,$3::jsonb)",[[f.order],action,JSON.stringify([{sales_order_item_id:f.item,qty,disposition}])])).rows[0].return_id;
 }
-async function approve(cn){await user(2,'manager');return scalar('select review_cn_case($1,true,null)',[cn])}
+async function approveOnly(cn){await user(2,'manager');return scalar('select review_cn_case($1,true,null)',[cn])}
+async function release(cn){await user(3,'stock_controller');return scalar('select complete_cn_reservation_release($1)',[cn])}
+async function approve(cn){const result=await approveOnly(cn);if(await scalar("select action='cancel_undelivered' from sales_returns where id=$1",[cn]))await release(cn);await user(2,'manager');return result;}
 async function snapshot(table){return scalar(`select coalesce(jsonb_agg(t order by id),'[]') from ${table} t`)}
 (async()=>{
  await db.exec(fs.readFileSync(path.join(__dirname,'fixtures/cn-contract.sql'),'utf8'));
  await db.exec(fs.readFileSync(path.join(__dirname,'fixtures/cn-reservations.sql'),'utf8'));
+ await db.exec("create function public.can_operate_inventory() returns boolean language sql stable as $$select current_user_has_permission('inventory.operate')$$");
  await db.exec('set check_function_bodies=on');
  // A historical sentinel exists before deployment. Applying DDL must not rewrite it.
- await user();await q('insert into app_users values($1),($2)',[id(1),id(2)]);
+ await user();await q('insert into app_users values($1),($2),($3)',[id(1),id(2),id(3)]);
  const legacy=await fixture();const legacyId=await create(legacy,1,'exchange','exchange');
  await q("update sales_returns set cn_no='CN-2026-024' where id=$1",[legacyId]);
  const before=await snapshot('sales_returns');
@@ -45,7 +48,28 @@ async function snapshot(table){return scalar(`select coalesce(jsonb_agg(t order 
  await denied(()=>q('select review_cn_case($1,true,null)',[cn]),/permission/i);
  await user(1,'manager');await denied(()=>q('select review_cn_case($1,true,null)',[cn]),/own CN/);
  await user(2,'manager',false);await denied(()=>q('select review_cn_case($1,true,null)',[cn]),/permission/i);
- await approve(cn);
+ await user(3,'stock_controller');await denied(()=>release(cn),/Approved cancellation task/);
+ await approveOnly(cn);
+ eq(Number(await scalar('select reserved_qty from inventory_reservation_lines() where sales_order_item_id=$1',[f.item])),10);
+ eq(Number(await scalar('select balance_due from sales_order_summary where id=$1',[f.order])),300);
+ eq(await scalar('select closed_at is null from cn_case_workflows where sales_return_id=$1',[cn]),true);
+ eq(await scalar('select cn_case_stock_complete($1)',[cn]),false);
+ const releaseQueue=await scalar('select get_cn_reservation_release_queue()');
+ eq(releaseQueue.filter(x=>x.return_id===cn).length,1);
+ eq(releaseQueue.find(x=>x.return_id===cn).completed_at,null);
+ await denied(()=>create(f,7),/undelivered|remaining/);
+ await denied(()=>q("insert into stock_movements(reference_item_id,reference_type,movement_type,qty) values($1,'sales_order_item','sale_delivery',7)",[f.item]),/uncancelled/);
+ await user();await denied(()=>q('select complete_cn_reservation_release($1)',[cn]),/permission/);
+ await user(3,'stock_controller',false);await denied(()=>q('select complete_cn_reservation_release($1)',[cn]),/permission/);
+ const creditBeforeRelease=await snapshot('sales_credit_applications');
+ await user(3,'stock_controller');await db.exec('set role authenticated');
+ const firstRelease=await release(cn);
+ await db.exec('reset role');
+ const secondRelease=await release(cn);
+ eq(firstRelease.already_completed,false);eq(secondRelease.already_completed,true);
+ eq(secondRelease.completed_by,id(3));eq(secondRelease.completed_at,firstRelease.completed_at);
+ assert.deepEqual(await snapshot('sales_credit_applications'),creditBeforeRelease);checks++;
+ await user(2,'manager');
  eq(Number(await scalar('select balance_due from sales_order_summary where id=$1',[f.order])),300);
  eq(Number(await scalar("select qty from sales_item_status_quantities where sales_order_item_id=$1 and status='cancelled'",[f.item])),4);
  eq(Number(await scalar('select qty from sales_order_items where id=$1',[f.item])),10);
@@ -144,6 +168,25 @@ async function snapshot(table){return scalar(`select coalesce(jsonb_agg(t order 
  await denied(()=>q("select update_sales_return($1,current_date,'cancel_undelivered',null,null,$2::jsonb)",[editCn,JSON.stringify([{sales_order_item_id:editable.item,qty:6,disposition:'no_stock_action'}])]),/undelivered/);
  eq(Number(await scalar('select qty from sales_return_items where sales_return_id=$1',[editCn])),3);
  await denied(()=>create(editable,0.5),/undelivered/);
+ // Two approved tasks share an item without releasing each other's reservations.
+ const shared=await fixture();const one=await create(shared,4),two=await create(shared,6);
+ await approveOnly(one);await approveOnly(two);
+ eq(Number(await scalar('select reserved_qty from inventory_reservation_lines() where sales_order_item_id=$1',[shared.item])),10);
+ await release(two);
+ eq(Number(await scalar('select reserved_qty from inventory_reservation_lines() where sales_order_item_id=$1',[shared.item])),4);
+ await release(one);
+ eq(Number(await scalar("select qty from sales_item_status_quantities where sales_order_item_id=$1 and status='cancelled'",[shared.item])),10);
+ eq(Number(await scalar('select count(*) from inventory_reservation_lines() where sales_order_item_id=$1',[shared.item])),0);
+ await denied(()=>release(legacyId),/Approved cancellation task/);
+ // A physical return continues requiring receipt and a separate credit decision.
+ const physical=await fixture({delivered:2});const physicalCn=await create(physical,2,'return_to_stock','return_to_stock');
+ await approve(physicalCn);eq(await scalar('select cn_case_stock_complete($1)',[physicalCn]),false);
+ const physicalItem=await scalar('select id from sales_return_items where sales_return_id=$1',[physicalCn]);
+ await q("insert into stock_movements(reference_item_id,reference_type,movement_type,qty) values($1,'sales_return_item','return',2)",[physicalItem]);
+ await q('select refresh_cn_case_closure($1)',[physicalCn]);
+ eq(await scalar('select cn_case_stock_complete($1)',[physicalCn]),true);
+ eq(await scalar('select financial_effect from sales_returns where id=$1',[physicalCn]),'none');
+ eq(Number(await scalar('select count(*) from cn_reservation_release_tasks where sales_return_id=$1',[physicalCn])),0);
  // A repeated physical Exchange still waits for actual intake and a separate credit decision.
  const exchange=await fixture({delivered:2});const exchangeCn=await create(exchange,2,'exchange','exchange');
  await approve(exchangeCn);
@@ -154,7 +197,11 @@ async function snapshot(table){return scalar(`select coalesce(jsonb_agg(t order 
  eq(await scalar("select has_function_privilege('anon','public.rebuild_sales_return_credit_allocations(uuid)','EXECUTE')"),false);
  eq(await scalar("select has_function_privilege('authenticated','public.rebalance_customer_credits(uuid)','EXECUTE')"),false);
  eq(await scalar("select has_table_privilege('authenticated','public.cn_undelivered_postings','INSERT')"),false);
+ eq(await scalar("select has_function_privilege('anon','public.complete_cn_reservation_release(uuid)','EXECUTE')"),false);
+ eq(await scalar("select has_table_privilege('authenticated','public.cn_reservation_release_tasks','UPDATE')"),false);
  await user();await q("select set_config('test.uid','',false)");
+ eq(await scalar('select get_cn_reservation_release_queue()'),null);
+ await denied(()=>q('select complete_cn_reservation_release($1)',[cn]),/permission/);
  await denied(()=>q('select * from get_cancellable_order_items($1)',[multi.order]),/Access denied/);
  // Historical sentinel is unchanged after all new workflow activity.
  assert.deepEqual((await snapshot('sales_returns')).find(x=>x.id===legacyId),before.find(x=>x.id===legacyId));checks++;

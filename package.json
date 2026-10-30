@@ -2,7 +2,7 @@
   "name": "limperial-sales-workflow-tests",
   "private": true,
   "scripts": {
-    "test": "node tests/cancel-undelivered.test.cjs && node tests/cancel-undelivered-ui.test.cjs",
+    "test": "node tests/cancel-undelivered.test.cjs && node tests/cancel-undelivered-ui.test.cjs && node tests/cn-reservation-release-ui.test.cjs",
     "test:tax-inventory": "node tests/tax-inventory.test.cjs",
     "test:sales-daily": "node tests/sales-daily.test.cjs"
   },

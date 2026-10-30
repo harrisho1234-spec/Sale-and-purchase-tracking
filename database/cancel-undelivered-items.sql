@@ -23,6 +23,18 @@ create table public.cn_cancellation_source_values (
 alter table public.cn_cancellation_source_values enable row level security;
 revoke all on public.cn_cancellation_source_values from public,anon,authenticated;
 
+
+-- One stock task per approved cancellation; no historical backfill.
+create table public.cn_reservation_release_tasks (
+ sales_return_id uuid primary key references public.sales_returns(id),
+ created_at timestamptz not null default now(),
+ completed_at timestamptz,
+ completed_by uuid references public.app_users(user_id),
+ check ((completed_at is null) = (completed_by is null))
+);
+alter table public.cn_reservation_release_tasks enable row level security;
+revoke all on public.cn_reservation_release_tasks from public,anon,authenticated;
+
 create function public.cn_cancellable_qty(p_item_id uuid,p_exclude_return uuid default null)
 returns numeric language sql stable security definer set search_path='public','pg_temp'
 as $fn$
@@ -44,7 +56,7 @@ as $fn$
        where ri.sales_order_item_id=i.id and r.action='cancel_undelivered'
          and r.status<>'cancelled' and coalesce(w.approval_status,'pending')<>'rejected'
          and r.id is distinct from p_exclude_return
-         and not exists(select 1 from public.cn_undelivered_postings p where p.sales_return_id=r.id)),0),
+         and not exists(select 1 from public.cn_reservation_release_tasks p where p.sales_return_id=r.id and p.completed_at is not null)),0),
    i.qty - coalesce((select sum(ri.qty) from public.sales_return_items ri
        join public.sales_returns r on r.id=ri.sales_return_id
        left join public.cn_case_workflows w on w.sales_return_id=r.id
@@ -125,7 +137,7 @@ for each row execute function public.guard_undelivered_cn_header();
 create function public.post_undelivered_cn(p_return_id uuid)
 returns void language plpgsql security definer set search_path='public','auth','pg_temp'
 as $fn$
-declare r public.sales_returns%rowtype; line record; q record; remaining numeric; take_qty numeric;
+declare r public.sales_returns%rowtype; line record;
 begin
  select * into r from public.sales_returns where id=p_return_id for update;
  if r.action<>'cancel_undelivered' then return; end if;
@@ -149,22 +161,9 @@ begin
        or (a.action_type='do_delivery' and exists(select 1 from public.delivery_request_items d
          where d.id::text=a.payload->>'delivery_request_item_id' and d.sales_order_item_id=line.sales_order_item_id))))
    then raise exception 'Resolve pending stock release before cancellation'; end if;
-   -- Move quantities out of nonterminal buckets. Never change sold qty/pricing or stock ledger.
-   remaining:=line.qty;
-   for q in select * from public.sales_item_status_quantities where sales_order_item_id=line.sales_order_item_id
-     and status not in ('delivered','installed','cancelled') order by id for update
-   loop
-     exit when remaining<=0;
-     take_qty:=least(q.qty,remaining);
-     if take_qty=q.qty then delete from public.sales_item_status_quantities where id=q.id;
-     else update public.sales_item_status_quantities set qty=qty-take_qty,updated_by=auth.uid(),updated_at=now() where id=q.id; end if;
-     remaining:=remaining-take_qty;
-   end loop;
-   insert into public.sales_item_status_quantities(sales_order_item_id,status,qty,updated_by)
-   values(line.sales_order_item_id,'cancelled',line.qty,auth.uid())
-   on conflict(sales_order_item_id,status) do update set qty=sales_item_status_quantities.qty+excluded.qty,
-     updated_by=excluded.updated_by,updated_at=now();
+
  end loop;
+ insert into public.cn_reservation_release_tasks(sales_return_id) values(r.id);
  insert into public.cn_cancellation_source_values(sales_return_id,sales_order_id,amount)
  select r.id,i.sales_order_id,sum(
    public.sales_order_item_net_return_value(i.id,ri.qty+coalesce(prior.qty,0))
@@ -192,7 +191,7 @@ begin
    case when tg_op<>'DELETE' then new.sales_order_item_id end]) x where x is not null
  loop
    select coalesce(sum(ri.qty),0) into required_qty from public.sales_return_items ri
-   join public.cn_undelivered_postings p on p.sales_return_id=ri.sales_return_id
+   join public.cn_reservation_release_tasks p on p.sales_return_id=ri.sales_return_id and p.completed_at is not null
    where ri.sales_order_item_id=item_id;
    select coalesce(sum(qty),0) into actual_qty from public.sales_item_status_quantities
    where sales_order_item_id=item_id and status='cancelled';
@@ -216,6 +215,9 @@ begin
    select * into i from public.sales_order_items where id=new.reference_item_id for update;
    select coalesce(sum(qty),0) into cancelled from public.sales_item_status_quantities
      where sales_order_item_id=i.id and status='cancelled';
+   cancelled:=cancelled+coalesce((select sum(ri.qty) from public.sales_return_items ri
+     join public.cn_reservation_release_tasks t on t.sales_return_id=ri.sales_return_id
+     where ri.sales_order_item_id=i.id and t.completed_at is null),0);
    select coalesce(sum(qty),0) into released from public.stock_movements where affects_balance
      and movement_type='sale_delivery' and reference_type='sales_order_item' and reference_item_id=i.id and id<>new.id;
    released:=released+coalesce((select sum(qty) from public.customer_fulfillment_reconciliations
@@ -863,4 +865,188 @@ revoke all on function public.rebuild_sales_return_credit_allocations(uuid),
 revoke all on function public.create_sales_return_multi(uuid[],text,date,text,text,text,jsonb),
  public.update_sales_return(uuid,date,text,text,text,jsonb),
  public.set_sales_return_financial_treatment(uuid,text) from public,anon;
+
+-- Stock processing is atomic and idempotent. It does not post finance or stock movements.
+create function public.complete_cn_reservation_release(p_return_id uuid)
+returns jsonb language plpgsql security definer set search_path='public','auth','pg_temp'
+as $fn$
+declare r public.sales_returns%rowtype; t public.cn_reservation_release_tasks%rowtype;
+ line record; q record; remaining numeric; take_qty numeric;
+begin
+ if auth.uid() is null or not coalesce(public.can_operate_inventory(),false)
+   or coalesce(public.current_app_role(),'') not in ('stock_controller','admin','super_admin') then
+   raise exception 'Stock operation permission required'; end if;
+ -- Same workflow/header lock order as approval and closure.
+ perform 1 from public.cn_case_workflows where sales_return_id=p_return_id for update;
+ select * into r from public.sales_returns where id=p_return_id for update;
+ select * into t from public.cn_reservation_release_tasks where sales_return_id=p_return_id for update;
+ if not found or r.action is distinct from 'cancel_undelivered' or r.status='cancelled'
+   or not exists(select 1 from public.cn_case_workflows where sales_return_id=p_return_id and approval_status='approved')
+   or not exists(select 1 from public.cn_undelivered_postings where sales_return_id=p_return_id) then
+   raise exception 'Approved cancellation task required'; end if;
+ if t.completed_at is not null then
+   return jsonb_build_object('return_id',r.id,'completed_at',t.completed_at,'completed_by',t.completed_by,'already_completed',true);
+ end if;
+ for line in select * from public.sales_return_items where sales_return_id=r.id order by sales_order_item_id
+ loop
+   perform 1 from public.sales_order_items where id=line.sales_order_item_id for update;
+   if line.qty>coalesce(public.cn_cancellable_qty(line.sales_order_item_id,r.id),0) then
+     raise exception 'Cancellation exceeds undelivered available quantity; refresh and review'; end if;
+   -- Move quantities out of nonterminal buckets. Never change sold qty/pricing or stock ledger.
+   remaining:=line.qty;
+   for q in select * from public.sales_item_status_quantities where sales_order_item_id=line.sales_order_item_id
+     and status not in ('delivered','installed','cancelled') order by id for update
+   loop
+     exit when remaining<=0;
+     take_qty:=least(q.qty,remaining);
+     if take_qty=q.qty then delete from public.sales_item_status_quantities where id=q.id;
+     else update public.sales_item_status_quantities set qty=qty-take_qty,updated_by=auth.uid(),updated_at=now() where id=q.id; end if;
+     remaining:=remaining-take_qty;
+   end loop;
+   insert into public.sales_item_status_quantities(sales_order_item_id,status,qty,updated_by)
+   values(line.sales_order_item_id,'cancelled',line.qty,auth.uid())
+   on conflict(sales_order_item_id,status) do update set qty=sales_item_status_quantities.qty+excluded.qty,
+     updated_by=excluded.updated_by,updated_at=now();
+ end loop;
+ update public.cn_reservation_release_tasks set completed_at=now(),completed_by=auth.uid()
+ where sales_return_id=r.id returning * into t;
+ perform public.refresh_cn_case_closure(r.id);
+ return jsonb_build_object('return_id',r.id,'completed_at',t.completed_at,'completed_by',t.completed_by,'already_completed',false);
+end $fn$;
+revoke all on function public.complete_cn_reservation_release(uuid) from public,anon;
+grant execute on function public.complete_cn_reservation_release(uuid) to authenticated;
+
+create function public.get_cn_reservation_release_queue()
+returns jsonb language sql stable security definer set search_path='public','auth','pg_temp'
+as $fn$
+ select case when auth.uid() is null or not coalesce(public.can_view_inventory(),false) then null else
+ coalesce((select jsonb_agg(jsonb_build_object(
+ 'return_id',r.id,'cn_no',r.cn_no,'customer_name',c.name,'created_at',t.created_at,
+ 'completed_at',t.completed_at,'completed_by',t.completed_by,
+ 'items',(select jsonb_agg(jsonb_build_object('item_name',ri.item_name_snapshot,
+   'product_code',ri.product_code_snapshot,'qty',ri.qty) order by ri.id)
+   from public.sales_return_items ri where ri.sales_return_id=r.id)
+ ) order by t.created_at desc,r.id)
+ from public.cn_reservation_release_tasks t join public.sales_returns r on r.id=t.sales_return_id
+ join public.cn_case_workflows w on w.sales_return_id=r.id
+ join public.customers c on c.id=r.customer_id
+ where r.action='cancel_undelivered' and r.status<>'cancelled' and w.approval_status='approved'),'[]'::jsonb) end
+$fn$;
+revoke all on function public.get_cn_reservation_release_queue() from public,anon;
+grant execute on function public.get_cn_reservation_release_queue() to authenticated;
+
+CREATE OR REPLACE FUNCTION public.cn_case_stock_complete(p_return_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'auth', 'pg_temp'
+AS $function$
+ select case when exists(select 1 from public.sales_returns where id=p_return_id and action='cancel_undelivered')
+ then exists(select 1 from public.cn_reservation_release_tasks where sales_return_id=p_return_id and completed_at is not null)
+ else not exists (
+  select 1 from public.sales_return_items ri
+  where ri.sales_return_id=p_return_id
+   and ri.disposition in ('return_to_stock','exchange')
+   and (
+     ri.qty>coalesce(ri.historical_stock_reconciled_qty,0)+coalesce((
+       select sum(sm.qty) from public.stock_movements sm
+       where sm.affects_balance and sm.movement_type in ('return','in')
+        and sm.reference_type='sales_return_item' and sm.reference_item_id=ri.id
+     ),0)+case when ri.disposition='exchange' then coalesce((
+       select sum(held_qty) from public.cn_exchange_hold_requests h
+       where h.sales_return_item_id=ri.id and h.status='approved'
+     ),0) else 0 end
+     or exists(select 1 from public.cn_stock_receipt_requests req
+       where req.sales_return_item_id=ri.id and req.status='pending')
+     or exists(select 1 from public.cn_exchange_hold_requests h
+       where h.sales_return_item_id=ri.id and h.status='pending')
+   )
+ ) end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.get_visible_cn_case_workflows()
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'auth', 'pg_temp'
+AS $function$
+select case when auth.uid() is null then null else
+coalesce((select jsonb_agg(jsonb_build_object(
+ 'action',r.action,'return_id',w.sales_return_id,'cn_no',r.cn_no,
+ 'approval_status',w.approval_status,'approval_note',w.approval_note,
+ 'approved_at',w.approved_at,'approved_by',w.approved_by,
+ 'financial_decision',w.financial_decision,'closed_at',w.closed_at,
+ 'stock_complete',public.cn_case_stock_complete(w.sales_return_id),
+ 'requested_by',r.created_by,'customer_name',c.name,
+ 'workflow_status',case
+  when w.approval_status='pending' then 'Awaiting CN Approval'
+  when w.approval_status='rejected' then 'CN Rejected'
+  when w.closed_at is not null then 'Case Closed'
+  when not public.cn_case_stock_complete(w.sales_return_id) then case when r.action='cancel_undelivered' then 'Awaiting Reservation Release' else 'Awaiting Stock Receipt' end
+  else 'Awaiting Financial Decision' end
+) order by r.created_at desc)
+from public.cn_case_workflows w
+join public.sales_returns r on r.id=w.sales_return_id
+join public.customers c on c.id=r.customer_id
+where public.can_view_sales_return(r.id)
+),'[]'::jsonb) end
+$function$;
+
+CREATE OR REPLACE FUNCTION public.mark_cn_credit_decision()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'auth', 'pg_temp'
+AS $function$
+declare w public.cn_case_workflows%rowtype;
+begin
+ select * into w from public.cn_case_workflows where sales_return_id=new.id for update;
+ if not found or new.financial_effect is not distinct from old.financial_effect then return new;end if;
+ if public.current_app_role() not in ('manager','admin','super_admin') or not public.current_user_has_permission('returns.approve') then raise exception 'Manager/Admin CN financial approval permission required';end if;
+if w.approval_status<>'approved' then raise exception 'Approve the CN before customer-credit changes';end if;
+ if new.action<>'cancel_undelivered' and not public.cn_case_stock_complete(new.id) then
+  raise exception 'Complete physical stock receipt approval before applying customer credit';end if;
+ if w.closed_at is not null then
+  raise exception 'This CN is closed. Contact an administrator to review corrections';end if;
+ if new.financial_effect='credit_ar' then
+  update public.cn_case_workflows set financial_decision='credit_ar',
+   financial_decided_by=auth.uid(),financial_decided_at=now(),updated_at=now()
+   where sales_return_id=new.id;
+ else
+  update public.cn_case_workflows set financial_decision='pending',
+   financial_decided_by=null,financial_decided_at=null,updated_at=now()
+   where sales_return_id=new.id;
+ end if;
+ return new;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.refresh_cn_case_closure(p_return_id uuid)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'auth', 'pg_temp'
+AS $function$
+declare w public.cn_case_workflows%rowtype; r public.sales_returns%rowtype; done_stock boolean;
+begin
+ select * into w from public.cn_case_workflows where sales_return_id=p_return_id for update;
+ if not found then return; end if; -- Preserve legacy CNs.
+ select * into r from public.sales_returns where id=p_return_id;
+ done_stock:=public.cn_case_stock_complete(p_return_id);
+ if r.status='cancelled' or w.approval_status<>'approved' then
+   update public.cn_case_workflows set closed_at=null,updated_at=now()
+   where sales_return_id=p_return_id and closed_at is not null;
+   return;
+ end if;
+ if (done_stock or r.action='cancel_undelivered') and r.status='confirmed' then
+   -- No Stock Action cases also move to ready-for-financial-decision.
+   perform set_config('app.cn_workflow_internal','1',true);
+   update public.sales_returns set status='received',updated_at=now() where id=p_return_id;
+   perform set_config('app.cn_workflow_internal','',true);
+ end if;
+ update public.cn_case_workflows
+ set closed_at=case when done_stock and financial_decision<>'pending'
+   then coalesce(closed_at,now()) else null end,updated_at=now()
+ where sales_return_id=p_return_id;
+end $function$;
+
 commit;
