@@ -240,7 +240,8 @@
        plan.reps.filter(r=>!scopedRep()||String(r.id)===String(scopedRep())).filter(r=>S.selectedReps===null||S.selectedReps.has(String(r.id))).map(rep=>{
          const t=n(rep.annual_target)*periods.reduce((sum,p)=>sum+weight(p),0);
          const a=sumActual(yrRows.filter(r=>String(r.sales_rep_id)===String(rep.id)),months);
-         return '<tr class="border-t"><td class="px-3 py-2 font-medium">'+h(rep.name)+'</td><td class="px-3 py-2 text-right">'+n(rep.percentage)+'%</td>'+
+         const repStatus=rep.status==='resigned'?' · Resigned':rep.source==='target_only'?' · No login':'';
+         return '<tr class="border-t"><td class="px-3 py-2 font-medium">'+h(rep.name)+'<span class="text-[10px] text-gray-500">'+h(repStatus)+'</span></td><td class="px-3 py-2 text-right">'+n(rep.percentage)+'%</td>'+
            '<td class="px-3 py-2 text-right">'+moneyLocal(t)+'</td><td class="px-3 py-2 text-right">'+moneyLocal(a)+'</td>'+
            '<td class="px-3 py-2 text-right font-bold">'+pct(a,t)+'</td></tr>';
        }).join('')+'</tbody></table></div></div>');
