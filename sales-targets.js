@@ -288,6 +288,15 @@
     return T.reps;
   }
   function validateTotal(values){return values.reduce((sum,v)=>sum+n(v),0)}
+  function renderTargetRepRow(rep,percentage){
+    const status=rep.status==='resigned'||rep.active===false?'Resigned / Inactive':rep.source==='target_only'?'No login account':'Active';
+    const actions=rep.source==='target_only'
+      ?'<button type="button" class="ml-2 underline text-blue-700 text-[10px]" onclick="changeTargetOnlyRepStatus(\''+h(rep.id)+'\',\''+(rep.status==='resigned'?'active':'resigned')+'\')">'+(rep.status==='resigned'?'Mark Active':'Mark Resigned')+'</button>':'';
+    return '<div class="flex justify-between items-center gap-3 text-xs border-b py-2" data-target-person="'+h(rep.id)+'"><span class="min-w-0">'+h(rep.name)+
+      ' <span class="text-[10px] text-gray-500">('+h(status)+')</span>'+actions+
+      '</span>'+itemInput('targetRep_'+rep.id,percentage)+'</div>';
+  }
+
   function itemInput(id,val,step='0.01'){
     return '<input type="number" min="0" max="100" step="'+step+'" id="'+id+'" value="'+h(val)+'" class="target-percent w-24 max-w-full px-2 py-2 rounded-lg border bg-white text-sm text-right" oninput="updateSalesTargetTotals()" aria-label="'+h(id)+' percentage">';
   }
@@ -311,8 +320,12 @@
           '</div><p id="targetBusinessTotal" class="text-xs mt-2"></p></section>'+
         '<section class="border rounded-xl p-3"><h4 class="text-sm font-bold mb-2">Sales rep allocations · must independently total 100%</h4>'+
           '<p class="text-[11px] text-gray-500 mb-2">Assign a percentage of the TOTAL company target to each salesperson. Set 0% for anyone not allocated.</p>'+
-          (list.length?'<div class="max-h-64 overflow-y-auto grid sm:grid-cols-2 gap-2">'+list.map(rep=>'<label class="flex justify-between items-center gap-3 text-xs border-b py-2"><span class="min-w-0">'+h(rep.name)+(rep.active===false?' (Inactive)':'')+'</span>'+itemInput('targetRep_'+rep.id,saved.get(String(rep.id))||0)+'</label>').join('')+'</div>':
-          '<div class="p-3 text-sm text-red-700">No Sales Reps found. Set up salesperson accounts first.</div>')+
+          '<div id="targetPeopleList" class="max-h-64 overflow-y-auto grid sm:grid-cols-2 gap-2">'+
+             list.map(rep=>renderTargetRepRow(rep,saved.get(String(rep.id))||0)).join('')+'</div>'+
+           '<div class="mt-3 p-3 bg-gray-50 rounded-xl border"><p class="text-[11px] font-semibold">Add salesperson without a login</p>'+
+             '<p class="text-[10px] text-gray-500 mb-2">Targets only; resigned staff retain historical plans. This does not create an account or sales transaction.</p>'+
+             '<div class="flex flex-wrap gap-2"><input id="targetNewPersonName" maxlength="150" placeholder="Full name" class="flex-1 min-w-[180px] rounded-lg border p-2 text-xs" />'+
+             '<button type="button" id="targetNewPersonBtn" onclick="addTargetOnlyRep()" class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs font-bold">Add to Targets</button></div></div>'+
           '<p id="targetRepsTotal" class="text-xs mt-2"></p></section>'+
         '<section class="border rounded-xl p-3"><h4 class="text-sm font-bold mb-1">Monthly target weighting · must total 100%</h4>'+
         '<p class="text-[11px] text-gray-500 mb-2">Default is equal months. Increase seasonal months and reduce others as needed. Quarterly targets are the sum of their three months.</p>'+
@@ -325,6 +338,42 @@
       updateSalesTargetTotals();
     }catch(err){showToast(err.message||'Cannot load target editor.','err')}
   };
+
+  window.addTargetOnlyRep=async function(){
+    const input=document.getElementById('targetNewPersonName'),name=String(input?.value||'').trim();
+    if(name.length<2)return showToast('Enter the salesperson full name.','err');
+    const button=document.getElementById('targetNewPersonBtn');
+    if(button?.disabled)return;
+    if(button)button.disabled=true;
+    try{
+      const r=await db.rpc('add_sales_target_person',{p_name:name});
+      if(r.error)throw r.error;
+      const id=String(r.data),rep={id,name,active:true,status:'active',source:'target_only'};
+      if(!T.reps)T.reps=[];
+      T.reps.push(rep);
+      const list=document.getElementById('targetPeopleList');
+      if(list)list.insertAdjacentHTML('beforeend',renderTargetRepRow(rep,0));
+      if(input)input.value='';
+      updateSalesTargetTotals();
+      showToast('Added '+name+' to target roster. No login account created.');
+    }catch(err){showToast(err.message||'Could not add salesperson.','err')}
+    finally{if(button?.isConnected)button.disabled=false}
+  };
+  window.changeTargetOnlyRepStatus=async function(id,status){
+    const rep=(T.reps||[]).find(x=>String(x.id)===String(id));
+    if(!rep||rep.source!=='target_only')return showToast('Only target-only people can be changed here. App users remain managed in User & Access.','err');
+    const msg=status==='resigned'?'Mark '+rep.name+' as resigned? Previous targets remain saved.':'Mark '+rep.name+' active again?';
+    if(!confirm(msg))return;
+    const result=await db.rpc('update_sales_target_person_status',{p_id:id,p_status:status});
+    if(result.error)return showToast(result.error.message||'Unable to update status.','err');
+    rep.status=status;rep.active=status==='active';
+    const row=document.querySelector('[data-target-person="'+id+'"]');
+    const percentage=n(document.getElementById('targetRep_'+id)?.value);
+    if(row)row.outerHTML=renderTargetRepRow(rep,percentage);
+    updateSalesTargetTotals();
+    showToast(rep.name+(status==='resigned'?' marked resigned.':' marked active.')+' History is preserved.');
+  };
+
   window.updateSalesTargetTotals=function(){
     function print(id,sum){const el=document.getElementById(id);if(!el)return;const valid=Math.abs(sum-100)<0.011;
       el.textContent='Allocated: '+sum.toFixed(4).replace(/0+$/,'').replace(/\.$/,'')+'% · '+(valid?'Balanced':'Must equal 100%');
