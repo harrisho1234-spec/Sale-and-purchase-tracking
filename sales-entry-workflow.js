@@ -169,7 +169,18 @@
     if(docLabel) docLabel.textContent=flow==='pre_order'?'SR Number':'TK / RK Invoice Number';
     if(doc) doc.placeholder=flow==='pre_order'?'Example: SR-2026-001':'Example: TK2609-001 or RK2609-001';
     const type=flow==='pre_order'?'pre_order':'stock';
-    lineRows().forEach(r=>{const s=r.querySelector('.source-type');if(s)s.value=type});
+    lineRows().forEach(r=>{
+      const source=r.querySelector('.source-type');if(source)source.value=type;
+      const cb=r.querySelector('.do-request-checkbox');
+      if(!cb)return;
+      const area=cb.closest('label')?.parentElement;
+      if(area)area.classList.toggle('hidden',flow==='pre_order');
+      if(flow==='pre_order'){
+        cb.checked=false;
+        const amount=r.querySelector('.do-request-qty');if(amount)amount.disabled=true;
+      }
+    });
+    updateSalesDoPanel();
     salesEntryRecalc();
   };
 
@@ -243,6 +254,12 @@
     const row=cb?.closest('.order-item-row');if(!row)return;
     const qInput=row.querySelector('.qty');
     const doQty=row.querySelector('.do-request-qty');
+    if(currentFlow()==='pre_order'){
+      cb.checked=false;
+      if(doQty)doQty.disabled=true;
+      updateSalesDoPanel();
+      return showToast('A DO requires a TK/RK invoice. It cannot be requested from an SR.','err');
+    }
     const checked=!!cb.checked;
     if(doQty){
       doQty.disabled=!checked;
@@ -271,7 +288,7 @@
 
   window.updateSalesDoPanel=function(){
     const panel=document.getElementById('salesDoDetails');if(!panel)return;
-    const any=[...document.querySelectorAll('#orderItems .do-request-checkbox')].some(x=>x.checked);
+    const any=currentFlow()==='stock_sale'&&[...document.querySelectorAll('#orderItems .do-request-checkbox')].some(x=>x.checked);
     panel.classList.toggle('hidden',!any);
     const dateInput=document.getElementById('doRequestedDate');
     if(dateInput)dateInput.required=any;
@@ -317,7 +334,7 @@
       <div class="md:col-span-1 flex items-end"><button type="button" onclick="this.closest('.order-item-row').remove();salesEntryRecalc();updateSalesDoPanel()" class="w-full h-[42px] border rounded-lg text-red-500 font-bold">×</button></div>
       <select class="source-type hidden"><option value="stock" ${flow==='stock_sale'?'selected':''}>Stock</option><option value="pre_order" ${flow==='pre_order'?'selected':''}>Pre-order</option></select>`;
     wrap.appendChild(d);
-    salesEntryRecalc();
+    updateSalesDocumentFields();
   };
 
   window.addServiceFeeRow=function(){
@@ -466,6 +483,7 @@
       const doQty=Number(r.querySelector('.do-request-qty')?.value||0);
       return {line_position:idx+1,qty:doQty,sold_qty:soldQty,row:r};
     }).filter(Boolean);
+    if(flow!=='stock_sale'&&doSelections.length)return showToast('DO requests are only available for official TK/RK invoices.','err');
     const badDo=doSelections.find(x=>x.qty<=0||x.qty>x.sold_qty);
     if(badDo){
       badDo.row.querySelector('.do-request-qty')?.focus();
@@ -561,7 +579,7 @@
     const receipt={
       orderId:so.id,documentNo:docNo,hasDo:doSelections.length>0,
       doNo:generatedDoNo,requestedDate:doSelections.length?requestedDoDate.value:'',
-      itemCount:doSelections.length,customerReviewPending
+      itemCount:doSelections.length,flowType:flow,customerReviewPending
     };
     try{
       await go('sales-orders');
