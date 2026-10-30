@@ -95,6 +95,16 @@ async function openProductDetail(id){
 
 
 
+
+async function retryProductCodeSheetWriteback(id){
+  if(!isAdmin())return showToast('Admin or Super Admin access required.','err');
+  if(!confirm('Retry updating the Price Structure code? First correct any duplicate brand rows or unsupported formulas.'))return;
+  const r=await db.rpc('admin_retry_product_code_sheet_writeback',{p_product_id:id});
+  if(r.error)return showToast(r.error.message||'Could not retry sheet update.','err');
+  showToast('Price Structure update queued again for the next automatic synchronization.');
+  await openProductCodeHistory(id);
+}
+
 async function openProductCodeHistory(id){
   if(!isAdmin())return showToast('Admin or Super Admin access required.','err');
   try{
@@ -122,9 +132,15 @@ async function openProductCodeHistory(id){
         </div>
         ${data.source_original_code?'<div class="text-xs text-gray-600">Original Price Structure source code: <b class="font-mono">'+esc(data.source_original_code)+'</b></div>':''}
         ${writeback.status!=='not_required'?'<div class="text-xs border rounded-xl p-3 '+(writeback.status==='applied'?'border-green-200 bg-green-50 text-green-800':writeback.status==='needs_review'?'border-red-200 bg-red-50 text-red-700':'border-amber-200 bg-amber-50 text-amber-800')+'"><b>Price Structure sheet:</b> '+(writeback.status==='applied'?'Updated':writeback.status==='needs_review'?'Needs review':'Queued for automatic update')+(writeback.note?'<div class="mt-1">'+esc(writeback.note)+'</div>':'')+'</div>':''}
+        <button id="retryProductCodeSheetBtn" type="button" class="mt-2 mb-2 px-3 py-1.5 rounded-lg border border-red-300 bg-white text-red-800 text-xs font-bold" style="display:none">Retry Sheet Update After Correction</button>
         <div><div class="text-xs font-bold mb-2">All historical codes</div><div class="flex flex-wrap gap-2">${legacy}</div></div>
         <div><div class="text-xs font-bold mb-2">Code change history</div><div class="space-y-2 max-h-[45vh] overflow-y-auto">${history}</div></div>
       </div>`);
+    const retry=document.getElementById('retryProductCodeSheetBtn');
+    if(retry&&writeback.status==='needs_review'){
+      retry.style.display='inline-block';
+      retry.onclick=()=>retryProductCodeSheetWriteback(id);
+    }
   }catch(err){showToast(err.message||'Could not load code history.','err')}
 }
 
