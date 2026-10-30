@@ -79,6 +79,7 @@ async function openProductDetail(id){
             <div class="grid sm:grid-cols-3 gap-2 mt-4">
               <button onclick="openEditProduct('${id}')" class="px-3 py-2.5 bg-[#211d18] text-white rounded-xl text-sm">Edit Product</button>
               <button onclick="openChangeProductCode('${id}')" class="px-3 py-2.5 border border-amber-200 bg-amber-50 text-amber-800 rounded-xl text-sm">Change Product Code</button>
+              <button onclick="openProductCodeHistory('${id}')" class="px-3 py-2.5 border border-blue-200 bg-blue-50 text-blue-800 rounded-xl text-sm">Code History</button>
               <button onclick="openAdjustStock('${id}')" class="px-3 py-2.5 border rounded-xl text-sm">Adjust Stock</button>
               <button onclick="openEditCosting('${id}')" class="px-3 py-2.5 border rounded-xl text-sm">Edit Costing</button>
             </div>
@@ -92,6 +93,34 @@ async function openProductDetail(id){
     </div>`);
 }
 
+
+
+async function openProductCodeHistory(id){
+  if(!isAdmin())return showToast('Admin or Super Admin access required.','err');
+  try{
+    const r=await db.rpc('get_product_code_history',{p_product_id:id});
+    if(r.error)throw r.error;
+    const data=r.data||{},changes=Array.isArray(data.changes)?data.changes:[],aliases=Array.isArray(data.aliases)?data.aliases:[];
+    const history=changes.length
+      ?changes.map(x=>'<div class="rounded-xl border p-3 space-y-1">'+
+        '<div class="font-mono text-sm font-bold">'+esc(x.old_code||'')+' → '+esc(x.new_code||'')+'</div>'+
+        '<div class="text-xs text-gray-500">'+esc(x.changed_by||'')+' · '+esc(x.changed_at?new Date(x.changed_at).toLocaleString('en-GB'):'')+'</div>'+
+        '<div class="text-xs">Reason: '+esc(x.reason||'Not provided')+'</div></div>').join('')
+      :'<div class="rounded-xl border bg-gray-50 p-4 text-xs text-gray-500">No previous code changes recorded.</div>';
+    const legacy=aliases.length?aliases.map(x=>'<span class="inline-flex rounded-full border bg-gray-50 px-3 py-1 text-xs font-mono">'+esc(x.code)+'</span>').join(' '):'<span class="text-xs text-gray-500">None</span>';
+    openModal('Product Code Master & History',`
+      <div class="space-y-4">
+        <div class="rounded-xl bg-blue-50 border border-blue-100 p-4">
+          <div class="uppercase text-[10px] text-blue-800 font-bold">Current active code</div>
+          <div class="font-mono font-extrabold text-xl text-blue-900 mt-1">${esc(data.current_code||'')}</div>
+          <div class="text-xs text-blue-800 mt-2">One permanent product ID · older codes remain aliases, not separate stock or products.</div>
+        </div>
+        ${data.source_original_code?'<div class="text-xs text-gray-600">Original Price Structure source code: <b class="font-mono">'+esc(data.source_original_code)+'</b></div>':''}
+        <div><div class="text-xs font-bold mb-2">All historical codes</div><div class="flex flex-wrap gap-2">${legacy}</div></div>
+        <div><div class="text-xs font-bold mb-2">Code change history</div><div class="space-y-2 max-h-[45vh] overflow-y-auto">${history}</div></div>
+      </div>`);
+  }catch(err){showToast(err.message||'Could not load code history.','err')}
+}
 
 async function openChangeProductCode(id){
   if(!isAdmin())return showToast('Admin or Super Admin access required.','err');
