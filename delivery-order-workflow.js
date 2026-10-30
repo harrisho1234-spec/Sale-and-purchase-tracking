@@ -157,6 +157,7 @@
           (hasDo?'<button type="button" onclick="exportStockDeliveryOrder(\''+esc(id)+'\')" class="px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-800 text-[10px] font-bold" title="Open the official Delivery Order, then print or save as PDF">↧ Export DO / PDF</button>':'')+
           (canAccessDoEdit()?'<button type="button" onclick="openDeliveryOrderEdit(\''+esc(id)+'\')" class="px-3 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-[10px] font-bold" title="'+(canDirectDoEdit()?'Apply DO corrections with audit history':'Submit changes for review')+'">'+(canDirectDoEdit()?'Edit DO':'Request Edit')+'</button>':'')+
           (canEditDoNumber()?'<button type="button" onclick="assignDeliveryOrderNo(\''+esc(id)+'\')" class="px-3 py-2 rounded-lg border '+(hasDo?'border-purple-200 bg-purple-50 text-purple-700':'border-[#d8c28a] bg-[#fffaf0] text-[#8a6a1f]')+' text-[10px] font-bold">'+(hasDo?'Correct DO No.':'Assign Missing DO No.')+'</button>':'')+
+          (['admin','super_admin'].includes(role())&&num(req.total_delivered_qty)===0?'<button type="button" onclick="rejectDoRequest(\''+esc(id)+'\')" class="px-3 py-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 text-[10px] font-bold">Reject DO</button>':'')+
           (canDeleteDoRequest()?'<button type="button" data-do-delete-id="'+esc(id)+'" onclick="deleteDoRequest(\''+esc(id)+'\')" class="px-3 py-2 rounded-lg border border-red-200 bg-red-50 text-red-700 text-[10px] font-bold hover:bg-red-100" title="Super Admin only: remove an unreleased DO request">Delete DO</button>':'')+
         '</div>'+
       '</div>'+
@@ -259,6 +260,24 @@
   // Super Admin deletion removes an erroneous, unreleased DO from active
   // fulfillment. The database keeps its official number and cancellation
   // audit; it blocks Stock OUT or in-progress/approved stock approvals.
+
+  window.rejectDoRequest=async function(requestId){
+    if(!['admin','super_admin'].includes(role()))return showToast('Admin or Super Admin access required.','err');
+    const req=D.requests.find(x=>String(x.delivery_request_id)===String(requestId));
+    if(!req)return showToast('DO request not found. Refresh first.','err');
+    if(num(req.total_delivered_qty)>0)return showToast('Stock was already released. Use a formal stock correction, not rejection.','err');
+    const reason=window.prompt('Reason for rejecting '+(req.do_no||'this DO')+'? Rejected quantities can then be requested again from the issued TK/RK invoice.');
+    if(reason===null)return;
+    if(!reason.trim())return showToast('Rejection reason is required.','err');
+    if(!window.confirm('Reject '+(req.do_no||'this DO')+'? No stock will be received or released. Eligible quantities will be available for resubmission. The old DO number stays in history.'))return;
+    const r=await db.rpc('admin_reject_delivery_request',{p_delivery_request_id:requestId,p_reason:reason.trim()});
+    if(r.error)return showToast(r.error.message||'Could not reject DO.','err');
+    D.expandedRequests.delete(String(requestId));
+    showToast('DO rejected. Eligible quantities can be submitted on a new DO from the issued TK/RK invoice.');
+    if(typeof window.invalidateInventoryCache==='function')window.invalidateInventoryCache();
+    await renderRequests();
+  };
+
   window.deleteDoRequest=async function(requestId){
     if(!canDeleteDoRequest())return showToast('Only Super Admin can delete a DO request.','err');
     const id=String(requestId||'');
