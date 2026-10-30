@@ -134,6 +134,44 @@ function protectCostOrBrandLookup_(sheet,column,lookupRange,position,label) {
   return {cell:sheet.getRange(r,column),formula:formula};
 }
 
+
+/**
+ * Copy only missing literal product information from a verified historical
+ * brand row. Never touch calculated selling-price/discount/profit formulas,
+ * physical inventory, or a nonblank value on the active row.
+ * A field backed by an ARRAYFORMULA is left to its own formula instead.
+ */
+function planMissingProductInfoTransfer_(oldRow,newRow) {
+  const columns=[
+    {col:1,label:'Category'},
+    {col:3,label:'Product Name'},
+    {col:5,label:'Product Photo'},
+    {col:6,label:'Description / Size'},
+    {col:8,label:'Cost'},
+    {col:10,label:'Sales Price'},
+    {col:16,label:'Brand'},
+    {col:20,label:'Product Type'}
+  ];
+  const plan=[];
+  columns.forEach(function(field){
+    const from=oldRow.sheet.getRange(oldRow.row,field.col);
+    const target=newRow.sheet.getRange(newRow.row,field.col);
+    // Current row wins. Do not erase any new values, including zero.
+    if(String(target.getDisplayValue()||'').trim()!=='' || target.getFormula())return;
+    if(String(from.getDisplayValue()||'').trim()==='' || from.getFormula())return;
+    // A blank cell inside an array formula's output cannot be overwritten.
+    if([8,16].indexOf(field.col)>=0){
+      const count=Math.min(30,Math.max(1,newRow.sheet.getLastRow()));
+      const formulas=newRow.sheet.getRange(1,field.col,count,1).getFormulas();
+      if(formulas.some(function(r){return /ARRAYFORMULA\s*\(/i.test(r[0]||'');}))return;
+    }
+    const value=from.getValue();
+    if(value===null||value===undefined||String(value).trim()==='')return;
+    plan.push({cell:target,value:value,label:field.label});
+  });
+  return plan;
+}
+
 function applyExistingDualRowRename_(oldRow,newRow,job){
   // Only merge two rows after a high-confidence identity comparison.
   // A matching name and photograph prevent accidental stock assignment to
@@ -163,9 +201,12 @@ function applyExistingDualRowRename_(oldRow,newRow,job){
   const newLocationFormula=protectItemListLocation_(newRow.sheet,newRow.row,job.source_original_code);
   const newCost=protectCostOrBrandLookup_(newRow.sheet,8,'B:D',3,'Costing');
   const newBrand=protectCostOrBrandLookup_(newRow.sheet,16,'B:E',4,'Brand');
-  // Preflight complete. Never update Item List or Stock Movements.
+  const missingInfo=planMissingProductInfoTransfer_(oldRow,newRow);
+  // Preflight complete. Never update Item List, Stock Movements,
+  // previously issued sales documents, or any existing current-row values.
   if(newCost)newCost.cell.setFormula(newCost.formula);
   if(newBrand)newBrand.cell.setFormula(newBrand.formula);
+  missingInfo.forEach(function(info){info.cell.setValue(info.value);});
   if(newQtyFormula)newRow.sheet.getRange(newRow.row,7).setFormula(newQtyFormula);
   if(newLocationFormula)newRow.sheet.getRange(newRow.row,13).setFormula(newLocationFormula);
   if(!/^\s*=\s*0\s*$/.test(prevQty))oldQty.setFormula('=0');
@@ -180,7 +221,8 @@ function applyExistingDualRowRename_(oldRow,newRow,job){
     throw new Error('Dual-row post-save identity check failed.');
   }
   return newRow.sheet.getName()+'!B'+newRow.row+
-    ' (old '+oldRow.sheet.getName()+'!B'+oldRow.row+' retained with zero QTY)';
+    ' (old '+oldRow.sheet.getName()+'!B'+oldRow.row+' retained with zero QTY; copied missing: '+
+    (missingInfo.length?missingInfo.map(function(i){return i.label}).join(', '):'none')+')';
 }
 
 function applyOneProductCodeWriteback_(book,job) {
