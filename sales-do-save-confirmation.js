@@ -14,6 +14,7 @@
       orderId:String(receipt.orderId),
       documentNo:String(receipt.documentNo||'Sales Order'),
       hasDo:!!receipt.hasDo,
+      flowType:String(receipt.flowType||''),
       doNo:String(receipt.doNo||''),
       requestedDate:String(receipt.requestedDate||''),
       itemCount:Number(receipt.itemCount||0),
@@ -21,6 +22,7 @@
     };
     const doc=escapeHtml(lastReceipt.documentNo);
     const hasDo=lastReceipt.hasDo;
+    const isSr=lastReceipt.flowType==='pre_order'||/^SR/i.test(lastReceipt.documentNo);
     const date=escapeHtml(lastReceipt.requestedDate);
     const details=hasDo
       ?'<div class="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-2">'+
@@ -33,10 +35,10 @@
          (!lastReceipt.doNo?'<div class="text-xs text-amber-800">Check Inventory → Customer Fulfillment → DO Requests for the official number.</div>':'')+
        '</div>'
       :'<div class="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-2">'+
-         '<div class="font-bold text-amber-900">Sales Order saved — No DO requested</div>'+
-         '<div class="text-xs text-amber-800">No Delivery Order was sent to Stock. Request one now or later from Sales Tracking.</div>'+
+         '<div class="font-bold text-amber-900">'+(isSr?'SR saved — TK/RK invoice required for DO':'Sales Order saved — No DO requested')+'</div>'+
+         '<div class="text-xs text-amber-800">'+(isSr?'Convert the SR to an official TK/RK invoice before requesting delivery.':'No Delivery Order was sent to Stock. Request one now or later from Sales Tracking.')+'</div>'+
        '</div>';
-    const action=hasDo?''
+    const action=hasDo||isSr?''
       :'<button type="button" onclick="requestDoFromOrderConfirmation()" '+
        'class="px-4 py-2.5 rounded-xl bg-[#211d18] text-white text-xs font-bold">'+
        'Request DO Now →</button>';
@@ -56,6 +58,7 @@
   window.requestDoFromOrderConfirmation=async function(){
     const orderId=lastReceipt?.orderId;
     if(!orderId)return;
+    if(lastReceipt.flowType==='pre_order'||/^SR/i.test(lastReceipt.documentNo))return showToast('DO requests require an official TK/RK invoice.','err');
     if(typeof window.openExistingSalesDoRequest!=='function'){
       showToast('Open Sales Tracking and click REQUEST DO for this order.','err');
       return;
