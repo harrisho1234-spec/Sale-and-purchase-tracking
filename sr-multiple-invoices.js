@@ -52,6 +52,8 @@
          optionalLine('Review note',review)+
          optionalLine('Discount approved by',approver)+
          optionalLine('Submitted at',submitted)+
+         (i.status==='issued'&&i.id&&['sales','manager','admin','super_admin'].includes(String(state?.profile?.role||''))?
+           '<button type="button" onclick="openIssuedTkRkDoRequest(&quot;'+h(s.sr_id)+'&quot;,&quot;'+h(i.id)+'&quot;)" class="mt-2 px-3 py-2 bg-[#211d18] text-white rounded-lg text-xs font-bold">Request DO from issued '+h(i.invoice_no)+'</button>':'')+
          '<div class="text-[10px] text-gray-500">Fields not recorded in the linked invoice summary are omitted. SR deposit and discounts remain separate from invoice amounts.</div>'+
        '</div></details>';
    }).join('')+'</div>':
@@ -73,6 +75,83 @@
      (allowPrepare()?'<button type="button" onclick="openPrepareSrConversion(\''+h(orderId)+'\')" class="bg-[#211d18] text-white rounded-xl w-full py-3 font-semibold">Prepare Next TK/RK Invoice</button>':'')+
    '</div>');
  };
+
+ // DO requests for converted SRs must originate from an officially issued TK/RK part.
+ window.openIssuedTkRkDoRequest=async function(srId,invoicePartId){
+   if(!['sales','manager','admin','super_admin'].includes(String(state?.profile?.role||''))){
+     return showToast('Sales or Management access is required.','err');
+   }
+   try{
+     const [srResult,stockResult]=await Promise.all([
+       db.rpc('get_sr_split_invoice_summary',{p_order_id:srId}),
+       db.rpc('get_sales_order_do_request_status',{p_sales_order_id:srId})
+     ]);
+     if(srResult.error)throw srResult.error;
+     if(stockResult.error)throw stockResult.error;
+     const issued=(srResult.data?.invoices||[]).find(x=>String(x.id)===String(invoicePartId)&&x.status==='issued');
+     if(!issued)throw new Error('The selected TK/RK invoice has not been issued or is not accessible.');
+     const available=new Map((stockResult.data||[]).map(x=>[String(x.sales_order_item_id),Number(x.available_do_qty||0)]));
+     const lines=(issued.lines||[]).map(l=>({
+       id:String(l.item_id||''),code:String(l.code||''),name:String(l.name||''),
+       qty:Math.min(Number(l.qty||0),available.get(String(l.item_id||''))||0)
+     })).filter(l=>l.id&&l.qty>0);
+     if(!lines.length)throw new Error('There are no remaining eligible product quantities on this issued invoice.');
+     const lineHtml=lines.map((l,i)=>
+       '<div class="p-3 border rounded-xl bg-white" data-issued-do-line="'+h(l.id)+'">'+
+         '<div class="text-xs font-bold">'+h(l.code)+' · '+h(l.name)+'</div>'+
+         '<div class="mt-2 flex flex-wrap gap-3 items-center justify-between">'+
+           '<label class="text-xs font-semibold"><input type="checkbox" class="issued-do-check mr-2" checked>Request item</label>'+
+           '<label class="text-xs">DO Qty <input type="number" step="0.01" min="0.01" max="'+l.qty+'" value="'+l.qty+'" class="issued-do-qty ml-2 w-24 border rounded-lg p-2"></label>'+
+         '</div></div>'
+     ).join('');
+     openModal('Request DO · '+h(issued.invoice_no),
+       '<form id="issuedInvoiceDoForm" class="space-y-4">'+
+       '<div class="p-3 rounded-xl border border-blue-200 bg-blue-50 text-xs text-blue-900"><b>Issued TK/RK '+h(issued.invoice_no)+'</b>. The DO will be linked to this invoice, not submitted from the unconverted SR. Only eligible, not-yet-requested quantities can be released.</div>'+
+       '<div class="space-y-2">'+lineHtml+'</div>'+
+       '<label class="block text-xs font-bold">Requested Delivery Date *<input type="date" id="issuedDoDate" required class="block mt-1 w-full border rounded-lg p-2.5"></label>'+
+       '<label class="block text-xs font-bold">Delivery Address<input id="issuedDoAddress" class="block mt-1 w-full border rounded-lg p-2.5"></label>'+
+       '<label class="block text-xs font-bold">Delivery Note<textarea id="issuedDoNote" rows="2" class="block mt-1 w-full border rounded-lg p-2.5"></textarea></label>'+
+       '<button id="issuedDoSubmit" type="submit" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-bold">Submit DO Request</button>'+
+       '</form>');
+     document.getElementById('issuedInvoiceDoForm').onsubmit=async function(e){
+       e.preventDefault();
+       const selected=[...document.querySelectorAll('[data-issued-do-line]')].filter(row=>row.querySelector('.issued-do-check')?.checked).map(row=>{
+         const input=row.querySelector('.issued-do-qty');
+         return {sales_order_item_id:row.getAttribute('data-issued-do-line'),qty:Number(input?.value||0),max:Number(input?.max||0)};
+       });
+       if(!selected.length)return showToast('Select at least one invoiced product for DO.','err');
+       if(selected.some(x=>!Number.isFinite(x.qty)||x.qty<=0||x.qty>x.max+0.0001))return showToast('Check DO quantities against invoice availability.','err');
+       const date=document.getElementById('issuedDoDate').value;
+       if(!date)return showToast('Requested Delivery Date is required.','err');
+       const button=document.getElementById('issuedDoSubmit');
+       if(button.disabled)return;
+       button.disabled=true;button.textContent='Submitting DO Request...';
+       try{
+         const result=await db.rpc('submit_issued_sr_invoice_delivery_request',{
+           p_invoice_part_id:invoicePartId,
+           p_sales_order_id:srId,
+           p_requested_delivery_date:date,
+           p_delivery_address:document.getElementById('issuedDoAddress')?.value.trim()||null,
+           p_request_note:document.getElementById('issuedDoNote')?.value.trim()||null,
+           p_items:selected.map(x=>({sales_order_item_id:x.sales_order_item_id,qty:x.qty}))
+         });
+         if(result.error)throw result.error;
+         let doNo='';
+         try{
+           const number=await db.rpc('get_delivery_order_number',{p_delivery_request_id:result.data});
+           if(!number.error)doNo=String(number.data||'');
+         }catch(_){}
+         closeModal();
+         showToast((doNo?'DO '+doNo:'Delivery Order')+' requested from '+issued.invoice_no+'. Sent to Stock.');
+         if(typeof window.invalidateInventoryCache==='function')window.invalidateInventoryCache();
+       }catch(err){
+         button.disabled=false;button.textContent='Submit DO Request';
+         showToast(err.message||'Could not request DO from this invoice.','err');
+       }
+     };
+   }catch(err){showToast(err.message||'Cannot request DO from this issued invoice.','err')}
+ };
+
  window.openPrepareSrConversion=async function(orderId){
    if(!allowPrepare())return showToast('Permission to prepare TK/RK invoice required','err');
    const [o,s]=await Promise.all([
