@@ -1,0 +1,13 @@
+{
+  "name": "limperial-sales-workflow-tests",
+  "private": true,
+  "scripts": {
+    "test": "node tests/cancel-undelivered.test.cjs && node tests/cancel-undelivered-ui.test.cjs && node tests/cn-reservation-release-ui.test.cjs",
+    "test:tax-inventory": "node tests/tax-inventory.test.cjs",
+    "test:sales-daily": "node tests/sales-daily.test.cjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.3.14",
+    "jsdom": "26.1.0"
+  }
+}

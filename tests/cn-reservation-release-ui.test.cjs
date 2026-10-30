@@ -1,0 +1,24 @@
+const {JSDOM}=require('jsdom');
+const fs=require('fs'),path=require('path'),assert=require('node:assert/strict');
+const dom=new JSDOM('<div id="inventoryBody"><div class="inv-task-card"></div></div>',{runScripts:'outside-only'});
+const w=dom.window,calls=[],toasts=[];let finish,done=false,permission=true;
+w.state={page:'stock-inventory',profile:{role:'stock_controller'}};
+w.hasAppPermission=()=>permission;w.confirm=()=>true;w.showToast=(...args)=>toasts.push(args);
+w.renderStockInventoryBody=async()=>{};
+w.db={rpc:async(name,args)=>{calls.push({name,args});if(name==='get_cn_reservation_release_queue')return {data:[{return_id:'cn1',cn_no:'CN-TEST',customer_name:'<img src=x onerror=alert(1)>',items:[{item_name:'Lamp',qty:4}],completed_at:done?'2026-10-30T10:00:00Z':null,completed_by:done?'stock-user':null}]};return new Promise(resolve=>{finish=resolve})}};
+w.eval(fs.readFileSync(path.join(__dirname,'../cn-reservation-releases.js'),'utf8'));
+(async()=>{
+ await w.renderStockInventoryBody();
+ const panel=w.document.getElementById('cnReservationReleasePanel');
+ assert.match(panel.textContent,/Physical Stock IN: 0/);assert.equal(panel.querySelector('img'),null);
+ let button=panel.querySelector('[data-release-id]');
+ const first=button.onclick();await button.onclick();assert.equal(calls.filter(x=>x.name==='complete_cn_reservation_release').length,1);
+ finish({error:{message:'Response lost'}});await first;assert.equal(button.disabled,false);
+ const retry=button.onclick();assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1).args)),{p_return_id:'cn1'});
+ done=true;finish({data:{already_completed:true}});await retry;
+ assert.match(panel.textContent,/Reservation released/);assert.match(panel.textContent,/stock-user/);assert.equal(panel.querySelector('[data-release-id]'),null);
+ done=false;w.state.profile.role='sales';await w.renderStockInventoryBody();assert.equal(panel.querySelector('[data-release-id]'),null);
+ w.state.profile.role='stock_controller';permission=false;const count=calls.length;await w.renderStockInventoryBody();assert.equal(calls.length,count);
+ assert.equal(calls.some(x=>/receipt|financial/.test(x.name)),false);
+ console.log('PASS: stock task rendering, escaping, permissions, duplicate click, lost-response retry, and completion audit.');
+})().catch(e=>{console.error(e);process.exitCode=1}).finally(()=>dom.window.close());

@@ -127,7 +127,7 @@
         html+='</div></div>';
         if(canManageCredit())html+='<button type="button" data-remove-credit class="px-3 py-2 border rounded-lg bg-white text-xs font-semibold">Remove Customer Credit</button>';
       }else{
-        html+='<div class="font-bold text-gray-600 mt-1">Customer Credit $0.00</div><div class="text-[10px] text-gray-500 mt-1">Net Return Value: '+money(h.return_value||0)+'. The CN records the physical return, but does not reduce AR until credit is approved.</div></div>';
+        html+='<div class="font-bold text-gray-600 mt-1">Customer Credit $0.00</div><div class="text-[10px] text-gray-500 mt-1">Net Return Value: '+money(h.return_value||0)+(h.action==='cancel_undelivered'?'. Cancellation approval will apply credit to source invoices without changing payments.':'. The CN records the physical return, but does not reduce AR until credit is approved.')+'</div></div>';
         if(canManageCredit()&&h.status==='received')html+='<button type="button" data-apply-credit class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-xs font-semibold">Apply Customer Credit</button>';
       }
       html+='</div>';
@@ -150,8 +150,8 @@
       const info=[...body.querySelectorAll('.bg-blue-50')].find(x=>x.textContent.includes('records the return only')||x.textContent.includes('Customer payments and AR'));
       if(info){
         info.innerHTML=h.financial_effect==='credit_ar'
-          ? 'This CN has approved <b>Customer Credit</b>. Credit reduces the target invoice AR but does not change the actual cash received.'
-          : 'This CN records the physical return only. After it is <b>Received</b>, Manager/Admin can approve Customer Credit if the customer should receive a financial credit.';
+          ? (h.action==='cancel_undelivered'?'This approved cancellation reduces source invoice balances, with excess retained as customer credit. No physical stock receipt. Deposits and payment history are unchanged.':'This CN has approved <b>Customer Credit</b>. Credit reduces the target invoice AR but does not change the actual cash received.')
+          : (h.action==='cancel_undelivered'?'Awaiting management approval. No stock receipt is needed.':'This CN records the physical return only. After it is <b>Received</b>, Manager/Admin can approve Customer Credit if the customer should receive a financial credit.');
       }
 
       if(h.financial_effect==='credit_ar'){
