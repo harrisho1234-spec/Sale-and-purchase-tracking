@@ -258,6 +258,7 @@ window.importRecordedDailyActivities=async()=>{
   const already=new Set(additionalDraft.filter(t=>t.sourceType&&t.sourceId).map(t=>t.sourceType+':'+t.sourceId));
   window.dailyImportCandidates=rows.filter(x=>!already.has(x.activity_type+':'+x.id));
   window.dailyImportSelectedDate=date;
+  window.dailyImportActorId=own;
   if(!window.dailyImportCandidates.length)return toast('No new Showroom or Online activities for '+date);
   const body='<p class="text-xs mb-3">All Showroom and Online records for <b>'+h(date)+'</b> are available, including unassigned and other Sales visits. Selecting one adds a reference to <b>your Evening Result only</b>; it does not change the customer assignment or create a new visit.</p>'+
   '<div class="max-h-[50vh] overflow-auto space-y-2">'+
@@ -273,7 +274,7 @@ window.importRecordedDailyActivities=async()=>{
  }catch(e){toast(e.message,true)}
 };
 window.confirmRecordedDailyActivities=()=>{
- if(window.dailyImportSelectedDate!==ui.date)return toast('Daily report date changed. Open the import list again.',true);
+ if(window.dailyImportSelectedDate!==ui.date||window.dailyImportActorId!==String(state.user?.id||''))return toast('Daily report date or Sales account changed. Open the import list again.',true);
  preserveEveningInputs();captureAdditional();
  const chosen=[...document.querySelectorAll('.daily-activity-import:checked')].map(el=>window.dailyImportCandidates?.[Number(el.value)]).filter(Boolean);
  const known=new Set(additionalDraft.filter(x=>x.sourceId&&x.sourceType).map(x=>x.sourceType+':'+x.sourceId));
