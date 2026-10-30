@@ -400,6 +400,12 @@
     const issued=[...new Map(docs.map(x=>[x.toUpperCase(),x])).values()];
     return sr+(issued.length?' → '+issued.join(' · '):'');
   }
+  function hasOfficialDoInvoice(o){
+    const flow=String(o.sales_flow_type||o.order_type||'').toLowerCase();
+    const sr=String(o.sr_no||o.order_no||'').toUpperCase();
+    const invoice=String(o.sales_invoice_no||o.invoice_no||o.order_no||'').trim().toUpperCase();
+    return flow!=='pre_order'&&!sr.startsWith('SR')&&/^(TK|RK)[-_]?[0-9]/.test(invoice);
+  }
   function invoiceCard(o) {
     const open = ui.salesExpanded.has(o.id);
     const items = o.items||[];
@@ -456,7 +462,7 @@
               </div>`).join(''):`<div class="lr-empty">No line-item detail available.</div>`)}
             ${((['sales','manager','admin','super_admin'].includes(state.profile?.role)&&cleanStatus(o.status)!=='cancelled')||isSuper())?`
               <div class="mt-4 pt-4 border-t flex flex-wrap gap-2 justify-end">
-                ${(['sales','manager','admin','super_admin'].includes(state.profile?.role)&&cleanStatus(o.status)!=='cancelled')
+                ${(['sales','manager','admin','super_admin'].includes(state.profile?.role)&&cleanStatus(o.status)!=='cancelled'&&hasOfficialDoInvoice(o))
                   ?`<button onclick="openExistingSalesDoRequest(\'${o.id}\')" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-bold">▣ REQUEST DO</button>`
                   :''}
                 ${isSuper()?`<button onclick="openSuperAdminInvoiceEdit(\'${o.id}\')" class="px-3 py-2 border border-[#d8c28a] bg-[#fffaf0] text-[#8a6a1f] rounded-lg text-[10px] font-bold">✎ EDIT INVOICE</button>
@@ -521,6 +527,9 @@ window.openExistingSalesDoRequest=async function(orderId){
   }
   if(cleanStatus(o.status)==='cancelled'){
     return showToast('Cancelled Sales Order cannot request delivery.','err');
+  }
+  if(!hasOfficialDoInvoice(o)){
+    return showToast('Delivery Orders can only be requested from an official TK/RK invoice, not an SR.','err');
   }
 
   try{
