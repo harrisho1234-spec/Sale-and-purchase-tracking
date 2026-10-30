@@ -9,14 +9,52 @@
  const moneyN=v=>'$'+Number(v||0).toFixed(2);
  const safeCount=v=>Number(v||0);
  let shownOrder=null,listing=null;
+ const knownNumber=v=>v!==null&&v!==undefined&&v!==''&&Number.isFinite(Number(v));
+ const optionalLine=(label,value)=>value===null||value===undefined||String(value).trim()===''?'':'<div class="text-[11px] text-gray-600"><b>'+h(label)+':</b> '+h(value)+'</div>';
+ const lineDetail=l=>{
+   const price=l.unit_price??l.price;
+   const discount=l.discount_amount??l.item_discount??l.line_discount;
+   const total=l.line_total??l.total;
+   return '<div class="border-t py-2 text-xs flex flex-col sm:flex-row justify-between gap-2">'+
+     '<div class="min-w-0"><b>'+h(l.code||l.product_code||'Item')+'</b> · '+h(l.name||l.item_name||'')+
+       optionalLine('Item note',l.notes??l.note)+'</div>'+
+     '<div class="sm:text-right shrink-0">Qty '+safeCount(l.qty)+
+     (knownNumber(price)?' · Unit '+moneyN(price):'')+
+     (knownNumber(discount)?' · Discount −'+moneyN(discount):'')+
+     (knownNumber(total)?' · Net '+moneyN(total):'')+'</div></div>';
+ };
  const htmlInvoices=s=>{
    const inv=Array.isArray(s?.invoices)?s.invoices:[];
-   return inv.length?'<div class="space-y-2">'+inv.map(i=>
-     '<div class="rounded-xl border p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">'+
-     '<div><div class="text-xs font-bold">'+h(i.invoice_no)+' · '+h(i.status.toUpperCase())+'</div>'+
-     '<div class="text-[10px] text-gray-500">'+(i.lines||[]).map(l=>h(l.code)+' × '+safeCount(l.qty)).join(' · ')+'</div></div>'+
-     '<div class="text-sm font-bold">'+moneyN(i.total)+'</div></div>'
-   ).join('')+'</div>':
+   return inv.length?'<div class="space-y-2">'+inv.map(i=>{
+     const lines=Array.isArray(i.lines)?i.lines:[];
+     const discount=i.order_discount??i.discount_amount;
+     const submitted=i.submitted_at??i.requested_at??i.created_at;
+     const review=i.review_note??i.approval_note;
+     const approver=i.discount_approved_by??i.discount_approver;
+     return '<details class="rounded-xl border bg-white group">'+
+       '<summary class="list-none cursor-pointer p-3 flex flex-wrap justify-between gap-3 items-center">'+
+         '<div><div class="text-xs font-bold">'+h(i.invoice_no||'Pending invoice')+' · '+h(String(i.status||'unknown').toUpperCase())+'</div>'+
+         '<div class="text-[10px] text-gray-500">'+lines.map(l=>h(l.code||l.product_code||'Item')+' × '+safeCount(l.qty)).join(' · ')+'</div></div>'+
+         '<div class="text-right"><div class="text-sm font-bold">'+(knownNumber(i.total)?moneyN(i.total):'Total unavailable')+'</div><div class="text-[10px] text-blue-700">View Invoice Breakdown ▾</div></div>'+
+       '</summary>'+
+       '<div class="border-t px-3 py-3 space-y-2">'+
+         '<div class="text-[10px] font-bold uppercase text-gray-500">Invoice items</div>'+
+         (lines.length?lines.map(lineDetail).join(''):'<p class="text-xs text-gray-500">Item breakdown is not available in this invoice summary.</p>')+
+         '<div class="rounded-lg border bg-gray-50 p-3 grid grid-cols-2 gap-3 text-xs">'+
+           (knownNumber(i.subtotal)?'<div>Subtotal <b>'+moneyN(i.subtotal)+'</b></div>':'')+
+           (knownNumber(discount)?'<div>Order discount <b>−'+moneyN(discount)+'</b></div>':'')+
+           '<div>Invoice total <b>'+(knownNumber(i.total)?moneyN(i.total):'Not available')+'</b></div>'+
+           (knownNumber(i.deposit_applied)?'<div>Deposit applied <b>'+moneyN(i.deposit_applied)+'</b></div>':'')+
+           (knownNumber(i.balance_due)?'<div>Remaining balance <b>'+moneyN(i.balance_due)+'</b></div>':'')+
+         '</div>'+
+         optionalLine('Invoice note',i.notes??i.note)+
+         optionalLine('Note to approver',i.request_note??i.approver_note)+
+         optionalLine('Review note',review)+
+         optionalLine('Discount approved by',approver)+
+         optionalLine('Submitted at',submitted)+
+         '<div class="text-[10px] text-gray-500">Fields not recorded in the linked invoice summary are omitted. SR deposit and discounts remain separate from invoice amounts.</div>'+
+       '</div></details>';
+   }).join('')+'</div>':
    '<div class="text-xs text-gray-500">No split TK/RK invoices requested yet.</div>';
  };
  window.openSrInvoiceOverview=async function(orderId){
