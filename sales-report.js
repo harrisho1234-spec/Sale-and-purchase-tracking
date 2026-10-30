@@ -354,7 +354,7 @@
           <div class="text-[10px] text-[#7c6a48] mt-2">Invoices ${money(t.invoice)} + Pre-payment ${money(t.prepayment)} − Previously applied ${money(t.applied)} − Returns ${money(t.returns)}</div>
         </div>
         ${kpiCard('Collection',money(t.collection),'Deposits + all payments actually received','text-green-600')}
-        ${kpiCard('Confirmed Sales',money(t.confirmed),'Invoices + Pre-payment + Pending ('+money(t.pending)+' pending)','text-[#8a6514]')}
+        ${kpiCard('Confirmed Sales',money(t.confirmed),'Invoices + Prepayment + Pending − Applied Prepayments ('+money(t.pending)+' pending)','text-[#8a6514]')}
       </div>
       <div class="grid grid-cols-2 gap-3 mb-4">
         ${kpiCard('Returns / CN','−'+money(t.returns),'Active returned value','text-amber-600')}
@@ -379,7 +379,7 @@
           <div class="px-4 py-3 border-b"><h4 class="font-bold">Period Summary</h4></div>
           <div class="overflow-x-auto">
             <table class="w-full text-xs">
-              <thead class="bg-[#faf9f6] text-gray-400 uppercase text-[9px]"><tr><th class="text-left px-3 py-2">Period</th><th class="text-right px-3 py-2">Actual</th><th class="text-right px-3 py-2">Collection</th><th class="text-right px-3 py-2">Confirmed</th><th class="text-right px-3 py-2">Returns</th><th class="text-right px-3 py-2">Orders</th></tr></thead>
+              <thead class="bg-[#faf9f6] text-gray-400 uppercase text-[9px]"><tr><th class="text-left px-3 py-2">Period</th><th class="text-right px-3 py-2">Actual</th><th class="text-right px-3 py-2">Collection</th><th class="text-right px-3 py-2">Confirmed</th><th class="text-right px-3 py-2">Returns</th><th class="text-right px-3 py-2">Entries</th></tr></thead>
               <tbody class="divide-y">${buckets.map(b=>`<tr><td class="px-3 py-2 font-semibold">${esc(b.label)}</td><td class="px-3 py-2 text-right font-bold">${money(b.actual)}</td><td class="px-3 py-2 text-right text-green-600">${money(b.collection)}</td><td class="px-3 py-2 text-right">${money(b.confirmed)}</td><td class="px-3 py-2 text-right text-amber-600">−${money(b.returns)}</td><td class="px-3 py-2 text-right">${b.orders}</td></tr>`).join('')}</tbody>
             </table>
           </div>
@@ -411,7 +411,7 @@
         <div class="px-4 py-3 border-b flex items-center justify-between"><div><h4 class="font-bold">Sales Rep Summary</h4><div class="text-[10px] text-gray-400 mt-0.5">Based on the selected period and Sales Rep filter.</div></div><div class="text-[10px] text-gray-400">${repRows.length} rep${repRows.length===1?'':'s'}</div></div>
         <div class="overflow-x-auto">
           <table class="w-full text-xs">
-            <thead class="bg-[#faf9f6] text-gray-400 uppercase text-[9px]"><tr><th class="text-left px-4 py-2">Sales Rep</th><th class="text-right px-4 py-2">Orders</th><th class="text-right px-4 py-2">Actual Sales</th><th class="text-right px-4 py-2">Collection</th><th class="text-right px-4 py-2">Confirmed</th><th class="text-right px-4 py-2">Returns</th></tr></thead>
+            <thead class="bg-[#faf9f6] text-gray-400 uppercase text-[9px]"><tr><th class="text-left px-4 py-2">Sales Rep</th><th class="text-right px-4 py-2">Entries</th><th class="text-right px-4 py-2">Actual Sales</th><th class="text-right px-4 py-2">Collection</th><th class="text-right px-4 py-2">Confirmed</th><th class="text-right px-4 py-2">Returns</th></tr></thead>
             <tbody class="divide-y">${repRows.length?repRows.map(r=>`<tr><td class="px-4 py-3 font-semibold">${esc(r.name)}</td><td class="px-4 py-3 text-right">${r.orders}</td><td class="px-4 py-3 text-right font-bold">${money(r.actual)}</td><td class="px-4 py-3 text-right text-green-600">${money(r.collection)}</td><td class="px-4 py-3 text-right">${money(r.confirmed)}</td><td class="px-4 py-3 text-right text-amber-600">−${money(r.returns)}</td></tr>`).join(''):`<tr><td colspan="6" class="px-4 py-10 text-center text-gray-400">No sales data for this selection.</td></tr>`}</tbody>
           </table>
         </div>
