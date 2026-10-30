@@ -104,8 +104,8 @@ async function openChangeProductCode(id){
       <b>Rename the existing product — do not recreate it.</b> Inventory and linked sales/PO items keep the same internal product ID.
       Previously issued documents retain their original code snapshots. Old codes cannot be reassigned to a different product.
     </div>
-    <div><label class="text-xs font-bold">Current Code</label><div class="mt-1 border bg-gray-50 rounded-xl p-3 font-mono text-sm">\${esc(p.code)}</div></div>
-    <label class="block text-xs font-bold">New Product Code<input id="productNewCode" required maxlength="100" class="mt-1 w-full border rounded-xl p-3" value="\${esc(p.code)}"></label>
+    <div><label class="text-xs font-bold">Current Code</label><div class="mt-1 border bg-gray-50 rounded-xl p-3 font-mono text-sm">${esc(p.code)}</div></div>
+    <label class="block text-xs font-bold">New Product Code<input id="productNewCode" required maxlength="100" class="mt-1 w-full border rounded-xl p-3" value="${esc(p.code)}"></label>
     <label class="block text-xs font-bold">Reason for Change *<textarea id="productCodeReason" rows="2" maxlength="1000" required placeholder="Wrong code, updated manufacturer number..." class="mt-1 w-full border rounded-xl p-3"></textarea></label>
     <button id="productCodeSaveBtn" type="submit" class="w-full bg-[#211d18] text-white py-3 rounded-xl font-bold">Confirm Code Change</button>
   </form>`);
