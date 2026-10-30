@@ -60,7 +60,7 @@
         </form>
 
         <div class="border-t pt-5">
-          <div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">PO Items</h4><div class="text-xs text-gray-400">Items here can be linked to SR customer items.</div></div><span class="lr-badge lr-badge-gray">${d.items.length} items</span></div>
+          <div class="flex items-center justify-between mb-3"><div><h4 class="font-bold">PO Items</h4><div class="text-xs text-gray-400">Arrived POs can still be corrected. Relink mistaken SR allocations in Procurement → SR Allocations. If an item was already physically received into Stock, its product/quantity needs a stock reconciliation before changing that PO line; status Arrived alone does not add stock.</div></div><span class="lr-badge lr-badge-gray">${d.items.length} items</span></div>
           <div id="poExistingItems" class="divide-y border rounded-xl mb-4">${d.items.length?d.items.map(i=>`<div class="p-3 grid md:grid-cols-[1fr_90px_170px] gap-2 text-xs"><div><b>${esc(i.product_code_snapshot||'No Code')}</b><div class="text-gray-500 mt-0.5">${esc(i.item_name_snapshot||'')}</div></div><div>Qty <b>${Number(i.qty||0)}</b></div><div class="text-right"><div>Cost <b>${money(i.unit_cost||0,p.currency||'USD')}</b></div><div class="text-[10px] text-gray-400 mt-1">Shipping <b>${money(i.shipping_cost||0,'USD')}</b></div></div></div>`).join(''):'<div class="p-4 text-xs text-gray-400">No PO items yet.</div>'}</div>
           ${historical
             ?'<div class="rounded-xl border border-purple-100 bg-purple-50/50 p-4 text-xs text-purple-700"><b>PO items locked as history.</b> Undo Historical Stock Reconciliation first if this PO needs to return to the live procurement workflow.</div>'
