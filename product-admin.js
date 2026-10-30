@@ -77,6 +77,7 @@ async function openProductDetail(id){
             </div>
             <div class="grid sm:grid-cols-3 gap-2 mt-4">
               <button onclick="openEditProduct('${id}')" class="px-3 py-2.5 bg-[#211d18] text-white rounded-xl text-sm">Edit Product</button>
+              <button onclick="openChangeProductCode('${id}')" class="px-3 py-2.5 border border-amber-200 bg-amber-50 text-amber-800 rounded-xl text-sm">Change Product Code</button>
               <button onclick="openAdjustStock('${id}')" class="px-3 py-2.5 border rounded-xl text-sm">Adjust Stock</button>
               <button onclick="openEditCosting('${id}')" class="px-3 py-2.5 border rounded-xl text-sm">Edit Costing</button>
             </div>
@@ -90,13 +91,51 @@ async function openProductDetail(id){
     </div>`);
 }
 
+
+async function openChangeProductCode(id){
+  if(!isAdmin())return showToast('Admin or Super Admin access required.','err');
+  const p=productById(id);
+  if(!p)return showToast('Product not found. Refresh Products.','err');
+  if(p.source_system==='price_structure_v3_private_push'||String(p.source_row_key||'').startsWith('price:')){
+    return showToast('This code is controlled by Price Structure. Update the source catalog and sync first to avoid duplicates.','err');
+  }
+  openModal('Change Product Code',`<form id="productCodeChangeForm" class="space-y-4">
+    <div class="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900">
+      <b>Rename the existing product — do not recreate it.</b> Inventory and linked sales/PO items keep the same internal product ID.
+      Previously issued documents retain their original code snapshots. Old codes cannot be reassigned to a different product.
+    </div>
+    <div><label class="text-xs font-bold">Current Code</label><div class="mt-1 border bg-gray-50 rounded-xl p-3 font-mono text-sm">\${esc(p.code)}</div></div>
+    <label class="block text-xs font-bold">New Product Code<input id="productNewCode" required maxlength="100" class="mt-1 w-full border rounded-xl p-3" value="\${esc(p.code)}"></label>
+    <label class="block text-xs font-bold">Reason for Change *<textarea id="productCodeReason" rows="2" maxlength="1000" required placeholder="Wrong code, updated manufacturer number..." class="mt-1 w-full border rounded-xl p-3"></textarea></label>
+    <button id="productCodeSaveBtn" type="submit" class="w-full bg-[#211d18] text-white py-3 rounded-xl font-bold">Confirm Code Change</button>
+  </form>`);
+  document.getElementById('productCodeChangeForm').onsubmit=async e=>{
+    e.preventDefault();
+    const code=document.getElementById('productNewCode').value.trim();
+    const reason=document.getElementById('productCodeReason').value.trim();
+    if(!code||!reason)return showToast('New code and change reason are required.','err');
+    if(code.toLowerCase()===String(p.code||'').toLowerCase())return showToast('Enter a different product code.','err');
+    if(!confirm('Change product code from '+p.code+' to '+code+'? This keeps historical document codes unchanged.'))return;
+    const btn=document.getElementById('productCodeSaveBtn');
+    btn.disabled=true;btn.textContent='Updating code...';
+    try{
+      const r=await db.rpc('admin_change_product_code',{p_product_id:id,p_new_code:code,p_reason:reason});
+      if(r.error)throw r.error;
+      closeModal();
+      showToast('Product code changed to '+String(r.data)+'. Original documents were preserved.');
+      if(typeof loadProducts==='function')await loadProducts();
+      if(typeof renderProducts==='function')await renderProducts();
+    }catch(err){btn.disabled=false;btn.textContent='Confirm Code Change';showToast(err.message||'Could not change code.','err')}
+  };
+}
+
 async function openEditProduct(id){
   const p=productById(id);if(!p||!isAdmin())return;
   let adminDetail=null;
   try{adminDetail=await getProductAdminDetail(id)}catch(err){return showToast(err.message,'err')}
 
   openModal('Edit Product',`<form id="editProductForm" class="grid md:grid-cols-2 gap-4">
-    <div><label class="text-xs font-semibold">Code</label><input id="epCode" value="${esc(p.code)}" required class="mt-1 w-full border rounded-xl px-3 py-2"><div id="epCodeStatus" class="text-[10px] mt-1 text-gray-400"></div></div>
+    <div><label class="text-xs font-semibold">Code</label><input id="epCode" value="${esc(p.code)}" required readonly class="mt-1 w-full border rounded-xl px-3 py-2 bg-gray-50"><div class="text-[10px] text-amber-700 mt-1">Use Change Product Code in Product Details to rename with an audit record.</div><div id="epCodeStatus" class="text-[10px] mt-1 text-gray-400"></div></div>
     <div><label class="text-xs font-semibold">Item Name</label><input id="epName" value="${esc(p.item_name)}" required class="mt-1 w-full border rounded-xl px-3 py-2"></div>
     <div><label class="text-xs font-semibold">Brand</label><input id="epBrand" value="${esc(p.brand||'')}" class="mt-1 w-full border rounded-xl px-3 py-2"></div>
     <div><label class="text-xs font-semibold">Class</label><input id="epClass" value="${esc(p.class||'')}" class="mt-1 w-full border rounded-xl px-3 py-2"></div>
