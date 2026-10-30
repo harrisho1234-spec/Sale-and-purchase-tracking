@@ -6,8 +6,10 @@
  * Run setupProductCodeAutoWriteback() once to install a 5-minute trigger.
  *
  * Source Item List/Stock Movement is intentionally NEVER rewritten.
- * Only the brand tab's Code cell and its relevant QTY / Costing lookup formula
- * are updated. The permanent Product Code Master alias resolves old codes.
+ * Only the brand tab's Code cell and relevant QTY / Location / Costing
+ * lookups are updated. QTY and Location prefer the App Stock Balance mirror
+ * of Stock & Inventory; old Item List codes are fallback only when absent
+ * from the mirror. No physical stock movements are created or rewritten.
  */
 const LIMP_CODE_WRITEBACK_BOOK_ID = '1maKk_lPYMYval44vnorm3_awwrIh5IYPKLovn_gWYtg';
 const LIMP_CODE_WRITEBACK_STOCK_SOURCE = 'https://docs.google.com/spreadsheets/d/1Rsd1lGDMyQCBO2fuTOJ0fNbDV_ojY8MrdhNXGPpiwD0/edit';
@@ -62,9 +64,11 @@ function findWritebackMatches_(book,oldCode,newCode){
 function protectQtyLookup_(sheet,row,originalCode) {
   const cell=sheet.getRange(row,7);
   const formula=cell.getFormula();
-  // A previously protected row already prefers the current code and falls
-  // back to the ORIGINAL stock ledger code, surviving multiple renames.
-  if(formula.indexOf('LIMP_CODE_ALIAS_QTY')>=0)return;
+  // Prefer live app stock mirror by CURRENT code. Legacy Item List is only
+  // a fallback for products absent from the limited mirror export.
+  // When upgrading a previously protected formula, refresh the old fallback.
+  const hasLegacyGuard=formula.indexOf('LIMP_CODE_ALIAS_QTY')>=0;
+  if(hasLegacyGuard&&formula.includes("'App Stock Balance'!"))return null;
   if(!formula||!/XLOOKUP\s*\(/i.test(formula)||
       formula.indexOf('Item List!A:A')<0||formula.indexOf('Item List!F:F')<0){
     throw new Error('QTY G'+row+' is not the recognized Item List XLOOKUP formula. No code changed.');
@@ -79,8 +83,9 @@ function protectQtyLookup_(sheet,row,originalCode) {
   const newFormula='=LET(LIMP_CODE_ALIAS_QTY, B'+row+
     ', codes, IMPORTRANGE('+source+',"Item List!A:A"),'+
     ' q, IMPORTRANGE('+source+',"Item List!F:F"),'+
+    " IFNA(XLOOKUP(LIMP_CODE_ALIAS_QTY,'App Stock Balance'!B:B,'App Stock Balance'!F:F),"+
     ' IFNA(XLOOKUP(LIMP_CODE_ALIAS_QTY,codes,q),'+
-    ' XLOOKUP("'+escapedOriginal+'",codes,q,0)))';
+    ' XLOOKUP("'+escapedOriginal+'",codes,q,0))))';
   // Named variable marker makes future edits idempotent.
   return newFormula;
 }
@@ -88,7 +93,7 @@ function protectQtyLookup_(sheet,row,originalCode) {
 function protectItemListLocation_(sheet,row,originalCode) {
   const formula=sheet.getRange(row,13).getFormula();
   if(!formula)return null; // Literal locations remain intact.
-  if(formula.indexOf('LIMP_CODE_ALIAS_LOC')>=0)return null;
+  if(formula.indexOf('LIMP_CODE_ALIAS_LOC')>=0&&formula.includes("'App Stock Balance'!"))return null;
   if(!/XLOOKUP\s*\(/i.test(formula) ||
      formula.indexOf('Item List!A4:A')<0||formula.indexOf('Item List!G4:G')<0 ||
      !new RegExp('\\bB'+row+'\\b','i').test(formula)){
@@ -99,8 +104,9 @@ function protectItemListLocation_(sheet,row,originalCode) {
   return '=LET(LIMP_CODE_ALIAS_LOC,B'+row+
     ',codes,IMPORTRANGE('+source+',"Item List!A4:A"),'+
     'loc,IMPORTRANGE('+source+',"Item List!G4:G"),'+
+    "IFNA(XLOOKUP(LIMP_CODE_ALIAS_LOC,'App Stock Balance'!B:B,'App Stock Balance'!J:J),"+
     'IFNA(XLOOKUP(LIMP_CODE_ALIAS_LOC,codes,loc),'+
-    'IFNA(XLOOKUP("'+original+'",codes,loc),"Sold Out")))';
+    'IFNA(XLOOKUP("'+original+'",codes,loc),"Sold Out"))))';
 }
 function protectCostOrBrandLookup_(sheet,column,lookupRange,position,label) {
   const end=Math.min(30,Math.max(sheet.getLastRow(),1));
