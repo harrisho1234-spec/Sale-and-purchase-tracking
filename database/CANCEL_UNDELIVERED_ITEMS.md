@@ -15,13 +15,15 @@ Creation retries use a request UUID and return the same CN. Approval locks the c
 
 ## Deployment
 
-The change is committed source code, **not a live deployment**. There is no historical backfill and no DML against existing financial records. CN-2026-024 must remain unchanged.
+The database migration `cancel_undelivered_items_stock_release` was applied on 2026-10-30. The frontend release is tracked in PR #2. There is no historical backfill and no DML against existing financial records. CN-2026-024 must remain unchanged.
 
 1. Apply the consolidated `database/cancel-undelivered-items.sql` once, as a transaction, after the existing CN case, Exchange, credit-allocation and reservation scripts. This includes the earlier cancellation branch and its stock-task extension; it replaces the earlier un-deployed script, not an additional migration to apply afterward. This follows this repository's `database/*.sql` deployment convention. The script expects the schema/function contracts inspected on 2026-10-29. Do not run older CN patches afterward, as they can replace these RPCs.
 2. Verify in a staging copy with the actual RLS policies and delivery/credit triggers. The new tables are RLS-enabled and accessible only through RPCs; helper execution is revoked from public client roles.
 3. Publish the frontend files together with the updated script versions in `index.html`.
 
-Do not publish the interface before the database script. No live SQL migration, approval, cancellation, receipt, credit, payment edit, or historical repair was performed as part of this implementation. Existing historical CNs cannot be converted to this action.
+The database script must precede the frontend release; do not reapply it after deployment. No live approval, cancellation, receipt, credit, payment edit, or historical repair was performed. Existing historical CNs cannot be converted to this action.
+
+Post-deployment database checks confirmed the task table has RLS enabled, clients cannot write it directly, anonymous users cannot call the release RPC, and unauthenticated release attempts are rejected. The new task/posting tables were empty after deployment. CN-2026-024 header, item, workflow and credit checksums matched their pre-deployment values. The live secondary credit guard was added to the isolated fixture, reproduced a blocking failure, and passed after the cancellation-specific correction.
 
 ## Validation
 
