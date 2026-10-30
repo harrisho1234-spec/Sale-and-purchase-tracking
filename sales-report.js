@@ -259,10 +259,11 @@
       a.returns+=n(r.return_value);
       a.invoice+=n(r.invoice_value);
       a.prepayment+=n(r.prepayment_value);
+      a.applied+=n(r.prepayment_applied);
       a.pending+=n(r.pending_value);
       a.orders++;
       return a;
-    },{actual:0,collection:0,confirmed:0,returns:0,invoice:0,prepayment:0,pending:0,orders:0});
+    },{actual:0,collection:0,confirmed:0,returns:0,invoice:0,prepayment:0,applied:0,pending:0,orders:0});
   }
   function tabButton(id,label){
     const active=reportState.view===id;
@@ -315,7 +316,7 @@
         <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
           <div>
             <h3 class="font-bold text-lg">Sales Report</h3>
-            <p class="text-[11px] text-gray-400 mt-1"><b>Actual Sales</b> is the main result: Invoice value + Pre-payment − active Return/CN. Collection is cash received. Confirmed includes Invoice + Pre-payment + Pending. Cancelled orders/CNs are excluded.</p>
+            <p class="text-[11px] text-gray-400 mt-1"><b>Actual Sales</b> is the main result: Invoice value + Pre-payment − Pre-payment already applied − active Return/CN. Prepayments are shown on receipt dates; issued TK/RK on issue dates. Collection shows cash received. Old SR deposits are not counted twice.</p>
           </div>
           <div class="flex flex-wrap items-center gap-2">
             <div class="flex gap-1 p-1 rounded-xl bg-[#f7f5f1]">${tabButton('month','By Month')}${tabButton('quarter','By Quarter')}${tabButton('year','By Year')}</div>
@@ -334,6 +335,7 @@
               <option value="PJ" ${reportState.business==='PJ'?'selected':''}>Project (PJ)</option>
               <option value="OTHER" ${reportState.business==='OTHER'?'selected':''}>Pre-Order / Other</option>
             </select>
+            <button type="button" onclick="exportSalesReportRowsCsv()" class="px-3 py-2.5 rounded-xl border bg-white text-xs font-semibold">Export CSV</button>
             ${canChooseReportReps()?`<div class="relative">
               <button type="button" onclick="toggleSalesReportRepMenu()" class="min-w-[190px] flex items-center justify-between gap-3 border rounded-xl bg-white px-3 py-2.5 text-sm">
                 <span class="truncate">${esc(selectedRepLabel())}</span><span class="text-gray-400">⌄</span>
@@ -349,14 +351,14 @@
         <div class="rounded-2xl p-5 bg-[#fff8e8] border border-[#e6c776] shadow-sm">
           <div class="text-[10px] uppercase tracking-[.16em] font-bold text-[#9a6b12]">Main Result · Actual Sales</div>
           <div class="text-3xl font-bold mt-2 text-[#1f2937]">${money(t.actual)}</div>
-          <div class="text-[10px] text-[#7c6a48] mt-2">Invoices ${money(t.invoice)} + Pre-payment ${money(t.prepayment)} − Returns ${money(t.returns)}</div>
+          <div class="text-[10px] text-[#7c6a48] mt-2">Invoices ${money(t.invoice)} + Pre-payment ${money(t.prepayment)} − Previously applied ${money(t.applied)} − Returns ${money(t.returns)}</div>
         </div>
         ${kpiCard('Collection',money(t.collection),'Deposits + all payments actually received','text-green-600')}
         ${kpiCard('Confirmed Sales',money(t.confirmed),'Invoices + Pre-payment + Pending ('+money(t.pending)+' pending)','text-[#8a6514]')}
       </div>
       <div class="grid grid-cols-2 gap-3 mb-4">
         ${kpiCard('Returns / CN','−'+money(t.returns),'Active returned value','text-amber-600')}
-        ${kpiCard('Orders',String(t.orders),'Included sales orders / SR')}
+        ${kpiCard('Report Entries',String(t.orders),'Invoices, payments, SR commitments, and returns')}
       </div>
 
       <div class="grid xl:grid-cols-[1.2fr_.8fr] gap-4">
@@ -366,7 +368,7 @@
             ${buckets.length?buckets.map(b=>{
               const width=max>0?Math.max((b.actual/max)*100,b.actual>0?2:0):0;
               return `<div>
-                <div class="flex items-center justify-between gap-3 text-xs mb-1"><div class="font-semibold w-14">${esc(b.label)}</div><div class="flex-1 text-right"><b>${money(b.actual)}</b><span class="text-gray-400 ml-2">${b.orders} order${b.orders===1?'':'s'}</span></div></div>
+                <div class="flex items-center justify-between gap-3 text-xs mb-1"><div class="font-semibold w-14">${esc(b.label)}</div><div class="flex-1 text-right"><b>${money(b.actual)}</b><span class="text-gray-400 ml-2">${b.orders} entries</span></div></div>
                 <div class="ml-14 h-2 rounded-full bg-gray-100 overflow-hidden"><div class="h-full rounded-full bg-[#b3871e]" style="width:${width}%"></div></div>
               </div>`;
             }).join(''):'<div class="py-12 text-center text-sm text-gray-400">No sales data for this selection.</div>'}
@@ -420,6 +422,25 @@
       window.renderSalesTargetsPanel(reportState);
   }
 
+
+  window.exportSalesReportRowsCsv=function(){
+    const data=periodRows();
+    if(!data.length)return showToast('No sales report entries for the selected filters.','err');
+    const headings=['Report Date','Document','Entry Type','Sales Rep','Category','Invoice Value','Prepayment','Prepayment Applied','Returns','Actual Sales','Collection','Confirmed Sales','Pending'];
+    const rows=data.map(r=>[r.order_date,r.document_no,r.report_event||'order',r.sales_rep_name,
+      reportCategory(r),n(r.invoice_value),n(r.prepayment_value),n(r.prepayment_applied),
+      n(r.return_value),n(r.actual_sales),n(r.collection_value),n(r.confirmed_sales),n(r.pending_value)]);
+    const safe=x=>{
+      let v=String(x==null?'':x);
+      if(/^[=+\-@\t\r]/.test(v))v="'"+v;
+      return '"'+v.replace(/"/g,'""')+'"';
+    };
+    const csv='\ufeff'+[headings,...rows].map(a=>a.map(safe).join(',')).join('\r\n');
+    const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download='LImperial_Sales_Report_'+(reportState.year||'all')+'.csv';
+    document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);
+  };
+
   window.renderReports=async function(){
     if(!['sales','manager','accountant','admin','super_admin'].includes(state.profile?.role||''))throw new Error('Sales Report access required');
     document.getElementById('pageTitle').textContent='Report';
@@ -427,8 +448,8 @@
     document.getElementById('content').innerHTML='<div id="salesReportRoot"><div class="py-20 text-center text-gray-400">Loading sales report...</div></div>';
 
     const [summaryRes,itemRes]=await Promise.all([
-      db.rpc('get_sales_report_rows_v5'),
-      db.rpc('get_sales_report_item_rows_v5')
+      db.rpc('get_sales_report_rows_v6'),
+      db.rpc('get_sales_report_item_rows_v6')
     ]);
     if(summaryRes.error)throw summaryRes.error;
     if(itemRes.error)throw itemRes.error;
