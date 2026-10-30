@@ -4,6 +4,7 @@
 (function(){
   const A={rows:[],loading:false,expanded:new Set(),details:new Map()};
   const negativeTypes=['out','broken','transfer','adjustment_out'];
+  let historyPageSize=20,historyPage=1;
 
   function role(){return String((typeof state!=='undefined'&&state&&state.profile&&state.profile.role)||'')}
   function isStockController(){return role()==='stock_controller'}
@@ -568,11 +569,30 @@
         historyHolder.className='mt-5';
       }
       root.appendChild(historyHolder);
+      const pageCount=Math.max(1,Math.ceil(reviewedRows.length/historyPageSize));
+      historyPage=Math.max(1,Math.min(historyPage,pageCount));
+      const startIndex=(historyPage-1)*historyPageSize;
+      const visibleReviewed=reviewedRows.slice(startIndex,startIndex+historyPageSize);
       historyHolder.innerHTML=reviewedRows.length?
-        '<div class="rounded-xl border border-gray-200 bg-gray-50 p-3 mb-3 flex flex-wrap items-center justify-between gap-2">'+
+        '<div class="rounded-xl border border-gray-200 bg-gray-50 p-3 mb-3 flex flex-wrap items-center justify-between gap-3">'+
           '<div><b class="text-sm">Reviewed Stock Quantity History</b><div class="text-[10px] text-gray-500 mt-1">Approved and rejected requests, newest review first.</div></div>'+
-          '<span class="px-2 py-1 rounded-full bg-white border text-[10px] font-bold">'+reviewedRows.length+' Reviewed</span>'+
-        '</div><div class="grid gap-3">'+reviewedRows.map(actionRequestCard).join('')+'</div>':'';
+          '<div class="flex items-center flex-wrap gap-2">'+
+            '<span class="px-2 py-1 rounded-full bg-white border text-[10px] font-bold">'+reviewedRows.length+' Reviewed</span>'+
+            '<label class="text-xs text-gray-600" for="stockHistoryPageSize">Show</label>'+
+            '<select id="stockHistoryPageSize" aria-label="Reviewed history records per page" onchange="setStockApprovalHistoryPageSize(this.value)" class="border rounded-lg bg-white px-2 py-1.5 text-xs">'+
+              [20,40,100].map(size=>'<option value="'+size+'"'+(size===historyPageSize?' selected':'')+'>'+size+'</option>').join('')+
+            '</select>'+
+          '</div>'+
+        '</div>'+
+        '<div class="grid gap-3">'+visibleReviewed.map(actionRequestCard).join('')+'</div>'+
+        '<div class="flex flex-wrap items-center justify-between gap-3 mt-3 text-xs text-gray-600">'+
+          '<span>Showing '+(startIndex+1)+'–'+Math.min(startIndex+historyPageSize,reviewedRows.length)+' of '+reviewedRows.length+'</span>'+
+          '<div class="flex items-center gap-2">'+
+            '<button type="button" onclick="setStockApprovalHistoryPage('+(historyPage-1)+')" '+(historyPage===1?'disabled ':'')+'class="px-3 py-2 border rounded-lg bg-white disabled:opacity-40">Previous</button>'+
+            '<span>Page '+historyPage+' of '+pageCount+'</span>'+
+            '<button type="button" onclick="setStockApprovalHistoryPage('+(historyPage+1)+')" '+(historyPage===pageCount?'disabled ':'')+'class="px-3 py-2 border rounded-lg bg-white disabled:opacity-40">Next</button>'+
+          '</div>'+
+        '</div>':'';
       patchRequestBadge();
     }catch(err){
       holder.innerHTML='<div class="inv-card text-red-600">Error loading stock approvals: '+esc(err.message||'Unknown error')+'</div>';
@@ -580,6 +600,18 @@
       if(historyHolder)historyHolder.innerHTML='';
     }
   }
+
+  window.setStockApprovalHistoryPageSize=function(value){
+    const size=Number(value);
+    if(![20,40,100].includes(size))return;
+    historyPageSize=size;historyPage=1;
+    renderActionRequestsPanel();
+  };
+  window.setStockApprovalHistoryPage=function(page){
+    if(!Number.isInteger(page)||page<1)return;
+    historyPage=page;
+    renderActionRequestsPanel();
+  };
 
   async function patchRequestBadge(){
     try{
