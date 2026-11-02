@@ -268,9 +268,16 @@
       };
     });
 
-    ui.salesOrders = merged;
-    ui.salesItems = merged.flatMap(o => (o.items||[]).map(i=>({...i,order:o})));
-    return merged;
+    // Preserve the original SR in history, but reconcile its financial
+    // contribution when a TK/RK counterpart has been issued and is visible.
+    let reconciled=merged;
+    try{
+      const portfolio=await window.CustomerSrFinancials.load(db,merged,Array.isArray(linked.data)?linked.data:[]);
+      reconciled=portfolio.rows;
+    }catch(err){console.warn('Tracking SR financial reconciliation unavailable:',err?.message||err);}
+    ui.salesOrders = reconciled;
+    ui.salesItems = reconciled.flatMap(o => (o.items||[]).map(i=>({...i,order:o})));
+    return reconciled;
   }
 
   function salesFilterOptions() {
