@@ -22,16 +22,19 @@
     if(cr.error)throw cr.error;
     if(ar.error)throw ar.error;
 
-    const orders=(or.data||[]).filter(o=>!isCancelled(o));
+    let reconciled;
+    try{reconciled=await window.CustomerSrFinancials.load(db,or.data||[]);}
+    catch(err){console.warn('Customer credit SR reconciliation unavailable:',err?.message||err);}
+    const orders=(reconciled?.rows||or.data||[]).filter(o=>!isCancelled(o));
     const credits=(cr.data||[]).filter(x=>x.customer_id===customerId&&x.status!=='cancelled');
     const apps=(ar.data||[]).filter(x=>x.customer_id===customerId);
 
-    const collectible=orders.filter(o=>!isPendingPre(o)&&n(o.gross_balance_due)>0.001);
-    const pending=orders.filter(o=>isPendingPre(o)&&n(o.gross_balance_due)>0.001);
+    const collectible=orders.filter(o=>o._srFinancial?!o._srFinancial.pending&&o._srFinancial.gross>0.001:!isPendingPre(o)&&n(o.gross_balance_due)>0.001);
+    const pending=orders.filter(o=>o._srFinancial?o._srFinancial.pending&&o._srFinancial.gross>0.001:isPendingPre(o)&&n(o.gross_balance_due)>0.001);
 
-    const grossAR=collectible.reduce((a,o)=>a+n(o.gross_balance_due),0);
-    const netDue=collectible.reduce((a,o)=>a+n(o.balance_due),0);
-    const pendingDue=pending.reduce((a,o)=>a+n(o.gross_balance_due),0);
+    const grossAR=collectible.reduce((a,o)=>a+n(o._srFinancial?.gross??o.gross_balance_due),0);
+    const netDue=collectible.reduce((a,o)=>a+n(o._srFinancial?.balance??o.balance_due),0);
+    const pendingDue=pending.reduce((a,o)=>a+n(o._srFinancial?.gross??o.gross_balance_due),0);
     const approvedCredit=credits.filter(x=>x.financial_effect==='credit_ar').reduce((a,x)=>a+n(x.credit_amount),0);
     const appliedCredit=credits.filter(x=>x.financial_effect==='credit_ar').reduce((a,x)=>a+n(x.applied_amount),0);
     const availableCredit=credits.filter(x=>x.financial_effect==='credit_ar').reduce((a,x)=>a+n(x.available_credit),0);
