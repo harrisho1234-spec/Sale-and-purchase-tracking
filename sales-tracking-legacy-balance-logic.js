@@ -12,13 +12,14 @@
   function n(v){const x=Number(v||0);return Number.isFinite(x)?x:0}
   function repName(o){return o?.sales_rep_name_snapshot||o?.rep_name||''}
   function isCancelled(o){return norm(o?.status)==='cancelled'}
-  function isSettled(o){return norm(o?.payment_status)==='paid'||n(o?.balance_due)<=0.001}
+  function financial(o,k,raw){return o?._srFinancial?o._srFinancial[k]:n(o?.[raw]);}
+  function isSettled(o){return norm(o?.payment_status)==='paid'||financial(o,'balance','balance_due')<=0.001}
   function isPre(o){
     return ['pre_order','mixed'].includes(norm(o?.order_type))||norm(o?.sales_flow_type)==='pre_order'||String(o?.sr_no||'').toUpperCase().startsWith('SR');
   }
   // A pre-order becomes collectible AR only after the final TK/RK has been issued.
-  function isPendingPre(o){return isPre(o)&&!o?.sales_invoice_no&&!o?.invoice_issued_at&&!o?.linked_fully_issued}
-  function isOpen(o){return !isCancelled(o)&&!isSettled(o)&&n(o?.balance_due)>0.001}
+  function isPendingPre(o){return o?._srFinancial?o._srFinancial.pending:isPre(o)&&!o?.sales_invoice_no&&!o?.invoice_issued_at&&!o?.linked_fully_issued}
+  function isOpen(o){return !isCancelled(o)&&!o?._srFinancial?.historyOnly&&!isSettled(o)&&financial(o,'balance','balance_due')>0.001}
 
   function withinDate(dateStr,filter){
     if(filter==='all'||!dateStr)return true;
@@ -43,7 +44,7 @@
     if(s==='preorder')return isOpen(o)&&isPendingPre(o);
     if(s==='not_taken')return !isCancelled(o)&&items.some(i=>norm(i.fulfillment_status)==='ready');
     if(s==='taken_unpaid')return isOpen(o)&&!isPendingPre(o)&&items.some(i=>['delivered','installed'].includes(norm(i.fulfillment_status)));
-    if(s==='settled')return !isCancelled(o)&&isSettled(o);
+    if(s==='settled')return !isCancelled(o)&&!o?._srFinancial?.historyOnly&&isSettled(o);
     return true;
   }
 
@@ -85,13 +86,13 @@
   }
 
   function stats(rows){
-    const total=rows.reduce((a,o)=>a+n(o.order_total),0);
-    const paid=rows.reduce((a,o)=>a+n(o.amount_paid),0);
-    const activeBalance=rows.reduce((a,o)=>a+(!isPendingPre(o)?n(o.balance_due):0),0);
-    const pendingBalance=rows.reduce((a,o)=>a+(isPendingPre(o)?n(o.balance_due):0),0);
-    const activeUncleared=rows.filter(o=>n(o.balance_due)>0.001&&!isPendingPre(o)).length;
+    const total=rows.reduce((a,o)=>a+financial(o,'total','order_total'),0);
+    const paid=rows.reduce((a,o)=>a+financial(o,'received','amount_paid'),0);
+    const activeBalance=rows.reduce((a,o)=>a+(!isPendingPre(o)?financial(o,'balance','balance_due'):0),0);
+    const pendingBalance=rows.reduce((a,o)=>a+(isPendingPre(o)?financial(o,'balance','balance_due'):0),0);
+    const activeUncleared=rows.filter(o=>financial(o,'balance','balance_due')>0.001&&!isPendingPre(o)).length;
     const pre=rows.filter(isPendingPre);
-    const prePaid=pre.reduce((a,o)=>a+n(o.amount_paid),0);
+    const prePaid=pre.reduce((a,o)=>a+financial(o,'received','amount_paid'),0);
     const preQty=pre.reduce((a,o)=>a+(o.items||[]).reduce((x,i)=>x+n(i.qty),0),0);
     const readyItems=rows.flatMap(o=>(o.items||[]).filter(i=>norm(i.fulfillment_status)==='ready'));
     const readyQty=readyItems.reduce((a,i)=>a+n(i.qty),0);
@@ -111,7 +112,7 @@
     const k=stats(rows);
 
     const summary=[...root.querySelectorAll('.lr-summary .lr-summary-item')];
-    if(summary[0])summary[0].querySelector('.lr-summary-value').textContent=String(rows.length);
+    if(summary[0])summary[0].querySelector('.lr-summary-value').textContent=String(rows.filter(o=>!o._srFinancial?.historyOnly).length);
     if(summary[1])setMoneyText(summary[1].querySelector('.lr-summary-value'),k.total);
     if(summary[2]){
       const lab=summary[2].querySelector('.lr-summary-label');if(lab)lab.textContent='Amount Received';
@@ -157,14 +158,14 @@
         const lab=moneyBlocks[0].querySelector('.lr-money-label');
         const val=moneyBlocks[0].querySelector('.lr-money');
         if(lab)lab.textContent=isPendingPre(o)?'Pre-Order Deposit':'Amount Received';
-        if(val){val.textContent=money(o.amount_paid,o.currency);val.classList.remove('text-green-600','text-blue-600');val.classList.add(isPendingPre(o)?'text-blue-600':'text-green-600')}
+        if(val){val.textContent=money(financial(o,'received','amount_paid'),o.currency);val.classList.remove('text-green-600','text-blue-600');val.classList.add(isPendingPre(o)?'text-blue-600':'text-green-600')}
       }
       if(moneyBlocks[1]){
         const lab=moneyBlocks[1].querySelector('.lr-money-label');
         const val=moneyBlocks[1].querySelector('.lr-money');
         if(lab)lab.textContent=isPendingPre(o)?'Est. Balance':(isSettled(o)?'Balance':'Active Balance');
         if(val){
-          val.textContent=money(o.balance_due,o.currency);
+          val.textContent=money(financial(o,'balance','balance_due'),o.currency);
           val.classList.remove('text-red-500','text-green-600','text-gray-400','text-gray-500');
           val.classList.add(isPendingPre(o)?'text-gray-400':(n(o.balance_due)>0.001?'text-red-500':'text-green-600'));
         }
