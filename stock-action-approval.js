@@ -26,6 +26,8 @@
     return isNaN(d.getTime())?String(v):d.toLocaleString();
   }
   function title(v){
+    if(v==='adjustment_in')return 'Adjustment +';
+    if(v==='adjustment_out')return 'Adjustment −';
     return String(v||'').replace(/[_-]+/g,' ').replace(/\b\w/g,function(m){return m.toUpperCase()});
   }
   function activeRequestsTab(){
