@@ -68,6 +68,9 @@ async function renderDashboard(){
   });
   state.supplierSummary=p.data||[];
   const items=i.data||[];
+  let portfolio;
+  try{portfolio=await window.CustomerSrFinancials.load(db,state.orderSummary,Array.isArray(linked.data)?linked.data:[]);}
+  catch(err){console.warn('Dashboard SR financial reconciliation unavailable:',err?.message||err);}
 
   // Keep Dashboard KPIs consistent with Sales Tracking's "All Active" logic.
   // Current open = non-cancelled orders with an outstanding balance.
@@ -81,15 +84,15 @@ async function renderDashboard(){
     return pre && !x.sales_invoice_no && !x.invoice_issued_at && !x.linked_fully_issued;
   };
 
-  const openOrders=state.orderSummary.filter(x=>
-    norm(x.status)!=='cancelled' && num(x.balance_due)>0.001
+  const openOrders=(portfolio?.rows||state.orderSummary).filter(x=>
+    norm(x.status)!=='cancelled' && num(x._srFinancial?.balance??x.balance_due)>0.001
   );
-  const pendingPreOrders=openOrders.filter(isPendingPre);
-  const collectibleOrders=openOrders.filter(x=>!isPendingPre(x));
+  const pendingPreOrders=openOrders.filter(x=>x._srFinancial?x._srFinancial.pending:isPendingPre(x));
+  const collectibleOrders=openOrders.filter(x=>x._srFinancial?!x._srFinancial.pending:!isPendingPre(x));
 
   const orderMap=new Map(openOrders.map(x=>[x.id,x]));
-  const totalSales=openOrders.reduce((a,x)=>a+num(x.order_total),0);
-  const balanceDue=collectibleOrders.reduce((a,x)=>a+Math.max(0,num(x.balance_due)),0);
+  const totalSales=openOrders.reduce((a,x)=>a+num(x._srFinancial?.total??x.order_total),0);
+  const balanceDue=collectibleOrders.reduce((a,x)=>a+Math.max(0,num(x._srFinancial?.balance??x.balance_due)),0);
   const uncleared=collectibleOrders;
 
   const notTaken=items.filter(x=>
@@ -102,8 +105,8 @@ async function renderDashboard(){
   const preIds=new Set(pendingPreOrders.map(x=>x.id));
   const preItems=items.filter(x=>preIds.has(x.sales_order_id));
   const preQty=preItems.reduce((a,x)=>a+num(x.qty),0);
-  const preDeposits=pendingPreOrders.reduce((a,x)=>a+num(x.amount_paid),0);
-  const prePending=pendingPreOrders.reduce((a,x)=>a+Math.max(0,num(x.balance_due)),0);
+  const preDeposits=pendingPreOrders.reduce((a,x)=>a+num(x._srFinancial?.received??x.amount_paid),0);
+  const prePending=pendingPreOrders.reduce((a,x)=>a+Math.max(0,num(x._srFinancial?.balance??x.balance_due)),0);
 
   const cards=`<div class="grid sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-6">
     ${salesDashCard('Active Balance Due (AR)',money(balanceDue),`Open sales value: <b class="text-gray-700">${money(totalSales)}</b>`,'','red')}
