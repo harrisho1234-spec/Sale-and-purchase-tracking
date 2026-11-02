@@ -1,0 +1,26 @@
+name: Customer SR financial reconciliation tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'customer-sr-financials.js'
+      - 'customer-edit.js'
+      - 'customer-order-history.js'
+      - 'customer-credit-summary.js'
+      - 'app.js'
+      - 'index.html'
+      - 'tests/customer-sr-financials.test.cjs'
+      - '.github/workflows/customer-sr-financial-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  customer-financial-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate customer SR to TK/RK financial totals
+        run: node --test tests/customer-sr-financials.test.cjs
