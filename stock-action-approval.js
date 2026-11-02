@@ -1,9 +1,10 @@
-// Approval gate for stock deductions and transfers.
-// Stock Controller submits OUT / Broken / Transfer / Adjustment- / Customer Delivery / DO Delivery.
-// Admin or Super Admin approval creates the real stock movement; pending requests do not affect stock balance.
+// Approval gate for stock adjustments, deductions, transfers, and deliveries.
+// Stock Controller requests Adjustment +/-; positive increases require Super Admin,
+// negative adjustments and other stock actions require Admin/Super Admin approval.
+// Pending requests do not affect stock balance.
 (function(){
   const A={rows:[],loading:false,expanded:new Set(),details:new Map()};
-  const negativeTypes=['out','broken','transfer','adjustment_out'];
+  const requestTypes=['out','broken','transfer','adjustment_out','adjustment_in'];
   let historyPageSize=20,historyPage=1;
 
   function role(){return String((typeof state!=='undefined'&&state&&state.profile&&state.profile.role)||'')}
@@ -69,7 +70,7 @@
     const box=document.createElement('div');
     box.setAttribute('data-stock-approval-notice','1');
     box.className='rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900';
-    box.innerHTML='<b>Approval required.</b> '+esc(kind||'This stock action')+' will be submitted first. <b>Stock quantity will not change until Admin/Super Admin approves it.</b>';
+    box.innerHTML='<b>Approval required.</b> '+esc(kind||'This stock action')+' will be submitted first. <b>Stock quantity will not change until '+(String(kind||'').toLowerCase().includes('adjustment +')?'Super Admin':'Admin / Super Admin')+' approves it.</b>';
     form.insertBefore(box,form.firstElementChild);
   }
 
@@ -86,7 +87,7 @@
     function update(){
       const t=String(typeEl&&typeEl.value||'');
       const purpose=String(purposeEl&&purposeEl.value||'');
-      const needs=negativeTypes.includes(t);
+      const needs=requestTypes.includes(t);
       const oldNotice=form.querySelector('[data-stock-approval-notice]');
       if(oldNotice)oldNotice.remove();
       if(needs){
@@ -103,7 +104,7 @@
 
     form.onsubmit=async function(e){
       const type=String(document.getElementById('smType')&&document.getElementById('smType').value||'');
-      if(!negativeTypes.includes(type)){
+      if(!requestTypes.includes(type)){
         if(typeof original==='function')return original.call(form,e);
         return;
       }
@@ -113,7 +114,9 @@
       const q=wholeNumber('smQty','Quantity');if(q==null)return;
       const from=String(document.getElementById('smFrom')&&document.getElementById('smFrom').value||'').trim();
       const to=String(document.getElementById('smTo')&&document.getElementById('smTo').value||'').trim();
-      if(!from)return showToast('Source location is required.','err');
+      if(type==='adjustment_in'){
+        if(!to)return showToast('Destination location is required for Adjustment +.','err');
+      }else if(!from)return showToast('Source location is required.','err');
       if(type==='transfer'&&(!to||to===from))return showToast('Transfer requires a different destination location.','err');
 
       const purpose=type==='out'?String(document.getElementById('smOutPurpose')&&document.getElementById('smOutPurpose').value||''):'';
@@ -178,6 +181,9 @@
         ?'Stock OUT Destination / Purpose: '+(purposeLabels[purpose]||purpose)+(purposeDetail?' — '+purposeDetail:'')
         :'';
       const rawNote=String(document.getElementById('smNote')&&document.getElementById('smNote').value||'').trim();
+      if(['adjustment_in','adjustment_out'].includes(type)&&rawNote.length<6){
+        return showToast('Enter an adjustment reason of at least 6 characters.','err');
+      }
 
       if(type==='out'){
         const refType=String(document.getElementById('smReferenceType')&&document.getElementById('smReferenceType').value||'');
@@ -212,7 +218,7 @@
       try{
         await submit('manual_movement',payload,payload.note);
         closeModal();
-        showToast('Stock action submitted for approval. Quantity has not changed yet.');
+        showToast(type==='adjustment_in'?'Adjustment + requested. Super Admin must approve it before stock increases.':type==='adjustment_out'?'Adjustment − requested. Admin / Super Admin approval required before stock decreases.':'Stock action submitted for approval. Quantity has not changed yet.');
         if(typeof window.setInventoryTab==='function')window.setInventoryTab('requests');
       }catch(err){
         if(btn){btn.disabled=false;btn.textContent='Submit for Approval'}
@@ -522,7 +528,11 @@
             (r.reviewer_note?'<div class="mt-2 text-[10px] text-gray-500"><b>Reviewer note:</b> '+esc(r.reviewer_note)+'</div>':'')+
             '<div class="mt-2 text-[10px] font-semibold text-[#a77d1a] group-hover:underline">Click to '+(expanded?'hide':'view')+' details & product photo <span id="stockActionArrow_'+id+'">'+(expanded?'⌃':'⌄')+'</span></div>'+
           '</div>'+
-          (canApprove()&&pending?'<div class="flex gap-2 shrink-0"><button onclick="event.stopPropagation();reviewStockActionRequest(\''+id+'\',true)" class="px-3 py-2 rounded-lg bg-green-600 text-white text-xs font-semibold">Approve</button><button onclick="event.stopPropagation();reviewStockActionRequest(\''+id+'\',false)" class="px-3 py-2 rounded-lg border border-red-200 text-red-600 text-xs font-semibold">Reject</button></div>':(!pending&&isSuperAdmin()?'<div class="flex gap-2 shrink-0"><button onclick="event.stopPropagation();deleteStockActionHistory(\''+id+'\')" class="px-3 py-2 rounded-lg border border-red-200 bg-red-50 text-red-700 text-xs font-semibold">Delete History</button></div>':''))+
+          (canApprove()&&pending?'<div class="flex gap-2 shrink-0">'+
+             ((r.movement_type==='adjustment_in'&&!isSuperAdmin())
+               ?'<span class="text-[10px] text-amber-700 self-center">Super Admin approval only</span>'
+               :'<button onclick="event.stopPropagation();reviewStockActionRequest(\''+id+'\',true)" class="px-3 py-2 rounded-lg bg-green-600 text-white text-xs font-semibold">Approve</button>')+
+             '<button onclick="event.stopPropagation();reviewStockActionRequest(\''+id+'\',false)" class="px-3 py-2 rounded-lg border border-red-200 text-red-600 text-xs font-semibold">Reject</button></div>':(!pending&&isSuperAdmin()?'<div class="flex gap-2 shrink-0"><button onclick="event.stopPropagation();deleteStockActionHistory(\''+id+'\')" class="px-3 py-2 rounded-lg border border-red-200 bg-red-50 text-red-700 text-xs font-semibold">Delete History</button></div>':''))+
         '</div>'+
       '</div>'+
       '<div id="stockActionDetail_'+id+'" class="'+(expanded?'':'hidden ')+'mt-4 pt-4 border-t">'+(expanded?(cached?actionDetailHtml(cached,r):'<div class="rounded-xl border bg-gray-50 p-6 text-center text-xs text-gray-400">Click again if details do not load automatically.</div>'):'')+'</div>'+
@@ -556,7 +566,7 @@
       const pending=pendingRows.length;
       holder.innerHTML=
         '<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 mb-3 flex flex-col md:flex-row md:items-center md:justify-between gap-2">'+
-          '<div><b class="text-sm">'+(canApprove()?'Pending Stock Quantity Approvals':'My Pending Stock Approval Requests')+'</b><div class="text-[10px] text-amber-900 mt-1">OUT, Broken, Transfer, Adjustment − and Customer/DO delivery do not change stock until approved.</div></div>'+
+          '<div><b class="text-sm">'+(canApprove()?'Pending Stock Quantity Approvals':'My Pending Stock Approval Requests')+'</b><div class="text-[10px] text-amber-900 mt-1">Adjustment + (Super Admin approval), Adjustment −, OUT, Broken, Transfer and Customer/DO delivery do not change stock until approved.</div></div>'+
           '<span class="px-2 py-1 rounded-full bg-white border text-[10px] font-bold">'+pending+' Pending</span>'+
         '</div>'+
         '<div class="grid gap-3">'+(pendingRows.map(actionRequestCard).join('')||'<div class="inv-card py-6 text-center text-xs text-gray-400">No pending stock quantity approvals.</div>')+'</div>';
