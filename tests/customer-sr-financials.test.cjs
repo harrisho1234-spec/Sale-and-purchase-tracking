@@ -81,3 +81,19 @@ test('cancelled orders and fully settled historical SR balances are never re-add
  assert.equal(x.summary.ar,0);
  assert.equal(x.summary.orders,1);
 });
+
+test('customer and tracking summaries use the same source-of-truth reconciler',()=>{
+ const fs=require('node:fs'),path=require('node:path');
+ const read=name=>fs.readFileSync(path.join(__dirname,'..',name),'utf8');
+ const html=read('index.html');
+ assert.ok(html.indexOf('customer-sr-financials.js')>=0);
+ assert.ok(html.indexOf('customer-sr-financials.js')<html.indexOf('app.js'));
+ for(const name of [
+  'customer-edit.js','customer-order-history.js','customer-credit-summary.js',
+  'app.js','tracking-redesign.js'
+ ]){
+  assert.match(read(name),/CustomerSrFinancials\.load\(/,name+' should load reconciled financial rows');
+ }
+ assert.match(read('sales-tracking-legacy-balance-logic.js'),/function financial\(o,k,raw\)/);
+ assert.match(read('customer-order-history.js'),/Converted · History Only/);
+});
