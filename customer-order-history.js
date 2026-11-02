@@ -111,8 +111,8 @@
     const visible=(reconciled?.rows||orders).filter(o=>norm(o.status)!=='cancelled');
     const sales=reconciled?.summary.sales??visible.reduce((a,o)=>a+num(o.order_total),0);
     const paid=reconciled?.summary.paid??visible.reduce((a,o)=>a+num(o.amount_paid),0);
-    const activeAR=reconciled?.summary.ar??visible.reduce((a,o)=>a+(!isPendingPre(o)&&!isSettled(o)?num(o.balance_due):0);
-    const pending=reconciled?.summary.pending??visible.reduce((a,o)=>a+(isPendingPre(o)&&!isSettled(o)?num(o.balance_due):0);
+    const activeAR=reconciled?.summary.ar??visible.reduce((a,o)=>a+(!isPendingPre(o)&&!isSettled(o)?num(o.balance_due):0),0);
+    const pending=reconciled?.summary.pending??visible.reduce((a,o)=>a+(isPendingPre(o)&&!isSettled(o)?num(o.balance_due):0),0);
     const countedOrders=reconciled?.summary.orders??visible.length;
 
     const body=document.getElementById('modalBody');
