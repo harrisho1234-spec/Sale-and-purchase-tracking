@@ -104,11 +104,16 @@
         linked_fully_issued:!!(split&&Number(split.total_qty)>0&&Number(split.issued_qty)>=Number(split.total_qty)&&!Number(split.pending_qty))
       };
     });
-    const visible=orders.filter(o=>norm(o.status)!=='cancelled');
-    const sales=visible.reduce((a,o)=>a+num(o.order_total),0);
-    const paid=visible.reduce((a,o)=>a+num(o.amount_paid),0);
-    const activeAR=visible.reduce((a,o)=>a+(!isPendingPre(o)&&!isSettled(o)?num(o.balance_due):0),0);
-    const pending=visible.reduce((a,o)=>a+(isPendingPre(o)&&!isSettled(o)?num(o.balance_due):0),0);
+    // Show every historical SR, but count its money only once after TK/RK issuance.
+    let reconciled;
+    try{reconciled=await window.CustomerSrFinancials.load(db,orders,Array.isArray(linked.data)?linked.data:[]);}
+    catch(err){console.warn('Customer converted SR financials unavailable:',err?.message||err);}
+    const visible=(reconciled?.rows||orders).filter(o=>norm(o.status)!=='cancelled');
+    const sales=reconciled?.summary.sales??visible.reduce((a,o)=>a+num(o.order_total),0);
+    const paid=reconciled?.summary.paid??visible.reduce((a,o)=>a+num(o.amount_paid),0);
+    const activeAR=reconciled?.summary.ar??visible.reduce((a,o)=>a+(!isPendingPre(o)&&!isSettled(o)?num(o.balance_due):0);
+    const pending=reconciled?.summary.pending??visible.reduce((a,o)=>a+(isPendingPre(o)&&!isSettled(o)?num(o.balance_due):0);
+    const countedOrders=reconciled?.summary.orders??visible.length;
 
     const body=document.getElementById('modalBody');
     if(!body)return;
@@ -126,7 +131,7 @@
             </div>
           </div>
           <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4">
-            <div><div class="text-[9px] uppercase font-bold text-gray-400">Orders</div><div class="text-lg font-bold mt-1">${orders.length}</div></div>
+            <div><div class="text-[9px] uppercase font-bold text-gray-400">Orders</div><div class="text-lg font-bold mt-1">${countedOrders}</div>${reconciled?.summary.converted?'<div class="text-[9px] text-gray-400">'+reconciled.summary.converted+' converted SR history record(s) excluded from financial totals</div>':''}</div>
             <div><div class="text-[9px] uppercase font-bold text-gray-400">Sales</div><div class="text-lg font-bold mt-1">${money(sales)}</div></div>
             <div><div class="text-[9px] uppercase font-bold text-gray-400">Received</div><div class="text-lg font-bold text-green-600 mt-1">${money(paid)}</div></div>
             <div><div class="text-[9px] uppercase font-bold text-gray-400">Active AR</div><div class="text-lg font-bold text-red-500 mt-1">${money(activeAR)}</div></div>
@@ -137,14 +142,16 @@
         <div>
           <div class="flex items-center justify-between mb-2"><h4 class="font-bold">Order History</h4><div class="text-[10px] text-gray-400">Newest first</div></div>
           <div class="grid gap-2 max-h-[55vh] overflow-y-auto pr-1">
-            ${orders.length?orders.map(o=>{
-              const pendingPre=isPendingPre(o)&&!isSettled(o);
+            ${orders.length?(reconciled?.rows||orders).map(o=>{
+              const historical=!!o._srFinancial?.historyOnly;
+              const pendingPre=!historical&&(o._srFinancial?o._srFinancial.pending:isPendingPre(o)&&!isSettled(o));
               const balLabel=pendingPre?'Est. Balance':(isSettled(o)?'Balance':'Active Balance');
               const paidLabel=pendingPre?'Pre-Order Deposit':'Paid';
               return `<div class="rounded-xl border border-[#ece8e0] bg-white p-4">
                 <div class="grid md:grid-cols-[1fr_auto] gap-3 items-start">
                   <div class="min-w-0">
-                    <div class="flex flex-wrap items-center gap-2"><b>${esc(docNo(o))}</b>${statusBadge(o)}</div>
+                    <div class="flex flex-wrap items-center gap-2"><b>${esc(docNo(o))}</b>${statusBadge(o)}${historical?'<span class="px-2 py-1 rounded-lg text-[10px] bg-slate-100 text-slate-600 border">Converted · History Only</span>':''}</div>
+                    ${historical?'<div class="text-[10px] text-blue-700 mt-1">This SR is fully issued. Original amounts are historical and already counted under the linked TK/RK invoice.</div>':''}
                     <div class="text-[11px] text-gray-400 mt-1">${esc(fmtDate(o.order_date))} · ${isPre(o)?'Pre-Order / SR':'Stock Sale / TK-RK'}${o.sales_category==='project'?' · Project (PJ)':''}</div>
                     <div class="text-[11px] text-gray-500 mt-2 truncate">${itemSummary(o)}</div>
                   </div>
