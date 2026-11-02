@@ -69,14 +69,24 @@
       .filter(i=>Number(i.issued_count||0)>0||(i.issued_numbers||[]).length>0)
       .map(i=>String(i.sr_id)));
     if(error){console.warn('Customer sales metrics unavailable:',error.message);window._customerSalesMetrics=new Map();return;}
+    // Reconcile original SRs with their issued TK/RK financial counterparts.
+    // Historical SR orders stay visible but fully converted totals are not counted twice.
+    let financialRows=data||[];
+    try{
+      const portfolio=await window.CustomerSrFinancials.load(db,data||[],Array.isArray(linked.data)?linked.data:[]);
+      financialRows=portfolio.rows;
+    }catch(err){console.warn('Customer SR financial reconciliation unavailable:',err?.message||err);}
     const map=new Map();
-    for(const o of data||[]){
+    for(const o of financialRows){
       if(String(o.status||'').toLowerCase()==='cancelled')continue;
+      const f=o._srFinancial;
       const x=map.get(o.customer_id)||{sales:0,paid:0,ar:0,pending:0,orders:0,hasIssuedInvoice:false,lastInvoiceAt:null,lastOrderAt:null,lastActivityAt:null};
-      x.sales+=Number(o.order_total||0);
-      x.paid+=Number(o.amount_paid||0);
-      if(isPendingPre(o)&&!isSettled(o))x.pending+=Number(o.balance_due||0);else if(!isSettled(o))x.ar+=Number(o.balance_due||0);
-      x.orders+=1;
+      x.sales+=f?f.total:Number(o.order_total||0);
+      x.paid+=f?f.received:Number(o.amount_paid||0);
+      if(f){if(f.pending)x.pending+=f.balance;else x.ar+=f.balance;}
+      else if(isPendingPre(o)&&!isSettled(o))x.pending+=Number(o.balance_due||0);
+      else if(!isSettled(o))x.ar+=Number(o.balance_due||0);
+      x.orders+=f?Number(f.counted):1;
       if(!!o.invoice_issued_at||!!String(o.sales_invoice_no||'').trim()||/^(TK|RK)[-0-9]/i.test(String(o.invoice_no||''))||issuedSRs.has(String(o.id)))x.hasIssuedInvoice=true;
       if(o.order_date&&(!x.lastOrderAt||String(o.order_date)>String(x.lastOrderAt)))x.lastOrderAt=o.order_date;
       if(o.invoice_issued_at&&(!x.lastInvoiceAt||String(o.invoice_issued_at)>String(x.lastInvoiceAt)))x.lastInvoiceAt=o.invoice_issued_at;
