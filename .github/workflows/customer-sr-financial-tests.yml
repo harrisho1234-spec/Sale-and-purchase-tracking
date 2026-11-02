@@ -8,6 +8,8 @@ on:
       - 'customer-edit.js'
       - 'customer-order-history.js'
       - 'customer-credit-summary.js'
+      - 'tracking-redesign.js'
+      - 'sales-tracking-legacy-balance-logic.js'
       - 'app.js'
       - 'index.html'
       - 'tests/customer-sr-financials.test.cjs'
@@ -22,5 +24,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Syntax-check modified browser scripts
+        run: |
+          node --check customer-sr-financials.js
+          node --check customer-edit.js
+          node --check customer-order-history.js
+          node --check customer-credit-summary.js
+          node --check tracking-redesign.js
+          node --check sales-tracking-legacy-balance-logic.js
+          node --check app.js
       - name: Validate customer SR to TK/RK financial totals
         run: node --test tests/customer-sr-financials.test.cjs
