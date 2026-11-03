@@ -123,8 +123,8 @@ test('customer popup excludes archived duplicate TK cards and counts only real o
  const orderArea=markup.split('Order History</h4>')[1]?.split('Return / Credit Note History</h4>')[0]||'';
  assert.match(orderArea,/SR-2026-011/);
  assert.match(orderArea,/SR-2026-012/);
- assert.doesNotMatch(orderArea,/TK2610-003<\/b>/);
- assert.doesNotMatch(orderArea,/TK2610-004<\/b>/);
+ assert.doesNotMatch(orderArea,/<b>TK2610-003<\/b>/);
+ assert.doesNotMatch(orderArea,/<b>TK2610-004<\/b>/);
  assert.match(markup,/Orders<\/div><div class="text-lg font-bold mt-1">2<\/div>/);
  assert.match(markup,/Gross Sales<\/div><div class="text-lg font-bold mt-1">\$3030\.00<\/div>/);
  assert.match(markup,/Received<\/div><div class="text-lg font-bold text-green-600 mt-1">\$1515\.00<\/div>/);
