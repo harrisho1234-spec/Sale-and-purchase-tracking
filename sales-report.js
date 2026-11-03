@@ -12,7 +12,7 @@
     selectedQuarters:null,
     periodMenuOpen:false,
     business:'all',
-    bookingsError:''
+    recognitionError:''
   };
 
   function n(v){const x=Number(v||0);return Number.isFinite(x)?x:0}
@@ -317,7 +317,7 @@
         <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
           <div>
             <h3 class="font-bold text-lg">Sales Report</h3>
-            <p class="text-[11px] text-gray-400 mt-1"><b>Actual Sales</b> follows invoice issues, prepayments and returns; <b>Collection</b> follows received-payment dates. <b>Booked Sales</b> counts each customer commitment once on its original SR/order date, even if TK/RK is issued months later. Converted TK/RK copies are excluded from bookings.</p>
+            <p class="text-[11px] text-gray-400 mt-1"><b>Actual Sales</b> counts officially issued TK/RK invoice value minus active returns; <b>Collection</b> tracks deposits and other received payments. Creating an SR never adds Sales; issued invoices are counted once on their issue date, including SR conversions.</p>
           </div>
           <div class="flex flex-wrap items-center gap-2">
             <div class="flex gap-1 p-1 rounded-xl bg-[#f7f5f1]">${tabButton('month','By Month')}${tabButton('quarter','By Quarter')}${tabButton('year','By Year')}</div>
@@ -347,16 +347,15 @@
         </div>
       </div>
 
-      ${reportState.bookingsError?'<div class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-800 mb-3">Booked Sales are temporarily unavailable. Actual Sales and Collection remain unchanged. Refresh or contact Admin.</div>':''}
       <div id="salesTargetsPanel" class="mb-4"></div>
       <div class="grid xl:grid-cols-3 gap-3 mb-3">
         <div class="rounded-2xl p-5 bg-[#fff8e8] border border-[#e6c776] shadow-sm">
           <div class="text-[10px] uppercase tracking-[.16em] font-bold text-[#9a6b12]">Main Result · Actual Sales</div>
           <div class="text-3xl font-bold mt-2 text-[#1f2937]">${money(t.actual)}</div>
-          <div class="text-[10px] text-[#7c6a48] mt-2">Invoices ${money(t.invoice)} + Pre-payment ${money(t.prepayment)} − Previously applied ${money(t.applied)} − Returns ${money(t.returns)}</div>
+          <div class="text-[10px] text-[#7c6a48] mt-2">TK/RK invoices ${money(t.invoice)} − Returns ${money(t.returns)} · SR deposits are Collection only</div>
         </div>
         ${kpiCard('Collection',money(t.collection),'Deposits + all payments actually received','text-green-600')}
-        ${kpiCard('Booked Sales',reportState.bookingsError?'Unavailable':money(t.confirmed),'Original SR/order date · does not move when converted to TK/RK','text-[#8a6514]')}
+        ${kpiCard('Issued Invoices',money(t.confirmed),'TK/RK issue date · excludes unconverted SRs and duplicate invoice copies','text-[#8a6514]')}
       </div>
       <div class="grid grid-cols-2 gap-3 mb-4">
         ${kpiCard('Returns / CN','−'+money(t.returns),'Active returned value','text-amber-600')}
@@ -381,8 +380,8 @@
           <div class="px-4 py-3 border-b"><h4 class="font-bold">Period Summary</h4></div>
           <div class="overflow-x-auto">
             <table class="w-full text-xs">
-              <thead class="bg-[#faf9f6] text-gray-400 uppercase text-[9px]"><tr><th class="text-left px-3 py-2">Period</th><th class="text-right px-3 py-2">Actual</th><th class="text-right px-3 py-2">Collection</th><th class="text-right px-3 py-2">Booked</th><th class="text-right px-3 py-2">Returns</th><th class="text-right px-3 py-2">Entries</th></tr></thead>
-              <tbody class="divide-y">${buckets.map(b=>`<tr><td class="px-3 py-2 font-semibold">${esc(b.label)}</td><td class="px-3 py-2 text-right font-bold">${money(b.actual)}</td><td class="px-3 py-2 text-right text-green-600">${money(b.collection)}</td><td class="px-3 py-2 text-right">${reportState.bookingsError?'—':money(b.confirmed)}</td><td class="px-3 py-2 text-right text-amber-600">−${money(b.returns)}</td><td class="px-3 py-2 text-right">${b.orders}</td></tr>`).join('')}</tbody>
+              <thead class="bg-[#faf9f6] text-gray-400 uppercase text-[9px]"><tr><th class="text-left px-3 py-2">Period</th><th class="text-right px-3 py-2">Actual</th><th class="text-right px-3 py-2">Collection</th><th class="text-right px-3 py-2">Issued</th><th class="text-right px-3 py-2">Returns</th><th class="text-right px-3 py-2">Entries</th></tr></thead>
+              <tbody class="divide-y">${buckets.map(b=>`<tr><td class="px-3 py-2 font-semibold">${esc(b.label)}</td><td class="px-3 py-2 text-right font-bold">${money(b.actual)}</td><td class="px-3 py-2 text-right text-green-600">${money(b.collection)}</td><td class="px-3 py-2 text-right">${money(b.confirmed)}</td><td class="px-3 py-2 text-right text-amber-600">−${money(b.returns)}</td><td class="px-3 py-2 text-right">${b.orders}</td></tr>`).join('')}</tbody>
             </table>
           </div>
         </div>
@@ -398,14 +397,14 @@
           <div class="grid sm:grid-cols-3 gap-3">
             ${['RK','TK','PJ'].map(code=>{
               const x=businessRows.find(b=>b.label.includes('('+code+')'))||{label:code,actual:0,collection:0,confirmed:0,returns:0,lines:0};
-              return `<div class="rounded-xl border bg-[#faf9f6] p-4"><div class="text-[10px] uppercase font-bold text-gray-400">${esc(x.label)}</div><div class="text-2xl font-bold mt-1">${money(x.actual)}</div><div class="text-[10px] text-gray-400 mt-1">Collection ${money(x.collection)} · Booked ${reportState.bookingsError?'—':money(x.confirmed)} · Returns −${money(x.returns)}</div></div>`;
+              return `<div class="rounded-xl border bg-[#faf9f6] p-4"><div class="text-[10px] uppercase font-bold text-gray-400">${esc(x.label)}</div><div class="text-2xl font-bold mt-1">${money(x.actual)}</div><div class="text-[10px] text-gray-400 mt-1">Collection ${money(x.collection)} · Issued ${money(x.confirmed)} · Returns −${money(x.returns)}</div></div>`;
             }).join('')}
           </div>
         </div>
       </div>
 
       <div class="grid xl:grid-cols-2 gap-4 mt-4">
-        ${dimensionBarCard('Sales by Brand','Ranked by Actual Sales (invoice + pre-payment − returns).',brandRows)}
+        ${dimensionBarCard('Sales by Brand','Ranked by Actual Sales (issued invoices − returns).',brandRows)}
         ${dimensionBarCard('Sales by Product Line','Ranked by Actual Sales. Product classes are normalized (for example Sofa, Chandelier, Wall Lamp, Table).',productLineRows)}
       </div>
 
@@ -413,8 +412,8 @@
         <div class="px-4 py-3 border-b flex items-center justify-between"><div><h4 class="font-bold">Sales Rep Summary</h4><div class="text-[10px] text-gray-400 mt-0.5">Based on the selected period and Sales Rep filter.</div></div><div class="text-[10px] text-gray-400">${repRows.length} rep${repRows.length===1?'':'s'}</div></div>
         <div class="overflow-x-auto">
           <table class="w-full text-xs">
-            <thead class="bg-[#faf9f6] text-gray-400 uppercase text-[9px]"><tr><th class="text-left px-4 py-2">Sales Rep</th><th class="text-right px-4 py-2">Entries</th><th class="text-right px-4 py-2">Actual Sales</th><th class="text-right px-4 py-2">Collection</th><th class="text-right px-4 py-2">Booked</th><th class="text-right px-4 py-2">Returns</th></tr></thead>
-            <tbody class="divide-y">${repRows.length?repRows.map(r=>`<tr><td class="px-4 py-3 font-semibold">${esc(r.name)}</td><td class="px-4 py-3 text-right">${r.orders}</td><td class="px-4 py-3 text-right font-bold">${money(r.actual)}</td><td class="px-4 py-3 text-right text-green-600">${money(r.collection)}</td><td class="px-4 py-3 text-right">${reportState.bookingsError?'—':money(r.confirmed)}</td><td class="px-4 py-3 text-right text-amber-600">−${money(r.returns)}</td></tr>`).join(''):`<tr><td colspan="6" class="px-4 py-10 text-center text-gray-400">No sales data for this selection.</td></tr>`}</tbody>
+            <thead class="bg-[#faf9f6] text-gray-400 uppercase text-[9px]"><tr><th class="text-left px-4 py-2">Sales Rep</th><th class="text-right px-4 py-2">Entries</th><th class="text-right px-4 py-2">Actual Sales</th><th class="text-right px-4 py-2">Collection</th><th class="text-right px-4 py-2">Issued</th><th class="text-right px-4 py-2">Returns</th></tr></thead>
+            <tbody class="divide-y">${repRows.length?repRows.map(r=>`<tr><td class="px-4 py-3 font-semibold">${esc(r.name)}</td><td class="px-4 py-3 text-right">${r.orders}</td><td class="px-4 py-3 text-right font-bold">${money(r.actual)}</td><td class="px-4 py-3 text-right text-green-600">${money(r.collection)}</td><td class="px-4 py-3 text-right">${money(r.confirmed)}</td><td class="px-4 py-3 text-right text-amber-600">−${money(r.returns)}</td></tr>`).join(''):`<tr><td colspan="6" class="px-4 py-10 text-center text-gray-400">No sales data for this selection.</td></tr>`}</tbody>
           </table>
         </div>
       </div>`;
@@ -427,9 +426,8 @@
 
   window.exportSalesReportRowsCsv=function(){
     const data=periodRows();
-    if(reportState.bookingsError)return showToast('Booked Sales unavailable. Please retry before exporting the complete report.','err');
     if(!data.length)return showToast('No sales report entries for the selected filters.','err');
-    const headings=['Report Date','Document','Entry Type','Sales Rep','Category','Invoice Value','Prepayment','Prepayment Applied','Returns','Actual Sales','Collection','Booked Sales','Pending'];
+    const headings=['Report Date','Document','Entry Type','Sales Rep','Category','Invoice Value','Prepayment','Prepayment Applied','Returns','Actual Sales','Collection','Issued Invoices','Pending'];
     const rows=data.map(r=>[r.order_date,r.document_no,r.report_event||'order',r.sales_rep_name,
       reportCategory(r),n(r.invoice_value),n(r.prepayment_value),n(r.prepayment_applied),
       n(r.return_value),n(r.actual_sales),n(r.collection_value),n(r.confirmed_sales),n(r.pending_value)]);
@@ -450,24 +448,19 @@
     document.getElementById('pageSubtitle').textContent='Sales by period, RK/TK business, Project category, Sales Rep, brand and product line';
     document.getElementById('content').innerHTML='<div id="salesReportRoot"><div class="py-20 text-center text-gray-400">Loading sales report...</div></div>';
 
-    const [summaryRes,itemRes,ordersRes]=await Promise.all([
+    const [summaryRes,itemRes]=await Promise.all([
       db.rpc('get_sales_report_rows_v6'),
-      db.rpc('get_sales_report_item_rows_v6'),
-      db.rpc('get_sales_report_rows_v5')
+      db.rpc('get_sales_report_item_rows_v6')
     ]);
     if(summaryRes.error)throw summaryRes.error;
     if(itemRes.error)throw itemRes.error;
-    // Only the Booked/Confirmed report column is replaced by original-order
-    // events; invoice and payment metrics keep the source v6 values and dates.
-    reportState.bookingsError=ordersRes.error?.message||'';
-    if(!reportState.bookingsError&&typeof window.LImperialBookedSales?.mergeEventRows==='function'){
-      reportState.rows=window.LImperialBookedSales.mergeEventRows(summaryRes.data||[],ordersRes.data||[]);
-    }else{
-      reportState.bookingsError=reportState.bookingsError||'Booked Sales helper unavailable';
-      console.warn('Booked Sales unavailable:',reportState.bookingsError);
-      reportState.rows=(summaryRes.data||[]).map(r=>({...r,confirmed_sales:0}));
-    }
-    reportState.itemRows=itemRes.data||[];
+    if(typeof window.LImperialInvoiceSales?.normalizeReportEvents!=='function' ||
+       typeof window.LImperialInvoiceSales?.normalizeItemRows!=='function')
+      throw new Error('Invoice-based Sales Report calculations unavailable. Refresh the application.');
+    // Read-only reporting: customer orders, SR, invoices and payments remain unchanged.
+    reportState.rows=window.LImperialInvoiceSales.normalizeReportEvents(summaryRes.data||[]);
+    reportState.itemRows=window.LImperialInvoiceSales.normalizeItemRows(itemRes.data||[],summaryRes.data||[]);
+    reportState.recognitionError='';
 
     const years=reportYears();
     if(!reportState.year||!years.includes(Number(reportState.year)))reportState.year=years.includes(new Date().getFullYear())?new Date().getFullYear():(years[0]||new Date().getFullYear());
