@@ -145,3 +145,19 @@ test('source report integration uses invoice events without the original-date Bo
  assert.doesNotMatch(reportCode,/Booked Sales/);
  assert.match(reportCode,/TK\/RK invoices/);
 });
+
+test('canonical SR migration: zero-value standalone TK audit rows do not add report entries',()=>{
+ const rows=[
+  event('payment','2026-09-08','SR-2026-012',{prepayment_value:708,collection_value:708}),
+  event('issued_invoice','2026-10-20','TK2610-004',{invoice_value:1416,prepayment_applied:708}),
+  event('order','2026-10-20','TK2610-004',{
+   order_id:'archived-tk-record',invoice_value:0,collection_value:0,actual_sales:0,confirmed_sales:0
+  })
+ ];
+ const out=normalizeReportEvents(rows);
+ assert.equal(out.length,2,'nonfinancial duplicate TK should not inflate report entries');
+ assert.equal(monthTotal(out,'2026-09','collection_value'),708);
+ assert.equal(monthTotal(out,'2026-09','actual_sales'),0);
+ assert.equal(monthTotal(out,'2026-10','collection_value'),0);
+ assert.equal(monthTotal(out,'2026-10','actual_sales'),1416);
+});
