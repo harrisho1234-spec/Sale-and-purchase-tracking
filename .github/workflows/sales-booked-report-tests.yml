@@ -1,4 +1,4 @@
-name: Booked Sales original-date checks
+name: Issued TK/RK Sales recognition checks
 
 on:
   push:
@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  booked-sales-tests:
+  issued-sales-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,5 +23,5 @@ jobs:
         run: |
           node --check sales-report-bookings.js
           node --check sales-report.js
-      - name: Test August to October SR conversion and booked revenue
+      - name: Test August to October SR conversion and invoice-based Sales
         run: node --test tests/sales-booked-report.test.cjs
