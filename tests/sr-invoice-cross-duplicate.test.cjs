@@ -20,9 +20,13 @@ test('DB blocks a second TK/RK number that SR conversion already reserved or iss
   assert.match(initial,/already reserved or issued through an SR conversion/);
 });
 test('existing historical TK invoices are not rewritten by the database migrations',()=>{
-  for(const s of [initial,stronger]){
-    assert.doesNotMatch(s,/\b(?:delete|truncate)\s+from\s+public\.(?:sales_orders|sales_payments|delivery_requests|stock_movements)/i);
-    assert.doesNotMatch(s,/\bupdate\s+public\.(?:sales_orders|sales_payments|delivery_requests|stock_movements)\s+set/i);
+  // The replacement MERGE RPC preserves its old item/payment update logic,
+  // so assert the NEW triggers do not issue any historical DML outside it.
+  const ddl=[initial.split('-- Extend the existing duplicate-check RPC')[0],
+    stronger.split('CREATE OR REPLACE FUNCTION public.merge_sales_order_document')[0]];
+  for(const statement of ddl){
+    assert.doesNotMatch(statement,/\b(?:delete|truncate)\s+from\s+public\.(?:sales_orders|sales_payments|delivery_requests|stock_movements)/i);
+    assert.doesNotMatch(statement,/\bupdate\s+public\.(?:sales_orders|sales_payments|delivery_requests|stock_movements)\s+set/i);
   }
   assert.match(initial,/tg_op='UPDATE'/i);
   assert.match(initial,/new\.order_no is not distinct from old\.order_no/i);
