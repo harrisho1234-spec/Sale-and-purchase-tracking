@@ -47,7 +47,21 @@
     }
     return result;
   }
-  const api={build};
+  function mergeEventRows(financialEvents=[],sourceOrders=[]){
+    const bookings=build(sourceOrders,financialEvents);
+    const financial=(financialEvents||[]).map(r=>({...r,confirmed_sales:0}));
+    const booked=bookings.map(b=>({
+      order_id:b.order_id,order_date:b.order_date,customer_id:b.customer_id,
+      document_no:b.document_no,sales_rep_id:b.sales_rep_id,sales_rep_name:b.sales_rep_name,
+      business_code:b.business_code,sales_category:b.sales_category,
+      report_event:'booked_order',order_type:b.booking_source==='SR'?'pre_order':'stock_sale',
+      gross_sales:0,return_value:0,net_sales:0,amount_received:0,balance_due:0,
+      invoice_value:0,prepayment_value:0,pending_value:0,actual_sales:0,
+      collection_value:0,prepayment_applied:0,confirmed_sales:b.booked_sales
+    }));
+    return financial.concat(booked);
+  }
+  const api={build,mergeEventRows};
   if(typeof module==='object'&&module.exports)module.exports=api;
   if(root)root.LImperialBookedSales=api;
 })(typeof window==='undefined'?null:window);
