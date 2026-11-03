@@ -144,15 +144,17 @@
           <div class="grid gap-2 max-h-[55vh] overflow-y-auto pr-1">
             ${orders.length?(reconciled?.rows||orders).map(o=>{
               const historical=!!o._srFinancial?.historyOnly;
+              const mergedTK=!!o.is_consolidated_duplicate;
+              const mainIssuedSR=!!o._srFinancial?.canonicalIssued;
               const pendingPre=!historical&&(o._srFinancial?o._srFinancial.pending:isPendingPre(o)&&!isSettled(o));
               const balLabel=pendingPre?'Est. Balance':(isSettled(o)?'Balance':'Active Balance');
               const paidLabel=pendingPre?'Pre-Order Deposit':'Paid';
               return `<div class="rounded-xl border border-[#ece8e0] bg-white p-4">
                 <div class="grid md:grid-cols-[1fr_auto] gap-3 items-start">
                   <div class="min-w-0">
-                    <div class="flex flex-wrap items-center gap-2"><b>${esc(docNo(o))}</b>${statusBadge(o)}${historical?'<span class="px-2 py-1 rounded-lg text-[10px] bg-slate-100 text-slate-600 border">Converted · History Only</span>':''}</div>
-                    ${historical?'<div class="text-[10px] text-blue-700 mt-1">This SR is fully issued. Original amounts are historical and already counted under the linked TK/RK invoice.</div>':''}
-                    <div class="text-[11px] text-gray-400 mt-1">${esc(fmtDate(o.order_date))} · ${isPre(o)?'Pre-Order / SR':'Stock Sale / TK-RK'}${o.sales_category==='project'?' · Project (PJ)':''}</div>
+                    <div class="flex flex-wrap items-center gap-2"><b>${esc(docNo(o))}</b>${statusBadge(o)}${mergedTK?'<span class="px-2 py-1 rounded-lg text-[10px] bg-slate-100 text-slate-600 border">Archived duplicate · linked to original SR</span>':historical?'<span class="px-2 py-1 rounded-lg text-[10px] bg-slate-100 text-slate-600 border">Converted · History Only</span>':''}</div>
+                    ${mergedTK?'<div class="text-[10px] text-blue-700 mt-1">This duplicate TK is retained as audit history only. Delivery, stock and original customer payments belong to the source SR-issued invoice; its figures are excluded from financial totals.</div>':historical?'<div class="text-[10px] text-blue-700 mt-1">This SR is fully issued. Original amounts are historical and already counted under the linked TK/RK invoice.</div>':''}
+                    <div class="text-[11px] text-gray-400 mt-1">${esc(fmtDate(o.order_date))} · ${mainIssuedSR?'SR → officially issued TK/RK':isPre(o)?'Pre-Order / SR':'Stock Sale / TK-RK'}${o.sales_category==='project'?' · Project (PJ)':''}</div>
                     <div class="text-[11px] text-gray-500 mt-2 truncate">${itemSummary(o)}</div>
                   </div>
                   <div class="grid grid-cols-3 gap-4 text-right text-xs min-w-[270px]">
