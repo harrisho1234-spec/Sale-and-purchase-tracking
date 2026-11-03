@@ -74,7 +74,9 @@ function header(title,sub){
  return '<div class="rounded-2xl border bg-white p-5 flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">'+
   '<div><div class="text-[10px] text-[#ad842b] font-bold tracking-wider uppercase">L’Imperial Sales & Order Management</div>'+
   '<h2 class="text-xl md:text-2xl font-serif font-bold mt-1">'+h(title)+'</h2><p class="text-xs mt-2 text-gray-500">'+h(sub)+'</p></div>'+
-  '<a href="'+WORKBOOK+'" target="_blank" rel="noopener noreferrer" class="'+lightButton+' text-center">Google Sheets master ↗</a></div>';
+  (['manager','admin','super_admin'].includes(state?.profile?.role)
+   ?'<a href="'+WORKBOOK+'" target="_blank" rel="noopener noreferrer" class="'+lightButton+' text-center">Google Sheets master ↗</a>'
+   :'')+'</div>';
 }
 async function showSetup(){
  root().innerHTML=header('Sales Daily Plan & Result','Google Sheets storage · secure server-side access')+
