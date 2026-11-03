@@ -8,6 +8,13 @@
  const h=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const moneyN=v=>'$'+Number(v||0).toFixed(2);
  const safeCount=v=>Number(v||0);
+ // An older standalone TK can already have a real DO/stock release even after
+ // the same TK number was officially issued from an SR. Never request twice.
+ const legacyIssuedDo=async invoicePartId=>{
+   const r=await db.rpc('issued_sr_invoice_legacy_do_conflict',{p_invoice_part_id:invoicePartId});
+   if(r.error)throw r.error;
+   return String(r.data||'').trim();
+ };
  let shownOrder=null,listing=null;
  const knownNumber=v=>v!==null&&v!==undefined&&v!==''&&Number.isFinite(Number(v));
  const optionalLine=(label,value)=>value===null||value===undefined||String(value).trim()===''?'':'<div class="text-[11px] text-gray-600"><b>'+h(label)+':</b> '+h(value)+'</div>';
@@ -38,6 +45,7 @@
          '<div class="text-right"><div class="text-sm font-bold">'+(knownNumber(i.total)?moneyN(i.total):'Total unavailable')+'</div><div class="text-[10px] text-blue-700">'+(i.status==='issued'?'Expand for DO request ▾':'View Invoice Breakdown ▾')+'</div></div>'+
        '</summary>'+
        '<div class="border-t px-3 py-3 space-y-2">'+
+         (i.legacy_do_no?'<div class="rounded-lg border border-amber-300 bg-amber-50 text-amber-900 p-3 text-xs"><b>Delivery already recorded:</b> '+h(i.legacy_do_no)+'. Historical TK fulfillment exists. Do not request a second DO or release these items again. Manager should reconcile the duplicate payment separately.</div>':'')+
          '<div class="text-[10px] font-bold uppercase text-gray-500">Invoice items</div>'+
          (lines.length?lines.map(lineDetail).join(''):'<p class="text-xs text-gray-500">Item breakdown is not available in this invoice summary.</p>')+
          '<div class="rounded-lg border bg-gray-50 p-3 grid grid-cols-2 gap-3 text-xs">'+
@@ -52,7 +60,7 @@
          optionalLine('Review note',review)+
          optionalLine('Discount approved by',approver)+
          optionalLine('Submitted at',submitted)+
-         (i.status==='issued'&&i.id&&['sales','manager','admin','super_admin'].includes(String(state?.profile?.role||''))?
+         (i.status==='issued'&&!i.legacy_do_no&&i.id&&['sales','manager','admin','super_admin'].includes(String(state?.profile?.role||''))?
            '<button type="button" onclick="openIssuedTkRkDoRequest(&quot;'+h(s.sr_id)+'&quot;,&quot;'+h(i.id)+'&quot;)" class="mt-2 px-3 py-2 bg-[#211d18] text-white rounded-lg text-xs font-bold">Request DO from issued '+h(i.invoice_no)+'</button>':'')+
          '<div class="text-[10px] text-gray-500">Fields not recorded in the linked invoice summary are omitted. SR deposit and discounts remain separate from invoice amounts.</div>'+
        '</div></details>';
@@ -75,8 +83,13 @@
      const invoices=(summary.data?.invoices||[]).filter(i=>i.status==='issued'&&i.id);
      if(!invoices.length)return showToast('An officially issued TK/RK invoice is required before requesting DO.','err');
      const left=new Map((availability.data||[]).map(x=>[String(x.sales_order_item_id),Math.max(0,Number(x.available_do_qty||0))]));
-     const availableInvoices=invoices.filter(i=>(i.lines||[]).some(l=>
+     const checked=await Promise.all(invoices.map(async i=>({...i,legacy_do_no:await legacyIssuedDo(i.id)})));
+     const alreadyDelivered=checked.filter(i=>i.legacy_do_no);
+     const availableInvoices=checked.filter(i=>!i.legacy_do_no&&(i.lines||[]).some(l=>
        l.item_id&&Math.min(Number(l.qty||0),left.get(String(l.item_id))||0)>0));
+     if(alreadyDelivered.length&&!availableInvoices.length){
+       return showToast('Existing delivery '+alreadyDelivered.map(x=>x.legacy_do_no).join(', ')+' is already linked to a historical TK. Do not create another DO. Open DO History.','err');
+     }
      if(!availableInvoices.length){
        return showToast('No requestable DO quantity remains on the issued TK/RK invoices. Check DO History or any delivered quantities.','err');
      }
@@ -94,6 +107,10 @@
    if(r.error)return showToast(r.error.message,'err');
    if(!r.data)return showToast('SR not found or not accessible.','err');
    const s=r.data,items=Array.isArray(s.items)?s.items:[],invoices=Array.isArray(s.invoices)?s.invoices:[];
+   // Show historical duplicate fulfillment in the official SR invoice review.
+   s.invoices=await Promise.all(invoices.map(async i=>({
+     ...i,legacy_do_no:i.status==='issued'&&i.id?await legacyIssuedDo(i.id):''
+   })));
    const all=items.reduce((n,t)=>n+Number(t.qty||0),0),issued=items.reduce((n,t)=>n+Number(t.issued_qty||0),0);
    openModal('SR → Linked TK/RK Invoices','<div class="space-y-4">'+
      '<div class="rounded-xl border bg-blue-50 p-3 text-xs text-blue-900"><b>'+invoices.filter(x=>x.status==='issued').length+' issued</b> · '+invoices.filter(x=>x.status==='pending').length+' awaiting approval · <b>'+issued+'/'+all+' pieces invoiced</b>. Original SR and deposit remain unchanged.</div>'+
@@ -120,6 +137,8 @@
      if(stockResult.error)throw stockResult.error;
      const issued=(srResult.data?.invoices||[]).find(x=>String(x.id)===String(invoicePartId)&&x.status==='issued');
      if(!issued)throw new Error('The selected TK/RK invoice has not been issued or is not accessible.');
+     const priorDo=await legacyIssuedDo(invoicePartId);
+     if(priorDo)throw new Error('Delivery '+priorDo+' already exists for TK/RK '+issued.invoice_no+' through a historical TK record. Do not request another DO or release stock twice.');
      const available=new Map((stockResult.data||[]).map(x=>[String(x.sales_order_item_id),Number(x.available_do_qty||0)]));
      const lines=(issued.lines||[]).map(l=>({
        id:String(l.item_id||''),code:String(l.code||''),name:String(l.name||''),
