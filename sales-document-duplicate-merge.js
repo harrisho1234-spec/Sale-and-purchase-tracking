@@ -86,13 +86,18 @@
       const cid=selectedCustomerId();
       const sameCustomer=!!cid&&row.customer_id===cid;
       const selected=mergeTarget?.order_id===row.order_id;
-      const canMerge=!!row.can_merge&&sameCustomer;
+      const issuedFromSr=row.sales_flow_type==='pre_order' && /^(TK|RK)/.test(String(row.document_no||'').toUpperCase());
+      const canMerge=!issuedFromSr&&!!row.can_merge&&sameCustomer;
       const cls=selected?'border-green-200 bg-green-50 text-green-900':canMerge?'border-amber-200 bg-amber-50 text-amber-950':'border-red-200 bg-red-50 text-red-900';
       const icon=selected?'✓':'⚠';
       let action='';
 
       if(selected){
         action=`<div class="mt-2 text-[11px] font-semibold">New items and any new deposit will be added to this existing document. Existing items and payments stay unchanged.</div>`;
+      }else if(issuedFromSr){
+        action=`<div class="mt-2 text-[11px] font-semibold">${esc(row.merge_reason||'This TK/RK was already issued from an SR. Do not create a duplicate Sales Order.')}</div>
+          <div class="mt-2 text-[11px]">To request DO or review the issued products, open the original SR → linked TK/RK. Existing deposits must not be entered again.</div>
+          <div class="mt-3 flex flex-wrap gap-2"><button type="button" data-open-issued-sr class="px-3 py-2 rounded-lg bg-blue-700 text-white text-xs font-semibold">Open Original SR / Issued Invoice</button><button type="button" data-change-number class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">Use Different Number</button></div>`;
       }else if(canMerge){
         action=`<div class="mt-3 flex flex-wrap gap-2"><button type="button" data-use-merge class="px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs font-semibold">Merge With Existing</button><button type="button" data-change-number class="px-3 py-2 rounded-lg border bg-white text-xs font-semibold">Use Different Number</button></div>`;
       }else{
@@ -110,6 +115,12 @@
         </div></div>
       </div>`;
       alertBox.classList.remove('hidden');
+      alertBox.querySelector('[data-open-issued-sr]')?.addEventListener('click',async()=>{
+        if(typeof window.openSrInvoiceOverview!=='function')return showToast('Open Sales Tracking and select the source SR to view its linked TK/RK invoices.','err');
+        closeModal();
+        try{await window.openSrInvoiceOverview(row.order_id)}
+        catch(err){showToast(err?.message||'Could not open original SR invoices.','err')}
+      });
       alertBox.querySelector('[data-use-merge]')?.addEventListener('click',()=>{
         mergeTarget=row;
         if(submitBtn)submitBtn.textContent=`Merge Into ${row.document_no||currentDoc()}`;
@@ -207,7 +218,7 @@
         if(mergeTarget?.order_id===row.order_id&&row.can_merge&&selectedCustomerId()===row.customer_id){
           return mergeExisting(e,row);
         }
-        showToast(`${row.document_no||currentDoc()} already exists. Choose “Merge With Existing” or enter a different number.`,'err');
+        showToast(row.sales_flow_type==='pre_order' && /^(TK|RK)/.test(String(row.document_no||'').toUpperCase())?'This TK/RK has already been issued from an SR. Use the original SR → linked TK/RK instead of creating another order.':`${row.document_no||currentDoc()} already exists. Choose “Merge With Existing” or enter a different number.`,'err');
         docInput.focus();
         return;
       }
