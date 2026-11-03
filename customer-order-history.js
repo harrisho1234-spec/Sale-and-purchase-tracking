@@ -158,8 +158,8 @@
                     <div class="text-[11px] text-gray-500 mt-2 truncate">${itemSummary(o)}</div>
                   </div>
                   <div class="grid grid-cols-3 gap-4 text-right text-xs min-w-[270px]">
-                    <div><div class="text-[9px] uppercase text-gray-400 font-bold">Total</div><div class="font-bold mt-1">${money(o.order_total,o.currency)}</div></div>
-                    <div><div class="text-[9px] uppercase text-gray-400 font-bold">${paidLabel}</div><div class="font-bold text-green-600 mt-1">${money(o.amount_paid,o.currency)}</div></div>
+                    <div><div class="text-[9px] uppercase text-gray-400 font-bold">${mergedTK?'Original · Audit Only':'Total'}</div><div class="font-bold mt-1">${money(mergedTK?o.legacy_original_invoice_total:o.order_total,o.currency)}</div></div>
+                    <div><div class="text-[9px] uppercase text-gray-400 font-bold">${mergedTK?'Mirrored SR Deposit':paidLabel}</div><div class="font-bold ${mergedTK?'text-gray-500':'text-green-600'} mt-1">${money(mergedTK?o.legacy_original_mirrored_deposit:o.amount_paid,o.currency)}</div></div>
                     <div><div class="text-[9px] uppercase text-gray-400 font-bold">${balLabel}</div><div class="font-bold mt-1 ${pendingPre?'text-gray-400':num(o.balance_due)>0?'text-red-500':'text-green-600'}">${money(o.balance_due,o.currency)}</div></div>
                   </div>
                 </div>
