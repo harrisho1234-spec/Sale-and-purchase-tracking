@@ -63,8 +63,70 @@ test('Sales Tracking hides archived TK cards while showing SR → issued TK/RK',
  assert.match(history,/Main SR · TK\/RK issued/);
 });
 test('browser cache uses updated canonical sources',()=>{
- for(const name of [
-  'customer-sr-financials.js','tracking-redesign.js',
-  'customer-order-history.js','sales-report-bookings.js'
- ])assert.ok(html.includes(name+'?v=20261103-canonical-sr-tk-v1'),name);
+ for(const name of ['customer-sr-financials.js','tracking-redesign.js','sales-report-bookings.js'])
+  assert.ok(html.includes(name+'?v=20261103-canonical-sr-tk-v1'),name);
+ for(const name of ['customer-order-history.js','customer-return-history.js'])
+  assert.ok(html.includes(name+'?v=20261103-hide-archived-tk2'),name);
+});
+
+test('customer popup excludes archived duplicate TK cards and counts only real orders',async()=>{
+ const vm=require('node:vm');
+ const popup=read('customer-return-history.js');
+ const body={innerHTML:''};
+ const summary=[
+  {id:'sr11',order_no:'SR-2026-011',sr_no:'SR-2026-011',sales_flow_type:'pre_order',
+   order_type:'pre_order',order_date:'2026-09-05',order_total:1614,amount_paid:807,balance_due:807,gross_balance_due:807,
+   credit_applied:0,status:'confirmed',customer_id:'c1',is_consolidated_duplicate:false},
+  {id:'tk3',order_no:'TK2610-003',sales_flow_type:'stock_sale',
+   order_type:'in_stock',order_date:'2026-10-20',order_total:0,amount_paid:0,balance_due:0,gross_balance_due:0,
+   credit_applied:0,status:'confirmed',customer_id:'c1',is_consolidated_duplicate:true},
+  {id:'sr12',order_no:'SR-2026-012',sr_no:'SR-2026-012',sales_flow_type:'pre_order',
+   order_type:'pre_order',order_date:'2026-09-08',order_total:1416,amount_paid:708,balance_due:708,gross_balance_due:708,
+   credit_applied:0,status:'confirmed',customer_id:'c1',is_consolidated_duplicate:false},
+  {id:'tk4',order_no:'TK2610-004',sales_flow_type:'stock_sale',
+   order_type:'in_stock',order_date:'2026-10-20',order_total:0,amount_paid:0,balance_due:0,gross_balance_due:0,
+   credit_applied:0,status:'confirmed',customer_id:'c1',is_consolidated_duplicate:true}
+ ];
+ const sourceReturn={sales_order_id:'tk4',return_id:'cn1',status:'confirmed',
+   return_value:20,cn_no:'CN-TEST',item_count:1,action:'return_only',return_date:'2026-10-22'};
+ const dbData={
+  sales_order_summary:summary,
+  sales_orders:[],
+  sales_returns:[],
+  get_visible_sales_returns:[sourceReturn],
+  get_visible_sr_split_invoice_list:[
+   {sr_id:'sr11',total_qty:1,issued_qty:1,pending_qty:0,issued_numbers:[{no:'TK2610-003'}]},
+   {sr_id:'sr12',total_qty:11,issued_qty:11,pending_qty:0,issued_numbers:[{no:'TK2610-004'}]}
+  ]
+ };
+ const query=items=>({
+  select(){return this;},eq(){return this;},order(){return this;},
+  then(resolve,reject){return Promise.resolve({data:items,error:null}).then(resolve,reject);}
+ });
+ const sandbox={
+  window:{},
+  state:{customers:[{id:'c1',name:'Sample Customer',phone:'012'}]},
+  db:{
+   from:table=>query(dbData[table]||[]),
+   rpc:name=>Promise.resolve({data:dbData[name]||[],error:null})
+  },
+  document:{getElementById:id=>id==='modalBody'?body:null},
+  openModal(){},
+  showToast(msg){throw new Error(msg)},
+  money:n=>'$'+Number(n||0).toFixed(2),
+  esc:value=>String(value??'').replaceAll('<','&lt;').replaceAll('>','&gt;'),
+  titleCase:value=>String(value||'')
+ };
+ vm.runInNewContext(popup,sandbox,{timeout:3000});
+ await sandbox.window.openCustomerOrders('c1');
+ const markup=body.innerHTML;
+ const orderArea=markup.split('Order History</h4>')[1]?.split('Return / Credit Note History</h4>')[0]||'';
+ assert.match(orderArea,/SR-2026-011/);
+ assert.match(orderArea,/SR-2026-012/);
+ assert.doesNotMatch(orderArea,/TK2610-003<\/b>/);
+ assert.doesNotMatch(orderArea,/TK2610-004<\/b>/);
+ assert.match(markup,/Orders<\/div><div class="text-lg font-bold mt-1">2<\/div>/);
+ assert.match(markup,/Gross Sales<\/div><div class="text-lg font-bold mt-1">\$3030\.00<\/div>/);
+ assert.match(markup,/Received<\/div><div class="text-lg font-bold text-green-600 mt-1">\$1515\.00<\/div>/);
+ assert.match(markup,/CN-TEST/,'historic return/CN remains visible even when its standalone TK is archived');
 });
