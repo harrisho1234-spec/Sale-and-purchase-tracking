@@ -68,7 +68,7 @@ test('one evening table row pairs each plan and its exact result regardless of t
   ]){
     assert.ok(customer[i].includes(plan));
     assert.ok(customer[i].includes(result));
-    assert.equal((customer[i].match(/#\d+/g)||[]).length,2,'same task number in both cells');
+    assert.equal((customer[i].match(/>#\d+<\/span>/g)||[]).length,2,'same task number in both cells');
   }
   assert.ok(other[0].includes('Check Project stock')&&other[0].includes('Fifth result'));
   assert.match(customer[0],/rowgroup" rowspan="5"/);
