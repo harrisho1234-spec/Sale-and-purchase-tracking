@@ -65,7 +65,41 @@
       return [{...r,actual_sales:0,confirmed_sales:0}];
     });
   }
-  const api={normalizeReportEvents};
+  function normalizeItemRows(items=[],events=[]){
+    const source=Array.isArray(events)?events:[];
+    const invoices=new Set(source.filter(r=>r.report_event==='issued_invoice'&&num(r.invoice_value)>0)
+      .map(invoiceKey));
+    const invoiceSources=new Map();
+    source.filter(r=>r.report_event==='issued_invoice'&&num(r.invoice_value)>0).forEach(r=>{
+      const key=invoiceKey(r);
+      if(!invoiceSources.has(key))invoiceSources.set(key,new Set());
+      invoiceSources.get(key).add(String(r.order_id||''));
+    });
+    const normalized=normalizeReportEvents(source);
+    const extraCashById=new Map(normalized.filter(r=>r._convertedMirror)
+      .map(r=>[String(r.order_id),num(r.collection_value)]));
+    const mirrorTotals=new Map(source.filter(r=>{
+      const key=invoiceKey(r);
+      return (r.report_event==='order'||!r.report_event)&&num(r.invoice_value)>0&&
+        invoices.has(key)&&!invoiceSources.get(key)?.has(String(r.order_id||''));
+    }).map(r=>[String(r.order_id),num(r.collection_value)]));
+    return (items||[]).flatMap(row=>{
+      const orderId=String(row.sales_order_id||'');
+      if(mirrorTotals.has(orderId)){
+        const total=mirrorTotals.get(orderId);
+        const extra=extraCashById.get(orderId)||0;
+        if(extra<=0.001)return [];
+        return [{...row,actual_sales:0,confirmed_sales:0,invoice_value:0,prepayment_value:0,
+          pending_value:0,qty:0,collection_value:round(num(row.collection_value)*(extra/Math.max(total,0.01)))}];
+      }
+      const invoice=Math.max(0,num(row.invoice_value));
+      const refund=Math.max(0,num(row.return_value));
+      const issued=round(invoice-refund);
+      return [{...row,actual_sales:issued,confirmed_sales:issued,
+        qty:invoice>0?row.qty:0}];
+    });
+  }
+  const api={normalizeReportEvents,normalizeItemRows};
   if(root)root.LImperialInvoiceSales=api;
   if(typeof module==='object'&&module.exports)module.exports=api;
 })(typeof window==='undefined'?null:window);
