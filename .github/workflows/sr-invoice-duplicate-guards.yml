@@ -1,0 +1,35 @@
+name: SR to TK/RK duplicate and delivery guards
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'database/20261103_cross_sr_tkrk_and_delivery_guards.sql'
+      - 'database/20261103_existing_invoice_merge_and_delivery_hardening.sql'
+      - 'sales-document-duplicate-merge.js'
+      - 'sr-multiple-invoices.js'
+      - 'tracking-redesign.js'
+      - 'index.html'
+      - 'tests/sr-invoice-cross-duplicate.test.cjs'
+      - '.github/workflows/sr-invoice-duplicate-guards.yml'
+  workflow_dispatch:
+
+jobs:
+  duplicate-guards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check affected JavaScript syntax
+        run: |
+          node --check sales-document-duplicate-merge.js
+          node --check sr-multiple-invoices.js
+          node --check tracking-redesign.js
+      - name: Verify duplicate invoice and historical DO safeguards
+        run: node --test tests/sr-invoice-cross-duplicate.test.cjs
+      - name: Verify existing customer SR reconciliation
+        run: node --test tests/customer-sr-financials.test.cjs
+      - name: Verify issued-only monthly reporting
+        run: node --test tests/sales-booked-report.test.cjs
