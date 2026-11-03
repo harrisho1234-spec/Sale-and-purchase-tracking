@@ -1,0 +1,33 @@
+name: Canonical SR → TK/RK reconciliation checks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'customer-sr-financials.js'
+      - 'tracking-redesign.js'
+      - 'customer-order-history.js'
+      - 'sales-report-bookings.js'
+      - 'index.html'
+      - 'tests/customer-sr-financials.test.cjs'
+      - 'tests/sales-booked-report.test.cjs'
+      - 'tests/canonical-sr-tk-consolidation.test.cjs'
+      - '.github/workflows/canonical-sr-tk-consolidation.yml'
+  workflow_dispatch:
+
+jobs:
+  canonical-sr-tk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax-check changed scripts
+        run: |
+          node --check customer-sr-financials.js
+          node --check tracking-redesign.js
+          node --check customer-order-history.js
+          node --check sales-report-bookings.js
+      - name: Verify canonical SR totals and archived TK history
+        run: node --test tests/customer-sr-financials.test.cjs tests/sales-booked-report.test.cjs tests/canonical-sr-tk-consolidation.test.cjs
