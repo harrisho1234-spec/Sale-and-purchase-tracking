@@ -410,17 +410,21 @@
   }
 
   function salesKpis(orders) {
-    const active = orders.filter(o=>cleanStatus(o.status)!=='cancelled');
-    const total = active.reduce((a,o)=>a+Number(o.order_total||0),0);
-    const paid = active.reduce((a,o)=>a+Number(o.amount_paid||0),0);
-    const balance = active.reduce((a,o)=>a+Number(o.balance_due||0),0);
-    const uncleared = active.filter(o=>Number(o.balance_due||0)>0);
+    const active = orders.filter(o=>cleanStatus(o.status)!=='cancelled'&&!o.is_consolidated_duplicate);
+    const fin=(o,key,raw)=>Number(o._srFinancial?.[key]??o[raw]??0);
+    const total = active.reduce((a,o)=>a+fin(o,'total','order_total'),0);
+    const paid = active.reduce((a,o)=>a+fin(o,'received','amount_paid'),0);
+    const balance = active.reduce((a,o)=>a+fin(o,'balance','balance_due'),0);
+    const uncleared = active.filter(o=>fin(o,'balance','balance_due')>0.001);
     const readyItems = active.flatMap(o=>(o.items||[]).filter(i=>['arrived','ready'].includes(cleanStatus(i.fulfillment_status))));
     const readyQty = readyItems.reduce((a,i)=>a+Number(i.qty||0),0);
     const readyValue = readyItems.reduce((a,i)=>a+Number(i.line_total||0),0);
-    const pre = active.filter(o=>['pre_order','mixed'].includes(cleanStatus(o.order_type)));
-    const prePaid = pre.reduce((a,o)=>a+Number(o.amount_paid||0),0);
-    const preBal = pre.reduce((a,o)=>a+Number(o.balance_due||0),0);
+    // Fully issued SR invoices are AR, never pending pre-order balances.
+    const pre = active.filter(o=>o._srFinancial
+      ?o._srFinancial.pending
+      :['pre_order','mixed'].includes(cleanStatus(o.order_type))&&!o.linked_fully_issued);
+    const prePaid = pre.reduce((a,o)=>a+fin(o,'received','amount_paid'),0);
+    const preBal = pre.reduce((a,o)=>a+fin(o,'balance','balance_due'),0);
     const preQty = pre.reduce((a,o)=>a+(o.items||[]).reduce((x,i)=>x+Number(i.qty||0),0),0);
     return {total,paid,balance,uncleared:uncleared.length,readyQty,readyValue,prePaid,preBal,preQty};
   }
