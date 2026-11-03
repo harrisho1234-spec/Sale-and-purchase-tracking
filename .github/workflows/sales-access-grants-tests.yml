@@ -1,0 +1,27 @@
+name: Sales Access grant management tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'sales-access-management.js'
+      - 'roles-access.js'
+      - 'index.html'
+      - 'tests/sales-access-grants.test.cjs'
+      - '.github/workflows/sales-access-grants-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  sales-access-grant-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check management JavaScript syntax
+        run: |
+          node --check roles-access.js
+          node --check sales-access-management.js
+      - name: Test grant status, expiry, renewal, revocation and ownership safety
+        run: node --test tests/sales-access-grants.test.cjs
