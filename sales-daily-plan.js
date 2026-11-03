@@ -330,23 +330,47 @@ window.openSalesDailyShare=section=>{
  const customerCats=['Customer Follow-up','Online Inquiries','Quotation / SR'];
  const isCustomer=t=>!t.todoTaskId&&(!!t.customerId||!!t.customerName||customerCats.includes(t.category));
  const customer=(r.tasks||[]).filter(isCustomer),other=(r.tasks||[]).filter(t=>!isCustomer(t));
- const planCell=t=>'<div style="font-size:12px;line-height:1.85;padding:7px 0;border-bottom:1px solid #eee;break-inside:avoid"><b>• '+h(t.plan)+'</b>'+
- (t.customerName?'<div style="font-size:11px;color:#666;padding-left:10px">Customer: '+h(t.customerName)+'</div>':'')+
- (t.todoTaskId?'<div style="font-size:10px;color:#926315;padding-left:10px">To-Do task</div>':'')+'</div>';
- const resultCell=t=>'<div style="font-size:12px;line-height:1.85;padding:7px 0;border-bottom:1px solid #eee;break-inside:avoid"><b>'+h(t.status||'Not updated')+'</b> — '+h(t.result||'No outcome recorded')+
- (t.nextFollowup?'<div style="font-size:11px;color:#666">Next: '+h(t.nextFollowup)+'</div>':'')+'</div>';
+ // Each Morning Plan and Evening Result belongs to the SAME HTML table row.
+ // Independent stacked divs drift apart when Khmer/English descriptions differ in height.
+ const planCell=(t,i)=>'<div style="font-size:12px;line-height:1.85;overflow-wrap:anywhere;white-space:pre-wrap"><span style="font-size:10px;color:#64748b;font-weight:700;margin-right:5px">#'+(i+1)+'</span><b>'+h(t.plan||'No morning plan')+'</b>'+
+ (t.customerName?'<div style="font-size:11px;color:#666;padding-left:17px">Customer: '+h(t.customerName)+'</div>':'')+
+ (t.todoTaskId?'<div style="font-size:10px;color:#926315;padding-left:17px">To-Do task</div>':'')+'</div>';
+ const resultCell=(t,i)=>'<div style="font-size:12px;line-height:1.85;overflow-wrap:anywhere;white-space:pre-wrap"><span style="font-size:10px;color:#64748b;font-weight:700;margin-right:5px">#'+(i+1)+'</span><b>'+h(t.status||'Not updated')+'</b> — '+h(t.result||'No outcome recorded')+
+ (t.nextFollowup?'<div style="font-size:11px;color:#666;padding-left:17px">Next: '+h(t.nextFollowup)+'</div>':'')+'</div>';
  const extras=pm?(r.additionalActivities||[]):[];
  const customerExtra=extras.filter(x=>['Customer Visit','Customer Follow-up','Online Inquiry','Quotation','Sales Order'].includes(x.category));
  const otherExtra=extras.filter(x=>!customerExtra.includes(x));
- const tableSection=(label,list,unplanned)=>'<tr style="vertical-align:top"><th style="width:'+(pm?'21':'28')+'%;padding:10px 8px;border:1px solid #bbb;text-align:left;font-size:12px;background:#f8f8f6">'+label+'</th>'+
- '<td style="width:'+(pm?'39.5':'72')+'%;padding:4px 9px;border:1px solid #bbb">'+(list.length?list.map(planCell).join(''):'<span style="font-size:11px;color:#888">No planned tasks</span>')+
- (pm?unplanned.map(() => '<div style="padding:6px 0;border-bottom:1px solid #eee;color:#999;font-size:12px">—</div>').join(''):'')+'</td>'+
- (pm?'<td style="width:39.5%;padding:4px 9px;border:1px solid #bbb">'+list.map(resultCell).join('')+
- unplanned.map(x=>'<div style="font-size:12px;padding:6px 0;border-bottom:1px solid #eee"><b>• '+h(x.category)+(x.customerName?' — '+h(x.customerName):'')+'</b><div>'+h(x.result||'')+'</div>'+(x.nextFollowup?'<div style="color:#666;font-size:11px">Next: '+h(x.nextFollowup)+'</div>':'')+(x.sourceId?'<div style="font-size:10px;color:#666">Linked '+h(x.sourceType==='online'?'Online Inquiry':'Showroom Visit')+' · '+h(x.sourceId.slice(0,8))+'</div>':'')+'</div>').join('')+'</td>':'')+'</tr>';
- const extraBlock='';
+ const rowStyle='vertical-align:top;break-inside:avoid;page-break-inside:avoid';
+ const cellStyle='border:1px solid #bbb;padding:10px;vertical-align:top;overflow-wrap:anywhere';
+ const unplannedCell=x=>'<div style="font-size:12px;line-height:1.85;overflow-wrap:anywhere;white-space:pre-wrap"><b>Unplanned · '+h(x.category)+(x.customerName?' — '+h(x.customerName):'')+'</b><div>'+h(x.result||'No outcome recorded')+'</div>'+
+ (x.nextFollowup?'<div style="color:#666;font-size:11px">Next: '+h(x.nextFollowup)+'</div>':'')+
+ (x.sourceId?'<div style="font-size:10px;color:#666">Linked '+h(x.sourceType==='online'?'Online Inquiry':'Showroom Visit')+' · '+h(x.sourceId.slice(0,8))+'</div>':'')+'</div>';
+ const tableSection=(label,list,unplanned)=>{
+   const records=list.map((task,i)=>({task,index:i+1,unplanned:false}))
+     .concat(pm?unplanned.map(x=>({task:x,unplanned:true})):[]);
+   if(!records.length){
+     return '<tbody><tr style="'+rowStyle+'"><th scope="row" style="'+cellStyle+';width:'+(pm?'21':'28')+'%;text-align:left;background:#f8f8f6;font-size:12px">'+h(label)+'</th>'+
+       '<td style="'+cellStyle+';font-size:12px;color:#888">No planned tasks</td>'+
+       (pm?'<td style="'+cellStyle+';font-size:12px;color:#888">—</td>':'')+'</tr></tbody>';
+   }
+   return '<tbody>'+records.map((entry,i)=>{
+     const t=entry.task;
+     const category=i===0?'<th scope="rowgroup" rowspan="'+records.length+'" style="'+cellStyle+';width:'+(pm?'21':'28')+'%;text-align:left;background:#f8f8f6;font-size:12px;font-weight:700">'+h(label)+'</th>':'';
+     const plan=entry.unplanned
+       ?'<div style="font-size:11px;color:#777">— No morning plan (unplanned activity)</div>'
+       :planCell(t,entry.index-1);
+     return '<tr style="'+rowStyle+';background:'+(i%2?'#fafaf8':'#fff')+'">'+category+
+       '<td style="'+cellStyle+';width:'+(pm?'39.5':'72')+'%">'+plan+'</td>'+
+       (pm?'<td style="'+cellStyle+';width:39.5%">'+(entry.unplanned?unplannedCell(t):resultCell(t,entry.index-1))+'</td>':'')+
+       '</tr>';
+   }).join('')+'</tbody>';
+ };
  const rows='<table style="border-collapse:collapse;width:100%;table-layout:fixed;margin-top:12px">'+
- (pm?'<tr style="background:#e3eedf"><th style="border:1px solid #bbb;padding:9px;font-size:12px;text-align:left">Category</th><th style="border:1px solid #bbb;padding:9px;font-size:12px;text-align:left">Morning Plan</th><th style="border:1px solid #bbb;padding:9px;font-size:12px;text-align:left">Evening Result</th></tr>':'')+
+ '<thead><tr style="background:#e3eedf"><th style="border:1px solid #bbb;padding:9px;font-size:12px;text-align:left">Category</th>'+
+ '<th style="border:1px solid #bbb;padding:9px;font-size:12px;text-align:left">Morning Plan</th>'+
+ (pm?'<th style="border:1px solid #bbb;padding:9px;font-size:12px;text-align:left">Evening Result</th>':'')+'</tr></thead>'+
  tableSection('Customer Tasks',customer,customerExtra)+tableSection('Other Tasks / To-Do',other,otherExtra)+'</table>';
+ const extraBlock='';
  const panel=document.createElement('div');panel.id='salesDailyShareOverlay';panel.style.cssText='position:fixed;inset:0;z-index:99999;background:#0009;overflow:auto;padding:16px';
  panel.innerHTML='<div style="max-width:760px;margin:auto"><div data-share-tools style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px"><button onclick="window.print()" style="background:white;padding:9px 14px;border-radius:8px">Print / PDF</button><button onclick="closeSalesDailyShare()" style="background:white;padding:9px 14px;border-radius:8px">Close</button></div>'+
  '<div id="salesDailyShareCard" style="background:white;color:#242424;padding:22px;border-radius:12px;box-shadow:0 8px 32px #0002;font-family:Noto Sans Khmer,Arial,sans-serif;line-height:1.75">'+
