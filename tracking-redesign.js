@@ -275,6 +275,30 @@
       const portfolio=await window.CustomerSrFinancials.load(db,merged,Array.isArray(linked.data)?linked.data:[]);
       reconciled=portfolio.rows;
     }catch(err){console.warn('Tracking SR financial reconciliation unavailable:',err?.message||err);}
+    // Identify pre-existing standalone TK/RK copies of officially issued SR
+    // invoices. Keep them visible (some hold real DO/stock history), but make
+    // their relationship and cash-reconciliation risk unmistakable.
+    const srById=new Map(reconciled.map(o=>[String(o.id),o]));
+    const linkedInvoiceOwners=new Map();
+    (Array.isArray(linked.data)?linked.data:[]).forEach(x=>{
+      const sr=srById.get(String(x.sr_id));
+      if(!sr)return;
+      (x.issued_numbers||[]).forEach(i=>{
+        const doc=String(i.no||'').trim().toUpperCase();
+        if(doc)linkedInvoiceOwners.set(String(sr.customer_id||'')+'::'+doc,sr);
+      });
+    });
+    reconciled.forEach(o=>{
+      if(String(o.sales_flow_type||o.order_type||'')==='pre_order')return;
+      const doc=String(o.sales_invoice_no||o.invoice_no||o.order_no||'').trim().toUpperCase();
+      const sr=linkedInvoiceOwners.get(String(o.customer_id||'')+'::'+doc);
+      if(sr&&sr.id!==o.id){
+        o._legacySrInvoiceMirror={
+          srId:sr.id,srNo:sr.sr_no||sr.order_no,
+          srPaid:Number(sr.amount_paid||0),tkPaid:Number(o.amount_paid||0)
+        };
+      }
+    });
     ui.salesOrders = reconciled;
     ui.salesItems = reconciled.flatMap(o => (o.items||[]).map(i=>({...i,order:o})));
     return reconciled;
@@ -425,6 +449,7 @@
               <div class="flex flex-wrap items-center gap-2">
                 <button onclick="toggleSalesInvoice('${o.id}')" class="font-extrabold text-[14px] hover:text-[#b3871e]">${esc(srTkRkLabel(o))}</button>
                 ${salesStatusBadge(o)}
+                ${o._legacySrInvoiceMirror?'<span class="lr-badge lr-badge-amber">Historical duplicate TK · linked '+esc(o._legacySrInvoiceMirror.srNo)+'</span>':''}
                 ${o.sales_category==='project'?'<span class="lr-badge lr-badge-blue">PJ · Project</span>':''}
                 ${items.some(i=>Number(returnInfo(i)?.qty_returned||0)>0)?`<span class="lr-badge lr-badge-amber">↩ Return Recorded</span>`:''}
                 ${repName(o)?`<span class="lr-badge lr-badge-gray">▣ ${esc(repName(o))}</span>`:''}
@@ -434,6 +459,7 @@
                 ${o.customer_phone?`<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border bg-gray-50 text-[10px] text-gray-600 whitespace-nowrap">☎ ${esc(o.customer_phone)}</span>`:''}
               </div>
               <div class="text-[10px] text-gray-400 mt-1 truncate">◇ ${esc(invoiceItemSummary(o))}</div>
+              ${o._legacySrInvoiceMirror?'<div class="mt-1.5 rounded-lg bg-amber-50 border border-amber-200 p-2 text-[10px] text-amber-900"><b>Existing issued SR invoice:</b> '+esc(o._legacySrInvoiceMirror.srNo)+' → '+esc(o.sales_invoice_no||o.invoice_no||o.order_no)+'. This separately created TK is retained for delivery/stock audit. <b>Do not delete or release stock again.</b> SR recorded '+money(o._legacySrInvoiceMirror.srPaid)+' and this TK recorded '+money(o._legacySrInvoiceMirror.tkPaid)+' in payments; verify cash evidence before treating them as separate receipts. <button type="button" class="underline font-bold" onclick="event.stopPropagation();openSrInvoiceOverview(\''+esc(o._legacySrInvoiceMirror.srId)+'\')">Open original SR invoice</button></div>':''}
             </div>
           </div>
           <div class="grid grid-cols-2 gap-7 text-right min-w-[245px]">
