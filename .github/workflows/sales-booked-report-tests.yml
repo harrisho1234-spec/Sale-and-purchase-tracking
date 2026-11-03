@@ -1,0 +1,27 @@
+name: Booked Sales original-date checks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'sales-report-bookings.js'
+      - 'sales-report.js'
+      - 'index.html'
+      - 'tests/sales-booked-report.test.cjs'
+      - '.github/workflows/sales-booked-report-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  booked-sales-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check report JavaScript syntax
+        run: |
+          node --check sales-report-bookings.js
+          node --check sales-report.js
+      - name: Test August to October SR conversion and booked revenue
+        run: node --test tests/sales-booked-report.test.cjs
