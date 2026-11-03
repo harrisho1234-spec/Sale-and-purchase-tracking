@@ -108,12 +108,15 @@
     let reconciled;
     try{reconciled=await window.CustomerSrFinancials.load(db,orders,Array.isArray(linked.data)?linked.data:[]);}
     catch(err){console.warn('Customer converted SR financials unavailable:',err?.message||err);}
-    const visible=(reconciled?.rows||orders).filter(o=>norm(o.status)!=='cancelled');
+    // Display canonical SR → TK/RK, not zero-value archived standalone TK
+    // copies. They remain preserved in database audit records.
+    const displayOrders=(reconciled?.rows||orders).filter(o=>!o.is_consolidated_duplicate);
+    const visible=displayOrders.filter(o=>norm(o.status)!=='cancelled');
     const sales=reconciled?.summary.sales??visible.reduce((a,o)=>a+num(o.order_total),0);
     const paid=reconciled?.summary.paid??visible.reduce((a,o)=>a+num(o.amount_paid),0);
     const activeAR=reconciled?.summary.ar??visible.reduce((a,o)=>a+(!isPendingPre(o)&&!isSettled(o)?num(o.balance_due):0),0);
     const pending=reconciled?.summary.pending??visible.reduce((a,o)=>a+(isPendingPre(o)&&!isSettled(o)?num(o.balance_due):0),0);
-    const countedOrders=reconciled?.summary.orders??visible.length;
+    const countedOrders=displayOrders.length;
 
     const body=document.getElementById('modalBody');
     if(!body)return;
@@ -131,7 +134,7 @@
             </div>
           </div>
           <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4">
-            <div><div class="text-[9px] uppercase font-bold text-gray-400">Orders</div><div class="text-lg font-bold mt-1">${countedOrders}</div>${reconciled?.summary.converted?'<div class="text-[9px] text-gray-400">'+reconciled.summary.converted+' converted SR history record(s) excluded from financial totals</div>':''}</div>
+            <div><div class="text-[9px] uppercase font-bold text-gray-400">Orders</div><div class="text-lg font-bold mt-1">${countedOrders}</div></div>
             <div><div class="text-[9px] uppercase font-bold text-gray-400">Sales</div><div class="text-lg font-bold mt-1">${money(sales)}</div></div>
             <div><div class="text-[9px] uppercase font-bold text-gray-400">Received</div><div class="text-lg font-bold text-green-600 mt-1">${money(paid)}</div></div>
             <div><div class="text-[9px] uppercase font-bold text-gray-400">Active AR</div><div class="text-lg font-bold text-red-500 mt-1">${money(activeAR)}</div></div>
@@ -142,7 +145,7 @@
         <div>
           <div class="flex items-center justify-between mb-2"><h4 class="font-bold">Order History</h4><div class="text-[10px] text-gray-400">Newest first</div></div>
           <div class="grid gap-2 max-h-[55vh] overflow-y-auto pr-1">
-            ${orders.length?(reconciled?.rows||orders).map(o=>{
+            ${displayOrders.length?displayOrders.map(o=>{
               const historical=!!o._srFinancial?.historyOnly;
               const mergedTK=!!o.is_consolidated_duplicate;
               const mainIssuedSR=!!o._srFinancial?.canonicalIssued;
