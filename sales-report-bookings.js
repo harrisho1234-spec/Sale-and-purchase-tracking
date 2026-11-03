@@ -33,7 +33,10 @@
       const amount=Math.max(0,num(r.invoice_value));
       const isOrder=r.report_event==='order'||!r.report_event;
       const group=isOrder?issued.get(invoiceKey(r)):null;
-      const mirrored=!!group&&amount>0&&!group.sources.has(String(r.order_id||''));
+      // Consolidated audit-only TKs have zero invoice/cash in the effective
+      // summary view, but should not add blank entries to report counts.
+      const mirrored=!!group&&!group.sources.has(String(r.order_id||''))
+        &&(amount>0||(num(r.collection_value)===0&&num(r.prepayment_value)===0));
       if(mirrored){
         const key=invoiceKey(r);
         const available=Math.max(0,group.applied-(consumedCarryover.get(key)||0));
