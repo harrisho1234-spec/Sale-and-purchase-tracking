@@ -7,14 +7,16 @@ set search_path=public,pg_temp as $guard$
 declare v_doc text;
 begin
   if tg_table_name='sales_orders' then
-    if tg_op='UPDATE' and new.order_no is not distinct from old.order_no
-      and new.invoice_no is not distinct from old.invoice_no
-      and new.sales_invoice_no is not distinct from old.sales_invoice_no then
-      return new;
+    if tg_op='UPDATE' then
+      if new.order_no is not distinct from old.order_no
+        and new.invoice_no is not distinct from old.invoice_no
+        and new.sales_invoice_no is not distinct from old.sales_invoice_no then
+        return new;
+      end if;
     end if;
     for v_doc in
       select distinct upper(btrim(doc))
-      from unnest(array[new.order_no,new.invoice_no,new.sales_invoice_no]) as doc
+      from unnest(array[new.order_no,new.invoice_no,new.sales_invoice_no]) as docs(doc)
       where doc is not null and btrim(doc)<>'' and upper(btrim(doc)) ~ '^(TK|RK)'
       order by 1
     loop
@@ -27,8 +29,10 @@ begin
     end loop;
   elsif tg_table_name='sales_sr_invoice_parts' then
     if new.status not in ('pending','issued') then return new; end if;
-    if tg_op='UPDATE' and new.invoice_no is not distinct from old.invoice_no
-      and old.status in ('pending','issued') then return new; end if;
+    if tg_op='UPDATE' then
+      if new.invoice_no is not distinct from old.invoice_no
+        and old.status in ('pending','issued') then return new; end if;
+    end if;
     v_doc:=upper(btrim(new.invoice_no));
     if v_doc is not null and v_doc<>'' then
       perform pg_advisory_xact_lock(hashtextextended('imperial-tkrk:'||v_doc,0));
@@ -64,8 +68,8 @@ create or replace function public.issued_sr_invoice_legacy_do_conflict(p_invoice
 returns text language plpgsql stable security definer
 set search_path=public,auth,pg_temp as $check$
 declare v_invoice public.sales_sr_invoice_parts%rowtype;
-declare v_customer uuid;
-declare v_label text;
+        v_customer uuid;
+        v_label text;
 begin
   select * into v_invoice from public.sales_sr_invoice_parts where id=p_invoice_part_id and status='issued';
   if not found then return null; end if;
