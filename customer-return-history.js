@@ -81,6 +81,9 @@
         linked_fully_issued:!!(split&&Number(split.total_qty)>0&&Number(split.issued_qty)>=Number(split.total_qty)&&!Number(split.pending_qty))
       };
     });
+    // Keep archival TK rows for audit and existing CN association, but do not
+    // show them as additional customer orders. The original SR → TK/RK stays.
+    const displayOrders=orders.filter(o=>!o.is_consolidated_duplicate);
     const orderIds=new Set(orders.map(o=>o.id));
 
     const allVisibleReturns=rr.error?[]:(rr.data||[]);
@@ -95,7 +98,7 @@
       returnByOrder.get(r.sales_order_id).push(merged);
     }
 
-    const visible=orders.filter(o=>norm(o.status)!=='cancelled');
+    const visible=displayOrders.filter(o=>norm(o.status)!=='cancelled');
     const validReturns=returns
       .filter(r=>norm(r.status)!=='cancelled')
       .map(r=>({...r,...(financialMap.get(r.return_id)||{})}));
@@ -132,7 +135,7 @@
           </div>
 
           <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3 mt-4">
-            <div><div class="text-[9px] uppercase font-bold text-gray-400">Orders</div><div class="text-lg font-bold mt-1">${orders.length}</div></div>
+            <div><div class="text-[9px] uppercase font-bold text-gray-400">Orders</div><div class="text-lg font-bold mt-1">${displayOrders.length}</div></div>
             <div><div class="text-[9px] uppercase font-bold text-gray-400">Gross Sales</div><div class="text-lg font-bold mt-1">${money(grossSales)}</div></div>
             <div><div class="text-[9px] uppercase font-bold text-gray-400">Returns</div><div class="text-lg font-bold text-amber-600 mt-1">−${money(returnValue)}</div><div class="text-[9px] text-gray-400 mt-0.5">${validReturns.length} active CN${validReturns.length===1?'':'s'}</div></div>
             <div><div class="text-[9px] uppercase font-bold text-gray-400">Net Sales</div><div class="text-lg font-bold mt-1">${money(netSales)}</div></div>
@@ -154,7 +157,7 @@
         <div>
           <div class="flex items-center justify-between mb-2"><h4 class="font-bold">Order History</h4><div class="text-[10px] text-gray-400">Newest first</div></div>
           <div class="grid gap-2 max-h-[42vh] overflow-y-auto pr-1">
-            ${orders.length?orders.map(o=>{
+            ${displayOrders.length?displayOrders.map(o=>{
               const pendingPre=isPendingPre(o)&&!isSettled(o);
               const balLabel=pendingPre?'Est. Balance':(isSettled(o)?'Balance':'Active Balance');
               const paidLabel=pendingPre?'Pre-Order Deposit':'Paid';
