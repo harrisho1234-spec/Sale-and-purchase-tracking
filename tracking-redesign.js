@@ -289,6 +289,13 @@
       });
     });
     reconciled.forEach(o=>{
+      if(o.is_consolidated_duplicate&&o.consolidated_sr_id){
+        const canonical=srById.get(String(o.consolidated_sr_id));
+        if(canonical){
+          if(!canonical._consolidatedIssuedTkDocs)canonical._consolidatedIssuedTkDocs=[];
+          canonical._consolidatedIssuedTkDocs.push(String(o.sales_invoice_no||o.invoice_no||o.order_no||''));
+        }
+      }
       if(String(o.sales_flow_type||o.order_type||'')==='pre_order')return;
       const doc=String(o.sales_invoice_no||o.invoice_no||o.order_no||'').trim().toUpperCase();
       const sr=linkedInvoiceOwners.get(String(o.customer_id||'')+'::'+doc);
@@ -369,6 +376,9 @@
   function filteredSalesOrders() {
     const q = ui.salesSearch.toLowerCase().trim();
     let list = ui.salesOrders.filter(o=>{
+      // Legacy TK copies remain archived in the database for audit, but the
+      // SR → issued TK/RK is now the only active Sales Tracking transaction.
+      if(o.is_consolidated_duplicate)return false;
       if(!withinDateFilter(o.order_date,ui.salesDate)) return false;
       if(ui.salesRep!=='all' && repName(o)!==ui.salesRep) return false;
       if(ui.salesCustomer!=='all' && o.customer_id!==ui.salesCustomer) return false;
@@ -449,6 +459,7 @@
               <div class="flex flex-wrap items-center gap-2">
                 <button onclick="toggleSalesInvoice('${o.id}')" class="font-extrabold text-[14px] hover:text-[#b3871e]">${esc(srTkRkLabel(o))}</button>
                 ${salesStatusBadge(o)}
+                ${o._consolidatedIssuedTkDocs?.length?'<span class="lr-badge lr-badge-blue">Main SR → issued '+esc(o._consolidatedIssuedTkDocs.join(' · '))+'</span>':''}
                 ${o._legacySrInvoiceMirror?'<span class="lr-badge lr-badge-amber">Historical duplicate TK · linked '+esc(o._legacySrInvoiceMirror.srNo)+'</span>':''}
                 ${o.sales_category==='project'?'<span class="lr-badge lr-badge-blue">PJ · Project</span>':''}
                 ${items.some(i=>Number(returnInfo(i)?.qty_returned||0)>0)?`<span class="lr-badge lr-badge-amber">↩ Return Recorded</span>`:''}
