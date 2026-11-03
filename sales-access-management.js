@@ -210,12 +210,12 @@ root.saveSalesAccessGrant=async function(event){
   }else if(old.active!==false&&statusOf(old)==='Expired'&&expires&&new Date(expires)>new Date()){
    if(!root.confirm('This future expiry will reactivate an expired grant. Continue?'))return;
   }
-  const {data:changed,error}=await root.db.from('sales_access_grants').update(patch).eq('id',old.id).select('id').maybeSingle();
+  const {data:changed,error}=await db.from('sales_access_grants').update(patch).eq('id',old.id).select('id').maybeSingle();
   if(error)return notify(error.message,true);
   if(!changed)return notify('Grant not updated. Check access permissions.',true);
   notify(mode==='renew'?'Access renewed':'Access grant updated');
  }else{
-  let q=root.db.from('sales_access_grants').select('id').eq('sales_user_id',person);
+  let q=db.from('sales_access_grants').select('id').eq('sales_user_id',person);
   if(scope==='customer')q=q.eq('customer_id',target).is('sales_order_id',null);
   else q=q.eq('sales_order_id',target).is('customer_id',null);
   const {data:found,error:findError}=await q.limit(1).maybeSingle();
@@ -223,8 +223,8 @@ root.saveSalesAccessGrant=async function(event){
   if(found)return notify('An existing grant covers this salesperson and target. Use Edit or Renew instead.',true);
   const record={sales_user_id:person,customer_id:scope==='customer'?target:null,
    sales_order_id:scope==='order'?target:null,access_level:level,reason,
-   expires_at:expires,active:true,granted_by:root.state.user.id};
-  const {error}=await root.db.from('sales_access_grants').insert(record);
+   expires_at:expires,active:true,granted_by:state.user.id};
+  const {error}=await db.from('sales_access_grants').insert(record);
   if(error)return notify(error.message,true);
   notify('Sales access granted');
  }
@@ -239,7 +239,7 @@ root.revokeSalesAccess=async function(id){
  const owned=!!g.customer_id&&alreadyAssigned(data().customers,g.customer_id,g.sales_user_id);
  if(!root.confirm('Revoke this access grant? The record will remain marked Revoked.'+
    (owned?' The salesperson will still have access as the assigned customer owner.':'')))return;
- const {data:changed,error}=await root.db.from('sales_access_grants').update({active:false}).eq('id',id).select('id').maybeSingle();
+ const {data:changed,error}=await db.from('sales_access_grants').update({active:false}).eq('id',id).select('id').maybeSingle();
  if(error)return notify(error.message,true);
  if(!changed)return notify('Grant not revoked. Check access permissions.',true);
  notify('Access revoked');
