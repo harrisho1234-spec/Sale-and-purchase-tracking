@@ -1,0 +1,23 @@
+name: Daily plan share alignment checks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'sales-daily-plan.js'
+      - 'tests/sales-daily-share-alignment.test.cjs'
+      - '.github/workflows/daily-share-alignment-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  daily-share-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check daily plan JavaScript syntax
+        run: node --check sales-daily-plan.js
+      - name: Verify morning/evening row alignment
+        run: node --test tests/sales-daily-share-alignment.test.cjs
