@@ -97,3 +97,33 @@ test('customer and tracking summaries use the same source-of-truth reconciler',(
  assert.match(read('sales-tracking-legacy-balance-logic.js'),/function financial\(o,k,raw\)/);
  assert.match(read('customer-order-history.js'),/Converted · History Only/);
 });
+
+test('consolidated SR-issued TK is the MAIN financial record; duplicate TK is audit only',()=>{
+ const source=[
+   sr('sr11','SR-2026-011',1614,807),
+   sr('sr12','SR-2026-012',1416,708),
+   invoice('tk3','TK2610-003',0,0),
+   invoice('tk4','TK2610-004',0,0)
+ ];
+ source[2].is_consolidated_duplicate=true;
+ source[2].consolidated_sr_id='sr11';
+ source[2].consolidated_invoice_part_id='issued-3';
+ source[3].is_consolidated_duplicate=true;
+ source[3].consolidated_sr_id='sr12';
+ source[3].consolidated_invoice_part_id='issued-4';
+ const out=f.reconcile(source,[
+   issued('sr11','TK2610-003',1),
+   issued('sr12','TK2610-004',11)
+ ]);
+ assert.equal(out.summary.sales,3030,'original SRs are the only sales');
+ assert.equal(out.summary.paid,1515,'real SR deposits counted once');
+ assert.equal(out.summary.ar,1515,'unpaid TK balances are attached to the original SRs');
+ assert.equal(out.summary.pending,0,'TK/RK already issued, no unconverted pending SR');
+ assert.equal(out.summary.orders,2,'archival duplicates are not counted as orders');
+ assert.equal(out.summary.converted,2,'two duplicate audit shells are recognized');
+ assert.equal(out.rows.find(x=>x.id==='sr11')._srFinancial.canonicalIssued,true);
+ assert.equal(out.rows.find(x=>x.id==='sr12')._srFinancial.canonicalIssued,true);
+ assert.equal(out.rows.find(x=>x.id==='tk3')._srFinancial.historyOnly,true);
+ assert.equal(out.rows.find(x=>x.id==='tk4')._srFinancial.historyOnly,true);
+ assert.equal(out.rows.find(x=>x.id==='tk4')._srFinancial.total,0);
+});
