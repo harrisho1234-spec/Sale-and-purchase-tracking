@@ -54,11 +54,11 @@
       if(r.report_event==='return'){
         // An accepted CN/return reduces the net issued sales in its own period.
         const deduction=Math.max(0,num(r.return_value));
-        return [{...r,actual_sales:round(-deduction),confirmed_sales:round(-deduction)}];
+        return [{...r,actual_sales:round(-deduction),confirmed_sales:0}];
       }
       if(isOrder&&amount>0&&!isUnissuedSR(r)){
         const net=round(Math.max(0,amount-num(r.return_value)));
-        return [{...r,actual_sales:net,confirmed_sales:net}];
+        return [{...r,actual_sales:net,confirmed_sales:round(amount)}];
       }
       // SR creation, SR deposits and still-unissued balances do not count as
       // sales. Their Collection/pending columns remain available for reports.
@@ -95,7 +95,7 @@
       const invoice=Math.max(0,num(row.invoice_value));
       const refund=Math.max(0,num(row.return_value));
       const issued=round(invoice-refund);
-      return [{...row,actual_sales:issued,confirmed_sales:issued,
+      return [{...row,actual_sales:issued,confirmed_sales:round(invoice),
         qty:invoice>0?row.qty:0}];
     });
   }
