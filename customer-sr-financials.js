@@ -30,17 +30,24 @@
     const visible=rows.filter(o=>!isCancelled(o));
     const invoiceNumbers=new Set(visible.filter(o=>!isSR(o)).map(invoiceNumber).filter(Boolean));
     const splitMap=new Map((Array.isArray(links)?links:[]).map(x=>[String(x.sr_id),x]));
+    // An archived standalone TK is audit evidence only. The fully issued
+    // original SR becomes the authoritative customer financial transaction.
+    const consolidatedSrIds=new Set(visible.filter(x=>x.is_consolidated_duplicate&&x.consolidated_sr_id)
+      .map(x=>String(x.consolidated_sr_id)));
     const result=rows.map(original=>{
       const o={...original},sr=isSR(o),split=splitMap.get(String(o.id));
       const issued=(split?.issued_numbers||[]).filter(x=>x.no);
       // Only suppress SR financials if the corresponding invoice is also visible.
       const posted=issued.length>0&&issued.every(x=>invoiceNumbers.has(norm(x.no)));
       const totalQty=n(split?.total_qty),issuedQty=n(split?.issued_qty);
-      const fullyIssued=sr&&posted&&totalQty>0&&issuedQty>=totalQty-0.0001&&n(split?.pending_qty)<=0.0001;
-      const partial=sr&&posted&&issuedQty>0&&totalQty>issuedQty+0.0001;
+      const archived=!!o.is_consolidated_duplicate;
+      const canonicalIssued=sr&&consolidatedSrIds.has(String(o.id))&&issued.length>0
+        &&totalQty>0&&issuedQty>=totalQty-0.0001&&n(split?.pending_qty)<=0.0001;
+      const fullyIssued=sr&&!canonicalIssued&&posted&&totalQty>0&&issuedQty>=totalQty-0.0001&&n(split?.pending_qty)<=0.0001;
+      const partial=sr&&!canonicalIssued&&posted&&issuedQty>0&&totalQty>issuedQty+0.0001;
       const detail=details?.[String(o.id)]||null;
       let ratio=1;
-      if(fullyIssued)ratio=0;
+      if(fullyIssued||archived)ratio=0;
       else if(partial) {
         // Exact source-item value (rather than quantity fraction) preserves
         // differing unit prices and line discounts in partial conversions.
@@ -51,13 +58,14 @@
       const received=cents(n(o.amount_paid)*ratio);
       const balance=cents(n(o.balance_due)*ratio);
       const gross=cents(n(o.gross_balance_due??o.balance_due)*ratio);
-      const pending=sr&&noInvoice(o)&&!fullyIssued&&balance>0.001;
+      const pending=sr&&noInvoice(o)&&!fullyIssued&&!canonicalIssued&&balance>0.001;
       const financial={
-        total,received,balance,gross,pending,historyOnly:fullyIssued,
+        total,received,balance,gross,pending,historyOnly:fullyIssued||archived,
+        canonicalIssued,archivedDuplicate:archived,
         partial:partial&&ratio<1,unreconciledPartial:partial&&ratio===1&&!detail,
-        issuedInvoiceNumbers:posted?issued.map(x=>String(x.no)):[],
+        issuedInvoiceNumbers:(posted||canonicalIssued)?issued.map(x=>String(x.no)):[],
         originalTotal:n(o.order_total),originalPaid:n(o.amount_paid),originalBalance:n(o.balance_due),
-        counted:!fullyIssued&&!isCancelled(o)
+        counted:!fullyIssued&&!archived&&!isCancelled(o)
       };
       o._srFinancial=financial;
       return o;
