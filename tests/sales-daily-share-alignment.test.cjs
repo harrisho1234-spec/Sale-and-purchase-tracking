@@ -96,5 +96,33 @@ test('share report escapes user-supplied text and uses cache-busted script',()=>
   const html=render('PM',adjusted);
   assert.ok(html.includes('&lt;script&gt;alert(1)&lt;/script&gt;'));
   assert.ok(!html.includes('<script>alert(1)</script>'));
-  assert.match(index,/sales-daily-plan\.js\?v=20261103-row-aligned-share1/);
+  assert.match(index,/sales-daily-plan\.js\?v=20261103-hide-master-link-for-sales1/);
+});
+
+test('Google Sheets master shortcut is hidden for Sales and other non-management roles',()=>{
+  const start=source.indexOf('function header(title,sub){');
+  const end=source.indexOf('\nasync function showSetup(){',start);
+  assert.ok(start>=0&&end>start,'Daily report header is available');
+  const headerSource=source.slice(start,end);
+  const makeHeader=role=>vm.runInNewContext(
+    headerSource+'\nheader("Daily Plan & Result","Morning Plan and Evening Result")',
+    {
+      state:{profile:{role}},
+      WORKBOOK:'https://docs.google.com/spreadsheets/d/test/edit',
+      lightButton:'btn-test',
+      h:value=>String(value)
+    },
+    {timeout:1000}
+  );
+  for(const role of ['sales','accountant','stock_controller',null]){
+    const output=makeHeader(role);
+    assert.doesNotMatch(output,/Google Sheets master/,'no master shortcut for '+role);
+    assert.doesNotMatch(output,/docs\.google\.com\/spreadsheets/,'no master URL for '+role);
+    assert.match(output,/Daily Plan & Result/);
+  }
+  for(const role of ['manager','admin','super_admin']){
+    const output=makeHeader(role);
+    assert.match(output,/Google Sheets master/,'master button remains available for '+role);
+    assert.match(output,/docs\.google\.com\/spreadsheets/);
+  }
 });
