@@ -847,6 +847,103 @@
     row.querySelector('.qty').value=String(line.qty);row.querySelector('.unit-price').value=String(line.unitPrice);row.querySelector('.line-discount').value=String(line.discountAmount);row.dataset.discountBasis='amount';
     addImportedItemNoteField(row,line);
   }
+  function liveQuotationComparison(s,form){
+    const base=new Map(s.lines.map(l=>[String(l.key),l]));
+    const used=new Set(),changes=[],items=[];
+    let afterLineDiscounts=0,changed=false;
+    const currentRows=[...form.querySelectorAll('#orderItems .order-item-row')];
+    currentRows.forEach((row,index)=>{
+      const key=String(row.dataset.sourceQuoteKey||'');
+      const old=base.get(key);
+      if(old)used.add(key);
+      const val=sel=>num(row.querySelector(sel)?.value||0);
+      const itemCode=String(row.querySelector('.product-code')?.value||'').trim();
+      const qty=val('.qty'),unitPrice=val('.unit-price'),discountAmount=val('.line-discount');
+      const note=String(row.querySelector('.source-quote-item-note')?.value||'').trim();
+      const name=String(row.querySelector('.product-name')?.value||'').trim();
+      const kind=row.querySelector('.line-kind')?.value||'product';
+      afterLineDiscounts+=round2(Math.max(qty*unitPrice-discountAmount,0));
+      const diff=[];
+      if(!old)diff.push('Added to order');
+      else {
+        if(itemCode!==old.code||kind!==old.kind)diff.push('Item/code changed');
+        if(Math.abs(qty-old.qty)>0.0001)diff.push('Qty '+old.qty+' → '+qty);
+        if(Math.abs(unitPrice-old.unitPrice)>0.001)diff.push('Unit '+money(old.unitPrice,'USD')+' → '+money(unitPrice,'USD'));
+        if(Math.abs(discountAmount-old.discountAmount)>0.001)diff.push('Discount '+money(old.discountAmount,'USD')+' → '+money(discountAmount,'USD'));
+        const oldNote=sourceItemNoteForOrder(old);
+        if(note!==oldNote)diff.push('Item note / floor / room changed');
+      }
+      if(diff.length)changed=true;
+      changes.push({key:key||'new-'+index,code:itemCode||name||'New line',old:old||null,
+        qty,unitPrice,discountAmount,note,diff});
+    });
+    s.lines.forEach(l=>{
+      if(!used.has(String(l.key))){
+        changed=true;changes.push({key:l.key,code:l.code||l.name,old:l,diff:['Removed from order']});
+      }
+    });
+    const orderDiscount=Math.max(0,num(form.querySelector('#orderDiscount')?.value||0));
+    const newTotal=round2(Math.max(afterLineDiscounts-orderDiscount,0));
+    if(Math.abs(orderDiscount-s.orderDiscount)>0.001){
+      changed=true;
+      items.push('Quotation-level discount '+money(s.orderDiscount,'USD')+' → '+money(orderDiscount,'USD'));
+    }
+    if(Math.abs(newTotal-s.total)>0.001)changed=true;
+    const signature=JSON.stringify({changes:changes.map(x=>[x.key,x.code,x.qty,x.unitPrice,x.discountAmount,x.note,x.diff]),
+      orderDiscount,newTotal});
+    return {changes,items,changed,signature,newTotal,orderDiscount};
+  }
+  function quoteComparisonPanelHtml(s,comparison){
+    const changedRows=comparison.changes.filter(x=>x.diff.length);
+    return '<section class="rounded-2xl border border-[#e5d8c5] bg-white p-4 space-y-3" id="quoteSourceComparison">'+
+      '<div class="flex flex-wrap justify-between items-start gap-3"><div><b class="text-sm">Quotation ↔ Official Order Comparison</b>'+
+      '<p class="text-xs text-gray-500 mt-1">Original '+esc(quotationDisplay(s.quoteNo,s.sourceState))+' is preserved. Review differences before saving.</p></div>'+
+      '<span class="rounded-lg px-2.5 py-1.5 text-xs font-semibold '+(comparison.changed?'bg-amber-100 text-amber-900':'bg-green-50 text-green-800')+'">'+
+       (comparison.changed?changedRows.length+' item changes · Check before saving':'No differences detected')+'</span></div>'+
+      '<div class="grid grid-cols-2 gap-3">'+
+       '<div class="rounded-lg bg-gray-50 p-3"><div class="text-[10px] text-gray-500">Saved Showroom quotation</div>'+
+        '<b class="text-lg">'+money(s.total,'USD')+'</b><div class="text-[10px] text-gray-500">Item discount '+money(s.lineDiscounts,'USD')+' · Extra '+money(s.orderDiscount,'USD')+'</div></div>'+
+       '<div class="rounded-lg bg-blue-50 p-3"><div class="text-[10px] text-blue-700">Proposed official order</div>'+
+        '<b class="text-lg">'+money(comparison.newTotal,'USD')+'</b>'+
+        '<div class="text-[10px] '+(comparison.newTotal<s.total?'text-amber-800':'text-gray-600')+'">Difference: '+(comparison.newTotal>=s.total?'+':'−')+money(Math.abs(round2(comparison.newTotal-s.total)),'USD')+'</div></div></div>'+
+      (comparison.items.length?'<div class="rounded-lg bg-amber-50 p-2 text-xs text-amber-900">'+comparison.items.map(esc).join(' · ')+'</div>':'')+
+      (changedRows.length?'<div class="space-y-2 max-h-64 overflow-y-auto">'+changedRows.map(x=>
+         '<div class="rounded-lg border border-amber-200 p-2 text-xs"><b>'+esc(x.code)+'</b>'+
+          '<p class="text-amber-800 mt-1">'+x.diff.map(esc).join(' · ')+'</p>'+
+          (x.old&&x.diff.includes('Item note / floor / room changed')?'<div class="text-gray-500 mt-1">From: '+esc(sourceItemNoteForOrder(x.old)||'None')+'<div>To: '+esc(x.note||'None')+'</div></div>':'')+
+         '</div>').join('')+'</div>':
+       '<p class="text-xs text-green-700">All quoted items, quantities, prices, discounts and notes match the proposed order.</p>')+
+      (comparison.changed?'<label class="flex gap-2 items-start border-t pt-3 text-xs font-semibold text-amber-900">'+
+       '<input type="checkbox" id="quoteDifferencesAcknowledged" class="mt-0.5">'+
+       '<span>I have reviewed these changes and will follow existing discount / order approval rules. This is an acknowledgement, not management approval.</span></label>':'')+
+      '</section>';
+  }
+  function renderQuoteConversionComparison(){
+    const form=document.getElementById('orderForm');
+    const holder=document.getElementById('quoteConversionComparison');
+    const ctx=activeConversionSnapshot;
+    if(!form||!holder||!ctx)return;
+    const cmp=liveQuotationComparison(ctx.summary,form);
+    const previouslyChecked=!!holder.querySelector('#quoteDifferencesAcknowledged')?.checked;
+    const same=holder.dataset.quoteDiffSignature===cmp.signature;
+    holder.innerHTML=quoteComparisonPanelHtml(ctx.summary,cmp);
+    holder.dataset.quoteDiffSignature=cmp.signature;
+    if(cmp.changed&&same&&previouslyChecked){
+      const el=holder.querySelector('#quoteDifferencesAcknowledged');if(el)el.checked=true;
+    }
+  }
+  async function checkQuotedSourceBeforeSave(ctx){
+    const current=await db.from(TABLE).select('id,status,customer_id,source_payload').eq('id',ctx.id).single();
+    if(current.error)throw current.error;
+    if(current.data.status==='converted')throw Error('This quotation was already converted. Open its linked Sales Order instead.');
+    if(String(current.data.customer_id||'')!==String(ctx.customerId||''))
+      throw Error('The linked CRM customer was changed. Reopen the quotation to review the customer.');
+    if(quotationBusinessSignature(current.data)!==ctx.signature)
+      throw Error('This imported quotation changed while you were preparing the order. Reopen it and compare the new revision.');
+    const latest=await verifyQuotationSnapshot(current.data);
+    if(latest.changed||latest.unchecked)
+      throw Error('Showroom has a newer or changed quotation. Update and review the latest revision before creating an official order.');
+  }
   window.convertImportedQuotation=async function(id){
     if(!canCreateQuotations())return showToast('Your role cannot create or import quotations.','err');
     if(!canConvertQuotations())return showToast('Create Sales Orders permission is required to convert a quotation.','err');
