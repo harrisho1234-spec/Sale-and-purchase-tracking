@@ -488,7 +488,7 @@ window.openDailyManagerReport=id=>{
 };
 window.submitDailyManagerReview=async(id,decision)=>{
  const comment=elem('dailyManagerComment')?.value||'';
- try{await api('review',{reportId:id,decision,comment});closeModal();toast('Review recorded in Google Sheets');await reload()}
+ try{await api('review',{reportId:id,decision,comment});closeModal();toast('Review recorded in Google Sheets');window.invalidateSalesDailyApprovals?.();await reload()}
  catch(e){toast(e.message,true)}
 };
 async function reload(){
@@ -662,7 +662,7 @@ window.requestSalesDailyEdit=async section=>{
 };
 window.decideSalesDailyEdit=async(requestId,decision)=>{
  const note=prompt('Optional management note:');if(note===null)return;
- try{await api('decide_edit',{requestId,decision,note});closeModal();toast('Edit request '+decision.toLowerCase());await reload()}
+ try{await api('decide_edit',{requestId,decision,note});closeModal();toast('Edit request '+decision.toLowerCase());window.invalidateSalesDailyApprovals?.();await reload()}
  catch(e){toast(e.message,true)}
 };
 const previousGo=window.go;
