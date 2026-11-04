@@ -93,3 +93,77 @@ test('UI resets drafts on date/account changes, requests scoped weekly stats and
  assert.match(nodes.content.innerHTML,/Last 7 days/);
 });
 
+
+test('manager review stays independent of task completion, persists its reviewer and clears pending review',()=>{
+ const {a,m,task,call}=fixture(),date='2026-10-22';
+ const report=call(a,'submit_am',{date,tasks:[task('Follow-up customer')]});
+ call(a,'submit_pm',{date,results:[{id:report.tasks[0].id,status:'Pending',result:'No reply yet'}]});
+ assert.equal(call(m,'read',{date}).reports[0].reviewStatus,'Pending');
+ call(m,'review',{reportId:report.id,decision:'Reviewed',comment:'Follow up tomorrow'});
+ const saved=call(m,'read',{date}).reports[0];
+ assert.equal(saved.reviewStatus,'Reviewed');
+ assert.equal(saved.pmStatus,'Submitted');
+ assert.equal(saved.reviewedBy,'Manager');
+ assert.ok(saved.reviewedAt);
+ assert.equal(saved.tasks[0].status,'Pending');
+ assert.equal(saved.tasks[0].result,'No reply yet');
+ assert.equal(call(m,'weekly',{start:date,end:date}).reviewed,1);
+ assert.throws(()=>call(m,'review',{reportId:report.id,decision:'Reviewed'}),/already reviewed/);
+});
+
+async function managerReviewUiCase(persist){
+ let report={id:'r1',date:'2026-11-01',userId:'sales1',salesperson:'Pay Pheara',
+  amStatus:'Submitted',pmStatus:'Submitted',reviewStatus:'Pending',reviewedBy:'',reviewedAt:'',
+  tasks:[{id:'t1',plan:'Follow up',category:'Customer Follow-up',status:'Pending',result:'No reply'}],
+  editRequests:[],additionalActivities:[]};
+ const info={modal:'',closed:0,notices:[],actions:[]};
+ const content={innerHTML:'',querySelectorAll:()=>[],querySelector:()=>null};
+ const nodes={content,pageTitle:{textContent:''},pageSubtitle:{textContent:''},dailyManagerComment:{value:'Please follow up'}};
+ const c={Intl,Date,console,document:{getElementById:id=>nodes[id]||null},
+  state:{user:{id:'manager'},profile:{role:'manager'},page:'dashboard'},
+  showToast:(message,type)=>info.notices.push({message,type}),
+  openModal:(title,html)=>{info.modal=html},closeModal:()=>{info.closed++},renderNav:()=>{},
+  navItems:()=>[],go:async()=>{},hasAppPermission:()=>true,
+  db:{rpc:async name=>({data:name==='get_sales_daily_connection'?{configured:true}:{can_review:true}}),
+   functions:{invoke:async(_,req)=>{
+    const action=req.body.action;info.actions.push(action);
+    if(action==='read')return {data:{ok:true,data:{reports:[JSON.parse(JSON.stringify(report))],
+     salesPeople:[{user_id:'sales1',name:'Pay Pheara'}]}}};
+    if(action==='weekly')return {data:{ok:true,data:{plannedTasks:1,amSubmitted:1,pmSubmitted:1,
+     reviewed:report.reviewStatus==='Reviewed'?1:0}}};
+    if(action==='review'){
+     if(persist){report.reviewStatus=req.body.payload.decision;report.reviewedBy='Manager';
+      report.reviewedAt='2026-11-04T03:00:00Z'}
+     return {data:{ok:true,data:{decision:req.body.payload.decision}}};
+    }
+    return {data:{ok:true,data:{}}};
+   }}}
+ };
+ c.window=c;vm.createContext(c);vm.runInContext(read('sales-daily-plan.js'),c);
+ await c.go('sales-daily-review');
+ assert.match(content.innerHTML,/Awaiting Manager Review/);
+ c.openDailyManagerReport('r1');
+ assert.match(info.modal,/Task outcome:<\\/b> Pending \/ Outstanding/);
+ assert.match(info.modal,/Manager review:<\\/b> Awaiting Manager Review/);
+ assert.equal((await c.getSalesDailyApprovalQueue()).length,1);
+ await c.submitDailyManagerReview('r1','Reviewed');
+ return {c,info,content,report};
+}
+test('manager review UI confirms saved status, shows reviewer and leaves unfinished tasks untouched',async()=>{
+ const {c,info,content,report}=await managerReviewUiCase(true);
+ assert.equal(info.closed,1);
+ assert.match(content.innerHTML,/Manager review: Reviewed/);
+ assert.equal(report.tasks[0].status,'Pending');
+ assert.equal((await c.getSalesDailyApprovalQueue()).length,0);
+ c.openDailyManagerReport('r1');
+ assert.match(info.modal,/Reviewed by Manager/);
+ assert.doesNotMatch(info.modal,/Mark Reviewed/);
+ assert.ok(info.notices.some(x=>/Manager review completed/.test(x.message)&&x.type!=='err'));
+});
+test('manager review UI does not falsely report success if Google Sheets still says Pending',async()=>{
+ const {info,report}=await managerReviewUiCase(false);
+ assert.equal(report.reviewStatus,'Pending');
+ assert.equal(info.closed,0);
+ assert.ok(info.notices.some(x=>/could not be confirmed/.test(x.message)&&x.type==='err'));
+ assert.ok(!info.notices.some(x=>/Manager review completed/.test(x.message)));
+});
