@@ -208,7 +208,67 @@
     if(typeof setInventoryTab==='function')await setInventoryTab('requests');
   };
 
+
+  // Opening a CN from Approvals reuses the existing server-authorized CN
+  // workflow. The reviewer still must approve/reject or make a credit decision.
+  window.openCNApprovalFromCenter=async function(id){
+    if(!cnReviewer())return showToast('CN management approval permission required.','err');
+    closeModal();
+    await go('returns');
+    var found=(window._visibleSalesReturns||[]).some(function(x){return String(x.return_id)===String(id)});
+    if(!found)return showToast('CN not visible in your current Return/CN scope. Open Returns / CN or check manager context.','err');
+    if(typeof window.viewSalesReturn==='function')await window.viewSalesReturn(id);
+  };
+  window.openDOEditApprovalFromCenter=async function(){
+    if(!adminReviewer())return showToast('Admin or Super Admin required.','err');
+    closeModal();
+    if(typeof window.openDeliveryOrderEditQueue==='function')await window.openDeliveryOrderEditQueue();
+  };
+  window.openStockCountApprovalFromCenter=async function(){
+    if(!adminReviewer())return showToast('Admin or Super Admin required.','err');
+    closeModal();
+    if(typeof window.openStockCountEditQueue==='function')await window.openStockCountEditQueue(null,true);
+  };
+  window.openDailyApprovalFromCenter=async function(reportId,date,personId){
+    if(typeof window.openSalesDailyApprovalItem!=='function')
+      return showToast('Team Daily Review is unavailable.','err');
+    closeModal();
+    await window.openSalesDailyApprovalItem(reportId,date,personId);
+  };
+
   function requestHtml(r,type){
+    if(type==='cn_approval'||type==='cn_finance'){
+      var finance=type==='cn_finance';
+      return '<button type="button" onclick="openCNApprovalFromCenter(\''+esc(r.return_id)+'\')" class="w-full text-left rounded-xl border border-amber-200 bg-white p-4 hover:bg-amber-50">'+
+        '<div class="flex flex-wrap justify-between items-start gap-3"><div><div class="flex flex-wrap gap-2 items-center">'+
+        '<span class="rounded-md px-2 py-1 text-[9px] font-bold '+(finance?'bg-blue-50 text-blue-700':'bg-amber-100 text-amber-800')+'">'+(finance?'CN CREDIT DECISION':'RETURN / CN APPROVAL')+'</span><b>'+esc(r.cn_no||'Credit Note')+'</b></div>'+
+        '<div class="text-xs text-gray-600 mt-2">'+esc(r.customer_name||'Customer')+' · '+esc(r.action||'Return')+'</div>'+
+        '<div class="text-xs text-gray-700 mt-2">'+(finance?'Stock handling complete; approve Customer Credit or close without credit.':'Approve or reject before Stock can process the return.')+'</div></div>'+
+        '<div class="text-right text-xs text-gray-500">'+(finance?'Financial review':'Management review')+
+        '<div class="mt-1">'+esc(dateText(r.approved_at||r.requested_at||r.created_at))+'</div><b class="text-amber-700 mt-2 block">Review →</b></div></div></button>';
+    }
+    if(type==='do_edit'){
+      return '<button type="button" onclick="openDOEditApprovalFromCenter()" class="w-full text-left rounded-xl border p-4 hover:bg-amber-50">'+
+        '<div class="flex justify-between gap-3 items-center"><div><span class="rounded-md px-2 py-1 text-[9px] font-bold bg-amber-100 text-amber-800">DO EDIT</span>'+
+        '<b class="ml-2">'+esc(r.do_no||r.document_no||'Delivery Order')+'</b>'+
+        '<div class="text-xs text-gray-500 mt-2">'+esc(r.customer_name||'')+' · '+esc(r.reason||'Correction requested')+'</div></div>'+
+        '<b class="text-xs text-amber-700">Review →</b></div></button>';
+    }
+    if(type==='stock_count_edit'){
+      return '<button type="button" onclick="openStockCountApprovalFromCenter()" class="w-full text-left rounded-xl border p-4 hover:bg-amber-50">'+
+        '<div class="flex justify-between gap-3 items-center"><div><span class="rounded-md px-2 py-1 text-[9px] font-bold bg-amber-100 text-amber-800">STOCK COUNT EDIT</span>'+
+        '<b class="ml-2">'+esc(String(r.period_month||'Stock Count').slice(0,7))+'</b>'+
+        '<div class="text-xs text-gray-500 mt-2">'+esc(r.reason||'Review stock count corrections')+'</div></div>'+
+        '<b class="text-xs text-amber-700">Review →</b></div></button>';
+    }
+    if(type==='daily'){
+      return '<button type="button" onclick="openDailyApprovalFromCenter(\''+esc(r.report_id)+'\',\''+esc(r.date)+'\',\''+esc(r.userId||'')+'\')" class="w-full text-left rounded-xl border p-4 hover:bg-amber-50">'+
+        '<div class="flex justify-between gap-3 items-center"><div>'+
+        '<span class="rounded-md px-2 py-1 text-[9px] font-bold bg-blue-50 text-blue-700">'+(r.kind==='edit'?'DAILY EDIT REQUEST':'DAILY RESULT REVIEW')+'</span>'+
+        '<b class="ml-2">'+esc(r.salesperson||'Sales')+'</b>'+
+        '<div class="text-xs text-gray-500 mt-2">'+esc(r.date||'')+' · '+esc(r.kind==='edit'?(r.section||'')+' · '+(r.reason||'Correction request'):'Evening Result submitted')+'</div></div>'+
+        '<b class="text-xs text-amber-700">Review →</b></div></button>';
+    }
     if(type==='conversion'){
       return '<button type="button" onclick="openSrConversionApproval(\''+esc(r.request_id)+'\')" class="w-full text-left rounded-xl border border-amber-200 bg-white p-4 hover:bg-amber-50">'
       +'<div class="flex flex-wrap justify-between items-center gap-3"><div><div class="flex gap-2 items-center"><span class="rounded-md px-2 py-1 text-[9px] bg-amber-100 text-amber-800 font-bold">TK/RK CONVERSION</span><b>'+esc(r.sr_no||'SR')+'</b></div>'
@@ -284,11 +344,16 @@
     if(filter==='all'||filter==='stages')A.stages.forEach(function(x){rows.push({type:'stage',x:x})});
     if(filter==='all'||filter==='assignments')A.assignments.forEach(function(x){rows.push({type:'assignment',x:x})});
     if(filter==='all'||filter==='conversions')A.conversions.forEach(function(x){rows.push({type:'conversion',x:x})});
+    if(filter==='all'||filter==='cn_approval')A.cnApprovals.forEach(function(x){rows.push({type:'cn_approval',x:x})});
+    if(filter==='all'||filter==='cn_finance')A.cnFinance.forEach(function(x){rows.push({type:'cn_finance',x:x})});
+    if(filter==='all'||filter==='do_edit')A.doEdits.forEach(function(x){rows.push({type:'do_edit',x:x})});
+    if(filter==='all'||filter==='stock_count_edit')A.stockCountEdits.forEach(function(x){rows.push({type:'stock_count_edit',x:x})});
+    if(filter==='all'||filter==='daily')A.dailyReviews.forEach(function(x){rows.push({type:'daily',x:x})});
     if((filter==='all'||filter==='stock')&&stockReviewer()&&stockTotal()>0){
       var latest=([].concat(A.stockActions||[],A.stockEdits||[]).sort(function(a,b){return new Date(b.requested_at)-new Date(a.requested_at)})[0]||{});
       rows.push({type:'stock',x:{requested_at:latest.requested_at||new Date().toISOString()}});
     }
-    rows.sort(function(a,b){return new Date(b.x.requested_at)-new Date(a.x.requested_at)});
+    rows.sort(function(a,b){return (Date.parse(b.x.requested_at||b.x.created_at||b.x.approved_at)||0)-(Date.parse(a.x.requested_at||a.x.created_at||a.x.approved_at)||0)});
     return rows;
   }
 
