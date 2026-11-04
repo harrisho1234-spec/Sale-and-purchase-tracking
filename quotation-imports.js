@@ -947,11 +947,23 @@
   window.convertImportedQuotation=async function(id){
     if(!canCreateQuotations())return showToast('Your role cannot create or import quotations.','err');
     if(!canConvertQuotations())return showToast('Create Sales Orders permission is required to convert a quotation.','err');
+    const chosenDocument=document.getElementById('quoteConversionDocument')?.value||'TK';
+    if(!['SR','TK','RK'].includes(chosenDocument))return showToast('Choose SR, TK or RK.','err');
     await loadOrderData();
     const r=await db.from(TABLE).select('*').eq('id',id).single();if(r.error)return showToast(r.error.message,'err');
-    let draft=r.data;
-    if(draft.status==='converted')return showToast('This quotation has already been converted.','err');
-    try{draft=await importSavedRecord(draft.source_record_id)}catch(err){return showToast(err.message||'Could not refresh the latest quotation revision.','err')}
+    const draft=r.data;
+    if(draft.status==='converted')return showToast('This quotation has already been converted. Open its linked order.','err');
+    // Never auto-refresh on conversion: staff must see and accept newer versions.
+    try{
+      const status=await verifyQuotationSnapshot(draft);
+      if(status.changed||status.unchecked){
+        showToast('Showroom quotation changed. Open Review and select Update to Latest Revision before conversion.','err');
+        await window.reviewImportedQuotation(id);
+        return;
+      }
+    }catch(err){
+      return showToast('Cannot verify the current Showroom revision: '+(err.message||err),'err');
+    }
     if(!draft.customer_id)return showToast('Link an existing customer before converting this quotation.','err');
     const customer=(state.customers||[]).find(c=>String(c.id)===String(draft.customer_id));
     if(!customer)return showToast('The linked customer is not available to your account. Create/link or request access first.','err');
@@ -960,7 +972,10 @@
     const select=document.getElementById('orderCustomer');
     if(select){select.value=customer.id;select.dispatchEvent(new Event('change',{bubbles:true}))}
     const search=document.getElementById('orderCustomerSearch');if(search){search.value=customer.name||'';search.dataset.customerId=customer.id}
-    const flow=document.getElementById('salesFlowType');if(flow){flow.value='stock_sale';flow.dispatchEvent(new Event('change',{bubbles:true}))}
+    const flow=document.getElementById('salesFlowType');
+    if(flow){flow.value=chosenDocument==='SR'?'pre_order':'stock_sale';flow.dispatchEvent(new Event('change',{bubbles:true}))}
+    const invoice=document.getElementById('salesInvoiceType');
+    if(invoice&&chosenDocument!=='SR')invoice.value=chosenDocument;
     const doc=document.getElementById('salesDocumentNo');if(doc)doc.value='';
     const wrap=document.getElementById('orderItems');if(wrap)wrap.innerHTML='';
     let unmatched=0;
@@ -979,9 +994,50 @@
     if(typeof salesEntryRecalc==='function')salesEntryRecalc();
     if(typeof updateSalesCustomerReviewHint==='function')updateSalesCustomerReviewHint();
     activeConversionId=id;
-    const title=document.getElementById('modalTitle');if(title)title.textContent='Convert Quotation → Official Sales Order';
+    activeConversionSnapshot={
+      id,customerId:draft.customer_id,signature:quotationBusinessSignature(draft),
+      summary:s,chosenDocument,sourceRevision:quotationRevision(draft.source_payload)
+    };
+    const submitButton=document.getElementById('saveSalesOrderSubmit');
+    const holder=document.createElement('div');
+    holder.id='quoteConversionComparison';
+    if(submitButton)submitButton.before(holder);else form.appendChild(holder);
+    renderQuoteConversionComparison();
+    form.addEventListener('input',event=>{
+      if(event.target?.id!=='quoteDifferencesAcknowledged')renderQuoteConversionComparison();
+    });
+    form.addEventListener('change',event=>{
+      if(event.target?.id!=='quoteDifferencesAcknowledged')renderQuoteConversionComparison();
+    });
+    // Covers add/remove rows by the existing buttons without changing
+    // the normal Sales Order form or stock/DO validation.
+    form.addEventListener('click',event=>{
+      if(event.target?.closest('button'))setTimeout(renderQuoteConversionComparison,0);
+    });
+    const normalSave=form.onsubmit;
+    form.addEventListener('submit',async event=>{
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if(conversionSaving)return;
+      if(!activeConversionSnapshot||activeConversionId!==id)
+        return showToast('Quotation conversion context expired. Reopen the quotation.','err');
+      renderQuoteConversionComparison();
+      const comparison=liveQuotationComparison(activeConversionSnapshot.summary,form);
+      if(comparison.changed&&!form.querySelector('#quoteDifferencesAcknowledged')?.checked)
+        return showToast('Review and acknowledge the changes from the saved Showroom quotation before saving.','err');
+      conversionSaving=true;
+      try{
+        await checkQuotedSourceBeforeSave(activeConversionSnapshot);
+        if(typeof normalSave!=='function')throw Error('Sales Order save action unavailable. Reopen the order form.');
+        // Existing saveOrder retains all SR/TK/RK, discount, payment, DO,
+        // duplicate number and permission validations.
+        await normalSave.call(form,event);
+      }catch(err){showToast(err.message||'Cannot save quotation conversion.','err')}
+      finally{conversionSaving=false}
+    },true);
+    const title=document.getElementById('modalTitle');if(title)title.textContent='Convert Quotation → Official '+chosenDocument;
     const hint=document.getElementById('salesFlowHint');
-    if(hint)hint.innerHTML='<b>Imported quotation:</b> review all lines, choose <b>TK or RK</b>, then enter the official number. '+(unmatched?'<span class="text-red-700"><b>'+unmatched+' product line'+(unmatched===1?' is':'s are')+' not matched yet.</b> Select the matching catalog product before saving.</span>':'All product codes matched the current catalog.');
+    if(hint)hint.innerHTML='<b>Imported quotation '+esc(revisionLabel(quotationRevision(draft.source_payload)))+':</b> review all lines and enter the official <b>'+esc(chosenDocument)+'</b> number. '+(unmatched?'<span class="text-red-700"><b>'+unmatched+' product line'+(unmatched===1?' is':'s are')+' not matched yet.</b> Select the matching catalog product before saving.</span>':'All product codes matched the current catalog.');
     if(doc)doc.focus();
   };
 
@@ -990,7 +1046,7 @@
     window.closeModal=function(){
       // If a quotation conversion form is abandoned, clear its context so a later
       // unrelated Sales Order can never mark the old quotation as converted.
-      if(activeConversionId && document.getElementById('orderForm')) activeConversionId=null;
+      if(activeConversionId && document.getElementById('orderForm')){activeConversionId=null;activeConversionSnapshot=null;}
       return baseCloseModal.apply(this,arguments);
     };
   }
@@ -999,7 +1055,7 @@
   window.afterSalesOrderCreated=async function(so,meta){
     if(typeof previousAfterCreate==='function')await previousAfterCreate(so,meta);
     if(!activeConversionId)return;
-    const id=activeConversionId;activeConversionId=null;
+    const id=activeConversionId;activeConversionId=null;activeConversionSnapshot=null;
     const r=await db.from(TABLE).update({status:'converted',converted_sales_order_id:so.id,converted_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',id);
     if(r.error)throw r.error;
   };
