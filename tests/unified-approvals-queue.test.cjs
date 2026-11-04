@@ -174,8 +174,8 @@ test('bell/PWA attention and CN timestamps include existing review queues',()=>{
 });
 test('browser cache versions point to newest Approvals, Daily and bell scripts',()=>{
  assert.match(index,/approval-notifications\.js\?v=20261104-type-tabs-v2/);
- assert.match(index,/sales-daily-plan\.js\?v=20261104-review-status-confirm1/);
- assert.match(index,/push-notifications\.js\?v=20261104-unified-review-bell1/);
+ assert.match(index,/sales-daily-plan\.js\?v=20261104-pm-deadline-alerts1/);
+ assert.match(index,/push-notifications\.js\?v=20261104-daily-pm-alerts1/);
 });
 
 test('PWA bell combines SQL attention with authenticated recent Daily review count',async()=>{
@@ -195,9 +195,39 @@ test('PWA bell combines SQL attention with authenticated recent Daily review cou
  await sandbox.refreshAttentionTest();
  assert.equal(sandbox.P.attention.count,5);
  assert.equal(sandbox.P.attention.target,'approvals');
- assert.match(sandbox.P.attention.body,/2 Team Daily Reviews/);
+ assert.match(sandbox.P.attention.body,/2 pending Team Daily Reviews/);
  assert.match(sandbox.P.attention.body,/3 Return\/CN reviews/);
 });
+
+test('notification bell includes role-scoped missing Evening Results and unfinished tasks',async()=>{
+ const push=read('push-notifications.js');
+ const start=push.indexOf('  async function refreshAttention(){');
+ const end=push.indexOf('  async function waitForUser(){',start);
+ assert.ok(start>0&&end>start);
+ const sandbox={
+  P:{attention:null},
+  window:{
+   getSalesDailyApprovalQueue:async()=>[{id:'reviewA'}],
+   getSalesDailyAttention:async()=>({count:3,missingCount:2,unfinishedCount:1,target:'sales-daily-review'})
+  },
+  readyUser:()=>true,
+  db:{rpc:async()=>({data:{count:4,target:'approvals',body:'4 other approvals'}})},
+  renderButton:()=>{},applyAppBadge:async()=>{},ensureSubscription:async()=>{},
+  Notification:{permission:'denied'},console:{warn:()=>{}},
+  Promise,Number,Array
+ };
+ vm.runInNewContext(push.slice(start,end)+'\nthis.refreshAttentionTest=refreshAttention;',sandbox,{timeout:2000});
+ await sandbox.refreshAttentionTest();
+ assert.equal(sandbox.P.attention.count,8);
+ assert.equal(sandbox.P.attention.target,'sales-daily-review');
+ assert.match(sandbox.P.attention.body,/2 missing Evening Results/);
+ assert.match(sandbox.P.attention.body,/1 unfinished sales task/);
+ assert.match(sandbox.P.attention.body,/4 other approvals/);
+ assert.match(daily,/window\.getSalesDailyAttention=async/);
+ assert.match(daily,/r\.pmStatus==='Submitted'/);
+ assert.match(daily,/String\(r\.userId\)!==id/);
+});
+
 test('notification priority opens actionable approvals before unrelated Tax alerts',()=>{
  const sql=read('database/20261104_prioritize_approval_bell_navigation.sql');
  assert.match(sql,/if v_approvals>0 or v_stock_approvals>0 then v_target:='approvals'/);
