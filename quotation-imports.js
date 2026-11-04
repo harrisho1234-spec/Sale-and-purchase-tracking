@@ -364,14 +364,14 @@
     if(r.error)throw r.error;return r.data||[];
   }
   function quotationTabs(){
-    const importsActive=quotationSection==='imports';
-    return '<div class="inline-flex rounded-xl border bg-white p-1 mb-5">'+
-      '<button type="button" onclick="showQuotationSection(\'imports\')" class="px-4 py-2 rounded-lg text-xs font-semibold '+(importsActive?'bg-[#211d18] text-white':'text-gray-600 hover:bg-gray-50')+'">Imported Queue</button>'+
-      '<button type="button" onclick="showQuotationSection(\'history\')" class="px-4 py-2 rounded-lg text-xs font-semibold '+(!importsActive?'bg-[#211d18] text-white':'text-gray-600 hover:bg-gray-50')+'">Quotation History</button>'+
+    return '<div class="inline-flex flex-wrap rounded-xl border bg-white p-1 mb-5">'+
+      [['history','Quotation History'],['imports','Imported Queue'],['analytics','Conversion Analytics']]
+        .map(([key,label])=>'<button type="button" onclick="showQuotationSection(\''+key+'\')" class="px-4 py-2 rounded-lg text-xs font-semibold '+
+          (quotationSection===key?'bg-[#211d18] text-white':'text-gray-600 hover:bg-gray-50')+'">'+label+'</button>').join('')+
       '</div>';
   }
   window.showQuotationSection=function(section){
-    quotationSection=section==='history'?'history':'imports';
+    quotationSection=['history','imports','analytics'].includes(section)?section:'history';
     renderImportedQuotations();
   };
   async function getRegistryRows(){
@@ -579,7 +579,7 @@
 
     const [revisionsResult,imported]=await Promise.all([
       db.from(REVISION_TABLE).select('*').eq('quotation_id',id).order('revision_no',{ascending:false}),
-      db.from(TABLE).select('id,status,converted_sales_order_id').eq('source_record_id',row.source_record_id).maybeSingle()
+      db.from(TABLE).select('id,status,converted_sales_order_id,converted_at,imported_at,source_saved_at,source_payload').eq('source_record_id',row.source_record_id).maybeSingle()
     ]);
     if(revisionsResult.error)return showToast(revisionsResult.error.message,'err');
     const revisions=revisionsResult.data||[];
@@ -701,6 +701,7 @@
   }
   window.renderImportedQuotations=async function(){
     if(quotationSection==='history')return renderQuotationHistoryPage();
+    if(quotationSection==='analytics')return renderQuotationAnalytics();
     await loadOrderData();
     const rows=await getRows();
     const ready=rows.filter(x=>x.status==='ready').length;
@@ -820,7 +821,7 @@
     let convertedOrderNo='';
     if(row.converted_sales_order_id){
       const linkedOrder=await db.from('sales_orders').select('order_no,sr_no,invoice_no,sales_rep_name_snapshot').eq('id',row.converted_sales_order_id).maybeSingle();
-      if(!linkedOrder.error)convertedOrderNo=String(linkedOrder.data?.order_no||'');
+      if(!linkedOrder.error)convertedOrderNo=linkedOrderNo(linkedOrder.data);
     }
     const lines=quotationSnapshotLines(s);
     openModal('Imported Quotation',
@@ -1128,7 +1129,7 @@
       // A V4 handoff keeps Imported Queue active so the newly imported quote can be reviewed.
       if(!handoffBusy)quotationSection='history';
       document.getElementById('pageTitle').textContent='Quotations';
-      document.getElementById('pageSubtitle').textContent='Permanent showroom quotation history and TK/RK Sales Order conversion';
+      document.getElementById('pageSubtitle').textContent='Showroom quotation history, SR/TK/RK conversion and conversion analytics';
       document.getElementById('content').innerHTML='<div class="py-20 text-center text-gray-400">Loading...</div>';
       try{await renderImportedQuotations()}catch(err){document.getElementById('content').innerHTML='<div class="card rounded-xl p-5 text-red-600">Error: '+esc(err.message||String(err))+'</div>'}
     };
