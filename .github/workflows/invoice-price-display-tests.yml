@@ -1,0 +1,28 @@
+name: Invoice price and discount display checks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'invoice-price-breakdown.js'
+      - 'tracking-redesign.js'
+      - 'sr-multiple-invoices.js'
+      - 'tests/invoice-price-breakdown.test.cjs'
+      - '.github/workflows/invoice-price-display-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  invoice-price-display:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check invoice display JavaScript
+        run: |
+          node --check invoice-price-breakdown.js
+          node --check tracking-redesign.js
+          node --check sr-multiple-invoices.js
+      - name: Validate original price, item discount, and invoice total calculations
+        run: node --test tests/invoice-price-breakdown.test.cjs
