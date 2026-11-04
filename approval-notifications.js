@@ -458,7 +458,22 @@
   wrapReview('reviewSalesEditRequest');
   wrapReview('reviewCustomerRequest');
   wrapReview('reviewSalesPaymentRequest');
-  setTimeout(function(){wrapReview('reviewCustomerStageChangeRequest')},100);
+  wrapReview('reviewCNCase');
+  wrapReview('finalizeCNNoCredit');
+  wrapReview('setSalesReturnFinancialTreatment');
+  wrapReview('resubmitCNCase');
+  wrapReview('reviewSrConversion');
+  setTimeout(function(){
+    [
+      'reviewCustomerStageChangeRequest','reviewDeliveryOrderEdit',
+      'reviewStockCountEdit','reviewActivitySalesAssignment'
+    ].forEach(wrapReview);
+  },100);
+  // Keep the sidebar/nav notification count fresh while the app is open.
+  // The separate bell/PWA push notification uses the database attention RPC.
+  setInterval(function(){
+    if(reviewer()&&(!document.visibilityState||document.visibilityState==='visible'))refresh();
+  },60000);
 
   try{
     if(state&&state.profile&&reviewer()){
