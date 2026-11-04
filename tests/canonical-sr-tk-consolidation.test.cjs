@@ -63,8 +63,10 @@ test('Sales Tracking hides archived TK cards while showing SR → issued TK/RK',
  assert.match(history,/Main SR · TK\/RK issued/);
 });
 test('browser cache uses updated canonical sources',()=>{
- for(const name of ['customer-sr-financials.js','tracking-redesign.js','sales-report-bookings.js'])
+ for(const name of ['customer-sr-financials.js','sales-report-bookings.js'])
   assert.ok(html.includes(name+'?v=20261103-canonical-sr-tk-v1'),name);
+ assert.ok(html.includes('tracking-redesign.js?v=20261104-invoice-pricing1'));
+ assert.ok(html.includes('invoice-price-breakdown.js?v=20261104-invoice-pricing1'));
  for(const name of ['customer-order-history.js','customer-return-history.js'])
   assert.ok(html.includes(name+'?v=20261103-hide-archived-tk2'),name);
 });
