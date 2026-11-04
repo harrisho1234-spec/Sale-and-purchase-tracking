@@ -432,6 +432,8 @@
     var summary=document.getElementById('approvalTypeSummary');
     var heading=document.getElementById('approvalTypeHeading');
     if(!filters||!body||!summary||!heading)return;
+    var totalBadge=document.getElementById('approvalPageTotal');
+    if(totalBadge)totalBadge.textContent=String(total());
     var types=approvalTypes();
     if(!types.some(function(t){return t.key===A.activeType}))A.activeType='all';
     var active=types.find(function(t){return t.key===A.activeType})||types[0];
@@ -485,7 +487,7 @@
         '<div class="flex flex-wrap justify-between items-center gap-3">'+
           '<div><h2 class="font-bold text-lg">Approval Types</h2>'+
           '<p class="text-xs text-gray-500 mt-1">Choose a type to see its requests here, or choose All Pending to see every type separately.</p></div>'+
-          '<div class="text-sm font-semibold text-gray-700">Total Pending <b class="ml-1 rounded-full bg-[#211d18] text-white px-3 py-1.5">'+total()+'</b></div>'+
+          '<div class="text-sm font-semibold text-gray-700">Total Pending <b id="approvalPageTotal" class="ml-1 rounded-full bg-[#211d18] text-white px-3 py-1.5">'+total()+'</b></div>'+
         '</div>'+
         '<div id="approvalTypeFilters" role="group" aria-label="Filter pending approvals by type" class="flex flex-wrap gap-2 mt-4"></div>'+
       '</div>'+
