@@ -685,10 +685,10 @@
     return {available,filtered,repStats,totals,oldOpen};
   }
   window.setQuotationAnalyticsYear=function(value){
-    quotationAnalyticsYear=String(value||'all');renderQuotationAnalytics();
+    quotationAnalyticsYear=String(value||'all');return renderQuotationAnalytics();
   };
   window.setQuotationAnalyticsRep=function(value){
-    quotationAnalyticsRep=String(value||'all');renderQuotationAnalytics();
+    quotationAnalyticsRep=String(value||'all');return renderQuotationAnalytics();
   };
   async function renderQuotationAnalytics(){
     if(!canViewQuotationAnalytics())return showToast('Management access is required for quotation conversion analytics.','err');
