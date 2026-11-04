@@ -67,6 +67,26 @@
     }
     return '';
   }
+  // V4 captures the notes by each cart row's stable ID inside quotation form
+  // state, not in the catalog item. Do not match by product code: the same
+  // product may appear twice with different room, discount and note.
+  function quotationFormState(sourceState){
+    const states=sourceState?.documentFormStates||{};
+    return (states.quotation?.initialized?states.quotation:null)||
+      states[sourceState?.documentType]||states.quotation||{};
+  }
+  function quotationItemNote(sourceState,entry,index){
+    const map=quotationFormState(sourceState)?.itemNotes||{};
+    const key=String(entry?.id??entry?.item?.id??index);
+    return Object.prototype.hasOwnProperty.call(map,key)?String(map[key]??'').trim():'';
+  }
+  function quotationItemSection(sourceState,entry){
+    return String(entry?.documentSections?.quotation||
+      entry?.documentSections?.[sourceState?.documentType]||'').trim();
+  }
+  function sourceItemNoteForOrder(line){
+    return [line.section?'Floor / Room / Section: '+line.section:'',line.note||''].filter(Boolean).join(' · ');
+  }
   function buildQuoteLines(sourceState){
     const out=[];
     const cart=Array.isArray(sourceState?.cart)?sourceState.cart:[];
@@ -80,6 +100,8 @@
         const setUnitPrice=(custom!==null&&custom!==undefined&&Number.isFinite(Number(custom)))?Number(custom):(Number.isFinite(Number(saved))?Number(saved):componentBase);
         const ratio=componentBase>0?setUnitPrice/componentBase:0;
         const setDiscountPct=clampPct(entry.discount);
+        const setNote=quotationItemNote(sourceState,entry,index);
+        const section=quotationItemSection(sourceState,entry);
         parts.forEach((part,partIndex)=>{
           const item=part?.item||{};
           const qty=Math.max(0.01,num(part?.quantity,1))*setQty;
@@ -90,7 +112,8 @@
             image:String(item.imgLink||item.image_url||'').trim(),className:String(item.class||'').trim(),
             qty:round2(qty),unitPrice,discountPct:setDiscountPct,
             discountAmount:round2(qty*unitPrice*setDiscountPct/100),
-            forcePreorder:!!entry.forcePreorder,sourceSetName:String(entry.setName||entry.name||'Set').trim()
+            forcePreorder:!!entry.forcePreorder,sourceSetName:String(entry.setName||entry.name||'Set').trim(),
+            section,note:partIndex===0?setNote:'',sourceCartId:String(entry?.id??index)
           });
         });
         return;
@@ -108,7 +131,9 @@
         image:String(item.imgLink||item.image_url||'').trim(),className:String(item.class||'').trim(),
         qty:round2(qty),unitPrice:round2(unitPrice),discountPct,
         discountAmount:round2(qty*unitPrice*discountPct/100),
-        forcePreorder:!!entry?.forcePreorder,sourceSetName:''
+        forcePreorder:!!entry?.forcePreorder,sourceSetName:'',
+        section:quotationItemSection(sourceState,entry),
+        note:quotationItemNote(sourceState,entry,index),sourceCartId:String(entry?.id??entry?.item?.id??index)
       });
     });
     return out;
@@ -121,11 +146,15 @@
     const customerAddress=recordOrRow?.customer_address||fieldValue(sourceState,'quote-address-input');
     const quoteNo=recordOrRow?.source_quote_no||fieldValue(sourceState,'quote-no-input');
     const salesperson=recordOrRow?.source_salesperson||fieldValue(sourceState,'quote-sales-input');
+    const gross=round2(lines.reduce((sum,l)=>sum+l.qty*l.unitPrice,0));
+    const lineDiscounts=round2(lines.reduce((sum,l)=>sum+l.discountAmount,0));
     const lineNet=round2(lines.reduce((sum,l)=>sum+Math.max(l.qty*l.unitPrice-l.discountAmount,0),0));
     const pct=clampPct(sourceState?.discountPctValue);
     const flat=Math.max(0,num(sourceState?.discountFlatValue,0));
     const orderDiscount=round2(Math.min(lineNet,lineNet*pct/100+flat));
-    return {sourceState,lines,customerName,customerPhone,customerAddress,quoteNo,salesperson,lineNet,orderDiscount,total:round2(Math.max(lineNet-orderDiscount,0))};
+    return {sourceState,lines,customerName,customerPhone,customerAddress,quoteNo,salesperson,
+      gross,lineDiscounts,lineNet,orderDiscountPct:pct,orderDiscountFlat:flat,
+      orderDiscount,total:round2(Math.max(lineNet-orderDiscount,0))};
   }
   function jsonpRecord(recordId){
     return new Promise((resolve,reject)=>{
