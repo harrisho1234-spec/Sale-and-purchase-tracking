@@ -1,22 +1,29 @@
 // Unified pending approvals notification center.
 (function(){
-  var A={orders:[],customers:[],payments:[],stages:[],assignments:[],conversions:[],stockActions:[],stockEdits:[],loading:false};
+  var A={orders:[],customers:[],payments:[],stages:[],assignments:[],conversions:[],stockActions:[],stockEdits:[],cnApprovals:[],cnFinance:[],doEdits:[],stockCountEdits:[],dailyReviews:[],loadWarnings:[],loading:false};
 
   function role(){return state.profile&&state.profile.role||''}
   function reviewer(){return typeof window.hasAppPermission==='function'?window.hasAppPermission('approvals.view'):['manager','admin','super_admin'].indexOf(role())>=0}
   function stockReviewer(){return typeof window.hasAppPermission==='function'?window.hasAppPermission('inventory.approve'):['admin','super_admin'].indexOf(role())>=0}
+  function adminReviewer(){return ['admin','super_admin'].includes(role())}
+  function cnReviewer(){return ['manager','admin','super_admin'].includes(role())&&
+    (typeof window.hasAppPermission!=='function'||window.hasAppPermission('returns.approve'))}
   function stockTotal(){return A.stockActions.length+A.stockEdits.length}
-  function total(){return A.orders.length+A.customers.length+A.payments.length+A.stages.length+A.assignments.length+A.conversions.length+stockTotal()}
+  function cnTotal(){return A.cnApprovals.length+A.cnFinance.length}
+  function total(){return A.orders.length+A.customers.length+A.payments.length+A.stages.length+
+    A.assignments.length+A.conversions.length+stockTotal()+cnTotal()+A.doEdits.length+
+    A.stockCountEdits.length+A.dailyReviews.length}
   function dateText(v){var d=new Date(v);return isNaN(d.getTime())?String(v||''):d.toLocaleString()}
 
   async function loadPending(){
-    if(!reviewer()){A.orders=[];A.customers=[];A.payments=[];A.stages=[];A.assignments=[];A.conversions=[];A.stockActions=[];A.stockEdits=[];return}
+    if(!reviewer()){A.orders=[];A.customers=[];A.payments=[];A.stages=[];A.assignments=[];A.conversions=[];A.stockActions=[];A.stockEdits=[];A.cnApprovals=[];A.cnFinance=[];A.doEdits=[];A.stockCountEdits=[];A.dailyReviews=[];A.loadWarnings=[];return}
     var stockActionPromise=stockReviewer()
       ?db.rpc('get_stock_action_requests',{p_status:'pending'})
       :Promise.resolve({data:[],error:null});
     var stockEditPromise=stockReviewer()
       ?db.from('stock_change_requests').select('id,status,requested_at').eq('status','pending').order('requested_at',{ascending:false}).limit(500)
       :Promise.resolve({data:[],error:null});
+    var optional=function(p){return Promise.resolve(p).catch(function(error){return {data:[],error:error}})};
     var res=await Promise.all([
       db.rpc('get_visible_sales_order_edit_requests',{p_status:'pending'}),
       db.rpc('get_visible_customer_change_requests',{p_status:'pending'}),
@@ -25,7 +32,13 @@
       db.rpc('get_pending_activity_sales_assignments'),
       db.rpc('get_pending_sr_conversion_requests'),
       stockActionPromise,
-      stockEditPromise
+      stockEditPromise,
+      cnReviewer()?optional(db.rpc('get_visible_cn_case_workflows')):Promise.resolve({data:[],error:null}),
+      adminReviewer()?optional(db.rpc('get_delivery_order_edit_requests',{p_delivery_request_id:null,p_pending_only:true})):Promise.resolve({data:[],error:null}),
+      adminReviewer()?optional(db.rpc('get_stock_count_edit_requests',{p_count_id:null,p_pending_only:true})):Promise.resolve({data:[],error:null}),
+      typeof window.getSalesDailyApprovalQueue==='function'
+        ?optional(window.getSalesDailyApprovalQueue().then(function(data){return {data:data,error:null}}))
+        :Promise.resolve({data:[],error:null})
     ]);
     if(res[0].error)throw res[0].error;
     if(res[1].error)throw res[1].error;
@@ -43,6 +56,25 @@
     A.conversions=res[5].data||[];
     A.stockActions=res[6].data||[];
     A.stockEdits=res[7].data||[];
+    A.loadWarnings=[];
+    ['Return/CN','DO edits','Stock Count edits','Team Daily Review'].forEach(function(name,i){
+      if(res[i+8].error){
+        A.loadWarnings.push(name+' unavailable: '+String(res[i+8].error.message||res[i+8].error));
+        console.warn('Pending '+name+':',res[i+8].error.message||res[i+8].error);
+      }
+    });
+    var cnRows=Array.isArray(res[8].data)?res[8].data:[];
+    var userId=String(state.user?.id||'');
+    A.cnApprovals=cnReviewer()?cnRows.filter(function(c){
+      return c.approval_status==='pending'&&String(c.requested_by)!==userId;
+    }):[];
+    A.cnFinance=cnReviewer()?cnRows.filter(function(c){
+      return c.approval_status==='approved'&&c.stock_complete&&
+        c.financial_decision==='pending'&&!c.closed_at;
+    }):[];
+    A.doEdits=adminReviewer()?(Array.isArray(res[9].data)?res[9].data:[]).filter(function(x){return x.status==='pending'}):[];
+    A.stockCountEdits=adminReviewer()?(Array.isArray(res[10].data)?res[10].data:[]).filter(function(x){return x.status==='pending'}):[];
+    A.dailyReviews=Array.isArray(res[11].data)?res[11].data:[];
   }
 
   function addNavBadge(){
