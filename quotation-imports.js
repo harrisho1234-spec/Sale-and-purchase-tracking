@@ -826,6 +826,7 @@
     row.appendChild(wrap);
   }
   function fillProductRow(row,line,product){
+    row.dataset.sourceQuoteKey=String(line.key);
     row.querySelector('.product-id').value=product?.id||'';
     row.querySelector('.product-code').value=product?.code||line.code||'';
     row.querySelector('.product-name').value=product?.item_name||line.name||'';
@@ -841,6 +842,7 @@
     addImportedItemNoteField(row,line);
   }
   function fillServiceRow(row,line){
+    row.dataset.sourceQuoteKey=String(line.key);
     const name=line.name||'Service Fee';const sel=row.querySelector('.service-fee-type');
     if(sel){sel.value=['Service Fee','Maintenance Fee','Cleaning Fee','Delivery / Installation','Other Fee'].includes(name)?name:'Other Fee';if(typeof serviceFeeChanged==='function')serviceFeeChanged(sel)}
     const nameInput=row.querySelector('.service-name');if(nameInput){nameInput.value=name;if(typeof serviceFeeNameChanged==='function')serviceFeeNameChanged(nameInput)}
