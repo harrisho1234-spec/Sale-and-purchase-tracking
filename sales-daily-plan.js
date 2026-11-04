@@ -612,6 +612,94 @@ async function reload(){
    '<div class="mt-3"><button onclick="reloadDailyReport()" class="'+lightButton+'">Retry</button></div></div>';
  }
 }
+// Personal in-app Daily Plan alerts remain in the authenticated Google Sheet.
+const dailyAttentionCache={userId:null,at:0,data:null,promise:null};
+window.getSalesDailyAttention=async()=>{
+ if(!sales()&&!review())return{count:0,missingCount:0,unfinishedCount:0,missing:[],unfinished:[],target:'dashboard'};
+ const id=String(state.user?.id||''),role=String(state.profile?.role||'');
+ if(dailyAttentionCache.userId===id&&dailyAttentionCache.role===role&&dailyAttentionCache.data&&Date.now()-dailyAttentionCache.at<60000)
+  return dailyAttentionCache.data;
+ if(dailyAttentionCache.userId===id&&dailyAttentionCache.role===role&&dailyAttentionCache.promise)return dailyAttentionCache.promise;
+ dailyAttentionCache.userId=id;dailyAttentionCache.role=role;
+ const pending=(async()=>{
+  await access();
+  if(!ui.config?.configured)return{count:0,missingCount:0,unfinishedCount:0,missing:[],unfinished:[],target:'dashboard'};
+  const current=today(),res=await api('read',{start:backDays(current,7),end:current,userId:review()?null:id});
+  const missing=[],unfinished=[];
+  (res.reports||[]).forEach(r=>{
+   if(initialPmMissing(r)&&r.date<current){
+    missing.push({id:String(r.id),date:r.date,userId:String(r.userId||''),
+     salesperson:r.salesperson||'Sales',lateSubmissionAllowed:!!r.lateSubmissionAllowed,
+     overdue:isOverdue(r),deadline:r.pmDeadline||pmDeadline(r.date)});
+   }
+   if(sales()&&String(r.userId)===id&&r.pmStatus==='Submitted'){
+    (r.tasks||[]).filter(unfinishedTask).forEach(t=>unfinished.push({
+     id:String(t.id||''),reportId:String(r.id),date:r.date,
+     status:t.status,plan:t.plan||'Unnamed task',nextFollowup:t.nextFollowup||''
+    }));
+   }
+  });
+  // Review and task completion are separate; a management missing report is not
+  // a manager-approval request until PM is actually submitted.
+  const result={missing,unfinished,missingCount:missing.length,unfinishedCount:unfinished.length,
+   count:missing.length+unfinished.length,target:review()?R:P};
+  if(dailyAttentionCache.userId!==id||dailyAttentionCache.role!==role||String(state.user?.id||'')!==id)return{count:0,missingCount:0,unfinishedCount:0,missing:[],unfinished:[],target:'dashboard'};
+  dailyAttentionCache.data=result;dailyAttentionCache.at=Date.now();
+  return result;
+ })();
+ dailyAttentionCache.promise=pending;
+ try{return await pending}finally{if(dailyAttentionCache.promise===pending)dailyAttentionCache.promise=null}
+};
+function dailyAttentionPanel(info){
+ if(!info?.count)return '';
+ if(review()){
+  return '<div class="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm"><b>'+info.missingCount+' missing Evening Result'+(info.missingCount===1?'':'s')+'</b>'+
+   '<p class="text-xs text-amber-900 mt-1">Only staff who submitted a Morning Plan are included. Each Evening Result was due by 10:00 AM the following day.</p>'+
+   '<div class="grid gap-2 mt-3">'+info.missing.slice(0,20).map(r=>
+    '<div class="rounded-lg bg-white border px-3 py-2 flex flex-wrap gap-2 items-center justify-between"><div><b>'+h(r.salesperson)+'</b> · '+h(r.date)+
+    ' <span class="text-xs font-semibold '+(r.overdue?'text-red-700':'text-amber-800')+'">'+(r.overdue?'Overdue':'Due today by 10:00 AM')+'</span>'+
+    (r.lateSubmissionAllowed?' · Late submission authorized':'')+'</div>'+
+    '<div class="flex gap-2"><button type="button" class="'+lightButton+'" onclick="openSalesDailyMissingReport(\''+h(r.id)+'\',\''+h(r.date)+'\',\''+h(r.userId)+'\')">View report</button>'+
+    (r.overdue&&!r.lateSubmissionAllowed?'<button type="button" class="'+lightButton+'" onclick="allowSalesDailyLatePm(\''+h(r.id)+'\',\''+h(r.date)+'\')">Allow late PM</button>':'')+
+    '</div></div>').join('')+'</div></div>';
+ }
+ return '<div class="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm"><b>Daily Plan reminders</b>'+
+  (info.missingCount?'<p class="mt-2 font-semibold text-red-800">'+info.missingCount+' missing Evening Result'+(info.missingCount===1?'':'s')+'</p>'+
+    '<div class="grid gap-2 mt-2">'+info.missing.slice(0,10).map(r=>
+      '<button type="button" class="text-left rounded-lg bg-white border px-3 py-2 text-xs" onclick="openOverdueSalesDaily(\''+h(r.date)+'\')">'+h(r.date)+' · '+(r.overdue?'Overdue':'Due by 10:00 AM today')+(r.lateSubmissionAllowed?' · Late submission authorized':' · Ask manager if overdue')+'</button>').join('')+'</div>':'')+
+  (info.unfinishedCount?'<p class="mt-3 font-semibold text-amber-900">'+info.unfinishedCount+' unfinished task'+(info.unfinishedCount===1?'':'s')+' from submitted Evening Results</p>'+
+    '<div class="grid gap-2 mt-2">'+info.unfinished.slice(0,15).map(t=>
+      '<button type="button" class="text-left rounded-lg bg-white border px-3 py-2 text-xs" onclick="openOverdueSalesDaily(\''+h(t.date)+'\')">'+
+      h(t.date)+' · '+h(t.plan)+' · <b>'+h(t.status)+'</b>'+(t.nextFollowup?' · Next '+h(t.nextFollowup):'')+'</button>').join('')+'</div>'+
+    '<p class="text-xs text-amber-900 mt-2">Carry these forward or complete the follow-up in your next report. Reviewing a report does not mark unfinished tasks as completed.</p>':'')+
+  '</div>';
+}
+window.refreshSalesDailyAttention=async()=>{
+ const page=state.page,userId=String(state.user?.id||'');
+ const id=page===P?'salesDailyAttention':page===R?'dailyManagerAttention':'';
+ const holder=id?elem(id):null;if(!holder)return;
+ try{
+  const info=await window.getSalesDailyAttention();
+  if(state.page===page&&String(state.user?.id||'')===userId&&elem(id))elem(id).innerHTML=dailyAttentionPanel(info);
+ }catch(err){console.warn('Daily Plan alerts could not refresh:',err.message||err)}
+};
+window.openSalesDailyMissingReport=async(id,date,personId)=>{
+ if(!review())return toast('Management permission required',true);
+ await window.openSalesDailyApprovalItem(id,date,personId);
+};
+window.allowSalesDailyLatePm=async(id,date)=>{
+ if(!review())return toast('Management permission required',true);
+ const reason=prompt('Reason to allow a late Evening Result for '+date+':');
+ if(reason===null)return;
+ if(!reason.trim())return toast('Enter a reason for allowing a late submission',true);
+ try{
+  await api('allow_late_pm',{reportId:id,reason:reason.trim()});
+  toast('Late submission authorized. The salesperson may now submit the Evening Result.');
+  window.invalidateSalesDailyApprovals?.();
+  await reload();
+ }catch(err){toast(err.message||'Could not authorize late submission',true)}
+};
+
 // Unified Approvals can inspect recent TEAM reviews through the existing
 // authenticated Google Sheet relay. No Daily Plan data is copied to Supabase.
 const dailyApprovalCache={userId:null,at:0,data:null,promise:null};
