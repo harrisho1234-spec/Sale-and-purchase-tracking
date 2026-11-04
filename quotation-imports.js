@@ -910,10 +910,10 @@
     const canConvert=canConvertQuotations();
     const canDelete=canDeleteImportedQuotation();
     const linked=(state.customers||[]).find(c=>String(c.id)===String(row.customer_id));
-    let convertedOrderNo='';
+    let convertedOrderNo='';let convertedOrderDetails=null;
     if(row.converted_sales_order_id){
       const linkedOrder=await db.from('sales_orders').select('order_no,sr_no,invoice_no,sales_rep_name_snapshot').eq('id',row.converted_sales_order_id).maybeSingle();
-      if(!linkedOrder.error)convertedOrderNo=linkedOrderNo(linkedOrder.data);
+      if(!linkedOrder.error){convertedOrderDetails=linkedOrder.data?{...linkedOrder.data,id:row.converted_sales_order_id}:null;convertedOrderNo=linkedOrderNo(linkedOrder.data)}
     }
     const lines=quotationSnapshotLines(s);
     openModal('Imported Quotation',
@@ -924,7 +924,7 @@
       (s.salesperson?'<div class="text-[10px] text-gray-500 mt-1"><b>Showroom salesperson text:</b> '+esc(s.salesperson)+' · reference only, does not assign ownership</div>':'')+
       (row.converted_sales_order_id?'<div class="mt-3 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-[10px] text-green-800">Converted to official Sales Order'+(convertedOrderNo?' <b>'+esc(convertedOrderNo)+'</b>':'')+'.'+(convertedOrderNo?' <button type="button" onclick="closeModal();openDashboardSalesOrder(\''+row.converted_sales_order_id+'\')" class="underline font-semibold ml-1">Open order</button>':'')+'</div>':'')+
       '<div class="text-[9px] text-gray-400 mt-2">Source ID: '+esc(row.source_record_id)+'</div></div>'+
-      (row.status==='converted'?linkedQuoteTimeline(row,convertedOrderNo?{id:row.converted_sales_order_id,order_no:convertedOrderNo}:null):'')+
+      (row.status==='converted'?linkedQuoteTimeline(row,convertedOrderDetails):'')+
       quotationRevisionNoticeHtml(row,latestNotice)+
       '<div><div class="flex items-center justify-between mb-2"><b class="text-sm">Quoted items</b><span class="text-xs font-bold">'+money(s.total,'USD')+'</span></div>'+
       '<div class="rounded-xl border overflow-hidden"><div class="grid grid-cols-[1fr_70px_95px_95px] gap-2 bg-gray-50 px-3 py-2 text-[9px] uppercase font-bold text-gray-400"><div>Item</div><div class="text-right">Qty</div><div class="text-right">Price</div><div class="text-right">Net</div></div><div class="px-3">'+(lines||'<div class="p-4 text-xs text-gray-400">No items in this quotation.</div>')+'</div></div><div class="mt-3">'+quoteDiscountSummaryHtml(s)+'</div></div>'+
@@ -1214,8 +1214,11 @@
     if(typeof previousAfterCreate==='function')await previousAfterCreate(so,meta);
     if(!activeConversionId)return;
     const id=activeConversionId;activeConversionId=null;activeConversionSnapshot=null;
-    const r=await db.from(TABLE).update({status:'converted',converted_sales_order_id:so.id,converted_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',id);
+    const r=await db.from(TABLE).update({status:'converted',converted_sales_order_id:so.id,converted_at:new Date().toISOString(),updated_at:new Date().toISOString()})
+      .eq('id',id).eq('status','ready').select('id,converted_sales_order_id').maybeSingle();
     if(r.error)throw r.error;
+    if(!r.data||String(r.data.converted_sales_order_id)!==String(so.id))
+      throw Error('Sales Order saved, but the quotation link was not confirmed. Ask Admin to reconcile the conversion before importing again.');
   };
 
   const oldNavItems=window.navItems;
