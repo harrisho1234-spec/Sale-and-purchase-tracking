@@ -1,6 +1,6 @@
 // Unified pending approvals notification center.
 (function(){
-  var A={orders:[],customers:[],payments:[],stages:[],assignments:[],conversions:[],stockActions:[],stockEdits:[],cnApprovals:[],cnFinance:[],doEdits:[],stockCountEdits:[],dailyReviews:[],loadWarnings:[],loading:false};
+  var A={orders:[],customers:[],payments:[],stages:[],assignments:[],conversions:[],stockActions:[],stockEdits:[],cnApprovals:[],cnFinance:[],doEdits:[],stockCountEdits:[],dailyReviews:[],loadWarnings:[],loading:false,activeType:'all'};
 
   function role(){return state.profile&&state.profile.role||''}
   function reviewer(){return typeof window.hasAppPermission==='function'?window.hasAppPermission('approvals.view'):['manager','admin','super_admin'].indexOf(role())>=0}
@@ -138,18 +138,18 @@
       +'</div><p class="text-xs text-gray-500 mt-1">'+(count?'Sales and stock requests are waiting for review.':'No requests are waiting for review.')+'</p></div>'
       +'<div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 xl:min-w-[900px]">'
       +'<button onclick="go(\'approvals\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">All Pending</div><div class="text-2xl font-bold mt-1">'+count+'</div></button>'
-      +'<button onclick="openApprovalCenter(\'orders\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Order Edits</div><div class="text-2xl font-bold mt-1">'+A.orders.length+'</div></button>'
-      +'<button onclick="openApprovalCenter(\'customers\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Customers</div><div class="text-2xl font-bold mt-1">'+A.customers.length+'</div></button>'
-      +'<button onclick="openApprovalCenter(\'payments\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Payments</div><div class="text-2xl font-bold mt-1">'+A.payments.length+'</div></button>'
-      +'<button onclick="openApprovalCenter(\'stages\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Stage Changes</div><div class="text-2xl font-bold mt-1">'+A.stages.length+'</div></button>'
-      +'<button onclick="openApprovalCenter(\'assignments\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Sales Assignments</div><div class="text-2xl font-bold mt-1">'+A.assignments.length+'</div></button>'
-      +'<button onclick="openApprovalCenter(\'conversions\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">TK/RK Conversions</div><div class="text-2xl font-bold mt-1">'+A.conversions.length+'</div></button>'
-      +'<button onclick="openApprovalCenter(\'cn_approval\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">CN Approvals</div><div class="text-2xl font-bold mt-1">'+A.cnApprovals.length+'</div></button>'
-      +'<button onclick="openApprovalCenter(\'cn_finance\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">CN Credit Decisions</div><div class="text-2xl font-bold mt-1">'+A.cnFinance.length+'</div></button>'
-      +'<button onclick="openApprovalCenter(\'daily\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Daily Reviews</div><div class="text-2xl font-bold mt-1">'+A.dailyReviews.length+'</div></button>'
-      +(adminReviewer()?'<button onclick="openApprovalCenter(\'do_edit\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">DO Edits</div><div class="text-2xl font-bold mt-1">'+A.doEdits.length+'</div></button>':'')
-      +(adminReviewer()?'<button onclick="openApprovalCenter(\'stock_count_edit\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Stock Count Edits</div><div class="text-2xl font-bold mt-1">'+A.stockCountEdits.length+'</div></button>':'')
-      +(stockReviewer()?'<button onclick="openStockApprovalRequests()" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Stock</div><div class="text-2xl font-bold mt-1">'+stockTotal()+'</div></button>':'')
+      +'<button onclick="openApprovalType(\'orders\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Order Edits</div><div class="text-2xl font-bold mt-1">'+A.orders.length+'</div></button>'
+      +'<button onclick="openApprovalType(\'customers\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Customers</div><div class="text-2xl font-bold mt-1">'+A.customers.length+'</div></button>'
+      +'<button onclick="openApprovalType(\'payments\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Payments</div><div class="text-2xl font-bold mt-1">'+A.payments.length+'</div></button>'
+      +'<button onclick="openApprovalType(\'stages\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Stage Changes</div><div class="text-2xl font-bold mt-1">'+A.stages.length+'</div></button>'
+      +'<button onclick="openApprovalType(\'assignments\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Sales Assignments</div><div class="text-2xl font-bold mt-1">'+A.assignments.length+'</div></button>'
+      +'<button onclick="openApprovalType(\'conversions\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">TK/RK Conversions</div><div class="text-2xl font-bold mt-1">'+A.conversions.length+'</div></button>'
+      +'<button onclick="openApprovalType(\'cn_approval\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">CN Approvals</div><div class="text-2xl font-bold mt-1">'+A.cnApprovals.length+'</div></button>'
+      +'<button onclick="openApprovalType(\'cn_finance\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">CN Credit Decisions</div><div class="text-2xl font-bold mt-1">'+A.cnFinance.length+'</div></button>'
+      +'<button onclick="openApprovalType(\'daily\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Daily Reviews</div><div class="text-2xl font-bold mt-1">'+A.dailyReviews.length+'</div></button>'
+      +(adminReviewer()?'<button onclick="openApprovalType(\'do_edit\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">DO Edits</div><div class="text-2xl font-bold mt-1">'+A.doEdits.length+'</div></button>':'')
+      +(adminReviewer()?'<button onclick="openApprovalType(\'stock_count_edit\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Stock Count Edits</div><div class="text-2xl font-bold mt-1">'+A.stockCountEdits.length+'</div></button>':'')
+      +(stockReviewer()?'<button onclick="openApprovalType(\'stock\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Stock</div><div class="text-2xl font-bold mt-1">'+stockTotal()+'</div></button>':'')
       +'</div></div>';
     root.insertBefore(box,root.firstChild);
   }
@@ -162,6 +162,7 @@
       addNavBadge();
       addHeaderButton();
       dashboardCard();
+      renderApprovalTypePanels();
       if(typeof window.refreshAppNotifications==='function')
         window.refreshAppNotifications().catch(function(err){console.warn('Refresh approval bell:',err.message||err)});
     }catch(e){
@@ -394,33 +395,111 @@
     openModal('Pending Approvals',html);
   };
 
+  // Keep all review types on the SAME Approvals page. Each count is the
+  // number of actionable, permission-visible pending requests in that type.
+  function approvalTypes(){
+    var types=[
+      {key:'all',label:'All Pending',count:total()},
+      {key:'cn_approval',label:'Return / CN Approval',count:A.cnApprovals.length,show:cnReviewer()},
+      {key:'cn_finance',label:'CN Credit Decisions',count:A.cnFinance.length,show:cnReviewer()},
+      {key:'orders',label:'Order Edits',count:A.orders.length},
+      {key:'payments',label:'Payments',count:A.payments.length},
+      {key:'conversions',label:'TK/RK Conversions',count:A.conversions.length},
+      {key:'customers',label:'Customer Requests',count:A.customers.length},
+      {key:'stages',label:'Stage Corrections',count:A.stages.length},
+      {key:'assignments',label:'Sales Assignments',count:A.assignments.length},
+      {key:'stock',label:'Stock Approvals',count:stockTotal(),show:stockReviewer()},
+      {key:'do_edit',label:'DO Edit Requests',count:A.doEdits.length,show:adminReviewer()},
+      {key:'stock_count_edit',label:'Stock Count Edits',count:A.stockCountEdits.length,show:adminReviewer()},
+      {key:'daily',label:'Team Daily Review',count:A.dailyReviews.length}
+    ];
+    return types.filter(function(t){return t.show!==false});
+  }
+
+  function typeGroupHtml(type,rows){
+    return '<section class="rounded-xl border border-[#ede8df] overflow-hidden" data-approval-group="'+type.key+'">'+
+      '<button type="button" onclick="setApprovalType(\''+type.key+'\')" class="w-full px-4 py-3 flex flex-wrap items-center justify-between gap-2 text-left bg-[#faf8f4] hover:bg-[#f2eee7]">'+
+      '<span class="text-sm font-semibold">'+esc(type.label)+'</span>'+
+      '<span class="inline-flex items-center justify-center rounded-full bg-white border text-xs font-bold min-w-[28px] h-7 px-2">'+type.count+'</span></button>'+
+      '<div class="p-3 grid gap-2">'+rows.map(function(r){return requestHtml(r.x,r.type)}).join('')+'</div>'+
+      '</section>';
+  }
+
+  function renderApprovalTypePanels(){
+    if(!reviewer()||state.page!=='approvals')return;
+    var filters=document.getElementById('approvalTypeFilters');
+    var body=document.getElementById('approvalTypeResults');
+    var summary=document.getElementById('approvalTypeSummary');
+    var heading=document.getElementById('approvalTypeHeading');
+    if(!filters||!body||!summary||!heading)return;
+    var types=approvalTypes();
+    if(!types.some(function(t){return t.key===A.activeType}))A.activeType='all';
+    var active=types.find(function(t){return t.key===A.activeType})||types[0];
+
+    filters.innerHTML=types.map(function(t){
+      var selected=t.key===active.key;
+      return '<button type="button" data-approval-type="'+t.key+'" aria-pressed="'+selected+'" onclick="setApprovalType(\''+t.key+'\')" class="inline-flex items-center gap-2 px-3 py-2.5 rounded-xl border text-xs font-semibold transition-colors '+
+        (selected?'bg-[#211d18] text-white border-[#211d18]':'bg-white text-gray-700 border-[#e7e1d7] hover:border-[#ba9a5a]')+'">'+
+        esc(t.label)+'<span class="inline-flex justify-center items-center min-w-[23px] h-[23px] px-1.5 rounded-full text-[11px] font-bold '+
+        (selected?'bg-white/20 text-white':t.count?'bg-amber-100 text-amber-900':'bg-gray-100 text-gray-500')+'">'+t.count+'</span></button>';
+    }).join('');
+
+    heading.textContent=active.key==='all'?'Pending Requests by Type':active.label;
+    summary.textContent=active.key==='all'
+      ?total()+' pending request'+(total()===1?'':'s')+' across '+types.filter(function(t){return t.key!=='all'&&t.count>0}).length+' active approval type(s).'
+      :active.count+' pending request'+(active.count===1?'':'s')+' in this approval type.';
+    if(active.key==='all'){
+      var groups=types.filter(function(t){return t.key!=='all'&&t.count>0});
+      body.innerHTML=groups.length
+        ?groups.map(function(t){return typeGroupHtml(t,rowsFor(t.key))}).join('')
+        :'<div class="rounded-xl border border-dashed p-10 text-center text-sm text-gray-500">No pending approvals. All review types are up to date.</div>';
+    }else{
+      var rows=rowsFor(active.key);
+      body.innerHTML=rows.length
+        ?'<div class="grid gap-2">'+rows.map(function(r){return requestHtml(r.x,r.type)}).join('')+'</div>'
+        :'<div class="rounded-xl border border-dashed p-10 text-center text-sm text-gray-500">No pending '+esc(active.label.toLowerCase())+' requests.</div>';
+    }
+  }
+
+  window.setApprovalType=function(type){
+    if(!reviewer())return showToast('Manager/Admin access required.','err');
+    if(!approvalTypes().some(function(t){return t.key===type}))return;
+    A.activeType=type;
+    renderApprovalTypePanels();
+  };
+
+  window.openApprovalType=async function(type){
+    if(!reviewer())return showToast('Manager/Admin access required.','err');
+    if(!approvalTypes().some(function(t){return t.key===type}))return;
+    A.activeType=type;
+    if(state.page!=='approvals')await go('approvals');
+    else renderApprovalTypePanels();
+  };
+
   window.renderApprovals=async function(){
     if(!reviewer())throw new Error('Manager/Admin access required');
     await loadPending();
-    var rows=rowsFor('all');
-
     document.getElementById('content').innerHTML=
-      '<div class="space-y-5">'
-      +'<div class="grid sm:grid-cols-2 xl:grid-cols-4 gap-4">'
-      +'<button onclick="openApprovalCenter(\'all\')" class="card rounded-2xl p-5 text-left border"><div class="text-[10px] uppercase font-bold text-gray-400">All Pending</div><div class="text-3xl font-bold mt-2">'+total()+'</div><div class="text-xs text-gray-400 mt-1">Awaiting review</div></button>'
-      +'<button onclick="openApprovalCenter(\'orders\')" class="card rounded-2xl p-5 text-left"><div class="text-[10px] uppercase font-bold text-gray-400">Order Edit Requests</div><div class="text-3xl font-bold mt-2">'+A.orders.length+'</div><div class="text-xs text-gray-400 mt-1">Sales order corrections</div></button>'
-      +'<button onclick="openApprovalCenter(\'customers\')" class="card rounded-2xl p-5 text-left"><div class="text-[10px] uppercase font-bold text-gray-400">Customer Requests</div><div class="text-3xl font-bold mt-2">'+A.customers.length+'</div><div class="text-xs text-gray-400 mt-1">New customers and changes</div></button>'
-      +'<button onclick="openApprovalCenter(\'payments\')" class="card rounded-2xl p-5 text-left"><div class="text-[10px] uppercase font-bold text-gray-400">Payment Requests</div><div class="text-3xl font-bold mt-2">'+A.payments.length+'</div><div class="text-xs text-gray-400 mt-1">Deposits and payments</div></button>'
-      +'<button onclick="openApprovalCenter(\'stages\')" class="card rounded-2xl p-5 text-left"><div class="text-[10px] uppercase font-bold text-gray-400">Stage Corrections</div><div class="text-3xl font-bold mt-2">'+A.stages.length+'</div><div class="text-xs text-gray-400 mt-1">Backward CRM stage requests</div></button>'
-      +'<button onclick="openApprovalCenter(\'assignments\')" class="card rounded-2xl p-5 text-left"><div class="text-[10px] uppercase font-bold text-gray-400">Sales Assignments</div><div class="text-3xl font-bold mt-2">'+A.assignments.length+'</div><div class="text-xs text-gray-400 mt-1">Showroom / Online reassignment</div></button>'
-      +'<button onclick="openApprovalCenter(\'conversions\')" class="card rounded-2xl p-5 text-left"><div class="text-[10px] uppercase font-bold text-gray-400">TK/RK Conversions</div><div class="text-3xl font-bold mt-2">'+A.conversions.length+'</div><div class="text-xs text-gray-400 mt-1">Sales pre-order invoices to approve</div></button>'
-      +'<button onclick="openApprovalCenter(\'cn_approval\')" class="card rounded-2xl p-5 text-left"><div class="text-[10px] uppercase font-bold text-gray-400">Return / CN Approvals</div><div class="text-3xl font-bold mt-2">'+A.cnApprovals.length+'</div><div class="text-xs text-gray-400 mt-1">Approve or reject submitted returns</div></button>'
-      +'<button onclick="openApprovalCenter(\'cn_finance\')" class="card rounded-2xl p-5 text-left"><div class="text-[10px] uppercase font-bold text-gray-400">CN Credit Decisions</div><div class="text-3xl font-bold mt-2">'+A.cnFinance.length+'</div><div class="text-xs text-gray-400 mt-1">Apply Customer Credit or close without credit</div></button>'
-      +'<button onclick="openApprovalCenter(\'daily\')" class="card rounded-2xl p-5 text-left"><div class="text-[10px] uppercase font-bold text-gray-400">Team Daily Review</div><div class="text-3xl font-bold mt-2">'+A.dailyReviews.length+'</div><div class="text-xs text-gray-400 mt-1">Recent Evening Results and edit requests</div></button>'
-      +(adminReviewer()?'<button onclick="openApprovalCenter(\'do_edit\')" class="card rounded-2xl p-5 text-left"><div class="text-[10px] uppercase font-bold text-gray-400">DO Edit Requests</div><div class="text-3xl font-bold mt-2">'+A.doEdits.length+'</div><div class="text-xs text-gray-400 mt-1">Delivery Order corrections</div></button>':'')
-      +(adminReviewer()?'<button onclick="openApprovalCenter(\'stock_count_edit\')" class="card rounded-2xl p-5 text-left"><div class="text-[10px] uppercase font-bold text-gray-400">Stock Count Edits</div><div class="text-3xl font-bold mt-2">'+A.stockCountEdits.length+'</div><div class="text-xs text-gray-400 mt-1">Submitted count adjustments</div></button>':'')
-      +(stockReviewer()?'<button onclick="openStockApprovalRequests()" class="card rounded-2xl p-5 text-left border-amber-200"><div class="text-[10px] uppercase font-bold text-gray-400">Stock Approvals</div><div class="text-3xl font-bold mt-2 text-amber-700">'+stockTotal()+'</div><div class="text-xs text-gray-400 mt-1">Stock OUT, transfer and delivery requests</div></button>':'')
-      +'</div>'
-      +(A.loadWarnings.length?'<div class="rounded-xl border border-amber-300 bg-amber-50 text-amber-800 p-3 text-xs">Some review queues could not load: '+A.loadWarnings.map(esc).join(' · ')+'</div>':'')
-      +'<div class="card rounded-2xl p-5"><div class="flex items-center justify-between gap-3 mb-4"><div><h3 class="font-bold text-lg">Waiting for Review</h3><p class="text-xs text-gray-400">Newest first</p></div><button onclick="renderApprovals().then(refreshApprovalNotifications)" class="px-3 py-2 border rounded-lg text-xs font-semibold">Refresh</button></div>'
-      +'<div class="grid gap-2">'+(rows.length?rows.map(function(r){return requestHtml(r.x,r.type)}).join(''):'<div class="rounded-xl border border-dashed p-10 text-center text-sm text-gray-400">No pending approvals.</div>')+'</div></div>'
-      +'</div>';
-
+      '<div class="space-y-5">'+
+      '<div class="card rounded-2xl p-5">'+
+        '<div class="flex flex-wrap justify-between items-center gap-3">'+
+          '<div><h2 class="font-bold text-lg">Approval Types</h2>'+
+          '<p class="text-xs text-gray-500 mt-1">Choose a type to see its requests here, or choose All Pending to see every type separately.</p></div>'+
+          '<div class="text-sm font-semibold text-gray-700">Total Pending <b class="ml-1 rounded-full bg-[#211d18] text-white px-3 py-1.5">'+total()+'</b></div>'+
+        '</div>'+
+        '<div id="approvalTypeFilters" role="group" aria-label="Filter pending approvals by type" class="flex flex-wrap gap-2 mt-4"></div>'+
+      '</div>'+
+      (A.loadWarnings.length?'<div class="rounded-xl border border-amber-300 bg-amber-50 text-amber-800 p-3 text-xs">Some review queues could not load: '+A.loadWarnings.map(esc).join(' · ')+'</div>':'')+
+      '<div class="card rounded-2xl p-5">'+
+        '<div class="flex flex-wrap justify-between items-center gap-3 mb-4">'+
+          '<div><h3 id="approvalTypeHeading" class="font-bold text-lg">Pending Requests by Type</h3>'+
+          '<p id="approvalTypeSummary" class="text-xs text-gray-500 mt-1"></p></div>'+
+          '<button type="button" onclick="renderApprovals().then(refreshApprovalNotifications)" class="px-3 py-2 border rounded-lg text-xs font-semibold">Refresh</button>'+
+        '</div>'+
+        '<div id="approvalTypeResults" class="grid gap-4"></div>'+
+      '</div>'+
+      '</div>';
+    renderApprovalTypePanels();
     addNavBadge();
     addHeaderButton();
   };
