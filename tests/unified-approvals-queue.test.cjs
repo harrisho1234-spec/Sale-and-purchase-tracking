@@ -164,7 +164,34 @@ test('bell/PWA attention and CN timestamps include existing review queues',()=>{
  assert.match(attention,/cn_credit:/);
  assert.match(cnDate,/'requested_at',r\.created_at/);
 });
-test('browser cache versions point to newest Approvals and Daily scripts',()=>{
+test('browser cache versions point to newest Approvals, Daily and bell scripts',()=>{
  assert.match(index,/approval-notifications\.js\?v=20261104-unified-cn-do-daily1/);
  assert.match(index,/sales-daily-plan\.js\?v=20261104-unified-cn-do-daily1/);
+ assert.match(index,/push-notifications\.js\?v=20261104-unified-review-bell1/);
+});
+
+test('PWA bell combines SQL attention with authenticated recent Daily review count',async()=>{
+ const push=read('push-notifications.js');
+ const start=push.indexOf('  async function refreshAttention(){');
+ const end=push.indexOf('  async function waitForUser(){',start);
+ assert.ok(start>0&&end>start);
+ const sandbox={
+  P:{attention:null},window:{getSalesDailyApprovalQueue:async()=>[{id:'daily1'},{id:'daily2'}]},
+  readyUser:()=>true,
+  db:{rpc:async()=>({data:{count:3,target:'approvals',body:'3 Return/CN reviews'}})},
+  renderButton:()=>{},applyAppBadge:async()=>{},ensureSubscription:async()=>{},
+  Notification:{permission:'denied'},console:{warn:()=>{}},
+  Promise,Number,Array
+ };
+ vm.runInNewContext(push.slice(start,end)+'\nthis.refreshAttentionTest=refreshAttention;',sandbox,{timeout:2000});
+ await sandbox.refreshAttentionTest();
+ assert.equal(sandbox.P.attention.count,5);
+ assert.equal(sandbox.P.attention.target,'approvals');
+ assert.match(sandbox.P.attention.body,/2 Team Daily Reviews/);
+ assert.match(sandbox.P.attention.body,/3 Return\/CN reviews/);
+});
+test('notification priority opens actionable approvals before unrelated Tax alerts',()=>{
+ const sql=read('database/20261104_prioritize_approval_bell_navigation.sql');
+ assert.match(sql,/if v_approvals>0 or v_stock_approvals>0 then v_target:='approvals'/);
+ assert.match(sql,/elsif v_tax_sales>0 then v_target:='tax-inventory'/);
 });
