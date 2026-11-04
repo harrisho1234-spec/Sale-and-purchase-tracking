@@ -157,9 +157,9 @@
         <div class="flex items-center justify-between gap-3"><div><div class="font-bold text-sm">Source Invoices</div><div class="text-[10px] text-gray-400 mt-0.5">One CN can include multiple invoices for the same customer.</div></div><div id="returnInvoiceCount" class="text-[10px] font-semibold text-gray-400"></div></div>
         <div id="returnAdditionalInvoicesArea" class="mt-2 rounded-xl border bg-gray-50 p-4 text-sm text-gray-400">Choose the first invoice above.</div>
       </div>
-      <div><label class="text-xs font-semibold">Return Action</label><select id="returnAction" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="cancel_undelivered">Cancel Undelivered Items</option><option value="return_only" selected>Return Only / No Refund</option><option value="return_to_stock">Return to Stock</option><option value="exchange">Exchange</option><option value="damaged_return">Damaged / Defective Return</option></select><p class="mt-1 text-[11px] text-gray-600">Choose cancellation for undelivered goods, or Exchange for goods physically returned. Cancellation needs no stock receipt.</p></div>
+      <div><label class="text-xs font-semibold">Return Action</label><select id="returnAction" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="cancel_undelivered">Cancel Undelivered Items</option><option value="return_only" selected>Return Only / No Refund</option><option value="return_to_stock">Return to Stock</option><option value="damaged_return">Damaged / Defective Return</option></select><p class="mt-1 text-[11px] text-gray-600">For physical returns, choose Return to Stock or another normal return action. If the customer buys something else, create a separate new TK/RK invoice. Exchange is temporarily unavailable.</p></div>
       <div><label class="text-xs font-semibold">Reason</label><input id="returnReason" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Changed model, wrong item, damaged..."></div>
-      <div class="md:col-span-2 border-t pt-4"><div class="font-bold text-sm">Returned Items</div><div class="text-[11px] text-gray-600 mt-1">Use Cancel Undelivered Items only for goods never delivered. Approval applies the CN to source invoice balances and creates a Stock reservation release task; excess stays as customer credit. Exchange is for physical returns. <b>Handling</b> is per product: Return to Stock is marked <b>Pending Stock Receipt</b> until a separate warehouse receipt is recorded. CN creation does not increase stock.</div><div id="returnItemsArea" class="mt-3 rounded-xl border bg-gray-50 p-4 text-sm text-gray-800"><span class="text-gray-500">Select the original sale first.</span></div></div>
+      <div class="md:col-span-2 border-t pt-4"><div class="font-bold text-sm">Returned Items</div><div class="text-[11px] text-gray-600 mt-1">Use Cancel Undelivered Items only for goods never delivered. Approval applies the CN to source invoice balances and creates a Stock reservation release task; excess stays as customer credit. When a customer returns items and buys new products, record a Return/CN and a separate new sale. Exchange is temporarily disabled. <b>Handling</b> is per product: Return to Stock is marked <b>Pending Stock Receipt</b> until a separate warehouse receipt is recorded. CN creation does not increase stock.</div><div id="returnItemsArea" class="mt-3 rounded-xl border bg-gray-50 p-4 text-sm text-gray-800"><span class="text-gray-500">Select the original sale first.</span></div></div>
       <div class="md:col-span-2"><label class="text-xs font-semibold">CN Notes</label><textarea id="returnNotes" rows="3" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Return details, replacement instruction, warehouse note..."></textarea></div>
       <div class="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-700">Return value is calculated from the net sold value after applicable line and order discounts. Creating a CN does not change AR. Approving an undelivered cancellation applies its credit without changing deposits or payment history.</div>
       <button class="md:col-span-2 bg-[#211d18] text-white rounded-xl py-3 font-semibold">Create Credit Note</button>
@@ -257,7 +257,7 @@
   };
 
   function syncReturnDisposition(action){
-    const v=action==='return_to_stock'?'return_to_stock':action==='exchange'?'exchange':action==='damaged_return'?'damaged_hold':'no_stock_action';
+    const v=action==='return_to_stock'?'return_to_stock':action==='damaged_return'?'damaged_hold':'no_stock_action';
     document.querySelectorAll('.return-item-disposition').forEach(x=>{x.value=v;window.updateReturnHandlingHint(x)});
   }
 
@@ -279,7 +279,7 @@
     const failed=results.find(x=>x.res.error);
     if(failed){root.innerHTML=`<div class="text-red-500">${esc(failed.res.error.message)}</div>`;return;}
 
-    const defaultDisp=action==='return_to_stock'?'return_to_stock':action==='exchange'?'exchange':action==='damaged_return'?'damaged_hold':'no_stock_action';
+    const defaultDisp=action==='return_to_stock'?'return_to_stock':action==='damaged_return'?'damaged_hold':'no_stock_action';
     const groups=results.map(({order,res})=>({
       order,
       rows:(res.data||[]).filter(x=>Number(x.qty_available||0)>0)
@@ -303,7 +303,7 @@
               <div class="min-w-0"><div class="font-semibold text-sm text-gray-900 truncate">${esc(x.item_name||'Item')}</div><div class="text-[10px] text-gray-600">${esc(x.product_code||'')}${x.product_code?' • ':''}Sold ${Number(x.qty_sold||0)} • ${action==='cancel_undelivered'?'Unavailable':'Returned'} ${Number(x.qty_returned||0)} • Available ${Number(x.qty_available||0)}</div></div>
               <div><label class="text-[9px] uppercase font-bold text-gray-600">Qty</label><input type="number" min="1" max="${Number(x.qty_available||0)}" step="1" value="1" aria-label="Return quantity for ${esc(x.item_name||'Item')}" class="return-item-qty mt-1 w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-gray-900 bg-white"></div>
               <div><label class="text-[9px] uppercase font-bold text-gray-600">Condition</label><select aria-label="Condition of ${esc(x.item_name||'Item')}" class="return-item-condition mt-1 w-full border border-gray-300 rounded-lg px-2 py-2 bg-white text-gray-900 text-xs"><option value="good">Good</option><option value="damaged">Damaged</option><option value="defective">Defective</option><option value="other">Other</option></select></div>
-              <div><label class="text-[9px] uppercase font-bold text-gray-600">Handling</label><select ${action==='cancel_undelivered'?'disabled':''} aria-label="Stock handling for ${esc(x.item_name||'Item')}" onchange="updateReturnHandlingHint(this)" class="return-item-disposition mt-1 w-full border border-gray-300 rounded-lg px-2 py-2 bg-white text-gray-900 text-xs"><option value="no_stock_action" ${defaultDisp==='no_stock_action'?'selected':''}>${action==='cancel_undelivered'?'Release Reservation':'No Stock Action'}</option><option value="return_to_stock" ${defaultDisp==='return_to_stock'?'selected':''}>Return to Stock</option><option value="damaged_hold" ${defaultDisp==='damaged_hold'?'selected':''}>Damaged Hold</option><option value="exchange" ${defaultDisp==='exchange'?'selected':''}>Exchange</option></select></div>
+              <div><label class="text-[9px] uppercase font-bold text-gray-600">Handling</label><select ${action==='cancel_undelivered'?'disabled':''} aria-label="Stock handling for ${esc(x.item_name||'Item')}" onchange="updateReturnHandlingHint(this)" class="return-item-disposition mt-1 w-full border border-gray-300 rounded-lg px-2 py-2 bg-white text-gray-900 text-xs"><option value="no_stock_action" ${defaultDisp==='no_stock_action'?'selected':''}>${action==='cancel_undelivered'?'Release Reservation':'No Stock Action'}</option><option value="return_to_stock" ${defaultDisp==='return_to_stock'?'selected':''}>Return to Stock</option><option value="damaged_hold" ${defaultDisp==='damaged_hold'?'selected':''}>Damaged Hold</option></select></div>
             </div>
             <div class="return-handling-hint text-[10px] text-gray-600 mt-2" aria-live="polite">${action==='cancel_undelivered'?'Cancellation · No physical receipt. Stock releases reservations after approval.':returnHandlingHint(defaultDisp)}</div>
             <input class="return-item-note mt-2 w-full border border-gray-300 rounded-lg px-3 py-2 text-xs text-gray-900 bg-white placeholder:text-gray-500" aria-label="Return note for ${esc(x.item_name||'Item')}" placeholder="Item return note (optional)">
@@ -328,8 +328,10 @@
       items.push({sales_order_item_id:r.dataset.id,qty,condition:r.querySelector('.return-item-condition').value,disposition:r.querySelector('.return-item-disposition').value,notes:r.querySelector('.return-item-note').value.trim()||null});
     }
     if(!usedOrderIds.length)return showToast('Select returned items from at least one source invoice.','err');
+    if(items.some(x=>x.disposition==='exchange'))return showToast('Exchange handling is temporarily disabled. Use Return/CN and a separate new TK/RK.','err');
     const btn=e.target.querySelector('button:not([type]),button[type="submit"]');if(btn){btn.disabled=true;btn.textContent='Creating CN...'}
     const action=document.getElementById('returnAction').value;
+    if(action==='exchange')return showToast('Exchange is temporarily disabled. Use Return/CN and create a separate new TK/RK purchase.','err');
     const args={p_sales_order_ids:usedOrderIds,p_cn_no:document.getElementById('returnCnNo').value.trim()||null,p_return_date:document.getElementById('returnDate').value,p_reason:document.getElementById('returnReason').value.trim()||null,p_notes:document.getElementById('returnNotes').value.trim()||null,p_items:items};
     if(action==='cancel_undelivered')args.p_request_id=e.target.dataset.cancellationRequestId;
     else args.p_action=action;
@@ -375,7 +377,7 @@
       ${h?.notes?`<div class="rounded-xl border bg-gray-50 p-3"><div class="text-[9px] uppercase font-bold text-gray-400">CN Notes</div><div class="text-sm mt-1">${esc(h.notes)}</div></div>`:''}
       <div class="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-700">${h?.action==='cancel_undelivered'?'This CN cancels undelivered items. Management approval applies invoice credit and creates a Release Reservation task for Stock. Excess stays as customer credit. Payments and physical stock are unchanged.':'This CN documents a physical return. Return-to-stock items remain pending until their warehouse stock receipt is posted and linked.'}</div>
       <div class="flex justify-end gap-2 flex-wrap">
-        ${canEditCN()&&h?.status!=='cancelled'?`<button onclick="openEditSalesReturn('${id}')" class="px-4 py-2 border border-amber-200 bg-amber-50 text-amber-800 rounded-lg text-xs font-semibold">Edit CN</button>`:''}
+        ${canEditCN()&&h?.status!=='cancelled'&&h?.action!=='exchange'?`<button onclick="openEditSalesReturn('${id}')" class="px-4 py-2 border border-amber-200 bg-amber-50 text-amber-800 rounded-lg text-xs font-semibold">Edit CN</button>`:''}
         ${canDeleteCN()?`<button onclick="deleteSalesReturn('${id}')" class="px-4 py-2 border border-red-200 bg-red-50 text-red-600 rounded-lg text-xs font-semibold">Delete CN</button>`:''}
       </div>
     </div>`);
@@ -386,19 +388,21 @@
     const h=(window._visibleSalesReturns||[]).find(x=>x.return_id===id);
     if(!h)return showToast('Credit Note not found.','err');
     if(h.status==='cancelled')return showToast('Cancelled Credit Notes cannot be edited.','err');
+    if(h.action==='exchange')return showToast('Existing Exchange CNs are locked for editing during the temporary pause. Their history is preserved.','err');
 
     const {data,error}=await db.rpc('get_sales_return_items_detail_v2',{p_return_id:id});
     if(error)return showToast(error.message,'err');
     const items=data||[];
+    if(items.some(x=>x.disposition==='exchange'))return showToast('This historical Exchange CN is locked for editing. Its history is preserved.','err');
     const condOptions=['good','damaged','defective','other'];
-    const dispOptions=h.action==='cancel_undelivered'?['no_stock_action']:['no_stock_action','return_to_stock','damaged_hold','exchange'];
+    const dispOptions=h.action==='cancel_undelivered'?['no_stock_action']:['no_stock_action','return_to_stock','damaged_hold'];
 
     openModal(`Edit ${h.cn_no||'Credit Note'}`,`
       <form id="editSalesReturnForm" class="grid md:grid-cols-2 gap-4">
         <div><label class="text-xs font-semibold">CN Number</label><input value="${esc(h.cn_no||'')}" disabled class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-gray-50 text-gray-500"></div>
         <div><label class="text-xs font-semibold">Source Invoice(s)</label><input value="${esc(h.original_document_no||'')}" disabled class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-gray-50 text-gray-500"></div>
         <div><label class="text-xs font-semibold">Return Date</label><input id="editReturnDate" type="date" value="${esc(h.return_date||today())}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
-        <div><label class="text-xs font-semibold">Return Action</label><select id="editReturnAction" ${h.action==='cancel_undelivered'?'disabled':''} class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${h.action==='cancel_undelivered'?'<option value="cancel_undelivered" selected>Cancel Undelivered Items</option>':''}<option value="return_only" ${h.action==='return_only'?'selected':''}>Return Only / No Refund</option><option value="return_to_stock" ${h.action==='return_to_stock'?'selected':''}>Return to Stock</option><option value="exchange" ${h.action==='exchange'?'selected':''}>Exchange</option><option value="damaged_return" ${h.action==='damaged_return'?'selected':''}>Damaged / Defective Return</option></select><p class="mt-1 text-[11px] text-gray-600">Overall customer return type; each item has separate Handling. No automatic stock movement.</p></div>
+        <div><label class="text-xs font-semibold">Return Action</label><select id="editReturnAction" ${h.action==='cancel_undelivered'?'disabled':''} class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${h.action==='cancel_undelivered'?'<option value="cancel_undelivered" selected>Cancel Undelivered Items</option>':''}<option value="return_only" ${h.action==='return_only'?'selected':''}>Return Only / No Refund</option><option value="return_to_stock" ${h.action==='return_to_stock'?'selected':''}>Return to Stock</option><option value="damaged_return" ${h.action==='damaged_return'?'selected':''}>Damaged / Defective Return</option></select><p class="mt-1 text-[11px] text-gray-600">Overall customer return type; each item has separate Handling. No automatic stock movement.</p></div>
         <div class="md:col-span-2"><label class="text-xs font-semibold">Reason</label><input id="editReturnReason" value="${esc(h.reason||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Reason for return"></div>
 
         <div class="md:col-span-2 border-t pt-4">
@@ -443,6 +447,7 @@
         });
       }
       if(!payload.some(x=>x.qty>0))return showToast('A Credit Note must contain at least one returned item.','err');
+      if(payload.some(x=>x.disposition==='exchange')||document.getElementById('editReturnAction').value==='exchange')return showToast('Exchange is temporarily disabled. Use Return/CN and a separate new TK/RK.','err');
       const btn=e.target.querySelector('button[type="submit"]');if(btn){btn.disabled=true;btn.textContent='Saving...'}
       const res=await db.rpc('update_sales_return',{
         p_return_id:id,
