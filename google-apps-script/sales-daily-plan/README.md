@@ -30,6 +30,15 @@ Both screens include a last-seven-days summary ending on the selected report dat
 
 Customer Database's **First Contact Date** is selectable when adding a customer. The server rejects future dates and dates before 1900, preserves the system creation timestamp, and requires an active Sales/Manager/Admin/Super Admin account. Sales and Manager creation retain the existing self-assignment rules.
 
+## Evening deadline, manager review, and notifications (4 Nov 2026)
+
+- **Only Sales-role employees who have submitted a Morning Plan** are expected to submit that day's Evening Result. No Morning Plan means no missing-PM alert or manager-review request for that date.
+- **First Evening Result deadline: 10:00 AM Phnom Penh time on the following calendar day** (including Sundays). At 10:00:01 AM the initial submission is blocked, but staff can still save a draft. Management can authorize an exceptional late first submission from **Team Daily Review → Missing Evening Results → Allow late PM**, with a required reason. This permission is stored in the separate **Daily Late PM Permissions** Google Sheet tab and audited. Manager/Admin/Super Admin must have their existing daily-review permission.
+- **Each Evening Result submission or resubmission** changes its manager-review status to **Pending**. Managers may Mark Reviewed or Request Corrections; corrections reopen PM and allow the revised result to be submitted after the original cutoff. An AM-only report is **Not Ready**, not a pending approval.
+- The **management in-app notification bell and Team Daily Review banner** show previous-day and recent missing PM reports. A report missing PM is not mistakenly added to Approvals. A manager-review request appears in Approvals only once PM is submitted.
+- **Sales staff in-app alerts** show their own missing PM reports and planned tasks marked Pending, Partially Completed, or Rescheduled on submitted Evening Results. They can open the relevant report to carry forward follow-up work. A manager's review does not silently complete a task. These alerts are computed through the existing authenticated Google Sheets relay for the last seven report days, refreshed while the app is open; they are not offline/background browser push notifications.
+- Updated **Code.gs must be deployed** for the hard deadline and management late override to work. In the existing Apps Script project, update from [Code.gs](./Code.gs), save, then select **Deploy → Manage deployments → Edit → New version → Deploy**. Do not create a replacement URL. Front-end GitHub deployment alone does not update the server-side deadline.
+
 ## Verification
 
 Run `node --test tests/sales-daily.test.cjs` for the AM/PM/review state transitions, ownership, weekly filters, carry-forward, date validation, blank sheet row handling, request validation, and UI date/account isolation. The Sheets API is simulated in these tests; they do not replace a signed-in live smoke test.
