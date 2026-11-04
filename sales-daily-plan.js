@@ -626,6 +626,7 @@ window.getSalesDailyAttention=async()=>{
   const current=today(),res=await api('read',{start:backDays(current,7),end:current,userId:review()?null:id});
   const missing=[],unfinished=[];
   (res.reports||[]).forEach(r=>{
+   if(sales()&&String(r.userId)!==id)return; // Never show other salespeople's alerts.
    if(initialPmMissing(r)&&r.date<current){
     missing.push({id:String(r.id),date:r.date,userId:String(r.userId||''),
      salesperson:r.salesperson||'Sales',lateSubmissionAllowed:!!r.lateSubmissionAllowed,
