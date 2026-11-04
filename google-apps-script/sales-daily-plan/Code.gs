@@ -85,7 +85,7 @@ function tab(ss,key){const sheet=ss.getSheetByName(TAB[key]);if(!sheet)throw Err
 function data(sheet){return sheet.getDataRange().getDisplayValues().slice(1)}
 function now(){return new Date().toISOString()}
 function today(){return Utilities.formatDate(new Date(),TZ,'yyyy-MM-dd')}
-// Default working calendar: Monday-Saturday; deadline 09:00 on next working morning, Phnom Penh time.
+// Evening Results are due at 10:00 AM on the next calendar day (Asia/Phnom_Penh).
 function pmDeadline(date){const d=new Date(iso(date)+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+1);return d.toISOString().slice(0,10)+'T10:00:00+07:00'}
 function pmLate(report){return report[5]==='Submitted'&&report[7]!=='Submitted'&&report[9]!=='Changes Requested'&&new Date().getTime()>Date.parse(pmDeadline(report[1]))}
 function pmSubmittedLate(report){return report[7]==='Submitted'&&!!report[8]&&Date.parse(report[8])>Date.parse(pmDeadline(report[1]))}
@@ -109,7 +109,7 @@ function latePmSheet(ss){
  if(!sh){sh=ss.insertSheet('Daily Late PM Permissions');sh.appendRow(['Report ID','Allowed By','Allowed At','Reason'])}
  return sh;
 }
-function allowedLatePmReports(ss){return new Set(data(latePmSheet(ss)).filter(r=>r[0]).map(r=>String(r[0])))}
+function allowedLatePmReports(ss){const sh=ss.getSheetByName('Daily Late PM Permissions');return sh?new Set(data(sh).filter(r=>r[0]).map(r=>String(r[0]))):new Set()}
 function allowLatePm(ss,a,p){
  ensureReview(a);
  const id=val(p.reportId,80),reason=saveText(p.reason,750);
