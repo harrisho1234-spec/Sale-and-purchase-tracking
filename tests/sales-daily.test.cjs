@@ -9,12 +9,12 @@ function fixture(){
  class Sheet{
   rows=[['header']];
   getDataRange(){return{getDisplayValues:()=>this.rows.map(r=>r.map(String))}}
-  appendRow(r){this.rows.push([...r])}
+  appendRow(r){this.rows.push([...r]);return this}
   deleteRow(n){this.rows.splice(n-1,1)}
-  getRange(n,c,h,w){return{setValues:rows=>{assert.equal(rows[0].length,w);this.rows[n-1]=[...rows[0]]}}}
+  getRange(n,c,h,w){return{setValues:rows=>{assert.equal(rows[0].length,w);this.rows[n-1]=[...rows[0]]},setValue:value=>{this.rows[n-1][c-1]=value}}}
  }
  const sheets=Object.fromEntries(['Daily Reports','Plan Tasks','Manager Reviews','Audit Log'].map(k=>[k,new Sheet()]));
- const ss={getSheetByName:n=>sheets[n],getName:()=> 'Test'};
+ const ss={getSheetByName:n=>sheets[n],insertSheet:n=>(sheets[n]=new Sheet()),getName:()=> 'Test'};
  const c={Utilities:{getUuid:()=>`id-${++id}`,formatDate:()=> '2026-10-22'},SpreadsheetApp:{flush(){}},LockService:{getScriptLock:()=>({waitLock(){},releaseLock(){}})}};
  vm.createContext(c);vm.runInContext(read('google-apps-script/sales-daily-plan/Code.gs'),c);
  const a={user_id:'sales-1',role:'sales',display_name:'=unsafe',can_write:true,can_review:false};
