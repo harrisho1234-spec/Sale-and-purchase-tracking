@@ -24,6 +24,9 @@
     const canCreateSales=typeof window.hasAppPermission!=='function'||window.hasAppPermission('sales_orders.create');
     return canCreateQuotations()&&canCreateSales;
   }
+  function canViewQuotationAnalytics(){
+    return ['manager','admin','super_admin'].includes(state.profile?.role||'')&&canViewQuotations();
+  }
   function canDeleteImportedQuotation(){
     return typeof window.hasAppPermission!=='function'||window.hasAppPermission('quotations.delete');
   }
@@ -365,13 +368,14 @@
   }
   function quotationTabs(){
     return '<div class="inline-flex flex-wrap rounded-xl border bg-white p-1 mb-5">'+
-      [['history','Quotation History'],['imports','Imported Queue'],['analytics','Conversion Analytics']]
+      [['history','Quotation History'],['imports','Imported Queue'],...(canViewQuotationAnalytics()?[['analytics','Conversion Analytics']]:[])]
         .map(([key,label])=>'<button type="button" onclick="showQuotationSection(\''+key+'\')" class="px-4 py-2 rounded-lg text-xs font-semibold '+
           (quotationSection===key?'bg-[#211d18] text-white':'text-gray-600 hover:bg-gray-50')+'">'+label+'</button>').join('')+
       '</div>';
   }
   window.showQuotationSection=function(section){
     quotationSection=['history','imports','analytics'].includes(section)?section:'history';
+    if(quotationSection==='analytics'&&!canViewQuotationAnalytics())quotationSection='history';
     renderImportedQuotations();
   };
   async function getRegistryRows(){
@@ -687,6 +691,7 @@
     quotationAnalyticsRep=String(value||'all');renderQuotationAnalytics();
   };
   async function renderQuotationAnalytics(){
+    if(!canViewQuotationAnalytics())return showToast('Management access is required for quotation conversion analytics.','err');
     const [registry,imports]=await Promise.all([getRegistryRows(),getRows()]);
     const years=[...new Set(registry.map(r=>String(r.issue_date||r.confirmed_at||r.saved_at||r.created_at||'').slice(0,4))
       .filter(x=>/^\d{4}$/.test(x)))].sort().reverse();
