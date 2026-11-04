@@ -398,6 +398,18 @@
       '<div class="flex justify-between gap-3 pt-2 border-t font-bold"><span>Final quoted total</span><span>'+money(s.total,'USD')+'</span></div>'+
     '</div>';
   }
+  function quoteListDetailsHtml(s){
+    const discount=round2(s.lineDiscounts+s.orderDiscount);
+    const notes=s.lines.filter(l=>!!l.note).length;
+    const sections=[...new Set(s.lines.map(l=>l.section).filter(Boolean))].length;
+    if(!discount&&!notes&&!sections)return '';
+    const details=[
+      discount?'Total discount: '+money(discount,'USD'):'',
+      notes?notes+' item note'+(notes===1?'':'s'):'',
+      sections?sections+' floor/room section'+(sections===1?'':'s'):''
+    ].filter(Boolean);
+    return '<div class="text-[10px] font-medium text-amber-800 mt-1">'+details.map(esc).join(' · ')+'</div>';
+  }
   function quoteLineDetailsHtml(l){
     return '<div class="min-w-0 mt-1 space-y-0.5">'+
       (l.sourceSetName?'<div class="text-[10px] text-slate-500">Set: '+esc(l.sourceSetName)+'</div>':'')+
@@ -572,11 +584,12 @@
     const canDelete=canDeleteImportedQuotation();
     const html=historyRows.map(row=>{
       const importRow=importBySource.get(String(row.source_record_id||''))||null;
+      const d=quoteSummary(row);
       return '<div class="card rounded-2xl p-4 border border-[#ece6dc]"><div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">'+
         '<div class="min-w-0"><div class="flex flex-wrap items-center gap-2">'+historyStatus(importRow)+'<span class="px-2 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold">'+quotationKind(row.quote_no).toUpperCase()+'</span><div class="font-bold text-base">'+esc(quotationDisplay(row.quote_no,row.source_payload))+'</div><span class="px-2 py-1 rounded-full bg-gray-50 border text-[9px] font-bold text-gray-500">'+(revisionCountByQuote.get(String(row.id))||1)+' version'+((revisionCountByQuote.get(String(row.id))||1)===1?'':'s')+'</span></div>'+
         '<div class="text-xs text-gray-600 mt-2">'+esc(row.customer_name||'No customer name')+(row.customer_phone?' · '+esc(row.customer_phone):'')+'</div>'+
         '<div class="text-[10px] text-gray-400 mt-1">Issue '+esc(row.issue_date||'')+(row.salesperson?' · '+esc(row.salesperson):'')+' · '+money(row.amount||0,'USD')+'</div>'+
-        '<div class="text-[10px] text-gray-400 mt-1">'+esc(row.source_name||'Saved quotation')+'</div></div>'+
+        '<div class="text-[10px] text-gray-400 mt-1">'+esc(row.source_name||'Saved quotation')+'</div>'+quoteListDetailsHtml(d)+'</div>'+
         '<div class="flex flex-wrap gap-2 shrink-0"><button type="button" onclick="reviewQuotationHistory(\''+row.id+'\')" class="px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold">View</button>'+
         (!importRow&&canCreate?'<button type="button" onclick="importQuotationFromHistory(\''+esc(row.source_record_id)+'\')" class="px-4 py-2.5 rounded-xl bg-[#17324d] text-white text-xs font-semibold">Import</button>':'')+
         (canDelete?'<button type="button" onclick="deleteQuotationHistory(\''+row.id+'\',\''+esc(row.source_record_id)+'\',\''+esc(row.quote_no)+'\')" class="px-4 py-2.5 rounded-xl border border-red-200 bg-white text-red-700 text-xs font-semibold">Delete</button>':'')+
@@ -605,6 +618,7 @@
         '<div class="flex flex-wrap items-center gap-2">'+badge(row.status)+'<div class="font-bold text-base truncate">'+esc(sourceLabel)+'</div></div>'+
         '<div class="text-xs text-gray-500 mt-2">'+esc(s.customerName||'No customer name')+(s.customerPhone?' · '+esc(s.customerPhone):'')+'</div>'+
         '<div class="text-[10px] text-gray-400 mt-1">'+itemCount+' quoted item'+(itemCount===1?'':'s')+' · '+money(s.total,'USD')+' · Imported '+esc(fmtDate(row.imported_at))+'</div>'+
+        quoteListDetailsHtml(s)+
         '<div class="text-[10px] mt-2 '+(customer?'text-green-700':'text-amber-700')+'">'+(customer?'Matched customer: <b>'+esc(customer.name)+'</b>':'No official CRM customer linked yet. The showroom details are reference only; select the customer manually before conversion.')+'</div></div>'+
         '<div class="flex gap-2 shrink-0"><button onclick="reviewImportedQuotation(\''+row.id+'\')" class="px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold">'+(row.status==='converted'?'View':'Review / Convert')+'</button>'+
         (canDelete?'<button type="button" onclick="deleteImportedQuotation(\''+row.id+'\')" class="px-4 py-2.5 rounded-xl border border-red-200 bg-white text-red-700 text-xs font-semibold hover:bg-red-50" title="Delete this imported record only">Delete</button>':'')+'</div></div></div>';
