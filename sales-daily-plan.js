@@ -594,6 +594,9 @@ window.getSalesDailyApprovalQueue=async()=>{
          report_id:String(r.id),date:r.date,userId:String(r.userId||''),salesperson:r.salesperson||'Sales',
          requested_at:r.pmSubmittedAt||r.date});
    });
+   // A user may sign out while Google Sheets is responding. Never cache or
+   // surface the old account's review queue under the next account.
+   if(dailyApprovalCache.userId!==id||String(state.user?.id||'')!==id)return [];
    dailyApprovalCache.at=Date.now();
    dailyApprovalCache.data=rows;
    return rows;
