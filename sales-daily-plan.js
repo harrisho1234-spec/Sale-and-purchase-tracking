@@ -23,6 +23,33 @@ const review=()=>['manager','admin','super_admin'].includes(state?.profile?.role
 const elem=id=>document.getElementById(id);
 const allowed=(page)=>page===P?sales():page===R?review():false;
 const ui={access:null,config:null,policyVersion:'',date:today(),start:today(),end:today(),person:'',report:null,reports:[],people:[],customers:[],tasks:[],suggestions:[],stats:null,loading:false,seq:0};
+// Keep recently authorized report details in memory to open the exact record
+// from Approvals or a missing-result alert without reloading the full page.
+const dailyDetailCache={account:null,rows:new Map()};
+function rememberDailyReports(reports){
+ const account=String(state.user?.id||'');
+ if(dailyDetailCache.account!==account){dailyDetailCache.account=account;dailyDetailCache.rows.clear()}
+ (reports||[]).forEach(r=>{
+  if(r?.id&&r.date&&r.userId)dailyDetailCache.rows.set(String(r.id),{report:r,at:Date.now()});
+ });
+ if(dailyDetailCache.rows.size>300){
+  const keys=[...dailyDetailCache.rows.keys()];
+  keys.slice(0,dailyDetailCache.rows.size-300).forEach(key=>dailyDetailCache.rows.delete(key));
+ }
+}
+function cachedDailyReport(id,date,personId,maxAge=90000){
+ if(dailyDetailCache.account!==String(state.user?.id||''))return null;
+ const hit=dailyDetailCache.rows.get(String(id));
+ if(!hit||Date.now()-hit.at>maxAge)return null;
+ const r=hit.report;
+ return (!date||r.date===date)&&(!personId||String(r.userId)===String(personId))?r:null;
+}
+function replaceDailyReport(r){
+ if(!r?.id)return;
+ rememberDailyReports([r]);
+ const index=ui.reports.findIndex(x=>String(x.id)===String(r.id));
+ if(index>=0)ui.reports[index]=r;
+}
 const empty=()=>({id:'',category:'Customer Follow-up',plan:'',customerId:'',customerName:'',priority:'Medium',plannedFollowup:''});
 const toast=(msg,error=false)=>showToast(msg,error?'err':undefined);
 const common='border rounded-xl px-3 py-2.5 w-full bg-white text-sm';
@@ -33,6 +60,7 @@ function resetAccount(){
  const id=state.user?.id||null;
  if(accountId===id)return;
  accountId=id;ui.seq++;ui.access=null;ui.config=null;ui.report=null;ui.reports=[];
+ dailyDetailCache.account=String(id||'');dailyDetailCache.rows.clear();
  ui.people=[];ui.customers=[];ui.tasks=[];ui.stats=null;ui.person='';ui.policyVersion='';
  ui.date=today();ui.start=today();ui.end=today();
 }
@@ -487,8 +515,10 @@ window.reloadSalesDailyReview=async()=>{
  ui.person=elem('dailyReviewPerson')?.value||'';
  await reload();
 };
-window.openDailyManagerReport=id=>{
- const r=ui.reports.find(x=>x.id===id);if(!r)return;
+window.openDailyManagerReport=(id,selectedReport)=>{
+ const r=selectedReport||ui.reports.find(x=>String(x.id)===String(id))||cachedDailyReport(id,'','',300000);
+ if(!r)return toast('This Daily Report is unavailable. Refresh the review list.',true);
+ rememberDailyReports([r]);
  const editRequests=(r.editRequests||[]).filter(x=>x.status==='Pending');
  const requestActions=editRequests.map(x=>'<div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs"><b>'+h(x.section==='AM'?'Morning Plan':'Evening Result')+' edit request</b><p class="my-2">'+h(x.reason)+'</p><div class="flex gap-2"><button class="'+lightButton+'" onclick="decideSalesDailyEdit(\''+h(x.id)+'\',\'Rejected\')">Reject</button><button class="'+actionButton+'" onclick="decideSalesDailyEdit(\''+h(x.id)+'\',\'Approved\')">Approve</button></div></div>').join('');
  const rows=r.tasks.map((t,i)=>'<div class="rounded-xl border p-3 bg-white"><b class="text-xs">'+(i+1)+'. '+h(t.plan)+'</b>'+
@@ -513,7 +543,7 @@ window.openDailyManagerReport=id=>{
 let managerReviewSaving=false;
 window.submitDailyManagerReview=async(id,decision)=>{
  if(managerReviewSaving)return;
- const report=ui.reports.find(r=>String(r.id)===String(id));
+ const report=ui.reports.find(r=>String(r.id)===String(id))||cachedDailyReport(id,'','',300000);
  if(!review()||!report||report.pmStatus!=='Submitted'||report.reviewStatus==='Reviewed')
   return toast('This report is not awaiting manager review. Refresh before taking action.',true);
  const comment=elem('dailyManagerComment')?.value||'';
@@ -530,8 +560,17 @@ window.submitDailyManagerReview=async(id,decision)=>{
    toast('Review was submitted, but its saved status could not be confirmed. Refresh before trying again.',true);
    return;
   }
+  replaceDailyReport(updated);
   closeModal();
-  await reload();
+  // Keep the manager's selected filters and report list on screen.
+  // No extra full-page loading transition after confirming this decision.
+  if(state.page===R){
+   renderManager();
+   api('weekly',{start:backDays(ui.end,6),end:ui.end,userId:ui.person||null}).then(stats=>{
+    if(state.page===R){ui.stats=stats;const node=root()?.querySelector('[data-daily-weekly]');
+     if(node)node.outerHTML='<div data-daily-weekly>'+weeklyPanel()+'</div>'}
+   }).catch(err=>console.warn('Daily weekly summary refresh:',err.message));
+  }
   toast(decision==='Reviewed'
    ?'Manager review completed. Unfinished task outcomes have not been changed.'
    :'Corrections requested. The salesperson can update the Evening Result.');
@@ -604,7 +643,7 @@ async function reload(){
    const res=await api('read',{start:ui.start,end:ui.end,userId:ui.person||null});
    if(seq!==ui.seq||state.page!==page||state.user?.id!==userId)return;
    ui.policyVersion=res.policyVersion||'';
-   ui.reports=res.reports||[];ui.people=res.salesPeople||[];reportLoaded=true;renderManager();
+   ui.reports=res.reports||[];ui.people=res.salesPeople||[];rememberDailyReports(ui.reports);reportLoaded=true;renderManager();
   }
  }catch(err){
   if(seq!==ui.seq||state.page!==page||state.user?.id!==userId)return;
@@ -627,6 +666,7 @@ window.getSalesDailyAttention=async()=>{
   await access();
   if(!ui.config?.configured)return{count:0,missingCount:0,unfinishedCount:0,missing:[],unfinished:[],target:'dashboard'};
   const current=today(),res=await api('read',{start:backDays(current,7),end:current,userId:review()?null:id});
+  rememberDailyReports(res.reports);
   const missing=[],unfinished=[];
   (res.reports||[]).forEach(r=>{
    if(sales()&&String(r.userId)!==id)return; // Never show other salespeople's alerts.
@@ -726,6 +766,7 @@ window.getSalesDailyApprovalQueue=async()=>{
    await access();
    if(!ui.config?.configured)return [];
    const res=await api('read',{start:backDays(today(),30),end:today(),userId:null});
+   rememberDailyReports(res.reports);
    const rows=[];
    (res.reports||[]).forEach(r=>{
      (r.editRequests||[]).filter(x=>x.status==='Pending').forEach(x=>rows.push({
@@ -748,13 +789,38 @@ window.getSalesDailyApprovalQueue=async()=>{
  dailyApprovalCache.promise=pending;
  try{return await pending}finally{if(dailyApprovalCache.promise===pending)dailyApprovalCache.promise=null}
 };
+let dailyDirectOpening=false;
 window.openSalesDailyApprovalItem=async(reportId,reportDate,personId)=>{
  if(!review())return toast('Team Daily Review permission required',true);
- ui.start=reportDate||today();ui.end=reportDate||today();ui.person=personId||'';
- await window.go(R);
- if(ui.reports?.some(r=>String(r.id)===String(reportId)))
-   window.openDailyManagerReport(String(reportId));
- else toast('Report is no longer in the review list. Select a wider date range.',true);
+ if(dailyDirectOpening)return;
+ const account=String(state.user?.id||'');
+ const current=ui.reports.find(r=>String(r.id)===String(reportId)&&
+  (!reportDate||r.date===reportDate)&&(!personId||String(r.userId)===String(personId)));
+ const cached=current||cachedDailyReport(reportId,reportDate,personId);
+ // The Approvals list and yesterday's missing-result alert have already
+ // obtained this report from the authenticated Google Sheet. Show it now.
+ if(cached)return window.openDailyManagerReport(String(reportId),cached);
+ if(!reportDate)return toast('Report date is missing. Refresh your approvals.',true);
+ dailyDirectOpening=true;
+ openModal('Opening Daily Report','<p class="text-sm text-gray-600">Loading only this report from Google Sheets…</p>');
+ try{
+  await access();
+  const res=await api('read',{start:reportDate,end:reportDate,userId:personId||null});
+  if(account!==String(state.user?.id||''))return closeModal();
+  const found=(res.reports||[]).find(r=>String(r.id)===String(reportId));
+  if(!found){
+   closeModal();
+   window.invalidateSalesDailyApprovals?.();
+   return toast('This report is unavailable in your team or may have been deleted. The review list will refresh.',true);
+  }
+  rememberDailyReports([found]);
+  window.openDailyManagerReport(String(reportId),found);
+ }catch(err){
+  if(account===String(state.user?.id||'')){
+   closeModal();
+   toast('Could not open this report: '+(err.message||err),true);
+  }
+ }finally{dailyDirectOpening=false}
 };
 
 window.reloadDailyReport=reload;
