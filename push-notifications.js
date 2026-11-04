@@ -161,7 +161,26 @@
     try{
       const {data,error}=await db.rpc('get_my_app_attention');
       if(error)throw error;
-      P.attention=data||{count:0,target:'dashboard',body:'No action items'};
+      const base=data||{count:0,target:'dashboard',body:'No action items'};
+      // The database powers real web-push alerts. Daily Plan reviews live only
+      // in Google Sheets, so add their authenticated count to the IN-APP bell.
+      // Do not store or duplicate report content in Supabase.
+      let dailyCount=0;
+      if(typeof window.getSalesDailyApprovalQueue==='function'){
+        try{
+          const rows=await window.getSalesDailyApprovalQueue();
+          dailyCount=Array.isArray(rows)?rows.length:0;
+        }catch(err){
+          console.warn('Google Sheet daily reviews could not update app bell:',err.message||err);
+        }
+      }
+      P.attention={
+        ...base,
+        count:Number(base.count||0)+dailyCount,
+        body:(dailyCount?dailyCount+' Team Daily Review'+(dailyCount===1?'':'s')+
+          (Number(base.count||0)?' · '+base.body:' need attention'):base.body),
+        target:dailyCount>0?'approvals':base.target
+      };
       renderButton();
       await applyAppBadge();
       if('Notification' in window&&Notification.permission==='granted'){
