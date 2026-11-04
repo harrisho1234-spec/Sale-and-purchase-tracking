@@ -8,9 +8,13 @@ const CATS=['Customer Follow-up','Showroom / Page','Online Inquiries','Product C
 const STATUSES=['Completed','Partially Completed','Pending','Rescheduled','Cancelled'];
 const h=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
 const today=()=>{const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Phnom_Penh',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());const m=Object.fromEntries(parts.filter(x=>x.type!=='literal').map(x=>[x.type,x.value]));return `${m.year}-${m.month}-${m.day}`;};
-const pmDeadline=(date)=>{const d=new Date(date+'T00:00:00Z');do{d.setUTCDate(d.getUTCDate()+1)}while(d.getUTCDay()===0);return d.toISOString().slice(0,10)+'T09:00:00+07:00';};
-const isOverdue=r=>r?.amStatus==='Submitted'&&r?.pmStatus!=='Submitted'&&Date.now()>Date.parse(r.pmDeadline||pmDeadline(r.date));
+const pmDeadline=(date)=>{const d=new Date(date+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+1);return d.toISOString().slice(0,10)+'T10:00:00+07:00';};
+const isOverdue=r=>r?.amStatus==='Submitted'&&r?.pmStatus!=='Submitted'&&r?.reviewStatus!=='Changes Requested'&&Date.now()>Date.parse(r.pmDeadline||pmDeadline(r.date));
 const isLate=r=>r?.pmStatus==='Submitted'&&!!r.pmSubmittedAt&&Date.parse(r.pmSubmittedAt)>Date.parse(r.pmDeadline||pmDeadline(r.date));
+const initialPmMissing=r=>r?.amStatus==='Submitted'&&r?.pmStatus!=='Submitted'&&r?.reviewStatus!=='Changes Requested';
+const unfinishedTask=t=>['Pending','Partially Completed','Rescheduled'].includes(t?.status);
+const firstPmLocked=r=>r&&initialPmMissing(r)&&isOverdue(r)&&!r.lateSubmissionAllowed;
+function latePmHint(r){return firstPmLocked(r)?'The 10:00 AM next-day deadline has passed. Save your draft and ask your Manager/Admin to allow a late submission.':''}
 const backDays=(d,n)=>{const x=new Date(d+'T12:00:00Z');x.setUTCDate(x.getUTCDate()-n);return x.toISOString().slice(0,10)};
 const can=(key,roles)=>typeof window.hasAppPermission==='function'?!!window.hasAppPermission(key):roles.includes(state?.profile?.role||'');
 const sales=()=>state?.profile?.role==='sales'&&can('sales_daily.plan_own',['sales']);
@@ -296,6 +300,7 @@ window.addAdditionalDaily=()=>{preserveEveningInputs();captureAdditional();if(ad
 window.removeAdditionalDaily=i=>{preserveEveningInputs();captureAdditional();additionalDraft.splice(i,1);renderSalesHome()};
 window.saveSalesDailyEvening=async submit=>{
  if(ui.loading)return;
+ if(submit&&firstPmLocked(ui.report))return toast(latePmHint(ui.report),true);
  const results=capturePm();const additionalActivities=captureAdditional();if(submit&&results.some(x=>!x.status))return toast('Update the status of every planned task before submitting',true);
  if(submit&&results.some(x=>!x.result.trim()))return toast('Write an actual outcome for every morning task before submitting',true);
  ui.loading=true;
@@ -405,7 +410,7 @@ window.openSalesDailyShare=section=>{
  panel.innerHTML='<div style="max-width:760px;margin:auto"><div data-share-tools style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px"><button onclick="window.print()" style="background:white;padding:9px 14px;border-radius:8px">Print / PDF</button><button onclick="closeSalesDailyShare()" style="background:white;padding:9px 14px;border-radius:8px">Close</button></div>'+
  '<div id="salesDailyShareCard" style="background:white;color:#242424;padding:22px;border-radius:12px;box-shadow:0 8px 32px #0002;font-family:Noto Sans Khmer,Arial,sans-serif;line-height:1.75">'+
  '<div style="border:1px solid #b4cbb1;background:#e3eedf;padding:12px"><div style="font-weight:700;font-size:15px">'+(pm?'Evening Result':'Morning Plan')+'</div><div style="font-size:13px;margin-top:4px"><b>Date:</b> '+h(r.date)+' &nbsp; <b>Name:</b> '+h(r.salesperson||state.profile?.full_name||state.profile?.name||'Sales')+'</div></div>'+
- rows+extraBlock+'<div style="margin-top:12px;font-size:11px;color:#777">Submitted: '+h(formatDailySubmittedAt(pm?r.pmSubmittedAt:r.amSubmittedAt))+' · '+h(r.reviewStatus||'Pending review')+'</div></div></div>';
+ rows+extraBlock+'<div style="margin-top:12px;font-size:11px;color:#777">Submitted: '+h(formatDailySubmittedAt(pm?r.pmSubmittedAt:r.amSubmittedAt))+' · Manager review: '+h(managerReviewStatus(r))+'</div></div></div>';
  document.body.appendChild(panel);panel.addEventListener('click',e=>{if(e.target===panel)window.closeSalesDailyShare()});
  if(!document.getElementById('salesDailySharePrintStyle')){const st=document.createElement('style');st.id='salesDailySharePrintStyle';st.textContent='@media print{body>*:not(#salesDailyShareOverlay){display:none!important}#salesDailyShareOverlay{position:static!important;background:white!important;overflow:visible!important;padding:0!important}#salesDailyShareOverlay [data-share-tools]{display:none!important}#salesDailyShareCard{box-shadow:none!important}}';document.head.appendChild(st)}
 };
@@ -420,10 +425,10 @@ function renderSalesHome(){
  '<label class="text-xs font-bold">Report Date<input id="salesDailyDate" type="date" class="'+common+'" value="'+h(ui.date)+'" onchange="selectSalesDailyDate()"></label>'+
  '<div class="flex flex-wrap gap-2"><span class="rounded-lg bg-amber-50 px-3 py-2 text-xs">AM: <b>'+h(report?.amStatus||'Not Started')+'</b></span>'+
  '<span class="rounded-lg bg-blue-50 px-3 py-2 text-xs">PM: <b>'+h(report?.pmStatus||'Not Started')+'</b></span>'+
- '<span class="rounded-lg bg-gray-100 px-3 py-2 text-xs">Manager: <b>'+h(report?.reviewStatus||'Pending')+'</b></span></div></div>'+
+ '<span class="rounded-lg bg-gray-100 px-3 py-2 text-xs">Manager review: <b>'+h(report?managerReviewStatus(report):'Not Ready (PM not submitted)')+'</b></span></div></div>'+
  (report?.managerComment?'<div class="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs"><b>Manager note:</b> '+h(report.managerComment)+'</div>':'')+
- (isOverdue(report)?'<div class="rounded-xl border border-red-200 bg-red-50 text-red-800 p-3 text-sm"><b>Overdue Evening Result:</b> This report was due by 9:00 AM the next working morning. Please submit an actual outcome for every task. Late submissions are recorded.</div>':'')+
- '<div id="salesDailyPriorReminder"></div>'+
+ (isOverdue(report)?'<div class="rounded-xl border border-red-200 bg-red-50 text-red-800 p-3 text-sm"><b>Overdue Evening Result:</b> The first Evening Result was due by 10:00 AM the following day (Phnom Penh time). '+h(latePmHint(report)||'Management has authorized a late submission.')+'</div>':'')+
+ '<div id="salesDailyAttention" aria-live="polite"></div>'+
  '<section class="space-y-3"><div class="flex flex-wrap justify-between items-center gap-2">'+
  '<h3 class="font-bold">Morning Plan</h3>'+(amLocked?'':'<button type="button" onclick="addSalesDailyTask()" class="'+lightButton+'">+ Add Task</button>')+'</div>'+
  '<div id="dailyPlanRows" class="grid gap-2">'+tasks.map((t,i)=>amLocked?compactSubmittedTask(t,i):formTask(t,i,false)).join('')+'</div>'+
@@ -437,7 +442,7 @@ function renderSalesHome(){
  '<p class="text-xs text-gray-500">Update what actually happened, and choose the next follow-up date when necessary.</p>'+
  '<div class="grid gap-3">'+(report.tasks||[]).map((t,i)=>pmTask(t,i,pmLocked)).join('')+'</div>'+ additionalEditor(pmLocked)+
  (!pmLocked?'<div class="flex flex-wrap gap-2"><button onclick="saveSalesDailyEvening(false)" class="'+lightButton+'">Save PM Draft</button>'+
- '<button onclick="saveSalesDailyEvening(true)" class="'+actionButton+'">Submit Evening Result</button></div>':
+ '<button onclick="saveSalesDailyEvening(true)" '+(firstPmLocked(report)?'disabled title="Ask management to allow a late submission" ':'')+'class="'+actionButton+'">Submit Evening Result</button></div>':
  '<div class="flex items-center flex-wrap gap-2"><p class="text-xs text-green-700">Evening results submitted. Manager can review and request corrections.</p><button onclick="requestSalesDailyEdit(\'PM\')" class="'+lightButton+'">Request Evening Edit</button></div>')+'</section>':'')+
  (report?.editRequests?.length?'<div class="rounded-xl border bg-white p-3"><b class="text-sm">Edit Requests</b>'+report.editRequests.map(x=>'<p class="text-xs mt-2">'+h(x.section)+' · '+h(x.status)+' · '+h(x.reason)+(x.decisionNote?' · '+h(x.decisionNote):'')+'</p>').join('')+'</div>':'')+
  '<div data-daily-weekly>'+weeklyPanel()+'</div>'+'<section class="rounded-2xl border bg-white p-4"><div class="flex justify-between gap-2 items-center"><div><b class="text-sm">Recorded activity in the app</b><p class="text-xs text-gray-500 mt-1">CRM follow-ups, Showroom/Online events and order activity. These do not automatically count as completed tasks.</p></div>'+
