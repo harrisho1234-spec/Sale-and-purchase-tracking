@@ -28,7 +28,7 @@ function doPost(e){
   const action=String(req.action||'');
   const payload=req.payload||{};
   if(typeof payload!=='object'||Array.isArray(payload))throw Error('Invalid payload');
-  if(!['ping','read','save_am','submit_am','append_todo_am','save_pm','submit_pm','review','carry_forward','weekly','request_edit','decide_edit','delete_report','todo_list','todo_save','todo_delete','todo_history'].includes(action))throw Error('Unknown action');
+  if(!['ping','read','save_am','submit_am','append_todo_am','save_pm','submit_pm','review','allow_late_pm','carry_forward','weekly','request_edit','decide_edit','delete_report','todo_list','todo_save','todo_delete','todo_history'].includes(action))throw Error('Unknown action');
   const ss=SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('SHEET_ID'));
   const res=dispatch(ss,actor,action,payload);
   return respond({ok:true,data:res});
@@ -73,6 +73,7 @@ function dispatch(ss,actor,action,p){
   if(action==='save_am'||action==='submit_am')return saveAm(ss,actor,p,action==='submit_am');
   if(action==='save_pm'||action==='submit_pm')return savePm(ss,actor,p,action==='submit_pm');
   if(action==='review')return reviewReport(ss,actor,p);
+   if(action==='allow_late_pm')return allowLatePm(ss,actor,p);
   throw Error('Unsupported operation');
  }finally{try{SpreadsheetApp.flush()}finally{lock.releaseLock()}}
 }
@@ -85,8 +86,8 @@ function data(sheet){return sheet.getDataRange().getDisplayValues().slice(1)}
 function now(){return new Date().toISOString()}
 function today(){return Utilities.formatDate(new Date(),TZ,'yyyy-MM-dd')}
 // Default working calendar: Monday-Saturday; deadline 09:00 on next working morning, Phnom Penh time.
-function pmDeadline(date){const d=new Date(iso(date)+'T00:00:00Z');do{d.setUTCDate(d.getUTCDate()+1)}while(d.getUTCDay()===0);return Utilities.formatDate(d,TZ,'yyyy-MM-dd')+'T09:00:00+07:00'}
-function pmLate(report){return report[5]==='Submitted'&&report[7]!=='Submitted'&&new Date().getTime()>Date.parse(pmDeadline(report[1]))}
+function pmDeadline(date){const d=new Date(iso(date)+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+1);return d.toISOString().slice(0,10)+'T10:00:00+07:00'}
+function pmLate(report){return report[5]==='Submitted'&&report[7]!=='Submitted'&&report[9]!=='Changes Requested'&&new Date().getTime()>Date.parse(pmDeadline(report[1]))}
 function pmSubmittedLate(report){return report[7]==='Submitted'&&!!report[8]&&Date.parse(report[8])>Date.parse(pmDeadline(report[1]))}
 function iso(d){d=String(d||'');const parsed=new Date(d+'T00:00:00Z');if(!/^\d{4}-\d{2}-\d{2}$/.test(d)||!Number.isFinite(parsed.getTime())||parsed.toISOString().slice(0,10)!==d)throw Error('Select a valid date');return d}
 function dayWindow(d){const td=today();if(Math.abs(Date.parse(d)-Date.parse(td))>1000*60*60*24*45)throw Error('Daily Report date must be within 45 days of today')}
@@ -103,6 +104,28 @@ function reportOutput(r,tasks){return{id:r[0],date:r[1],userId:r[2],salesperson:
 function visibleActor(a,id){return a.can_review?true:String(id)===String(a.user_id)}
 function fetchTeam(a){return new Set((a.sales_people||[]).map(x=>String(x.user_id)))}
 function visibleReport(a,r){if(!a.can_review)return r[2]===a.user_id;return fetchTeam(a).has(String(r[2]))}
+function latePmSheet(ss){
+ let sh=ss.getSheetByName('Daily Late PM Permissions');
+ if(!sh){sh=ss.insertSheet('Daily Late PM Permissions');sh.appendRow(['Report ID','Allowed By','Allowed At','Reason'])}
+ return sh;
+}
+function allowedLatePmReports(ss){return new Set(data(latePmSheet(ss)).filter(r=>r[0]).map(r=>String(r[0])))}
+function allowLatePm(ss,a,p){
+ ensureReview(a);
+ const id=val(p.reportId,80),reason=saveText(p.reason,750);
+ if(!reason)throw Error('Enter a reason to allow an overdue Evening Result');
+ const sh=tab(ss,'reports'),row=data(sh).find(r=>r[0]===id);
+ if(!row)throw Error('Report not found');
+ if(!fetchTeam(a).has(String(row[2])))throw Error('Not authorized for this salesperson');
+ if(row[5]!=='Submitted'||row[7]==='Submitted'||row[9]==='Changes Requested')
+  throw Error('Only missing initial Evening Results can receive this exception');
+ if(new Date().getTime()<=Date.parse(pmDeadline(row[1])))
+  throw Error('This Evening Result is still within the normal deadline');
+ if(allowedLatePmReports(ss).has(id))return {reportId:id,allowed:true,alreadyAllowed:true};
+ latePmSheet(ss).appendRow([id,a.user_id,now(),reason]);
+ audit(ss,a,id,'LATE_PM_ALLOWED',{date:row[1]},{reason});
+ return{reportId:id,allowed:true};
+}
 function readReports(ss,a,p){
  const begin=iso(p.start||p.date||today()),end=iso(p.end||p.date||today());
  if(begin>end||Date.parse(end)-Date.parse(begin)>31*86400000)throw Error('Choose a date range of 31 days or less');
@@ -112,7 +135,8 @@ function readReports(ss,a,p){
  const amended=new Set(data(tab(ss,'audit')).filter(r=>r[5]==='AM_TODO_APPENDED').map(r=>String(r[3])));
  const extraIndex={};data(additionalSheet(ss)).forEach(r=>(extraIndex[r[1]]||(extraIndex[r[1]]=[])).push({id:r[0],category:r[4],customerName:r[5],result:r[6],nextFollowup:r[7],sourceType:r[9]||'',sourceId:r[10]||''}));
  const editIndex={};editRows(ss).forEach(x=>(editIndex[x.row[1]]||(editIndex[x.row[1]]=[])).push({id:x.row[0],section:x.row[3],reason:x.row[4],status:x.row[5],requestedAt:x.row[6],decisionNote:x.row[9]}));
- return{reports:all.map(r=>({...reportOutput(r,(taskIndex[r[0]]||[]).sort((x,y)=>x.sort-y.sort)),editRequests:editIndex[r[0]]||[],amTodoAmended:amended.has(String(r[0])),additionalActivities:extraIndex[r[0]]||[]})),
+ const lateGrants=allowedLatePmReports(ss);
+ return{reports:all.map(r=>({...reportOutput(r,(taskIndex[r[0]]||[]).sort((x,y)=>x.sort-y.sort)),editRequests:editIndex[r[0]]||[],lateSubmissionAllowed:lateGrants.has(String(r[0])),amTodoAmended:amended.has(String(r[0])),additionalActivities:extraIndex[r[0]]||[]})),
  salesPeople:a.can_review?a.sales_people||[]:[],today:today()};
 }
 function buildTask(t,date,user,reportId,sort,old){
@@ -237,6 +261,13 @@ function savePm(ss,a,p,submit){
  if(!found.row||found.row[5]!=='Submitted')throw Error('Submit the Morning Plan before entering Evening Results');
  if(found.row[9]==='Reviewed')throw Error('This report has been reviewed and closed by Manager');
  if(found.row[7]==='Submitted')throw Error('Evening results have already been submitted. Ask Manager to request changes.');
+ // Initial submission: hard deadline. Resubmissions after manager corrections
+ // or an approved PM edit are permitted; management can authorize late first PM.
+ if(submit&&Date.now()>Date.parse(pmDeadline(date))&&
+  found.row[9]!=='Changes Requested'&&
+  !editState(ss,found.row[0]).some(x=>x.section==='PM'&&x.status==='Approved')&&
+  !allowedLatePmReports(ss).has(String(found.row[0])))
+  throw Error('Evening Result deadline passed (10:00 AM the following day, Phnom Penh time). Ask your Manager/Admin to allow a late submission.');
  const original=taskRows(tasks,found.row[0]),received=Array.isArray(p.results)?p.results:[];
  const categories=['Customer Visit','Customer Follow-up','Online Inquiry','Quotation','Sales Order','Showroom Work','Other'];
  const extras=Array.isArray(p.additionalActivities)?p.additionalActivities:[];
@@ -277,6 +308,7 @@ function savePm(ss,a,p,submit){
  const report=found.row.slice();
  const late=submit&&new Date().getTime()>Date.parse(pmDeadline(date));
  report[7]=submit?'Submitted':'Draft';report[8]=submit?now():'';report[9]='Pending';
+ if(submit){report[11]='';report[12]=''} // Each submitted revision needs a fresh manager review.
  report[14]=now();
  reports.getRange(found.i,1,1,15).setValues([report]);
  audit(ss,a,report[0],submit?(late?'PM_SUBMITTED_LATE':'PM_SUBMITTED'):'PM_DRAFT_SAVED',{tasks:original.map(x=>taskOutput(x.row))},{tasks:updates.map(x=>taskOutput(x.row)),deadline:pmDeadline(date),submittedAt:report[8],late});
