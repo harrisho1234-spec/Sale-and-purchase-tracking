@@ -382,6 +382,43 @@
     if(r.error)throw r.error;
     return r.data||[];
   }
+  async function linkedOrderMap(importRows){
+    const ids=[...new Set((importRows||[]).filter(r=>r?.status==='converted'&&r.converted_sales_order_id)
+      .map(r=>String(r.converted_sales_order_id)))];
+    if(!ids.length)return new Map();
+    const res=await db.from('sales_orders')
+      .select('id,order_no,sr_no,invoice_no,order_date,sales_rep_name_snapshot,status,created_at')
+      .in('id',ids);
+    if(res.error){console.warn('Linked quotation orders unavailable:',res.error.message);return new Map()}
+    return new Map((res.data||[]).map(o=>[String(o.id),o]));
+  }
+  function linkedOrderNo(o){
+    return String(o?.order_no||o?.sr_no||o?.invoice_no||'').trim();
+  }
+  function linkedQuoteTimeline(row,order){
+    if(!row)return '';
+    const revision=quotationRevision(row.source_payload);
+    return '<div class="rounded-xl border bg-[#faf9f6] p-3 text-xs space-y-1.5">'+
+      '<b class="block text-sm">Quotation → Official Document History</b>'+
+      '<div><b>Showroom saved:</b> '+esc(fmtDate(row.source_saved_at)||'Not recorded')+'</div>'+
+      '<div><b>Imported:</b> '+esc(fmtDate(row.imported_at)||'Not recorded')+'</div>'+
+      '<div><b>Source quotation revision:</b> '+esc(revisionLabel(revision))+' (preserved at conversion)</div>'+
+      '<div><b>Converted:</b> '+esc(fmtDate(row.converted_at)||'Not yet converted')+'</div>'+
+      (order?'<div><b>Official order:</b> '+esc(linkedOrderNo(order)||'Order')+' · '+esc(order.sales_rep_name_snapshot||'Sales representative not recorded')+'</div>'+
+        '<button type="button" onclick="openLinkedQuotationOrder(\''+esc(order.id)+'\')" class="mt-2 px-3 py-2 rounded-lg bg-[#211d18] text-white text-xs font-semibold">Open Linked Sales Order</button>':
+        row.status==='converted'?'<div class="text-amber-800">Official order is linked but not available in your current permissions.</div>':'')+
+    '</div>';
+  }
+  window.openLinkedQuotationOrder=async function(id){
+    // Respect existing Sales Order RLS and role permissions. The quotation's
+    // reference ID alone must not reveal otherwise restricted Sales Orders.
+    const res=await db.from('sales_orders').select('id').eq('id',id).maybeSingle();
+    if(res.error||!res.data)return showToast('This Sales Order is not accessible with your account.','err');
+    closeModal();
+    if(typeof window.openDashboardSalesOrder==='function')return window.openDashboardSalesOrder(id);
+    await go('sales-orders');
+    showToast('Open the linked Sales Order in Sales & Customers.');
+  };
   function historyStatus(importRow){
     if(!importRow)return '<span class="px-2 py-1 rounded-full bg-slate-50 text-slate-700 border border-slate-200 text-[10px] font-bold">SAVED</span>';
     if(importRow.status==='converted')return '<span class="px-2 py-1 rounded-full bg-green-50 text-green-700 border border-green-200 text-[10px] font-bold">CONVERTED</span>';
@@ -547,6 +584,7 @@
     if(revisionsResult.error)return showToast(revisionsResult.error.message,'err');
     const revisions=revisionsResult.data||[];
     const importRow=imported.data||null;
+    const linked=await linkedOrderMap(importRow?[importRow]:[]);
     const summary=quoteSummary(row);
     const lines=quotationSnapshotLines(summary);
     const currentRevision=Math.max(0,Number(row.current_revision)||quotationRevision(row.source_payload));
@@ -561,6 +599,7 @@
       '<div class="rounded-xl border p-3"><div class="text-[10px] uppercase tracking-wide font-bold text-gray-400 mb-2">Revision History</div>'+revisionTimelineButtons(row.id,revisions,currentRevision)+'</div>'+
       '<div><div class="flex items-center justify-between mb-2"><b class="text-sm">Current quotation snapshot · '+esc(revisionLabel(currentRevision))+'</b><span class="text-xs font-bold">'+money(row.amount??summary.total,'USD')+'</span></div>'+
       '<div class="rounded-xl border overflow-hidden"><div class="grid grid-cols-[1fr_70px_95px_95px] gap-2 bg-gray-50 px-3 py-2 text-[9px] uppercase font-bold text-gray-400"><div>Item</div><div class="text-right">Qty</div><div class="text-right">Price</div><div class="text-right">Net</div></div><div class="px-3">'+(lines||'<div class="p-4 text-xs text-gray-400">No item snapshot available.</div>')+'</div></div><div class="mt-3">'+quoteDiscountSummaryHtml(summary)+'</div></div>'+
+      (importRow?'<div class="mb-3">'+linkedQuoteTimeline(importRow,linked.get(String(importRow.converted_sales_order_id)))+'</div>':'')+
       '<div class="flex flex-wrap gap-2">'+
       (importRow?'<button type="button" onclick="closeModal();reviewImportedQuotation(\''+importRow.id+'\')" class="px-4 py-2.5 rounded-xl bg-[#211d18] text-white text-xs font-semibold">Open Imported Record</button>':'<button type="button" onclick="closeModal();importQuotationFromHistory(\''+esc(row.source_record_id)+'\')" class="px-4 py-2.5 rounded-xl bg-[#211d18] text-white text-xs font-semibold">Import Latest to Sales Queue</button>')+
       (canDeleteImportedQuotation()?'<button type="button" onclick="closeModal();deleteQuotationHistory(\''+row.id+'\',\''+esc(row.source_record_id)+'\',\''+esc(row.quote_no)+'\')" class="px-4 py-2.5 rounded-xl border border-red-200 bg-white text-red-700 text-xs font-semibold">Delete Quotation</button>':'')+
@@ -637,6 +676,7 @@
     const imported=historyRows.filter(row=>importBySource.has(String(row.source_record_id||''))).length;
     const canCreate=canCreateQuotations();
     const canDelete=canDeleteImportedQuotation();
+    const orderById=await linkedOrderMap(imports);
     const html=historyRows.map(row=>{
       const importRow=importBySource.get(String(row.source_record_id||''))||null;
       const d=quoteSummary(row);
@@ -644,7 +684,10 @@
         '<div class="min-w-0"><div class="flex flex-wrap items-center gap-2">'+historyStatus(importRow)+'<span class="px-2 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold">'+quotationKind(row.quote_no).toUpperCase()+'</span><div class="font-bold text-base">'+esc(quotationDisplay(row.quote_no,row.source_payload))+'</div><span class="px-2 py-1 rounded-full bg-gray-50 border text-[9px] font-bold text-gray-500">'+(revisionCountByQuote.get(String(row.id))||1)+' version'+((revisionCountByQuote.get(String(row.id))||1)===1?'':'s')+'</span></div>'+
         '<div class="text-xs text-gray-600 mt-2">'+esc(row.customer_name||'No customer name')+(row.customer_phone?' · '+esc(row.customer_phone):'')+'</div>'+
         '<div class="text-[10px] text-gray-400 mt-1">Issue '+esc(row.issue_date||'')+(row.salesperson?' · '+esc(row.salesperson):'')+' · '+money(row.amount||0,'USD')+'</div>'+
-        '<div class="text-[10px] text-gray-400 mt-1">'+esc(row.source_name||'Saved quotation')+'</div>'+quoteListDetailsHtml(d)+'</div>'+
+        '<div class="text-[10px] text-gray-400 mt-1">'+esc(row.source_name||'Saved quotation')+'</div>'+quoteListDetailsHtml(d)+
+        (importRow?.status==='converted'?'<div class="text-[10px] mt-2 font-semibold text-green-700">Official '+esc(linkedOrderNo(orderById.get(String(importRow.converted_sales_order_id)))||'order linked')+
+         ' · '+esc(revisionLabel(quotationRevision(importRow.source_payload)))+
+         ' · '+esc(fmtDate(importRow.converted_at))+'</div>':'')+'</div>'+
         '<div class="flex flex-wrap gap-2 shrink-0"><button type="button" onclick="reviewQuotationHistory(\''+row.id+'\')" class="px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold">View</button>'+
         (!importRow&&canCreate?'<button type="button" onclick="importQuotationFromHistory(\''+esc(row.source_record_id)+'\')" class="px-4 py-2.5 rounded-xl bg-[#17324d] text-white text-xs font-semibold">Import</button>':'')+
         (canDelete?'<button type="button" onclick="deleteQuotationHistory(\''+row.id+'\',\''+esc(row.source_record_id)+'\',\''+esc(row.quote_no)+'\')" class="px-4 py-2.5 rounded-xl border border-red-200 bg-white text-red-700 text-xs font-semibold">Delete</button>':'')+
@@ -664,6 +707,7 @@
     const draft=rows.filter(x=>x.status==='imported_draft').length;
     const converted=rows.filter(x=>x.status==='converted').length;
     const canDelete=canDeleteImportedQuotation();
+    const orderById=await linkedOrderMap(rows);
     const html=rows.map(row=>{
       const s=quoteSummary(row);
       const customer=(state.customers||[]).find(c=>String(c.id)===String(row.customer_id));
@@ -674,6 +718,8 @@
         '<div class="text-xs text-gray-500 mt-2">'+esc(s.customerName||'No customer name')+(s.customerPhone?' · '+esc(s.customerPhone):'')+'</div>'+
         '<div class="text-[10px] text-gray-400 mt-1">'+itemCount+' quoted item'+(itemCount===1?'':'s')+' · '+money(s.total,'USD')+' · Imported '+esc(fmtDate(row.imported_at))+'</div>'+
         quoteListDetailsHtml(s)+
+        (row.status==='converted'?'<div class="text-[10px] mt-2 text-green-700 font-semibold">Linked order: '+esc(linkedOrderNo(orderById.get(String(row.converted_sales_order_id)))||'restricted')+
+          ' · '+esc(revisionLabel(quotationRevision(row.source_payload)))+' · Converted '+esc(fmtDate(row.converted_at))+'</div>':'')+
         '<div class="text-[10px] mt-2 '+(customer?'text-green-700':'text-amber-700')+'">'+(customer?'Matched customer: <b>'+esc(customer.name)+'</b>':'No official CRM customer linked yet. The showroom details are reference only; select the customer manually before conversion.')+'</div></div>'+
         '<div class="flex gap-2 shrink-0"><button onclick="reviewImportedQuotation(\''+row.id+'\')" class="px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold">'+(row.status==='converted'?'View':'Review / Convert')+'</button>'+
         (canDelete?'<button type="button" onclick="deleteImportedQuotation(\''+row.id+'\')" class="px-4 py-2.5 rounded-xl border border-red-200 bg-white text-red-700 text-xs font-semibold hover:bg-red-50" title="Delete this imported record only">Delete</button>':'')+'</div></div></div>';
@@ -773,7 +819,7 @@
     const linked=(state.customers||[]).find(c=>String(c.id)===String(row.customer_id));
     let convertedOrderNo='';
     if(row.converted_sales_order_id){
-      const linkedOrder=await db.from('sales_orders').select('order_no').eq('id',row.converted_sales_order_id).maybeSingle();
+      const linkedOrder=await db.from('sales_orders').select('order_no,sr_no,invoice_no,sales_rep_name_snapshot').eq('id',row.converted_sales_order_id).maybeSingle();
       if(!linkedOrder.error)convertedOrderNo=String(linkedOrder.data?.order_no||'');
     }
     const lines=quotationSnapshotLines(s);
@@ -785,6 +831,7 @@
       (s.salesperson?'<div class="text-[10px] text-gray-500 mt-1"><b>Showroom salesperson text:</b> '+esc(s.salesperson)+' · reference only, does not assign ownership</div>':'')+
       (row.converted_sales_order_id?'<div class="mt-3 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-[10px] text-green-800">Converted to official Sales Order'+(convertedOrderNo?' <b>'+esc(convertedOrderNo)+'</b>':'')+'.'+(convertedOrderNo?' <button type="button" onclick="closeModal();openDashboardSalesOrder(\''+row.converted_sales_order_id+'\')" class="underline font-semibold ml-1">Open order</button>':'')+'</div>':'')+
       '<div class="text-[9px] text-gray-400 mt-2">Source ID: '+esc(row.source_record_id)+'</div></div>'+
+      (row.status==='converted'?linkedQuoteTimeline(row,convertedOrderNo?{id:row.converted_sales_order_id,order_no:convertedOrderNo}:null):'')+
       quotationRevisionNoticeHtml(row,latestNotice)+
       '<div><div class="flex items-center justify-between mb-2"><b class="text-sm">Quoted items</b><span class="text-xs font-bold">'+money(s.total,'USD')+'</span></div>'+
       '<div class="rounded-xl border overflow-hidden"><div class="grid grid-cols-[1fr_70px_95px_95px] gap-2 bg-gray-50 px-3 py-2 text-[9px] uppercase font-bold text-gray-400"><div>Item</div><div class="text-right">Qty</div><div class="text-right">Price</div><div class="text-right">Net</div></div><div class="px-3">'+(lines||'<div class="p-4 text-xs text-gray-400">No items in this quotation.</div>')+'</div></div><div class="mt-3">'+quoteDiscountSummaryHtml(s)+'</div></div>'+
