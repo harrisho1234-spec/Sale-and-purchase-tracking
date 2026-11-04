@@ -946,7 +946,7 @@
          '<option value="TK">TK — Stock Sale</option><option value="RK">RK — Stock Sale</option><option value="SR">SR — Pre-order</option>'+
        '</select><p class="text-[10px] text-gray-500 mt-1">Select the actual transaction type. This choice does not turn a quotation into confirmed revenue automatically.</p></div>')+
       (!canCreate?'<div class="rounded-xl border bg-gray-50 p-3 text-xs text-gray-600">Your current role can view quotations but cannot create or import them.</div>':(!canConvert?'<div class="rounded-xl border bg-gray-50 p-3 text-xs text-gray-600">Quotation access is enabled, but Create Sales Orders permission is also required for TK/RK conversion.</div>':''))+
-      '<button '+(!canConvert||!row.customer_id||row.status==='converted'||latestNotice.changed||latestNotice.unchecked?'disabled':'')+' onclick="convertImportedQuotation(\''+row.id+'\')" class="w-full rounded-xl py-3 font-semibold '+(!canConvert||!row.customer_id||row.status==='converted'||latestNotice.changed||latestNotice.unchecked?'bg-gray-200 text-gray-400 cursor-not-allowed':'bg-[#211d18] text-white')+'">'+(row.status==='converted'?'Already Converted':(latestNotice.changed?'Update Revision First':latestNotice.unchecked?'Verify Revision First':(!canConvert?'View Only':'Review & Convert to Official Order')))+'</button>'+
+      '<button '+(!canConvert||!row.customer_id||row.status!=='ready'||latestNotice.changed||latestNotice.unchecked?'disabled':'')+' onclick="convertImportedQuotation(\''+row.id+'\')" class="w-full rounded-xl py-3 font-semibold '+(!canConvert||!row.customer_id||row.status!=='ready'||latestNotice.changed||latestNotice.unchecked?'bg-gray-200 text-gray-400 cursor-not-allowed':'bg-[#211d18] text-white')+'">'+(row.status==='converted'?'Already Converted':(latestNotice.changed?'Update Revision First':latestNotice.unchecked?'Verify Revision First':(!canConvert?'View Only':'Review & Convert to Official Order')))+'</button>'+
       (canDelete?'<button type="button" onclick="deleteImportedQuotation(\''+row.id+'\')" class="w-full rounded-xl border border-red-200 bg-white py-2.5 text-red-700 text-xs font-semibold">Delete Imported Quotation</button>':'')+'</div>'
     );
   };
@@ -1115,6 +1115,7 @@
     const r=await db.from(TABLE).select('*').eq('id',id).single();if(r.error)return showToast(r.error.message,'err');
     const draft=r.data;
     if(draft.status==='converted')return showToast('This quotation has already been converted. Open its linked order.','err');
+    if(draft.status!=='ready')return showToast('Confirm the official CRM customer before conversion so the quotation can be linked reliably.','err');
     // Never auto-refresh on conversion: staff must see and accept newer versions.
     try{
       const status=await verifyQuotationSnapshot(draft);
