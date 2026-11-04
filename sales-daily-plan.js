@@ -531,6 +531,13 @@ window.openDailyManagerReport=(id,selectedReport)=>{
  '<div class="space-y-4">'+requestActions+'<div class="rounded-xl bg-gray-50 p-3 text-xs">AM: '+h(r.amStatus)+' · PM: '+h(r.pmStatus)+
  '</div><div class="mt-1"><b>Manager review:</b> '+h(managerReviewStatus(r))+managerReviewAudit(r)+'</div></div>'+rows+
  '<p class="text-[11px] text-gray-500">Manager review and task completion are separate. A reviewed report can still contain unfinished tasks.</p>'+
+ (initialPmMissing(r)?
+  '<div class="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs"><b>Evening Result not submitted</b>'+
+  '<p class="mt-1">Due by 10:00 AM on '+h(backDays(r.date,-1))+' (Phnom Penh time). '+(isOverdue(r)?'This submission is overdue.':'The deadline has not passed yet.')+'</p>'+
+  (r.lateSubmissionAllowed?'<p class="font-semibold text-green-800 mt-2">Late submission authorized. Awaiting the salesperson.</p>':
+   isOverdue(r)&&ui.policyVersion==='next-day-10am-20261104'?
+    '<button type="button" class="'+actionButton+' mt-2" onclick="allowSalesDailyLatePm(\''+h(r.id)+'\',\''+h(r.date)+'\')">Allow Late Evening Result</button>':'')+
+  '</div>':'')+
  ((r.additionalActivities||[]).length?'<div class="rounded-xl border p-3"><b class="text-sm">Additional Activities (Unplanned)</b>'+(r.additionalActivities||[]).map(x=>'<div class="text-xs border-b py-2"><b>'+h(x.category)+'</b>'+(x.customerName?' · '+h(x.customerName):'')+'<div>'+h(x.result)+'</div>'+(x.nextFollowup?'<div>Next follow-up: '+h(x.nextFollowup)+'</div>':'')+(x.sourceId?'<button class="underline text-blue-700" onclick="openDailyActivitySource(\''+h(x.sourceType)+'\',\''+h(x.sourceId)+'\')">Open original activity ↗</button>':'')+'</div>').join('')+'</div>':'')+
  (r.managerComment?'<p class="text-xs text-gray-600">Previous Manager comment: '+h(r.managerComment)+'</p>':'')+
  (r.pmStatus==='Submitted'&&r.reviewStatus!=='Reviewed'?
@@ -738,9 +745,17 @@ window.allowSalesDailyLatePm=async(id,date)=>{
  if(!reason.trim())return toast('Enter a reason for allowing a late submission',true);
  try{
   await api('allow_late_pm',{reportId:id,reason:reason.trim()});
+  const original=ui.reports.find(r=>String(r.id)===String(id))||cachedDailyReport(id,date,'',300000);
+  const result=await api('read',{start:date,end:date,userId:original?.userId||null});
+  const updated=(result.reports||[]).find(r=>String(r.id)===String(id));
+  if(!updated?.lateSubmissionAllowed){
+   return toast('Permission was submitted but has not been confirmed in Google Sheets. Refresh before retrying.',true);
+  }
+  replaceDailyReport(updated);
   toast('Late submission authorized. The salesperson may now submit the Evening Result.');
+  if(state.page===R)renderManager();
+  window.openDailyManagerReport(String(id),updated);
   window.invalidateSalesDailyApprovals?.();
-  await reload();
  }catch(err){toast(err.message||'Could not authorize late submission',true)}
 };
 
