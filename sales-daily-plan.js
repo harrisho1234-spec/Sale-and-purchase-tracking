@@ -343,10 +343,11 @@ window.openSalesDailyShare=section=>{
  // Imported showroom and online records belong in their own report sections,
  // even when their customer also appears in a Morning Plan. Prefer the source
  // type; legacy or manually entered activities can use their category instead.
- const isShowroomExtra=x=>String(x.sourceType||'').toLowerCase()==='showroom'||
-   ['Customer Visit','Showroom Work','Showroom Visit'].includes(x.category);
- const isOnlineExtra=x=>String(x.sourceType||'').toLowerCase()==='online'||
-   ['Online Inquiry','Online Visit'].includes(x.category);
+ const importedSource=x=>String(x.sourceType||'').toLowerCase().trim();
+ const isShowroomExtra=x=>importedSource(x)==='showroom'||
+   (!importedSource(x)&&['Customer Visit','Showroom Work','Showroom Visit'].includes(x.category));
+ const isOnlineExtra=x=>importedSource(x)==='online'||
+   (!importedSource(x)&&['Online Inquiry','Online Visit'].includes(x.category));
  const showroomExtra=extras.filter(isShowroomExtra);
  const onlineExtra=extras.filter(x=>!isShowroomExtra(x)&&isOnlineExtra(x));
  const customerExtra=extras.filter(x=>!isShowroomExtra(x)&&!isOnlineExtra(x)&&
