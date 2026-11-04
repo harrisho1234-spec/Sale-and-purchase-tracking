@@ -451,6 +451,44 @@
     const invoice=String(o.sales_invoice_no||o.invoice_no||o.order_no||'').trim().toUpperCase();
     return flow!=='pre_order'&&!sr.startsWith('SR')&&/^(TK|RK)[-_]?[0-9]/.test(invoice);
   }
+
+  // Only display calculations: discount_amount is a LINE discount, not a
+  // discount per piece. Final invoice total remains the stored order_total.
+  function salesInvoiceItemPrice(i,currency){
+    const p=window.InvoicePriceBreakdown.line(i);
+    const hasDiscount=Number(p.discount||0)>0.001;
+    return '<div class="text-xs sm:text-right sm:min-w-[205px] space-y-1">'+
+      (p.fullUnit!==null
+        ?'<div class="text-gray-500">Original unit: <b>'+money(p.fullUnit,currency)+'</b></div>'+
+         '<div class="'+(hasDiscount?'line-through text-gray-400':'text-gray-500')+'">Full line: '+p.qty+' × '+money(p.fullUnit,currency)+' = '+money(p.fullTotal,currency)+'</div>'
+        :'<div class="text-gray-400">Original unit price not recorded</div>')+
+      (hasDiscount
+        ?'<div class="font-semibold text-amber-700">Item discount: −'+money(p.discount,currency)+
+          (p.discountPercent!==null?' ('+window.InvoicePriceBreakdown.percent(p.discountPercent)+')':'')+'</div>'
+        :'<div class="text-gray-400">Item discount: '+(p.discountKnown?'0%':'Not recorded')+'</div>')+
+      (p.finalUnit!==null?'<div class="text-gray-600">Unit after discount: <b>'+money(p.finalUnit,currency)+'</b></div>':'')+
+      '<div class="font-bold text-green-700">After item discount: '+(p.finalTotal!==null?money(p.finalTotal,currency):'Not available')+'</div></div>';
+  }
+  function salesInvoicePriceSummary(o){
+    const p=window.InvoicePriceBreakdown.invoice(o.items||[],o.order_discount,o.order_total);
+    const currency=o.currency;
+    const summaryRow=(label,value,style='')=>
+      '<div class="flex justify-between gap-3"><span class="text-gray-600">'+label+'</span><b class="'+style+'">'+value+'</b></div>';
+    return '<section class="mt-4 rounded-xl border border-[#e6dfd0] bg-[#fffcf6] p-3 text-xs">'+
+      '<h4 class="text-sm font-bold mb-2">Price &amp; Discount Breakdown</h4>'+
+      (p.complete
+        ?summaryRow('Full price before discounts',money(p.original,currency))+
+         summaryRow('Item discounts','−'+money(p.itemsDiscount,currency),'text-amber-700')+
+         summaryRow('Subtotal after item discounts',money(p.afterItems,currency))
+        :'<div class="text-gray-500 mb-2">Original item prices are incomplete. Only recorded amounts are displayed.</div>')+
+      summaryRow('Additional invoice discount',p.orderDiscount>0?'−'+money(p.orderDiscount,currency):'None',p.orderDiscount>0?'text-amber-700':'')+
+      (p.adjustment!==null&&Math.abs(p.adjustment)>0.01
+        ?summaryRow('Other recorded adjustment',((p.adjustment<0?'−':'+')+money(Math.abs(p.adjustment),currency)),'text-amber-700'):'')+
+      '<div class="border-t border-[#e6dfd0] mt-2 pt-2">'+summaryRow('Final recorded total',money(p.finalTotal,currency),'text-green-700 text-sm')+'</div>'+
+      '<p class="text-[10px] text-gray-500 mt-2">Item discounts apply to the full quantity of each line. Any additional invoice discount is separate.</p>'+
+    '</section>';
+  }
+
   function invoiceCard(o) {
     const open = ui.salesExpanded.has(o.id);
     const items = o.items||[];
@@ -506,8 +544,9 @@
                   <div class="text-[10px] text-gray-400">${esc(i.product_catalog?.brand||'')} ${i.product_catalog?.class?'· '+esc(i.product_catalog.class):''}</div>
                   ${returnInfo(i)?`<div class="mt-1.5 flex flex-wrap items-center gap-2">${returnBadge(i)}<span class="text-[10px] text-gray-500">Remaining with customer: <b>${Number(returnInfo(i).remaining_with_customer||0)}</b></span></div>`:''}
                 </div>
-                <div class="text-right text-xs"><b>${Number(i.qty||0)} × ${money(i.unit_price,o.currency)}</b><div class="text-gray-400 mt-1">${money(i.line_total,o.currency)}</div></div>
+                ${salesInvoiceItemPrice(i,o.currency)}
               </div>`).join(''):`<div class="lr-empty">No line-item detail available.</div>`)}
+            ${items.length?salesInvoicePriceSummary(o):''}
             ${((['sales','manager','admin','super_admin'].includes(state.profile?.role)&&cleanStatus(o.status)!=='cancelled')||isSuper())?`
               <div class="mt-4 pt-4 border-t flex flex-wrap gap-2 justify-end">
                 ${(['sales','manager','admin','super_admin'].includes(state.profile?.role)&&cleanStatus(o.status)!=='cancelled'&&hasOfficialDoInvoice(o))
