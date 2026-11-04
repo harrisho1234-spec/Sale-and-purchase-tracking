@@ -59,7 +59,7 @@ test('customer suggestions match Cambodian phone formats, but do not assign CRM 
 test('quote versus proposed order shows all item and order discount changes, without mixing duplicate product codes',()=>{
  const q=instance().__testQuote,s=q.quoteSummary(quotation().record);
  const rows=s.lines.map(l=>{
-  const values={'.product-code':l.code,'.product-name':l.name,'.qty':l.qty,'.unit-price':l.unitPrice,'.line-discount':l.discountAmount,'.source-quote-item-note':l.note,'.line-kind':l.kind};
+  const values={'.product-code':l.code,'.product-name':l.name,'.qty':l.qty,'.unit-price':l.unitPrice,'.line-discount':l.discountAmount,'.source-quote-item-note':[l.section?'Floor / Room / Section: '+l.section:'',l.note].filter(Boolean).join(' · '),'.line-kind':l.kind};
   return {dataset:{sourceQuoteKey:l.key},values,querySelector(key){return this.values[key]===undefined?null:{value:this.values[key]}}};
  });
  const form={
