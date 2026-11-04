@@ -143,8 +143,8 @@ async function managerReviewUiCase(persist){
  await c.go('sales-daily-review');
  assert.match(content.innerHTML,/Awaiting Manager Review/);
  c.openDailyManagerReport('r1');
- assert.match(info.modal,/Task outcome:<\\/b> Pending \/ Outstanding/);
- assert.match(info.modal,/Manager review:<\\/b> Awaiting Manager Review/);
+ assert.match(info.modal,/Task outcome:<\/b> Pending \/ Outstanding/);
+ assert.match(info.modal,/Manager review:<\/b> Awaiting Manager Review/);
  assert.equal((await c.getSalesDailyApprovalQueue()).length,1);
  await c.submitDailyManagerReview('r1','Reviewed');
  return {c,info,content,report};
