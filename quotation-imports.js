@@ -933,7 +933,7 @@
       '<p id="quoteCustomerConfirmation" class="text-[10px] mt-1 text-blue-800"></p>'+
       ((!linked&&row.status!=='converted')?customerMatchesHtml(s):'')+
       '<div class="text-[10px] text-gray-500 mt-1">If the customer does not exist yet, create/link the customer in the normal Customer workflow, then return here and select it.</div>'+
-      '<div class="flex flex-wrap gap-2 mt-3"><button '+(!canCreate?'disabled':'')+' onclick="saveImportedQuotationCustomer(\''+row.id+'\')" class="px-4 py-2.5 rounded-xl text-xs font-semibold '+(!canCreate?'bg-gray-200 text-gray-400 cursor-not-allowed':'bg-[#17324d] text-white')+'">'+(canCreate?'Link Official Customer':'View Only')+'</button><button onclick="closeModal();go(\'customers\')" class="px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold">Create / Find Customer</button></div></div>'+
+      '<div class="flex flex-wrap gap-2 mt-3"><button '+(!canCreate||row.status==='converted'?'disabled':'')+' onclick="saveImportedQuotationCustomer(\''+row.id+'\')" class="px-4 py-2.5 rounded-xl text-xs font-semibold '+(!canCreate||row.status==='converted'?'bg-gray-200 text-gray-400 cursor-not-allowed':'bg-[#17324d] text-white')+'">'+(row.status==='converted'?'Customer Link Locked':canCreate?'Link Official Customer':'View Only')+'</button><button onclick="closeModal();go(\'customers\')" class="px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold">Create / Find Customer</button></div></div>'+
       '<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>Official Sales Order rule:</b> choose SR (pre-order), TK or RK (stock sale), then confirm the official number. Existing discount, product, stock, payment, DO, approval and role validations still apply.</div>'+
       (row.status==='converted'?'':'<div class="rounded-xl border bg-white p-3">'+
        '<label class="block text-xs font-semibold mb-1" for="quoteConversionDocument">Create official document as</label>'+
@@ -947,6 +947,9 @@
   };
   window.saveImportedQuotationCustomer=async function(id){
     if(!canCreateQuotations())return showToast('Your role cannot create or import quotations.','err');
+    const current=await db.from(TABLE).select('id,status').eq('id',id).single();
+    if(current.error)return showToast(current.error.message,'err');
+    if(current.data.status==='converted')return showToast('Converted quotations have locked customer links. Open the official order for any correction.','err');
     const customerId=document.getElementById('importQuoteCustomer')?.value||null;
     if(!customerId)return showToast('Select the official CRM customer first. If the customer does not exist, create/link it in Customers and then return here.','err');
     if(!(state.customers||[]).some(c=>String(c.id)===String(customerId)))
@@ -1024,6 +1027,18 @@
         changed=true;changes.push({key:l.key,code:l.code||l.name,old:l,diff:['Removed from order']});
       }
     });
+    if(activeConversionSnapshot){
+      const chosen=activeConversionSnapshot.chosenDocument;
+      const flow=form.querySelector('#salesFlowType')?.value||document.getElementById('salesFlowType')?.value;
+      const invoiceType=form.querySelector('#salesInvoiceType')?.value||document.getElementById('salesInvoiceType')?.value||'TK';
+      const actualDoc=flow==='pre_order'?'SR':invoiceType;
+      if(actualDoc!==chosen){changed=true;items.push('Document type '+chosen+' → '+actualDoc)}
+      const note=String(form.querySelector('#orderNotes')?.value||'').trim();
+      if(note!==String(activeConversionSnapshot.initialOrderNotes||'').trim()){
+        changed=true;
+        items.push('Official order note changed: '+(note||'Cleared'));
+      }
+    }
     const orderDiscount=Math.max(0,num(form.querySelector('#orderDiscount')?.value||0));
     const newTotal=round2(Math.max(afterLineDiscounts-orderDiscount,0));
     if(Math.abs(orderDiscount-s.orderDiscount)>0.001){
@@ -1032,7 +1047,7 @@
     }
     if(Math.abs(newTotal-s.total)>0.001)changed=true;
     const signature=JSON.stringify({changes:changes.map(x=>[x.key,x.code,x.qty,x.unitPrice,x.discountAmount,x.note,x.diff]),
-      orderDiscount,newTotal});
+      orderDiscount,newTotal,extra:items});
     return {changes,items,changed,signature,newTotal,orderDiscount};
   }
   function quoteComparisonPanelHtml(s,comparison){
@@ -1117,7 +1132,7 @@
     const flow=document.getElementById('salesFlowType');
     if(flow){flow.value=chosenDocument==='SR'?'pre_order':'stock_sale';flow.dispatchEvent(new Event('change',{bubbles:true}))}
     const invoice=document.getElementById('salesInvoiceType');
-    if(invoice&&chosenDocument!=='SR')invoice.value=chosenDocument;
+    if(invoice&&chosenDocument!=='SR'){invoice.value=chosenDocument;invoice.dispatchEvent(new Event('change',{bubbles:true}))}
     const doc=document.getElementById('salesDocumentNo');if(doc)doc.value='';
     const wrap=document.getElementById('orderItems');if(wrap)wrap.innerHTML='';
     let unmatched=0;
@@ -1138,7 +1153,8 @@
     activeConversionId=id;
     activeConversionSnapshot={
       id,customerId:draft.customer_id,signature:quotationBusinessSignature(draft),
-      summary:s,chosenDocument,sourceRevision:quotationRevision(draft.source_payload)
+      summary:s,chosenDocument,sourceRevision:quotationRevision(draft.source_payload),
+      initialOrderNotes:notes?.value||''
     };
     const submitButton=document.getElementById('saveSalesOrderSubmit');
     const holder=document.createElement('div');
