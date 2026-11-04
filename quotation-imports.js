@@ -700,6 +700,16 @@
     if(r.error)return showToast(r.error.message,'err');
     showToast('Official CRM customer linked. This quotation is ready for conversion.');await reviewImportedQuotation(id);
   };
+  function addImportedItemNoteField(row,line){
+    const value=sourceItemNoteForOrder(line);
+    if(!value||!row)return;
+    const wrap=document.createElement('div');
+    wrap.className='md:col-span-12 rounded-lg border border-blue-100 bg-blue-50/40 p-2.5';
+    wrap.innerHTML='<label class="text-[10px] font-semibold text-blue-800">Showroom item note / floor / room (editable for the official order)</label>'+
+      '<textarea class="source-quote-item-note mt-1 w-full rounded-lg border border-blue-100 bg-white px-3 py-2 text-xs" rows="2" maxlength="2000" placeholder="Note for this item"></textarea>';
+    wrap.querySelector('textarea').value=value;
+    row.appendChild(wrap);
+  }
   function fillProductRow(row,line,product){
     row.querySelector('.product-id').value=product?.id||'';
     row.querySelector('.product-code').value=product?.code||line.code||'';
@@ -713,12 +723,14 @@
     if(typeof updateSalesProductPhotoPreview==='function')updateSalesProductPhotoPreview(row,product?.image_url||line.image||'');
     const classLabel=row.querySelector('.product-class-label');if(classLabel)classLabel.textContent=product?.class||line.className||'Unclassified';
     const typeLabel=row.querySelector('.product-type-label');if(typeLabel)typeLabel.textContent=product?'Matched':'Needs product match';
+    addImportedItemNoteField(row,line);
   }
   function fillServiceRow(row,line){
     const name=line.name||'Service Fee';const sel=row.querySelector('.service-fee-type');
     if(sel){sel.value=['Service Fee','Maintenance Fee','Cleaning Fee','Delivery / Installation','Other Fee'].includes(name)?name:'Other Fee';if(typeof serviceFeeChanged==='function')serviceFeeChanged(sel)}
     const nameInput=row.querySelector('.service-name');if(nameInput){nameInput.value=name;if(typeof serviceFeeNameChanged==='function')serviceFeeNameChanged(nameInput)}
     row.querySelector('.qty').value=String(line.qty);row.querySelector('.unit-price').value=String(line.unitPrice);row.querySelector('.line-discount').value=String(line.discountAmount);row.dataset.discountBasis='amount';
+    addImportedItemNoteField(row,line);
   }
   window.convertImportedQuotation=async function(id){
     if(!canCreateQuotations())return showToast('Your role cannot create or import quotations.','err');
