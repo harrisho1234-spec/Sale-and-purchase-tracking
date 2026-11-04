@@ -385,13 +385,42 @@
     return url;
   }
 
+  function quoteDiscountSummaryHtml(s){
+    return '<div class="rounded-xl border bg-[#faf8f4] p-3 text-xs space-y-1.5" data-quotation-discount-breakdown>'+
+      '<div class="flex justify-between gap-3"><span>Full price before discount</span><b>'+money(s.gross,'USD')+'</b></div>'+
+      '<div class="flex justify-between gap-3"><span>Item discounts</span><b class="text-amber-700">−'+money(s.lineDiscounts,'USD')+'</b></div>'+
+      '<div class="flex justify-between gap-3"><span>After item discounts</span><b>'+money(s.lineNet,'USD')+'</b></div>'+
+      '<div class="flex justify-between gap-3"><span>Additional quotation discount'+
+        (s.orderDiscountPct>0?' ('+esc(String(s.orderDiscountPct))+'%':'')+
+        (s.orderDiscountFlat>0?(s.orderDiscountPct>0?' + ':' (')+money(s.orderDiscountFlat,'USD'):'')+
+        (s.orderDiscountPct>0||s.orderDiscountFlat>0?')':'')+
+        '</span><b class="text-amber-700">−'+money(s.orderDiscount,'USD')+'</b></div>'+
+      '<div class="flex justify-between gap-3 pt-2 border-t font-bold"><span>Final quoted total</span><span>'+money(s.total,'USD')+'</span></div>'+
+    '</div>';
+  }
+  function quoteLineDetailsHtml(l){
+    return '<div class="min-w-0 mt-1 space-y-0.5">'+
+      (l.sourceSetName?'<div class="text-[10px] text-slate-500">Set: '+esc(l.sourceSetName)+'</div>':'')+
+      (l.section?'<div class="text-[10px] text-blue-700"><b>Floor / Room:</b> '+esc(l.section)+'</div>':'')+
+      (l.discountAmount>0?'<div class="text-[10px] text-amber-700"><b>Item discount:</b> '+esc(String(l.discountPct))+'% (−'+money(l.discountAmount,'USD')+')</div>':
+        '<div class="text-[10px] text-gray-400">Item discount: 0%</div>')+
+      (l.note?'<div class="text-[10px] text-gray-700 whitespace-pre-wrap break-words"><b>Item note:</b> '+esc(l.note)+'</div>':'')+
+    '</div>';
+  }
   function quotationSnapshotLines(summary){
     return summary.lines.map((l,i)=>{
       const img=quotationLineImage(l);
-      const photo=img
-        ? '<div class="w-10 h-10 rounded-lg border bg-gray-50 overflow-hidden shrink-0"><img src="'+esc(img)+'" alt="" class="w-full h-full object-cover" onerror="this.parentElement.innerHTML=\'<div class=&quot;w-full h-full flex items-center justify-center text-[7px] text-gray-400 text-center px-1&quot;>No image</div>\'"></div>'
-        : '<div class="w-10 h-10 rounded-lg border bg-gray-50 shrink-0 flex items-center justify-center text-[7px] text-gray-400 text-center px-1">No image</div>';
-      return '<div class="grid grid-cols-[1fr_70px_95px_95px] gap-2 items-center py-2 border-b last:border-b-0"><div class="min-w-0 flex items-center gap-2">'+photo+'<div class="min-w-0"><div class="text-xs font-semibold truncate">'+esc(l.code||l.name||('Line '+(i+1)))+'</div><div class="text-[10px] text-gray-500 truncate">'+esc(l.name||'')+'</div></div></div><div class="text-xs text-right">'+l.qty+'</div><div class="text-xs text-right">'+money(l.unitPrice,'USD')+'</div><div class="text-xs text-right">'+money(Math.max(l.qty*l.unitPrice-l.discountAmount,0),'USD')+'</div></div>';
+      const photo=img?
+        '<div class="w-10 h-10 rounded-lg border bg-gray-50 overflow-hidden shrink-0"><img src="'+esc(img)+'" alt="" class="w-full h-full object-cover" onerror="this.style.display=\'none\'"></div>':
+        '<div class="w-10 h-10 rounded-lg border bg-gray-50 shrink-0 flex items-center justify-center text-[7px] text-gray-400 text-center px-1">No image</div>';
+      return '<div class="grid grid-cols-[minmax(0,1fr)_55px_75px_85px] sm:grid-cols-[minmax(0,1fr)_70px_95px_95px] gap-2 items-start py-3 border-b last:border-b-0">'+
+        '<div class="min-w-0 flex gap-2">'+photo+'<div class="min-w-0 flex-1">'+
+          '<div class="text-xs font-semibold break-words">'+esc(l.code||l.name||('Line '+(i+1)))+'</div>'+
+          '<div class="text-[10px] text-gray-500 break-words">'+esc(l.name||'')+'</div>'+quoteLineDetailsHtml(l)+'</div></div>'+
+        '<div class="text-xs text-right">'+l.qty+'</div>'+
+        '<div class="text-xs text-right">'+money(l.unitPrice,'USD')+'</div>'+
+        '<div class="text-xs text-right"><div class="'+(l.discountAmount>0?'text-gray-400 line-through text-[10px]':'hidden')+'">'+money(round2(l.qty*l.unitPrice),'USD')+'</div>'+
+          '<b>'+money(round2(Math.max(l.qty*l.unitPrice-l.discountAmount,0)),'USD')+'</b></div></div>';
     }).join('');
   }
 
