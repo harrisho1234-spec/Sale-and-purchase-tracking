@@ -160,6 +160,17 @@ test('manager review UI confirms saved status, shows reviewer and leaves unfinis
  assert.doesNotMatch(info.modal,/Mark Reviewed/);
  assert.ok(info.notices.some(x=>/Manager review completed/.test(x.message)&&x.type!=='err'));
 });
+test('unsubmitted Evening Result is Not Ready rather than a pending manager review',async()=>{
+ const {c,info,content,report}=await managerReviewUiCase(false);
+ report.pmStatus='Not Started';
+ c.invalidateSalesDailyApprovals();
+ await c.reloadDailyReport();
+ assert.ok(content.innerHTML.includes('Not Ready (PM not submitted)'));
+ assert.equal((await c.getSalesDailyApprovalQueue()).length,0);
+ c.openDailyManagerReport('r1');
+ assert.ok(info.modal.includes('Manager review:</b> Not Ready (PM not submitted)'));
+ assert.doesNotMatch(info.modal,/Mark Reviewed/);
+});
 test('manager review UI does not falsely report success if Google Sheets still says Pending',async()=>{
  const {info,report}=await managerReviewUiCase(false);
  assert.equal(report.reviewStatus,'Pending');
