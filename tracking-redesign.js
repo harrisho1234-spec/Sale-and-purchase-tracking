@@ -223,17 +223,20 @@
       ordersQ = ordersQ.eq('sales_rep_id',repContextId());
     }
 
-    const [sr,or,rr,linked] = await Promise.all([
+    const [sr,or,rr,linked,financialReturns] = await Promise.all([
       summaryQ,
       ordersQ,
       db.rpc('get_sales_tracking_return_summary'),
-      db.rpc('get_visible_sr_split_invoice_list')
+      db.rpc('get_visible_sr_split_invoice_list'),
+      db.rpc('get_sales_tracking_return_financial_breakdown')
     ]);
     if(sr.error) throw sr.error;
     if(or.error) throw or.error;
     if(rr.error) throw rr.error;
 
     const returnMap=new Map((rr.data||[]).map(x=>[x.sales_order_item_id,x]));
+    if(financialReturns.error)console.warn('Invoice return financial breakdown unavailable:',financialReturns.error.message);
+    const returnFinancialMap=new Map((financialReturns.data||[]).map(x=>[String(x.sales_order_id),x]));
     // Original SR remains the single accounting record. Invoice aliases are display/search metadata.
     if(linked.error)console.warn('TK/RK reference lookup:',linked.error.message);
     const splitBySr=new Map((Array.isArray(linked.data)?linked.data:[]).map(x=>[String(x.sr_id),x]));
@@ -256,6 +259,7 @@
       return {
         ...s,
         ...d,
+        return_financial:financialReturns.error?null:(returnFinancialMap.get(String(s.id))||{recorded_return_value:0,received_return_value:0,cn_count:0,cn_numbers:''}),
         linked_documents:docs,
         linked_issued_count:docs.length,
         linked_pending_count:Number(split?.pending_count||0),
@@ -489,6 +493,37 @@
     '</section>';
   }
 
+
+  function salesInvoiceReturnBalanceSummary(o){
+    // Balance Due is already NET of approved credit allocations in
+    // sales_order_summary. Do not subtract recorded returns a second time.
+    const rf=o.return_financial;
+    const m=v=>money(Number(v||0),o.currency);
+    const row=(label,value,style='')=>
+      '<div class="flex justify-between items-baseline gap-3 py-0.5"><span class="text-gray-600">'+label+'</span><b class="'+style+'">'+value+'</b></div>';
+    const returnValue=rf?Number(rf.recorded_return_value||0):null;
+    const applied=Number(o.credit_applied||0);
+    const ar=Number(o.balance_due||0);
+    const beforeCredit=Number(o.gross_balance_due??Math.max(0,Number(o.order_total||0)-Number(o.amount_paid||0)));
+    const cnCount=Number(rf?.cn_count||0);
+    return '<section class="mt-3 rounded-xl border border-blue-100 bg-blue-50/40 p-3 text-xs">'+
+      '<div class="flex flex-wrap items-center justify-between gap-2 mb-2"><h4 class="text-sm font-bold text-blue-950">Return / CN &amp; AR Breakdown</h4>'+
+        (cnCount?'<span class="text-[10px] font-semibold text-blue-700">'+cnCount+' recorded CN'+(cnCount===1?'':'s')+'</span>':'')+'</div>'+
+      row('Original invoice amount',m(o.order_total))+
+      row('Actual payments / deposits','−'+m(o.amount_paid),'text-green-700')+
+      row('AR before customer credit',m(beforeCredit))+
+      row('Recorded return value (after discounts)',returnValue===null?'Unavailable':'−'+m(returnValue),'text-amber-700')+
+      row('Approved customer credit applied','−'+m(applied),'text-blue-700')+
+      '<div class="border-t border-blue-200 mt-2 pt-2">'+row('Adjusted AR / Balance Due',m(ar),ar>0?'text-red-600 text-sm':'text-green-700 text-sm')+'</div>'+
+      (rf?.cn_numbers?'<div class="text-[10px] text-gray-500 mt-1">CN: '+esc(rf.cn_numbers)+'</div>':'')+
+      '<p class="text-[10px] text-gray-500 mt-2">'+
+        (returnValue!==null&&returnValue>0&&applied<=0
+          ?'Return recorded, but no Customer Credit is applied to this invoice yet. Manager/Admin must approve and apply credit to reduce AR. '
+          :'')+
+        'The recorded return is shown for reference, not deducted twice. Only approved credit allocated to THIS invoice reduces its AR; credit from a CN may be applied to another outstanding invoice. Actual payments are unchanged.</p>'+
+      '</section>';
+  }
+
   function invoiceCard(o) {
     const open = ui.salesExpanded.has(o.id);
     const items = o.items||[];
@@ -547,6 +582,7 @@
                 ${salesInvoiceItemPrice(i,o.currency)}
               </div>`).join(''):`<div class="lr-empty">No line-item detail available.</div>`)}
             ${items.length?salesInvoicePriceSummary(o):''}
+            ${salesInvoiceReturnBalanceSummary(o)}
             ${((['sales','manager','admin','super_admin'].includes(state.profile?.role)&&cleanStatus(o.status)!=='cancelled')||isSuper())?`
               <div class="mt-4 pt-4 border-t flex flex-wrap gap-2 justify-end">
                 ${(['sales','manager','admin','super_admin'].includes(state.profile?.role)&&cleanStatus(o.status)!=='cancelled'&&hasOfficialDoInvoice(o))
