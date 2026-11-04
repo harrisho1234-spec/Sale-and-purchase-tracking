@@ -19,22 +19,27 @@
  const knownNumber=v=>v!==null&&v!==undefined&&v!==''&&Number.isFinite(Number(v));
  const optionalLine=(label,value)=>value===null||value===undefined||String(value).trim()===''?'':'<div class="text-[11px] text-gray-600"><b>'+h(label)+':</b> '+h(value)+'</div>';
  const lineDetail=l=>{
-   const price=l.unit_price??l.price;
-   const discount=l.discount_amount??l.item_discount??l.line_discount;
-   const total=l.line_total??l.total;
+   const p=window.InvoicePriceBreakdown.line(l),hasDiscount=Number(p.discount||0)>0.001;
    return '<div class="border-t py-2 text-xs flex flex-col sm:flex-row justify-between gap-2">'+
      '<div class="min-w-0"><b>'+h(l.code||l.product_code||'Item')+'</b> · '+h(l.name||l.item_name||'')+
        optionalLine('Item note',l.notes??l.note)+'</div>'+
-     '<div class="sm:text-right shrink-0">Qty '+safeCount(l.qty)+
-     (knownNumber(price)?' · Unit '+moneyN(price):'')+
-     (knownNumber(discount)?' · Discount −'+moneyN(discount):'')+
-     (knownNumber(total)?' · Net '+moneyN(total):'')+'</div></div>';
+     '<div class="sm:text-right sm:min-w-[200px] space-y-1">'+
+       '<div class="text-gray-600">Qty: '+safeCount(l.qty)+'</div>'+
+       (p.fullUnit!==null?'<div class="text-gray-500">Original unit: '+moneyN(p.fullUnit)+'</div>'+
+        '<div class="'+(hasDiscount?'line-through text-gray-400':'text-gray-500')+'">Full line: '+moneyN(p.fullTotal)+'</div>':'')+
+       (hasDiscount?'<div class="font-semibold text-amber-700">Item discount: −'+moneyN(p.discount)+
+         (p.discountPercent!==null?' ('+window.InvoicePriceBreakdown.percent(p.discountPercent)+')':'')+'</div>':
+         '<div class="text-gray-400">Item discount: '+(p.discountKnown?'0%':'Not recorded')+'</div>')+
+       (p.finalUnit!==null?'<div>Unit after discount: '+moneyN(p.finalUnit)+'</div>':'')+
+       (p.finalTotal!==null?'<div class="font-bold text-green-700">After item discount: '+moneyN(p.finalTotal)+'</div>':'')+
+     '</div></div>';
  };
  const htmlInvoices=s=>{
    const inv=Array.isArray(s?.invoices)?s.invoices:[];
    return inv.length?'<div class="space-y-2">'+inv.map(i=>{
      const lines=Array.isArray(i.lines)?i.lines:[];
      const discount=i.order_discount??i.discount_amount;
+     const prices=window.InvoicePriceBreakdown.invoice(lines,discount,i.total);
      const submitted=i.submitted_at??i.requested_at??i.created_at;
      const review=i.review_note??i.approval_note;
      const approver=i.discount_approved_by??i.discount_approver;
@@ -49,9 +54,15 @@
          '<div class="text-[10px] font-bold uppercase text-gray-500">Invoice items</div>'+
          (lines.length?lines.map(lineDetail).join(''):'<p class="text-xs text-gray-500">Item breakdown is not available in this invoice summary.</p>')+
          '<div class="rounded-lg border bg-gray-50 p-3 grid grid-cols-2 gap-3 text-xs">'+
-           (knownNumber(i.subtotal)?'<div>Subtotal <b>'+moneyN(i.subtotal)+'</b></div>':'')+
-           (knownNumber(discount)?'<div>Order discount <b>−'+moneyN(discount)+'</b></div>':'')+
-           '<div>Invoice total <b>'+(knownNumber(i.total)?moneyN(i.total):'Not available')+'</b></div>'+
+           '<div class="col-span-2 font-bold text-gray-700">Price &amp; Discount Breakdown</div>'+
+           (prices.complete?'<div>Full price before discount <b>'+moneyN(prices.original)+'</b></div>'+
+             '<div>Item discounts <b class="text-amber-700">−'+moneyN(prices.itemsDiscount)+'</b></div>'+
+             '<div>After item discounts <b>'+moneyN(prices.afterItems)+'</b></div>':
+             (knownNumber(i.subtotal)?'<div>Subtotal <b>'+moneyN(i.subtotal)+'</b></div>':''))+
+           '<div>Additional invoice discount <b>'+(knownNumber(discount)?'−'+moneyN(discount):'None')+'</b></div>'+
+           (prices.adjustment!==null&&Math.abs(prices.adjustment)>0.01?
+             '<div>Other recorded adjustment <b>'+(prices.adjustment<0?'−':'+')+moneyN(Math.abs(prices.adjustment))+'</b></div>':'')+
+           '<div>Final invoice total <b class="text-green-700">'+(knownNumber(i.total)?moneyN(i.total):'Not available')+'</b></div>'+
            (knownNumber(i.deposit_applied)?'<div>Deposit applied <b>'+moneyN(i.deposit_applied)+'</b></div>':'')+
            (knownNumber(i.balance_due)?'<div>Remaining balance <b>'+moneyN(i.balance_due)+'</b></div>':'')+
          '</div>'+
