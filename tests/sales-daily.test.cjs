@@ -221,3 +221,67 @@ test('PM resubmission after manager correction requires a new review even after 
  call(m,'review',{reportId:report.id,decision:'Reviewed'});
  assert.equal(call(m,'read',{date}).reports[0].reviewStatus,'Reviewed');
 });
+
+test('approvals open the exact Daily Report in a modal without page navigation or redundant read',async()=>{
+ const report={id:'daily-3',date:'2026-11-03',userId:'sales-3',salesperson:'Pay Pheara',
+  amStatus:'Submitted',pmStatus:'Submitted',reviewStatus:'Pending',
+  tasks:[{id:'t-3',plan:'Follow up client',category:'Other',status:'Pending',result:'No reply'}],
+  additionalActivities:[],editRequests:[]};
+ const state={user:{id:'manager'},profile:{role:'manager'},page:'approvals'};
+ const nodes={content:{innerHTML:'',querySelectorAll:()=>[]},dailyManagerComment:{value:'Follow up again'}};
+ let modal='',navigation=0,reads=0,saved=0,closed=0;
+ const c={Intl,Date,console,document:{getElementById:id=>nodes[id]},
+  state,navItems:()=>[],hasAppPermission:()=>true,
+  go:async()=>{navigation++},showToast:()=>{},
+  openModal:(_,html)=>{modal=html},closeModal:()=>{closed++},
+  refreshApprovalNotifications:async()=>{},refreshAppNotifications:async()=>{},
+  db:{rpc:async name=>({data:name==='get_sales_daily_connection'?{configured:true}:{can_review:true}}),
+   functions:{invoke:async(_,req)=>{
+    const action=req.body.action;
+    if(action==='read'){reads++;return{data:{ok:true,data:{reports:[JSON.parse(JSON.stringify(report))],salesPeople:[]}}}}
+    if(action==='review'){saved++;report.reviewStatus=req.body.payload.decision;
+     report.reviewedBy='Manager';report.reviewedAt='2026-11-04T03:00:00Z';
+     return{data:{ok:true,data:{decision:req.body.payload.decision}}}}
+    return{data:{ok:true,data:{}}};
+   }}}};
+ c.window=c;vm.createContext(c);vm.runInContext(read('sales-daily-plan.js'),c);
+ assert.equal((await c.getSalesDailyApprovalQueue()).length,1);
+ const before=reads;
+ await c.openSalesDailyApprovalItem('daily-3','2026-11-03','sales-3');
+ assert.equal(navigation,0);
+ assert.equal(reads,before);
+ assert.equal(state.page,'approvals');
+ assert.match(modal,/Mark Reviewed/);
+ await c.submitDailyManagerReview('daily-3','Reviewed');
+ assert.equal(saved,1);
+ assert.equal(closed,1);
+ assert.equal(navigation,0);
+ assert.equal(report.tasks[0].status,'Pending');
+ assert.equal((await c.getSalesDailyApprovalQueue()).length,0);
+});
+test('missing evening result can open directly from an authenticated historical report',async()=>{
+ const report={id:'missing-3',date:'2026-11-02',userId:'sales-3',salesperson:'Pay Pheara',
+  amStatus:'Submitted',pmStatus:'Not Started',reviewStatus:'Pending',
+  lateSubmissionAllowed:false,tasks:[{id:'t',plan:'Morning follow-up',category:'Other'}],
+  additionalActivities:[],editRequests:[]};
+ const state={user:{id:'manager'},profile:{role:'manager'},page:'sales-daily-review'};
+ let modal='',reads=0,navigation=0;
+ const c={Intl,Date,console,document:{getElementById:()=>null},
+  state,navItems:()=>[],hasAppPermission:()=>true,go:async()=>{navigation++},
+  showToast:()=>{},openModal:(_,html)=>{modal=html},closeModal:()=>{},
+  db:{rpc:async()=>({data:{configured:true}}),
+   functions:{invoke:async(_,req)=>{
+    if(req.body.action==='read'){reads++;
+     return{data:{ok:true,data:{reports:[JSON.parse(JSON.stringify(report))],
+      policyVersion:'next-day-10am-20261104',salesPeople:[]}}}}
+    return{data:{ok:true,data:{}}};
+   }}}};
+ c.window=c;vm.createContext(c);vm.runInContext(read('sales-daily-plan.js'),c);
+ await c.getSalesDailyAttention();
+ const before=reads;
+ await c.openSalesDailyMissingReport('missing-3','2026-11-02','sales-3');
+ assert.equal(reads,before);
+ assert.equal(navigation,0);
+ assert.match(modal,/Evening Result not submitted/);
+ assert.doesNotMatch(modal,/Mark Reviewed/);
+});
