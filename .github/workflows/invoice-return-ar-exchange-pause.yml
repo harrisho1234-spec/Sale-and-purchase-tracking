@@ -8,6 +8,7 @@ on:
       - 'tracking-redesign.js'
       - 'index.html'
       - 'tests/invoice-return-ar-and-exchange-pause.test.cjs'
+      - 'tests/invoice-price-breakdown.test.cjs'
       - 'database/20261104_lock_new_exchange_and_show_return_ar.sql'
       - '.github/workflows/invoice-return-ar-exchange-pause.yml'
   workflow_dispatch:
