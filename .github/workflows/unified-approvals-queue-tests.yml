@@ -1,0 +1,31 @@
+name: Unified approval queues and notifications
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'approval-notifications.js'
+      - 'sales-daily-plan.js'
+      - 'index.html'
+      - 'tests/unified-approvals-queue.test.cjs'
+      - 'database/20261104_unified_review_attention_for_cn_do_stock.sql'
+      - 'database/20261104_cn_queue_requested_timestamp.sql'
+      - '.github/workflows/unified-approvals-queue-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  unified-approvals:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify script syntax
+        run: |
+          node --check approval-notifications.js
+          node --check sales-daily-plan.js
+      - name: Test all approval queues and role permissions
+        run: node --test tests/unified-approvals-queue.test.cjs
+      - name: Verify daily report sharing still works
+        run: node --test tests/sales-daily-share-alignment.test.cjs
