@@ -1090,7 +1090,7 @@
     }
   }
   async function checkQuotedSourceBeforeSave(ctx){
-    const current=await db.from(TABLE).select('id,status,customer_id,source_payload').eq('id',ctx.id).single();
+    const current=await db.from(TABLE).select('id,status,customer_id,source_record_id,source_quote_no,source_salesperson,source_payload,customer_name,customer_phone').eq('id',ctx.id).single();
     if(current.error)throw current.error;
     if(current.data.status==='converted')throw Error('This quotation was already converted. Open its linked Sales Order instead.');
     if(String(current.data.customer_id||'')!==String(ctx.customerId||''))
