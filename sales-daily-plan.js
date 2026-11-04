@@ -614,7 +614,7 @@ async function reload(){
  }
 }
 // Personal in-app Daily Plan alerts remain in the authenticated Google Sheet.
-const dailyAttentionCache={userId:null,at:0,data:null,promise:null};
+const dailyAttentionCache={userId:null,at:0,data:null,promise:null,revision:0};
 window.getSalesDailyAttention=async()=>{
  if(!sales()&&!review())return{count:0,missingCount:0,unfinishedCount:0,missing:[],unfinished:[],target:'dashboard'};
  const id=String(state.user?.id||''),role=String(state.profile?.role||'');
@@ -622,6 +622,7 @@ window.getSalesDailyAttention=async()=>{
   return dailyAttentionCache.data;
  if(dailyAttentionCache.userId===id&&dailyAttentionCache.role===role&&dailyAttentionCache.promise)return dailyAttentionCache.promise;
  dailyAttentionCache.userId=id;dailyAttentionCache.role=role;
+ const revision=++dailyAttentionCache.revision;
  const pending=(async()=>{
   await access();
   if(!ui.config?.configured)return{count:0,missingCount:0,unfinishedCount:0,missing:[],unfinished:[],target:'dashboard'};
@@ -645,7 +646,7 @@ window.getSalesDailyAttention=async()=>{
   // a manager-approval request until PM is actually submitted.
   const result={missing,unfinished,missingCount:missing.length,unfinishedCount:unfinished.length,
    count:missing.length+unfinished.length,target:review()?R:P,policyVersion:res.policyVersion||''};
-  if(dailyAttentionCache.userId!==id||dailyAttentionCache.role!==role||String(state.user?.id||'')!==id)return{count:0,missingCount:0,unfinishedCount:0,missing:[],unfinished:[],target:'dashboard'};
+  if(dailyAttentionCache.revision!==revision||dailyAttentionCache.userId!==id||dailyAttentionCache.role!==role||String(state.user?.id||'')!==id)return{count:0,missingCount:0,unfinishedCount:0,missing:[],unfinished:[],target:'dashboard'};
   dailyAttentionCache.data=result;dailyAttentionCache.at=Date.now();
   return result;
  })();
@@ -705,10 +706,10 @@ window.allowSalesDailyLatePm=async(id,date)=>{
 
 // Unified Approvals can inspect recent TEAM reviews through the existing
 // authenticated Google Sheet relay. No Daily Plan data is copied to Supabase.
-const dailyApprovalCache={userId:null,at:0,data:null,promise:null};
+const dailyApprovalCache={userId:null,at:0,data:null,promise:null,revision:0};
 window.invalidateSalesDailyApprovals=()=>{
- dailyApprovalCache.userId=null;dailyApprovalCache.at=0;dailyApprovalCache.data=null;dailyApprovalCache.promise=null;
- dailyAttentionCache.userId=null;dailyAttentionCache.at=0;dailyAttentionCache.data=null;dailyAttentionCache.promise=null;
+ dailyApprovalCache.revision++;dailyApprovalCache.userId=null;dailyApprovalCache.at=0;dailyApprovalCache.data=null;dailyApprovalCache.promise=null;
+ dailyAttentionCache.revision++;dailyAttentionCache.userId=null;dailyAttentionCache.at=0;dailyAttentionCache.data=null;dailyAttentionCache.promise=null;
  window.refreshSalesDailyAttention?.();
  if(typeof window.refreshApprovalNotifications==='function')window.refreshApprovalNotifications();
  if(typeof window.refreshAppNotifications==='function')Promise.resolve(window.refreshAppNotifications()).catch(err=>console.warn('Daily bell refresh:',err.message||err));
@@ -720,6 +721,7 @@ window.getSalesDailyApprovalQueue=async()=>{
    return dailyApprovalCache.data;
  if(dailyApprovalCache.userId===id&&dailyApprovalCache.promise)return dailyApprovalCache.promise;
  dailyApprovalCache.userId=id;
+ const revision=++dailyApprovalCache.revision;
  const pending=(async()=>{
    await access();
    if(!ui.config?.configured)return [];
@@ -738,7 +740,7 @@ window.getSalesDailyApprovalQueue=async()=>{
    });
    // A user may sign out while Google Sheets is responding. Never cache or
    // surface the old account's review queue under the next account.
-   if(dailyApprovalCache.userId!==id||String(state.user?.id||'')!==id)return [];
+   if(dailyApprovalCache.revision!==revision||dailyApprovalCache.userId!==id||String(state.user?.id||'')!==id)return [];
    dailyApprovalCache.at=Date.now();
    dailyApprovalCache.data=rows;
    return rows;
