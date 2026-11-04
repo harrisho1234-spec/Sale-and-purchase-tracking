@@ -9,6 +9,10 @@
   let quotationSection='history';
   let handoffBusy=false;
   let activeConversionId=null;
+  let activeConversionSnapshot=null;
+  let conversionSaving=false;
+  let quotationAnalyticsYear='all';
+  let quotationAnalyticsRep='all';
   const pendingDeletions=new Set();
   function canViewQuotations(){
     return typeof window.hasAppPermission!=='function'||window.hasAppPermission('quotations.view');
@@ -156,6 +160,57 @@
       gross,lineDiscounts,lineNet,orderDiscountPct:pct,orderDiscountFlat:flat,
       orderDiscount,total:round2(Math.max(lineNet-orderDiscount,0))};
   }
+  // Compare business fields, not JSON serialization order or transient UI flags.
+  function quotationBusinessSignature(recordOrRow){
+    const s=quoteSummary(recordOrRow);
+    return JSON.stringify({
+      number:s.quoteNo,revision:quotationRevision(s.sourceState),
+      customer:s.customerName,phone:normalizeCustomerPhone(s.customerPhone),
+      gross:s.gross,lineDiscounts:s.lineDiscounts,
+      orderDiscount:s.orderDiscount,total:s.total,
+      lines:s.lines.map(l=>[l.key,l.kind,l.code,l.name,l.qty,l.unitPrice,l.discountAmount,l.note,l.section,l.sourceSetName])
+    });
+  }
+  function normalizeCustomerPhone(phone){
+    let digits=String(phone||'').replace(/\D/g,'');
+    if(digits.startsWith('00855'))digits=digits.slice(2);
+    if(digits.startsWith('855'))digits='0'+digits.slice(3);
+    if(digits.length<8||digits.length>12)return '';
+    return digits;
+  }
+  function candidateCustomers(summary){
+    const phone=normalizeCustomerPhone(summary.customerPhone);
+    const name=lower(summary.customerName).replace(/\s+/g,' ').trim();
+    return (state.customers||[]).map(c=>{
+      const exactPhone=!!phone&&normalizeCustomerPhone(c.phone)===phone;
+      const exactName=name.length>2&&lower(c.name).replace(/\s+/g,' ').trim()===name;
+      return {customer:c,score:exactPhone?2:exactName?1:0,label:exactPhone?'Phone match':'Name match'};
+    }).filter(x=>x.score>0).sort((a,b)=>b.score-a.score).slice(0,5);
+  }
+  function quotationChangeNotice(snapshot,latest){
+    if(!latest)return{changed:false,unchecked:true};
+    const oldRev=quotationRevision(snapshot?.source_payload||{});
+    const newerRev=quotationRevision(parseState(latest));
+    const changed=quotationBusinessSignature(snapshot)!==quotationBusinessSignature(latest);
+    return {changed,unchecked:false,newerRev,oldRev};
+  }
+  async function verifyQuotationSnapshot(row){
+    const latest=await jsonpRecord(row.source_record_id);
+    if(!latest)throw Error('Could not verify the latest saved Showroom quotation. Try again.');
+    return quotationChangeNotice(row,latest);
+  }
+  window.refreshImportedQuotation=async function(id){
+    if(!canCreateQuotations())return showToast('Quotation import permission required.','err');
+    const row=await db.from(TABLE).select('id,status,source_record_id').eq('id',id).single();
+    if(row.error)return showToast(row.error.message,'err');
+    if(row.data.status==='converted')return showToast('Converted quotations are preserved and cannot be refreshed.','err');
+    if(!window.confirm('Update this imported quotation from the latest saved Showroom revision? The prior snapshot remains in Quotation History. Any in-progress conversion should be reviewed again.'))return;
+    try{
+      await importSavedRecord(row.data.source_record_id);
+      showToast('Latest Showroom quotation imported. Review the price, discounts, notes and customer before conversion.');
+      await window.reviewImportedQuotation(id);
+    }catch(e){showToast(e.message||'Could not update quotation','err')}
+  };
   function jsonpRecord(recordId){
     return new Promise((resolve,reject)=>{
       const cb='__limperialQuoteImport_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
