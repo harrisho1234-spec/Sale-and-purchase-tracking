@@ -658,10 +658,10 @@
       const date=String(row.issue_date||row.confirmed_at||row.saved_at||row.created_at||'').slice(0,10);
       const yr=date.slice(0,4);
       const amount=Math.max(0,num(row.amount,quoteSummary(row).total));
-      const imported=!!link;
+      const isImported=!!link;
       const converted=link?.status==='converted'&&!!link.converted_sales_order_id;
       const age=date?Math.max(0,Math.floor((Date.now()-Date.parse(date+'T00:00:00Z'))/86400000)):0;
-      return{row,link,salesperson,date,year:yr,amount,imported,converted,age};
+      return{row,link,salesperson,date,year:yr,amount,imported:isImported,converted,age};
     });
     const filtered=available.filter(x=>(year==='all'||x.year===year)&&(rep==='all'||x.salesperson===rep));
     const group=new Map();
