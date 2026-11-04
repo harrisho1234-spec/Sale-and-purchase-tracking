@@ -56,7 +56,7 @@ function authenticate(token){
  return access;
 }
 function dispatch(ss,actor,action,p){
- if(action==='ping')return{connected:true,sheet:ss.getName(),role:actor.role};
+ if(action==='ping')return{connected:true,sheet:ss.getName(),role:actor.role,policyVersion:'next-day-10am-20261104'};
  if(action==='append_todo_am')return appendTodoAm(ss,actor,p);
  if(action==='todo_list')return todoList(ss,actor);
  if(action==='todo_history')return todoHistory(ss,actor,p);
@@ -137,7 +137,7 @@ function readReports(ss,a,p){
  const editIndex={};editRows(ss).forEach(x=>(editIndex[x.row[1]]||(editIndex[x.row[1]]=[])).push({id:x.row[0],section:x.row[3],reason:x.row[4],status:x.row[5],requestedAt:x.row[6],decisionNote:x.row[9]}));
  const lateGrants=allowedLatePmReports(ss);
  return{reports:all.map(r=>({...reportOutput(r,(taskIndex[r[0]]||[]).sort((x,y)=>x.sort-y.sort)),editRequests:editIndex[r[0]]||[],lateSubmissionAllowed:lateGrants.has(String(r[0])),amTodoAmended:amended.has(String(r[0])),additionalActivities:extraIndex[r[0]]||[]})),
- salesPeople:a.can_review?a.sales_people||[]:[],today:today()};
+ salesPeople:a.can_review?a.sales_people||[]:[],today:today(),policyVersion:'next-day-10am-20261104'};
 }
 function buildTask(t,date,user,reportId,sort,old){
  if(!t||typeof t!=='object')throw Error('Invalid planned task');
