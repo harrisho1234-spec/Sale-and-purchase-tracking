@@ -108,7 +108,7 @@ test('share report escapes user-supplied text and uses cache-busted script',()=>
   const html=render('PM',adjusted);
   assert.ok(html.includes('&lt;script&gt;alert(1)&lt;/script&gt;'));
   assert.ok(!html.includes('<script>alert(1)</script>'));
-  assert.match(index,/sales-daily-plan\.js\?v=20261103-hide-master-link-for-sales1/);
+  assert.match(index,/sales-daily-plan\.js\?v=20261104-separate-import-showroom-online1/);
 });
 
 test('Google Sheets master shortcut is hidden for Sales and other non-management roles',()=>{
