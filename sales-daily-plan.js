@@ -318,6 +318,20 @@ const formatDailySubmittedAt=value=>{
  if(Number.isNaN(date.getTime()))return String(value);
  return new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Phnom_Penh',day:'2-digit',month:'short',year:'numeric',hour:'numeric',minute:'2-digit',hour12:true}).format(date)+' (Phnom Penh)';
 };
+// Distinguish the salesperson's task outcome from the manager's report review.
+// A morning plan without a submitted PM result is NOT awaiting manager approval.
+function managerReviewStatus(r){
+ if(r.reviewStatus==='Reviewed')return 'Reviewed';
+ if(r.reviewStatus==='Changes Requested')return 'Corrections Requested';
+ return r.pmStatus==='Submitted'?'Awaiting Manager Review':'Not Ready (PM not submitted)';
+}
+function managerReviewAudit(r){
+ if(!['Reviewed','Changes Requested'].includes(r.reviewStatus))return '';
+ const action=r.reviewStatus==='Reviewed'?'Reviewed by ':'Corrections requested by ';
+ return ' · '+action+h(r.reviewedBy||'Management')+
+  (r.reviewedAt?' on '+h(formatDailySubmittedAt(r.reviewedAt)):'');
+}
+function managerTaskStatus(t){return t.status==='Pending'?'Pending / Outstanding':(t.status||'Not updated')}
 // Use a Khmer-capable face in both the on-screen share card and printed/PDF output.
 function ensureDailyKhmerFont(){
  if(document.getElementById('salesDailyKhmerFont'))return;
@@ -447,14 +461,14 @@ async function renderManager(){
  '<div class="grid grid-cols-2 lg:grid-cols-4 gap-3">'+[
   ['Reports',reports.length],['Morning Plans Submitted',count('amStatus','Submitted')],
   ['Evening Results Submitted',count('pmStatus','Submitted')],
-  ['PM Overdue',reports.filter(isOverdue).length],['PM Submitted Late',reports.filter(isLate).length],['Awaiting Review',reports.filter(r=>r.pmStatus==='Submitted'&&r.reviewStatus!=='Reviewed').length],['Manager Reviewed',count('reviewStatus','Reviewed')]
+  ['PM Overdue',reports.filter(isOverdue).length],['PM Submitted Late',reports.filter(isLate).length],['Awaiting Manager Review',reports.filter(r=>managerReviewStatus(r)==='Awaiting Manager Review').length],['Manager Reviewed',count('reviewStatus','Reviewed')]
  ].map(([n,v])=>'<div class="bg-white border rounded-2xl p-4"><div class="text-[10px] font-bold uppercase text-gray-500">'+n+'</div><div class="font-black text-2xl mt-2">'+v+'</div></div>').join('')+'</div>'+
  '<div data-daily-weekly>'+weeklyPanel()+'</div>'+compliancePanel+'<section class="bg-white border rounded-2xl overflow-hidden">'+
  '<div class="p-4 border-b font-bold text-sm">Daily Reports · '+reports.length+'</div>'+
  (reports.length?'<div class="divide-y">'+reports.map(r=>'<div class="p-4 flex flex-wrap items-center gap-3">'+
  '<div class="flex-1 min-w-[210px]"><b class="text-sm">'+h(r.salesperson)+'</b><p class="text-xs text-gray-500 mt-1">'+h(r.date)+' · '+r.tasks.length+' tasks</p>'+
  '<p class="text-[11px] mt-1">AM: '+h(r.amStatus||'Draft')+' · PM: '+h(r.pmStatus||'Not Started')+
- ' · Review: '+h(r.reviewStatus||'Pending')+(r.amTodoAmended?' · AM REVISED (TO-DO)':'')+(isOverdue(r)?' · PM OVERDUE':isLate(r)?' · PM LATE':'')+'</p></div>'+
+ ' · Manager review: '+h(managerReviewStatus(r))+managerReviewAudit(r)+(r.amTodoAmended?' · AM REVISED (TO-DO)':'')+(isOverdue(r)?' · PM OVERDUE':isLate(r)?' · PM LATE':'')+'</p></div>'+
  '<button onclick="openDailyManagerReport(\''+h(r.id)+'\')" class="'+lightButton+'">View Plan & Result</button>'+(state.profile?.role==='super_admin'?'<button onclick="deleteSalesDailyReport(\''+h(r.id)+'\')" class="px-3 py-2 rounded-xl border border-red-200 text-red-700 text-xs font-bold">Delete</button>':'')+'</div>').join('')+'</div>':
  '<div class="p-10 text-sm text-gray-500 text-center">No Sales reports found for the selected date range.</div>')+'</section></div>';
 }
@@ -471,12 +485,13 @@ window.openDailyManagerReport=id=>{
  const rows=r.tasks.map((t,i)=>'<div class="rounded-xl border p-3 bg-white"><b class="text-xs">'+(i+1)+'. '+h(t.plan)+'</b>'+
  '<div class="text-[11px] text-gray-500 mt-1">'+h(t.category)+(t.customerName?' · '+h(t.customerName):'')+'</div>'+
  '<div class="grid sm:grid-cols-2 gap-2 mt-2 text-xs"><div><b>Planned:</b> '+h(t.plannedFollowup||'No date')+'</div>'+
- '<div><b>Evening status:</b> '+h(t.status||'Not updated')+'</div></div>'+
+ '<div><b>Task outcome:</b> '+h(managerTaskStatus(t))+'</div></div>'+
  '<div class="text-xs mt-2"><b>Actual result:</b> '+h(t.result||'Not submitted')+'</div>'+
  (t.nextFollowup?'<div class="text-xs text-blue-700 mt-2">Next follow-up: '+h(t.nextFollowup)+'</div>':'')+'</div>').join('');
  openModal('Daily Plan & Result — '+h(r.salesperson)+' · '+h(r.date),
  '<div class="space-y-4">'+requestActions+'<div class="rounded-xl bg-gray-50 p-3 text-xs">AM: '+h(r.amStatus)+' · PM: '+h(r.pmStatus)+
- ' · Review: '+h(r.reviewStatus||'Pending')+'</div>'+rows+
+ '</div><div class="mt-1"><b>Manager review:</b> '+h(managerReviewStatus(r))+managerReviewAudit(r)+'</div></div>'+rows+
+ '<p class="text-[11px] text-gray-500">Manager review and task completion are separate. A reviewed report can still contain unfinished tasks.</p>'+
  ((r.additionalActivities||[]).length?'<div class="rounded-xl border p-3"><b class="text-sm">Additional Activities (Unplanned)</b>'+(r.additionalActivities||[]).map(x=>'<div class="text-xs border-b py-2"><b>'+h(x.category)+'</b>'+(x.customerName?' · '+h(x.customerName):'')+'<div>'+h(x.result)+'</div>'+(x.nextFollowup?'<div>Next follow-up: '+h(x.nextFollowup)+'</div>':'')+(x.sourceId?'<button class="underline text-blue-700" onclick="openDailyActivitySource(\''+h(x.sourceType)+'\',\''+h(x.sourceId)+'\')">Open original activity ↗</button>':'')+'</div>').join('')+'</div>':'')+
  (r.managerComment?'<p class="text-xs text-gray-600">Previous Manager comment: '+h(r.managerComment)+'</p>':'')+
  (r.pmStatus==='Submitted'&&r.reviewStatus!=='Reviewed'?
@@ -486,10 +501,38 @@ window.openDailyManagerReport=id=>{
  '<button onclick="submitDailyManagerReview(\''+h(r.id)+'\',\'Reviewed\')" class="'+actionButton+'">Mark Reviewed</button></div>':'')+
  '<button onclick="closeModal()" class="'+lightButton+'">Close</button></div>');
 };
+let managerReviewSaving=false;
 window.submitDailyManagerReview=async(id,decision)=>{
+ if(managerReviewSaving)return;
+ const report=ui.reports.find(r=>String(r.id)===String(id));
+ if(!review()||!report||report.pmStatus!=='Submitted'||report.reviewStatus==='Reviewed')
+  return toast('This report is not awaiting manager review. Refresh before taking action.',true);
  const comment=elem('dailyManagerComment')?.value||'';
- try{await api('review',{reportId:id,decision,comment});closeModal();toast('Review recorded in Google Sheets');window.invalidateSalesDailyApprovals?.();await reload()}
- catch(e){toast(e.message,true)}
+ if(decision==='Changes Requested'&&!comment.trim())return toast('Add a reason for the requested changes.',true);
+ managerReviewSaving=true;
+ let sent=false;
+ try{
+  await api('review',{reportId:id,decision,comment});
+  sent=true;
+  // Do not claim success until the authoritative Google Sheet returns the saved decision.
+  const result=await api('read',{start:report.date,end:report.date,userId:report.userId});
+  const updated=(result.reports||[]).find(r=>String(r.id)===String(id));
+  if(!updated||updated.reviewStatus!==decision){
+   toast('Review was submitted, but its saved status could not be confirmed. Refresh before trying again.',true);
+   return;
+  }
+  closeModal();
+  await reload();
+  toast(decision==='Reviewed'
+   ?'Manager review completed. Unfinished task outcomes have not been changed.'
+   :'Corrections requested. The salesperson can update the Evening Result.');
+  // The shared approval count is refreshed only after the saved review is confirmed.
+  window.invalidateSalesDailyApprovals?.();
+ }catch(e){
+  toast(sent
+   ?'Review was submitted, but the updated report could not be loaded. Refresh before trying again.'
+   :'Review could not be saved: '+(e.message||e),true);
+ }finally{managerReviewSaving=false;}
 };
 async function reload(){
  resetAccount();
