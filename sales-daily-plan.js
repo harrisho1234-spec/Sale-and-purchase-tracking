@@ -564,6 +564,52 @@ async function reload(){
    '<div class="mt-3"><button onclick="reloadDailyReport()" class="'+lightButton+'">Retry</button></div></div>';
  }
 }
+// Unified Approvals can inspect recent TEAM reviews through the existing
+// authenticated Google Sheet relay. No Daily Plan data is copied to Supabase.
+const dailyApprovalCache={userId:null,at:0,data:null,promise:null};
+window.invalidateSalesDailyApprovals=()=>{
+ dailyApprovalCache.userId=null;dailyApprovalCache.at=0;dailyApprovalCache.data=null;dailyApprovalCache.promise=null;
+ if(typeof window.refreshApprovalNotifications==='function')window.refreshApprovalNotifications();
+};
+window.getSalesDailyApprovalQueue=async()=>{
+ if(!review())return [];
+ const id=String(state.user?.id||'');
+ if(dailyApprovalCache.userId===id&&dailyApprovalCache.data&&Date.now()-dailyApprovalCache.at<90000)
+   return dailyApprovalCache.data;
+ if(dailyApprovalCache.userId===id&&dailyApprovalCache.promise)return dailyApprovalCache.promise;
+ dailyApprovalCache.userId=id;
+ const pending=(async()=>{
+   await access();
+   if(!ui.config?.configured)return [];
+   const res=await api('read',{start:backDays(today(),30),end:today(),userId:null});
+   const rows=[];
+   (res.reports||[]).forEach(r=>{
+     (r.editRequests||[]).filter(x=>x.status==='Pending').forEach(x=>rows.push({
+       id:'daily-edit:'+String(x.id),kind:'edit',report_id:String(r.id),date:r.date,
+       salesperson:r.salesperson||'Sales',request_id:String(x.id),section:x.section||'',
+       reason:x.reason||'',requested_at:x.requestedAt||x.createdAt||r.pmSubmittedAt||r.amSubmittedAt||r.date
+     }));
+     if(r.pmStatus==='Submitted'&&!['Reviewed','Changes Requested'].includes(r.reviewStatus))
+       rows.push({id:'daily-review:'+String(r.id),kind:'review',
+         report_id:String(r.id),date:r.date,salesperson:r.salesperson||'Sales',
+         requested_at:r.pmSubmittedAt||r.date});
+   });
+   dailyApprovalCache.at=Date.now();
+   dailyApprovalCache.data=rows;
+   return rows;
+ })();
+ dailyApprovalCache.promise=pending;
+ try{return await pending}finally{if(dailyApprovalCache.promise===pending)dailyApprovalCache.promise=null}
+};
+window.openSalesDailyApprovalItem=async(reportId,reportDate,personId)=>{
+ if(!review())return toast('Team Daily Review permission required',true);
+ ui.start=reportDate||today();ui.end=reportDate||today();ui.person=personId||'';
+ await window.go(R);
+ if(ui.reports?.some(r=>String(r.id)===String(reportId)))
+   window.openDailyManagerReport(String(reportId));
+ else toast('Report is no longer in the review list. Select a wider date range.',true);
+};
+
 window.reloadDailyReport=reload;
 const oldNav=window.navItems;
 if(typeof oldNav==='function')window.navItems=function(){
