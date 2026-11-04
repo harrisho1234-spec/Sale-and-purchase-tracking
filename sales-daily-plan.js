@@ -9,9 +9,9 @@ const STATUSES=['Completed','Partially Completed','Pending','Rescheduled','Cance
 const h=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
 const today=()=>{const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Phnom_Penh',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());const m=Object.fromEntries(parts.filter(x=>x.type!=='literal').map(x=>[x.type,x.value]));return `${m.year}-${m.month}-${m.day}`;};
 const pmDeadline=(date)=>{const d=new Date(date+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+1);return d.toISOString().slice(0,10)+'T10:00:00+07:00';};
-const isOverdue=r=>r?.amStatus==='Submitted'&&r?.pmStatus!=='Submitted'&&r?.reviewStatus!=='Changes Requested'&&Date.now()>Date.parse(r.pmDeadline||pmDeadline(r.date));
+const isOverdue=r=>initialPmMissing(r)&&Date.now()>Date.parse(r.pmDeadline||pmDeadline(r.date));
 const isLate=r=>r?.pmStatus==='Submitted'&&!!r.pmSubmittedAt&&Date.parse(r.pmSubmittedAt)>Date.parse(r.pmDeadline||pmDeadline(r.date));
-const initialPmMissing=r=>r?.amStatus==='Submitted'&&r?.pmStatus!=='Submitted'&&r?.reviewStatus!=='Changes Requested';
+const initialPmMissing=r=>r?.amStatus==='Submitted'&&r?.pmStatus!=='Submitted'&&r?.reviewStatus!=='Changes Requested'&&!(r?.editRequests||[]).some(x=>x.section==='PM'&&x.status==='Approved');
 const unfinishedTask=t=>['Pending','Partially Completed','Rescheduled'].includes(t?.status);
 const firstPmLocked=r=>r&&initialPmMissing(r)&&isOverdue(r)&&!r.lateSubmissionAllowed;
 function latePmHint(r){return firstPmLocked(r)?'The 10:00 AM next-day deadline has passed. Save your draft and ask your Manager/Admin to allow a late submission.':''}
