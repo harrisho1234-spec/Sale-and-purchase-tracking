@@ -176,6 +176,7 @@ async function saveAm(submit){
   if(linked.some(id=>!retained.has(id)))toast('Plan saved, but the To-Do link was not retained. Update your Google Apps Script deployment to enable the compact-view label.',true);
   else toast(submit?'Morning plan submitted':'Morning draft saved');
   await reload();
+  window.invalidateSalesDailyApprovals?.();
  }catch(e){toast(e.message,true)}finally{ui.loading=false}
 }
 window.saveSalesDailyMorning=saveAm;
@@ -304,7 +305,7 @@ window.saveSalesDailyEvening=async submit=>{
  const results=capturePm();const additionalActivities=captureAdditional();if(submit&&results.some(x=>!x.status))return toast('Update the status of every planned task before submitting',true);
  if(submit&&results.some(x=>!x.result.trim()))return toast('Write an actual outcome for every morning task before submitting',true);
  ui.loading=true;
- try{await api(submit?'submit_pm':'save_pm',{date:ui.date,results,additionalActivities});toast(submit?'Evening results submitted':'Evening draft saved');await reload()}
+ try{await api(submit?'submit_pm':'save_pm',{date:ui.date,results,additionalActivities});toast(submit?'Evening results submitted for manager review':'Evening draft saved');await reload();window.invalidateSalesDailyApprovals?.()}
  catch(e){toast(e.message,true)}finally{ui.loading=false}
 };
 window.closeSalesDailyShare=()=>document.getElementById('salesDailyShareOverlay')?.remove();
@@ -447,6 +448,7 @@ function renderSalesHome(){
  (report?.editRequests?.length?'<div class="rounded-xl border bg-white p-3"><b class="text-sm">Edit Requests</b>'+report.editRequests.map(x=>'<p class="text-xs mt-2">'+h(x.section)+' · '+h(x.status)+' · '+h(x.reason)+(x.decisionNote?' · '+h(x.decisionNote):'')+'</p>').join('')+'</div>':'')+
  '<div data-daily-weekly>'+weeklyPanel()+'</div>'+'<section class="rounded-2xl border bg-white p-4"><div class="flex justify-between gap-2 items-center"><div><b class="text-sm">Recorded activity in the app</b><p class="text-xs text-gray-500 mt-1">CRM follow-ups, Showroom/Online events and order activity. These do not automatically count as completed tasks.</p></div>'+
  '<button onclick="showDailyActivitySuggestions()" class="'+lightButton+'">View Today’s Activity</button></div><div id="dailyActivitySuggestions" class="mt-3"></div></section></div>';
+ window.refreshSalesDailyAttention?.();
 }
 async function renderManager(){
  const reports=ui.reports,people=ui.people;
@@ -457,6 +459,7 @@ async function renderManager(){
  '<div class="overflow-x-auto"><table class="text-xs w-full text-left"><thead><tr class="border-b"><th class="p-2">Salesperson</th><th class="p-2">AM Plans</th><th class="p-2">PM Submitted</th><th class="p-2">PM Overdue</th><th class="p-2">Late PM</th><th class="p-2">PM Submission Rate</th></tr></thead><tbody>'+
  (compliance.length?compliance.map(x=>'<tr class="border-b"><td class="p-2">'+h(x.name)+'</td><td class="p-2">'+x.plans+'</td><td class="p-2">'+x.pm+'</td><td class="p-2">'+x.overdue+'</td><td class="p-2">'+x.late+'</td><td class="p-2">'+Math.round(x.pm/x.plans*100)+'%</td></tr>').join(''):'<tr><td colspan="6" class="p-3 text-gray-500">No submitted morning plans for this range.</td></tr>')+'</tbody></table></div></section>';
  root().innerHTML='<div class="max-w-7xl mx-auto space-y-4">'+header('Team Daily Review','Compare morning plans and evening results for Sales-role staff only')+
+ '<div id="dailyManagerAttention" aria-live="polite"></div>'+
  '<div class="rounded-2xl border bg-white p-4 flex flex-wrap items-end gap-3">'+
  '<label class="text-xs font-semibold">From<input id="dailyReviewFrom" class="'+common+'" type="date" value="'+h(from)+'"></label>'+
  '<label class="text-xs font-semibold">To<input id="dailyReviewTo" class="'+common+'" type="date" value="'+h(to)+'"></label>'+
@@ -476,6 +479,7 @@ async function renderManager(){
  ' · Manager review: '+h(managerReviewStatus(r))+managerReviewAudit(r)+(r.amTodoAmended?' · AM REVISED (TO-DO)':'')+(isOverdue(r)?' · PM OVERDUE':isLate(r)?' · PM LATE':'')+'</p></div>'+
  '<button onclick="openDailyManagerReport(\''+h(r.id)+'\')" class="'+lightButton+'">View Plan & Result</button>'+(state.profile?.role==='super_admin'?'<button onclick="deleteSalesDailyReport(\''+h(r.id)+'\')" class="px-3 py-2 rounded-xl border border-red-200 text-red-700 text-xs font-bold">Delete</button>':'')+'</div>').join('')+'</div>':
  '<div class="p-10 text-sm text-gray-500 text-center">No Sales reports found for the selected date range.</div>')+'</section></div>';
+ window.refreshSalesDailyAttention?.();
 }
 window.reloadSalesDailyReview=async()=>{
  ui.start=elem('dailyReviewFrom')?.value||ui.start;
@@ -584,13 +588,8 @@ async function reload(){
      }catch(_){sessionStorage.removeItem('salesDailyTodoDraft')}
    }
    reportLoaded=true;renderSalesHome();
-   // Background reminder: check previously submitted mornings without blocking today's editor.
-   api('read',{start:backDays(ui.date,7),end:backDays(ui.date,1)}).then(history=>{
-     if(seq!==ui.seq||state.page!==P||state.user?.id!==userId)return;
-     const missed=(history.reports||[]).filter(r=>r.userId===userId&&isOverdue(r)).sort((a,b)=>b.date.localeCompare(a.date));
-     const holder=elem('salesDailyPriorReminder');
-     if(holder&&missed.length)holder.innerHTML='<div class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"><b>'+missed.length+' overdue Evening Result'+(missed.length===1?'':'s')+'</b><p class="mt-1">Your previous morning plans are waiting for evening outcomes. Open the oldest outstanding report and submit the actual results.</p><button type="button" onclick="openOverdueSalesDaily(\''+h(missed[missed.length-1].date)+'\')" class="'+lightButton+' mt-2">Open '+h(missed[missed.length-1].date)+'</button></div>';
-   }).catch(err=>console.warn('Previous daily report reminders unavailable:',err.message));
+   // Role-scoped alerts are refreshed from the authenticated Google Sheet.
+
   }else{
    // Render report rows as soon as available; summary runs independently.
    let reportLoaded=false;
@@ -705,6 +704,8 @@ window.allowSalesDailyLatePm=async(id,date)=>{
 const dailyApprovalCache={userId:null,at:0,data:null,promise:null};
 window.invalidateSalesDailyApprovals=()=>{
  dailyApprovalCache.userId=null;dailyApprovalCache.at=0;dailyApprovalCache.data=null;dailyApprovalCache.promise=null;
+ dailyAttentionCache.userId=null;dailyAttentionCache.at=0;dailyAttentionCache.data=null;dailyAttentionCache.promise=null;
+ window.refreshSalesDailyAttention?.();
  if(typeof window.refreshApprovalNotifications==='function')window.refreshApprovalNotifications();
 };
 window.getSalesDailyApprovalQueue=async()=>{
