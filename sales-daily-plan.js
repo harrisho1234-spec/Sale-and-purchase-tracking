@@ -13,7 +13,7 @@ const isOverdue=r=>initialPmMissing(r)&&Date.now()>Date.parse(r.pmDeadline||pmDe
 const isLate=r=>r?.pmStatus==='Submitted'&&!!r.pmSubmittedAt&&Date.parse(r.pmSubmittedAt)>Date.parse(r.pmDeadline||pmDeadline(r.date));
 const initialPmMissing=r=>r?.amStatus==='Submitted'&&r?.pmStatus!=='Submitted'&&r?.reviewStatus!=='Changes Requested'&&!(r?.editRequests||[]).some(x=>x.section==='PM'&&x.status==='Approved');
 const unfinishedTask=t=>['Pending','Partially Completed','Rescheduled'].includes(t?.status);
-const firstPmLocked=r=>r&&initialPmMissing(r)&&isOverdue(r)&&!r.lateSubmissionAllowed;
+const firstPmLocked=r=>ui.policyVersion==='next-day-10am-20261104'&&r&&initialPmMissing(r)&&isOverdue(r)&&!r.lateSubmissionAllowed;
 function latePmHint(r){return firstPmLocked(r)?'The 10:00 AM next-day deadline has passed. Save your draft and ask your Manager/Admin to allow a late submission.':''}
 const backDays=(d,n)=>{const x=new Date(d+'T12:00:00Z');x.setUTCDate(x.getUTCDate()-n);return x.toISOString().slice(0,10)};
 const can=(key,roles)=>typeof window.hasAppPermission==='function'?!!window.hasAppPermission(key):roles.includes(state?.profile?.role||'');
@@ -22,7 +22,7 @@ const review=()=>['manager','admin','super_admin'].includes(state?.profile?.role
   (can('sales_daily.review_team',['manager','admin','super_admin'])||can('sales_daily.review_all',['admin','super_admin']));
 const elem=id=>document.getElementById(id);
 const allowed=(page)=>page===P?sales():page===R?review():false;
-const ui={access:null,config:null,date:today(),start:today(),end:today(),person:'',report:null,reports:[],people:[],customers:[],tasks:[],suggestions:[],stats:null,loading:false,seq:0};
+const ui={access:null,config:null,policyVersion:'',date:today(),start:today(),end:today(),person:'',report:null,reports:[],people:[],customers:[],tasks:[],suggestions:[],stats:null,loading:false,seq:0};
 const empty=()=>({id:'',category:'Customer Follow-up',plan:'',customerId:'',customerName:'',priority:'Medium',plannedFollowup:''});
 const toast=(msg,error=false)=>showToast(msg,error?'err':undefined);
 const common='border rounded-xl px-3 py-2.5 w-full bg-white text-sm';
@@ -33,7 +33,7 @@ function resetAccount(){
  const id=state.user?.id||null;
  if(accountId===id)return;
  accountId=id;ui.seq++;ui.access=null;ui.config=null;ui.report=null;ui.reports=[];
- ui.people=[];ui.customers=[];ui.tasks=[];ui.stats=null;ui.person='';
+ ui.people=[];ui.customers=[];ui.tasks=[];ui.stats=null;ui.person='';ui.policyVersion='';
  ui.date=today();ui.start=today();ui.end=today();
 }
 function weeklyPanel(){
@@ -428,7 +428,7 @@ function renderSalesHome(){
  '<span class="rounded-lg bg-blue-50 px-3 py-2 text-xs">PM: <b>'+h(report?.pmStatus||'Not Started')+'</b></span>'+
  '<span class="rounded-lg bg-gray-100 px-3 py-2 text-xs">Manager review: <b>'+h(report?managerReviewStatus(report):'Not Ready (PM not submitted)')+'</b></span></div></div>'+
  (report?.managerComment?'<div class="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs"><b>Manager note:</b> '+h(report.managerComment)+'</div>':'')+
- (isOverdue(report)?'<div class="rounded-xl border border-red-200 bg-red-50 text-red-800 p-3 text-sm"><b>Overdue Evening Result:</b> The first Evening Result was due by 10:00 AM the following day (Phnom Penh time). '+h(latePmHint(report)||'Management has authorized a late submission.')+'</div>':'')+
+ (isOverdue(report)?'<div class="rounded-xl border border-red-200 bg-red-50 text-red-800 p-3 text-sm"><b>Overdue Evening Result:</b> The first Evening Result was due by 10:00 AM the following day (Phnom Penh time). '+h(ui.policyVersion!=='next-day-10am-20261104'?'The updated deadline rule is not yet active on Google Apps Script.':latePmHint(report)||'Management has authorized a late submission.')+'</div>':'')+
  '<div id="salesDailyAttention" aria-live="polite"></div>'+
  '<section class="space-y-3"><div class="flex flex-wrap justify-between items-center gap-2">'+
  '<h3 class="font-bold">Morning Plan</h3>'+(amLocked?'':'<button type="button" onclick="addSalesDailyTask()" class="'+lightButton+'">+ Add Task</button>')+'</div>'+
@@ -565,6 +565,7 @@ async function reload(){
    });
    const res=await api('read',{date:ui.date,start:ui.date,end:ui.date});
    if(seq!==ui.seq||state.page!==page||state.user?.id!==userId)return;
+   ui.policyVersion=res.policyVersion||'';
    ui.report=(res.reports||[]).find(x=>x.userId===state.user?.id)||null;
    ui.tasks=ui.report?.tasks?.length?ui.report.tasks:[empty()];
    // To-Do linkage only creates a local unsaved Morning Plan draft, never submits.
@@ -602,6 +603,7 @@ async function reload(){
    });
    const res=await api('read',{start:ui.start,end:ui.end,userId:ui.person||null});
    if(seq!==ui.seq||state.page!==page||state.user?.id!==userId)return;
+   ui.policyVersion=res.policyVersion||'';
    ui.reports=res.reports||[];ui.people=res.salesPeople||[];reportLoaded=true;renderManager();
   }
  }catch(err){
@@ -642,7 +644,7 @@ window.getSalesDailyAttention=async()=>{
   // Review and task completion are separate; a management missing report is not
   // a manager-approval request until PM is actually submitted.
   const result={missing,unfinished,missingCount:missing.length,unfinishedCount:unfinished.length,
-   count:missing.length+unfinished.length,target:review()?R:P};
+   count:missing.length+unfinished.length,target:review()?R:P,policyVersion:res.policyVersion||''};
   if(dailyAttentionCache.userId!==id||dailyAttentionCache.role!==role||String(state.user?.id||'')!==id)return{count:0,missingCount:0,unfinishedCount:0,missing:[],unfinished:[],target:'dashboard'};
   dailyAttentionCache.data=result;dailyAttentionCache.at=Date.now();
   return result;
@@ -660,7 +662,7 @@ function dailyAttentionPanel(info){
     ' <span class="text-xs font-semibold '+(r.overdue?'text-red-700':'text-amber-800')+'">'+(r.overdue?'Overdue':'Due today by 10:00 AM')+'</span>'+
     (r.lateSubmissionAllowed?' · Late submission authorized':'')+'</div>'+
     '<div class="flex gap-2"><button type="button" class="'+lightButton+'" onclick="openSalesDailyMissingReport(\''+h(r.id)+'\',\''+h(r.date)+'\',\''+h(r.userId)+'\')">View report</button>'+
-    (r.overdue&&!r.lateSubmissionAllowed?'<button type="button" class="'+lightButton+'" onclick="allowSalesDailyLatePm(\''+h(r.id)+'\',\''+h(r.date)+'\')">Allow late PM</button>':'')+
+    (r.overdue&&!r.lateSubmissionAllowed&&info.policyVersion==='next-day-10am-20261104'?'<button type="button" class="'+lightButton+'" onclick="allowSalesDailyLatePm(\''+h(r.id)+'\',\''+h(r.date)+'\')">Allow late PM</button>':'')+
     '</div></div>').join('')+'</div></div>';
  }
  return '<div class="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm"><b>Daily Plan reminders</b>'+
@@ -689,6 +691,7 @@ window.openSalesDailyMissingReport=async(id,date,personId)=>{
 };
 window.allowSalesDailyLatePm=async(id,date)=>{
  if(!review())return toast('Management permission required',true);
+ if(ui.policyVersion!=='next-day-10am-20261104')return toast('Update the existing Google Apps Script deployment first to enable late PM authorization.',true);
  const reason=prompt('Reason to allow a late Evening Result for '+date+':');
  if(reason===null)return;
  if(!reason.trim())return toast('Enter a reason for allowing a late submission',true);
