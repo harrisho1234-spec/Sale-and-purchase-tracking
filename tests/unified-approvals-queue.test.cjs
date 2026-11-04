@@ -12,6 +12,12 @@ const index=read('index.html');
 
 function mock(role='admin',permissions={}){
  const calls=[],ui={innerHTML:''},modal={html:''},pages=[],visited=[];
+ const blocks={
+  approvalTypeFilters:{innerHTML:''},
+  approvalTypeResults:{innerHTML:''},
+  approvalTypeSummary:{textContent:''},
+  approvalTypeHeading:{textContent:''}
+ };
  const canned={
   get_visible_sales_order_edit_requests:[],
   get_visible_customer_change_requests:[],
@@ -45,10 +51,10 @@ function mock(role='admin',permissions={}){
   ]
  };
  const context={
-  state:{user:{id:'reviewer'},profile:{role},page:'dashboard'},
+  state:{user:{id:'reviewer'},profile:{role},page:'approvals'},
   document:{
    visibilityState:'visible',
-   getElementById:id=>id==='content'?ui:id==='pageTitle'?{closest:()=>null}:null,
+   getElementById:id=>id==='content'?ui:id==='pageTitle'?{closest:()=>null}:(blocks[id]||null),
    querySelectorAll:()=>[]
   },
   db:{
@@ -87,21 +93,20 @@ function mock(role='admin',permissions={}){
  context.openStockCountEditQueue=async()=>{visited.push({what:'count'})};
  context.openSalesDailyApprovalItem=async(id,date,userId)=>{visited.push({what:'daily',id,date,userId})};
  vm.runInNewContext(approvals,context,{timeout:2500});
- return {context,calls,ui,modal,canned,pages,visited};
+ return {context,calls,ui,modal,canned,pages,visited,blocks};
 }
-test('Admin sees actionable CN review + credit decision, DO, stock count and Daily requests',async()=>{
+test('Admin sees approval types with accurate counts and actionable grouped requests',async()=>{
  const x=mock();
  await x.context.renderApprovals();
- assert.match(x.ui.innerHTML,/Return \/ CN Approvals/);
- assert.match(x.ui.innerHTML,/CN Credit Decisions/);
- assert.match(x.ui.innerHTML,/DO Edit Requests/);
- assert.match(x.ui.innerHTML,/Stock Count Edits/);
- assert.match(x.ui.innerHTML,/Team Daily Review/);
+ const html=x.ui.innerHTML+' '+x.blocks.approvalTypeFilters.innerHTML+' '+x.blocks.approvalTypeResults.innerHTML;
+ for(const type of ['Return / CN Approval','CN Credit Decisions','DO Edit Requests','Stock Count Edits','Team Daily Review'])
+   assert.ok(html.includes(type),type);
  for(const expected of ['CN-NEW','CN-CREDIT','DO2611-001','Stock Count','Sales A'])
-   assert.ok(x.ui.innerHTML.includes(expected),expected);
+   assert.ok(x.blocks.approvalTypeResults.innerHTML.includes(expected),expected);
  for(const hidden of ['CN-OWN','CN-UNREADY','CN-CLOSED'])
-   assert.ok(!x.ui.innerHTML.includes(hidden),'should not show '+hidden);
- assert.match(x.ui.innerHTML,/All Pending<\/div><div class="text-3xl font-bold mt-2">5<\/div>/);
+   assert.ok(!x.blocks.approvalTypeResults.innerHTML.includes(hidden),'should not show '+hidden);
+ assert.match(x.ui.innerHTML,/Total Pending <b[^>]*>5<\/b>/);
+ assert.match(x.blocks.approvalTypeSummary.textContent,/5 pending requests across 5 active approval type\(s\)/);
  const queried=x.calls.filter(c=>c.name.startsWith('get_')).map(c=>c.name);
  for(const name of ['get_visible_cn_case_workflows','get_delivery_order_edit_requests',
  'get_stock_count_edit_requests'])assert.ok(queried.includes(name),name);
@@ -126,21 +131,24 @@ test('each approval uses its existing permission-controlled review workflow',asy
   {what:'daily',id:'daily-r',date:'2026-11-04',userId:'sales-user'}]));
  assert.ok(x.pages.includes('returns'));
 });
-test('Manager sees CN + Daily reviews but not Admin-only DO/Stock Count queues',async()=>{
+test('Manager sees CN + Daily reviews but cannot see Admin-only DO/Stock Count types',async()=>{
  const x=mock('manager');
  await x.context.renderApprovals();
- assert.match(x.ui.innerHTML,/CN-NEW/);
- assert.match(x.ui.innerHTML,/CN-CREDIT/);
- assert.match(x.ui.innerHTML,/Sales A/);
- assert.doesNotMatch(x.ui.innerHTML,/DO2611-001/);
- assert.equal(x.calls.filter(x=>x.name==='get_delivery_order_edit_requests').length,0);
- assert.equal(x.calls.filter(x=>x.name==='get_stock_count_edit_requests').length,0);
+ assert.match(x.blocks.approvalTypeResults.innerHTML,/CN-NEW/);
+ assert.match(x.blocks.approvalTypeResults.innerHTML,/CN-CREDIT/);
+ assert.match(x.blocks.approvalTypeResults.innerHTML,/Sales A/);
+ assert.doesNotMatch(x.blocks.approvalTypeResults.innerHTML,/DO2611-001/);
+ assert.doesNotMatch(x.blocks.approvalTypeFilters.innerHTML,/data-approval-type="do_edit"/);
+ assert.doesNotMatch(x.blocks.approvalTypeFilters.innerHTML,/data-approval-type="stock_count_edit"/);
+ assert.doesNotMatch(x.blocks.approvalTypeFilters.innerHTML,/data-approval-type="stock"/);
+ assert.equal(x.calls.filter(c=>c.name==='get_delivery_order_edit_requests').length,0);
+ assert.equal(x.calls.filter(c=>c.name==='get_stock_count_edit_requests').length,0);
 });
-test('user without Return approval permission cannot see CN review cases',async()=>{
+test('user without Return approval permission sees neither CN details nor CN type counters',async()=>{
  const x=mock('manager',{'returns.approve':false});
  await x.context.renderApprovals();
- assert.doesNotMatch(x.ui.innerHTML,/CN-NEW/);
- assert.doesNotMatch(x.ui.innerHTML,/CN-CREDIT/);
+ assert.doesNotMatch(x.blocks.approvalTypeResults.innerHTML,/CN-NEW|CN-CREDIT/);
+ assert.doesNotMatch(x.blocks.approvalTypeFilters.innerHTML,/data-approval-type="cn_approval"|data-approval-type="cn_finance"/);
  assert.equal(x.calls.filter(x=>x.name==='get_visible_cn_case_workflows').length,0);
 });
 test('Sales users never get approval queue or manager review cards',async()=>{
@@ -194,4 +202,56 @@ test('notification priority opens actionable approvals before unrelated Tax aler
  const sql=read('database/20261104_prioritize_approval_bell_navigation.sql');
  assert.match(sql,/if v_approvals>0 or v_stock_approvals>0 then v_target:='approvals'/);
  assert.match(sql,/elsif v_tax_sales>0 then v_target:='tax-inventory'/);
+});
+
+test('selecting an approval type filters requests inline and retains that type on refresh',async()=>{
+ const x=mock();
+ await x.context.renderApprovals();
+ assert.match(x.blocks.approvalTypeFilters.innerHTML,/data-approval-type="all" aria-pressed="true"/);
+ x.context.setApprovalType('cn_approval');
+ assert.equal(x.blocks.approvalTypeHeading.textContent,'Return / CN Approval');
+ assert.match(x.blocks.approvalTypeResults.innerHTML,/CN-NEW/);
+ assert.doesNotMatch(x.blocks.approvalTypeResults.innerHTML,/CN-CREDIT|DO2611-001|Sales A/);
+ assert.match(x.blocks.approvalTypeFilters.innerHTML,/data-approval-type="cn_approval" aria-pressed="true"/);
+ assert.match(x.blocks.approvalTypeSummary.textContent,/1 pending request in this approval type/);
+ await x.context.renderApprovals();
+ assert.equal(x.blocks.approvalTypeHeading.textContent,'Return / CN Approval');
+ x.context.setApprovalType('cn_finance');
+ assert.match(x.blocks.approvalTypeResults.innerHTML,/CN-CREDIT/);
+ assert.doesNotMatch(x.blocks.approvalTypeResults.innerHTML,/CN-NEW/);
+ x.context.setApprovalType('orders');
+ assert.match(x.blocks.approvalTypeResults.innerHTML,/No pending order edits requests/);
+ assert.match(x.blocks.approvalTypeFilters.innerHTML,/data-approval-type="orders" aria-pressed="true"/);
+ x.context.setApprovalType('all');
+ assert.match(x.blocks.approvalTypeResults.innerHTML,/data-approval-group="cn_approval"/);
+ assert.match(x.blocks.approvalTypeResults.innerHTML,/data-approval-group="cn_finance"/);
+ assert.match(x.blocks.approvalTypeResults.innerHTML,/data-approval-group="do_edit"/);
+ assert.match(x.blocks.approvalTypeResults.innerHTML,/data-approval-group="stock_count_edit"/);
+ assert.doesNotMatch(x.blocks.approvalTypeResults.innerHTML,/data-approval-group="orders"/);
+});
+test('every type displays its actual pending count beside the label',async()=>{
+ const x=mock();
+ await x.context.renderApprovals();
+ const chip=key=>{
+  const match=x.blocks.approvalTypeFilters.innerHTML.match(new RegExp('data-approval-type="'+key+'"[^>]*>[\\s\\S]*?<\\/button>'));
+  assert.ok(match,'Missing chip '+key);
+  return match[0];
+ };
+ for(const key of ['all','cn_approval','cn_finance','daily','do_edit','stock_count_edit']){
+  const number=key==='all'?5:1;
+  assert.match(chip(key),new RegExp('>'+number+'<\\/span>'));
+ }
+ for(const key of ['orders','payments','customers','conversions']){
+  assert.match(chip(key),/>0<\/span>/);
+ }
+});
+test('Dashboard shortcuts open the same Approvals page with the selected type',async()=>{
+ const x=mock();
+ x.context.state.page='dashboard';
+ await x.context.openApprovalType('cn_finance');
+ assert.deepEqual(x.pages,['approvals']);
+ await x.context.renderApprovals();
+ assert.match(x.blocks.approvalTypeResults.innerHTML,/CN-CREDIT/);
+ assert.doesNotMatch(x.blocks.approvalTypeResults.innerHTML,/CN-NEW/);
+ assert.match(approvals,/onclick="openApprovalType\(\\'cn_approval\\'\)"/);
 });
