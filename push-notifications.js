@@ -174,12 +174,27 @@
           console.warn('Google Sheet daily reviews could not update app bell:',err.message||err);
         }
       }
+      // Daily missed-PM and unfinished-task alerts stay in Google Sheets,
+      // and are counted only for the signed-in manager or salesperson.
+      let dailyAlerts={count:0,missingCount:0,unfinishedCount:0,target:'dashboard'};
+      if(typeof window.getSalesDailyAttention==='function'){
+        try{dailyAlerts=await window.getSalesDailyAttention()}
+        catch(err){console.warn('Google Sheet Daily Plan alerts unavailable:',err.message||err)}
+      }
+      const summaries=[];
+      if(dailyCount)summaries.push(dailyCount+' pending Team Daily Review'+(dailyCount===1?'':'s'));
+      if(dailyAlerts.missingCount)summaries.push(dailyAlerts.missingCount+' missing Evening Result'+(dailyAlerts.missingCount===1?'':'s'));
+      if(dailyAlerts.unfinishedCount)summaries.push(dailyAlerts.unfinishedCount+' unfinished sales task'+(dailyAlerts.unfinishedCount===1?'':'s'));
+      if(Number(base.count||0))summaries.push(base.body||Number(base.count)+' other action items');
       P.attention={
         ...base,
-        count:Number(base.count||0)+dailyCount,
-        body:(dailyCount?dailyCount+' Team Daily Review'+(dailyCount===1?'':'s')+
-          (Number(base.count||0)?' · '+base.body:' need attention'):base.body),
-        target:dailyCount>0?'approvals':base.target
+        count:Number(base.count||0)+dailyCount+Number(dailyAlerts.count||0),
+        body:summaries.length?summaries.join(' · '):(base.body||'No action items'),
+        // Missing PM deadlines are important to management, but are NOT
+        // misclassified as pending manager approvals.
+        target:Number(dailyAlerts.missingCount||0)>0?dailyAlerts.target:
+          dailyCount>0?'approvals':
+          Number(dailyAlerts.count||0)>0?dailyAlerts.target:base.target
       };
       renderButton();
       await applyAppBadge();
