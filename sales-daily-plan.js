@@ -340,8 +340,18 @@ window.openSalesDailyShare=section=>{
  const resultCell=(t,i)=>'<div style="font-size:12px;line-height:1.85;overflow-wrap:anywhere;white-space:pre-wrap"><span style="font-size:10px;color:#64748b;font-weight:700;margin-right:5px">#'+(i+1)+'</span><b>'+h(t.status||'Not updated')+'</b> — '+h(t.result||'No outcome recorded')+
  (t.nextFollowup?'<div style="font-size:11px;color:#666;padding-left:17px">Next: '+h(t.nextFollowup)+'</div>':'')+'</div>';
  const extras=pm?(r.additionalActivities||[]):[];
- const customerExtra=extras.filter(x=>['Customer Visit','Customer Follow-up','Online Inquiry','Quotation','Sales Order'].includes(x.category));
- const otherExtra=extras.filter(x=>!customerExtra.includes(x));
+ // Imported showroom and online records belong in their own report sections,
+ // even when their customer also appears in a Morning Plan. Prefer the source
+ // type; legacy or manually entered activities can use their category instead.
+ const isShowroomExtra=x=>String(x.sourceType||'').toLowerCase()==='showroom'||
+   ['Customer Visit','Showroom Work','Showroom Visit'].includes(x.category);
+ const isOnlineExtra=x=>String(x.sourceType||'').toLowerCase()==='online'||
+   ['Online Inquiry','Online Visit'].includes(x.category);
+ const showroomExtra=extras.filter(isShowroomExtra);
+ const onlineExtra=extras.filter(x=>!isShowroomExtra(x)&&isOnlineExtra(x));
+ const customerExtra=extras.filter(x=>!isShowroomExtra(x)&&!isOnlineExtra(x)&&
+   ['Customer Follow-up','Quotation','Sales Order'].includes(x.category));
+ const otherExtra=extras.filter(x=>!showroomExtra.includes(x)&&!onlineExtra.includes(x)&&!customerExtra.includes(x));
  const rowStyle='vertical-align:top;break-inside:avoid;page-break-inside:avoid';
  const cellStyle='border:1px solid #bbb;padding:10px;vertical-align:top;overflow-wrap:anywhere';
  const unplannedCell=x=>'<div style="font-size:12px;line-height:1.85;overflow-wrap:anywhere;white-space:pre-wrap"><b>Unplanned · '+h(x.category)+(x.customerName?' — '+h(x.customerName):'')+'</b><div>'+h(x.result||'No outcome recorded')+'</div>'+
@@ -371,7 +381,10 @@ window.openSalesDailyShare=section=>{
  '<thead><tr style="background:#e3eedf"><th style="border:1px solid #bbb;padding:9px;font-size:12px;text-align:left">Category</th>'+
  '<th style="border:1px solid #bbb;padding:9px;font-size:12px;text-align:left">Morning Plan</th>'+
  (pm?'<th style="border:1px solid #bbb;padding:9px;font-size:12px;text-align:left">Evening Result</th>':'')+'</tr></thead>'+
- tableSection('Customer Tasks',customer,customerExtra)+tableSection('Other Tasks / To-Do',other,otherExtra)+'</table>';
+ tableSection('Customer Tasks',customer,customerExtra)+
+ (pm&&showroomExtra.length?tableSection('Showroom',[],showroomExtra):'')+
+ (pm&&onlineExtra.length?tableSection('Online',[],onlineExtra):'')+
+ tableSection('Other Tasks / To-Do',other,otherExtra)+'</table>';
  const extraBlock='';
  const panel=document.createElement('div');panel.id='salesDailyShareOverlay';panel.style.cssText='position:fixed;inset:0;z-index:99999;background:#0009;overflow:auto;padding:16px';
  panel.innerHTML='<div style="max-width:760px;margin:auto"><div data-share-tools style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px"><button onclick="window.print()" style="background:white;padding:9px 14px;border-radius:8px">Print / PDF</button><button onclick="closeSalesDailyShare()" style="background:white;padding:9px 14px;border-radius:8px">Close</button></div>'+
