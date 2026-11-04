@@ -162,6 +162,8 @@
       addNavBadge();
       addHeaderButton();
       dashboardCard();
+      if(typeof window.refreshAppNotifications==='function')
+        window.refreshAppNotifications().catch(function(err){console.warn('Refresh approval bell:',err.message||err)});
     }catch(e){
       console.warn('Approval notifications:',e.message);
     }finally{
