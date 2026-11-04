@@ -720,15 +720,51 @@
     }
   };
 
+  function customerMatchesHtml(summary){
+    const matches=candidateCustomers(summary);
+    if(!matches.length)return '<p class="mt-2 text-xs text-gray-500">No matching CRM contact found in your permitted customer list. Choose manually or create a customer.</p>';
+    return '<div class="rounded-xl border border-blue-200 bg-white p-3 mt-3"><b class="text-xs">Possible existing customers (suggestions only)</b>'+
+      '<p class="text-[10px] text-gray-500 mt-1">Phone matches are preferred. Confirm the correct customer manually; this does not change salesperson ownership.</p>'+
+      '<div class="grid gap-2 mt-2">'+matches.map(x=>
+        '<div class="flex flex-wrap items-center justify-between gap-2 border rounded-lg p-2">'+
+          '<div class="text-xs"><b>'+esc(x.customer.name)+'</b>'+
+          (x.customer.phone?' · '+esc(x.customer.phone):'')+
+          '<div class="text-[10px] text-blue-800">'+x.label+'</div></div>'+
+          '<button type="button" class="rounded-lg border px-3 py-1.5 text-xs font-semibold" onclick="chooseQuoteCustomerSuggestion(\''+esc(x.customer.id)+'\')">Select match</button></div>'
+      ).join('')+'</div></div>';
+  }
+  window.chooseQuoteCustomerSuggestion=function(id){
+    const select=document.getElementById('importQuoteCustomer');
+    if(!select)return;
+    const customer=(state.customers||[]).find(c=>String(c.id)===String(id));
+    if(!customer)return showToast('This customer is not in your permitted CRM list.','err');
+    select.value=String(customer.id);
+    const hint=document.getElementById('quoteCustomerConfirmation');
+    if(hint)hint.textContent='Selected '+customer.name+'. Click Link Official Customer to confirm. Sales ownership is unchanged.';
+  };
+  function quotationRevisionNoticeHtml(row,notice){
+    if(row.status==='converted')return '<p class="text-[11px] text-gray-500 mt-2">Converted using the preserved Showroom quotation snapshot. Later Showroom revisions will not modify this order.</p>';
+    if(notice?.changed)return '<div class="rounded-xl border border-amber-400 bg-amber-50 p-3 text-xs text-amber-950"><b>Newer / changed Showroom quotation detected</b>'+
+      '<p class="mt-1">Imported snapshot: '+esc(revisionLabel(notice.oldRev))+' · Latest saved: '+esc(revisionLabel(notice.newerRev))+
+      '. Prices, notes, items or quotation terms may have changed. The imported snapshot has NOT been overwritten.</p>'+
+      '<button type="button" class="mt-2 px-3 py-2 rounded-lg bg-[#211d18] text-white font-semibold" onclick="refreshImportedQuotation(\''+esc(row.id)+'\')">Update to Latest Revision</button></div>';
+    if(notice?.unchecked)return '<div class="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-800"><b>Revision not verified.</b> '+esc(notice.reason||'Check your Showroom connection.')+
+      '<button type="button" class="block mt-2 underline font-semibold" onclick="reviewImportedQuotation(\''+esc(row.id)+'\')">Retry check</button></div>';
+    return '<p class="text-[11px] text-green-700">Saved Showroom revision verified · '+esc(revisionLabel(notice?.oldRev))+'</p>';
+  }
   function customerOptions(selectedId){
     return '<option value="">-- Select existing customer --</option>'+(state.customers||[]).map(c=>'<option value="'+esc(c.id)+'" '+(String(c.id)===String(selectedId||'')?'selected':'')+'>'+esc(c.name)+(c.phone?' · '+esc(c.phone):'')+'</option>').join('');
   }
   window.reviewImportedQuotation=async function(id){
     await loadOrderData();
     const r=await db.from(TABLE).select('*').eq('id',id).single();if(r.error)return showToast(r.error.message,'err');
-    let row=r.data;
+    const row=r.data;
+    // Do not silently update this imported snapshot during review. The staff
+    // must explicitly accept a new Showroom revision before any conversion.
+    let latestNotice={changed:false,oldRev:quotationRevision(row.source_payload)};
     if(row.status!=='converted'){
-      try{row=await importSavedRecord(row.source_record_id)}catch(err){console.warn('Latest quotation revision refresh skipped:',err?.message||err)}
+      try{latestNotice=await verifyQuotationSnapshot(row)}
+      catch(err){latestNotice={changed:false,unchecked:true,reason:err.message||String(err)}}
     }
     const s=quoteSummary(row);
     const canCreate=canCreateQuotations();
@@ -749,15 +785,23 @@
       (s.salesperson?'<div class="text-[10px] text-gray-500 mt-1"><b>Showroom salesperson text:</b> '+esc(s.salesperson)+' · reference only, does not assign ownership</div>':'')+
       (row.converted_sales_order_id?'<div class="mt-3 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-[10px] text-green-800">Converted to official Sales Order'+(convertedOrderNo?' <b>'+esc(convertedOrderNo)+'</b>':'')+'.'+(convertedOrderNo?' <button type="button" onclick="closeModal();openDashboardSalesOrder(\''+row.converted_sales_order_id+'\')" class="underline font-semibold ml-1">Open order</button>':'')+'</div>':'')+
       '<div class="text-[9px] text-gray-400 mt-2">Source ID: '+esc(row.source_record_id)+'</div></div>'+
+      quotationRevisionNoticeHtml(row,latestNotice)+
       '<div><div class="flex items-center justify-between mb-2"><b class="text-sm">Quoted items</b><span class="text-xs font-bold">'+money(s.total,'USD')+'</span></div>'+
       '<div class="rounded-xl border overflow-hidden"><div class="grid grid-cols-[1fr_70px_95px_95px] gap-2 bg-gray-50 px-3 py-2 text-[9px] uppercase font-bold text-gray-400"><div>Item</div><div class="text-right">Qty</div><div class="text-right">Price</div><div class="text-right">Net</div></div><div class="px-3">'+(lines||'<div class="p-4 text-xs text-gray-400">No items in this quotation.</div>')+'</div></div><div class="mt-3">'+quoteDiscountSummaryHtml(s)+'</div></div>'+
       '<div class="rounded-xl border border-blue-100 bg-blue-50/30 p-4"><div class="text-[10px] uppercase tracking-wide font-bold text-blue-700">Official Customer · CRM</div><label class="text-xs font-semibold block mt-2">Select the official customer manually</label><select id="importQuoteCustomer" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">'+customerOptions(row.customer_id)+'</select>'+
-      '<div class="text-[10px] mt-2 '+(linked?'text-green-700':'text-amber-700')+'">'+(linked?'Official CRM customer: <b>'+esc(linked.name)+'</b>.':'No official customer linked. We do not auto-match public showroom names or phone numbers.')+'</div>'+
+      '<div class="text-[10px] mt-2 '+(linked?'text-green-700':'text-amber-700')+'">'+(linked?'Official CRM customer: <b>'+esc(linked.name)+'</b>.':'No official customer linked. We do not automatically assign customers from Showroom information.')+'</div>'+
+      '<p id="quoteCustomerConfirmation" class="text-[10px] mt-1 text-blue-800"></p>'+
+      ((!linked&&row.status!=='converted')?customerMatchesHtml(s):'')+
       '<div class="text-[10px] text-gray-500 mt-1">If the customer does not exist yet, create/link the customer in the normal Customer workflow, then return here and select it.</div>'+
       '<div class="flex flex-wrap gap-2 mt-3"><button '+(!canCreate?'disabled':'')+' onclick="saveImportedQuotationCustomer(\''+row.id+'\')" class="px-4 py-2.5 rounded-xl text-xs font-semibold '+(!canCreate?'bg-gray-200 text-gray-400 cursor-not-allowed':'bg-[#17324d] text-white')+'">'+(canCreate?'Link Official Customer':'View Only')+'</button><button onclick="closeModal();go(\'customers\')" class="px-4 py-2.5 rounded-xl border bg-white text-xs font-semibold">Create / Find Customer</button></div></div>'+
-      '<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>Official Sales Order rule:</b> conversion opens your normal Sales Order form. You must choose TK or RK and enter its official number; the existing duplicate, product, payment, DO, and role validations still run.</div>'+
+      '<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>Official Sales Order rule:</b> choose SR (pre-order), TK or RK (stock sale), then confirm the official number. Existing discount, product, stock, payment, DO, approval and role validations still apply.</div>'+
+      (row.status==='converted'?'':'<div class="rounded-xl border bg-white p-3">'+
+       '<label class="block text-xs font-semibold mb-1" for="quoteConversionDocument">Create official document as</label>'+
+       '<select id="quoteConversionDocument" class="w-full border rounded-lg px-3 py-2 text-sm bg-white">'+
+         '<option value="TK">TK — Stock Sale</option><option value="RK">RK — Stock Sale</option><option value="SR">SR — Pre-order</option>'+
+       '</select><p class="text-[10px] text-gray-500 mt-1">Select the actual transaction type. This choice does not turn a quotation into confirmed revenue automatically.</p></div>')+
       (!canCreate?'<div class="rounded-xl border bg-gray-50 p-3 text-xs text-gray-600">Your current role can view quotations but cannot create or import them.</div>':(!canConvert?'<div class="rounded-xl border bg-gray-50 p-3 text-xs text-gray-600">Quotation access is enabled, but Create Sales Orders permission is also required for TK/RK conversion.</div>':''))+
-      '<button '+(!canConvert||!row.customer_id||row.status==='converted'?'disabled':'')+' onclick="convertImportedQuotation(\''+row.id+'\')" class="w-full rounded-xl py-3 font-semibold '+(!canConvert||!row.customer_id||row.status==='converted'?'bg-gray-200 text-gray-400 cursor-not-allowed':'bg-[#211d18] text-white')+'">'+(row.status==='converted'?'Already Converted':(!canConvert?'View Only':'Convert to Official Sales Order'))+'</button>'+
+      '<button '+(!canConvert||!row.customer_id||row.status==='converted'||latestNotice.changed||latestNotice.unchecked?'disabled':'')+' onclick="convertImportedQuotation(\''+row.id+'\')" class="w-full rounded-xl py-3 font-semibold '+(!canConvert||!row.customer_id||row.status==='converted'||latestNotice.changed||latestNotice.unchecked?'bg-gray-200 text-gray-400 cursor-not-allowed':'bg-[#211d18] text-white')+'">'+(row.status==='converted'?'Already Converted':(latestNotice.changed?'Update Revision First':latestNotice.unchecked?'Verify Revision First':(!canConvert?'View Only':'Review & Convert to Official Order')))+'</button>'+
       (canDelete?'<button type="button" onclick="deleteImportedQuotation(\''+row.id+'\')" class="w-full rounded-xl border border-red-200 bg-white py-2.5 text-red-700 text-xs font-semibold">Delete Imported Quotation</button>':'')+'</div>'
     );
   };
@@ -765,6 +809,8 @@
     if(!canCreateQuotations())return showToast('Your role cannot create or import quotations.','err');
     const customerId=document.getElementById('importQuoteCustomer')?.value||null;
     if(!customerId)return showToast('Select the official CRM customer first. If the customer does not exist, create/link it in Customers and then return here.','err');
+    if(!(state.customers||[]).some(c=>String(c.id)===String(customerId)))
+      return showToast('Select a customer from your permitted CRM list.','err');
     const r=await db.from(TABLE).update({customer_id:customerId,status:'ready',updated_at:new Date().toISOString()}).eq('id',id).select().single();
     if(r.error)return showToast(r.error.message,'err');
     showToast('Official CRM customer linked. This quotation is ready for conversion.');await reviewImportedQuotation(id);
