@@ -98,7 +98,7 @@ test('quotation analytics count each saved quotation once and exclude unregister
  assert.equal(stats.totals.quoteValue,350);
  assert.equal(stats.repStats[0].salesperson,'Sale A');
  assert.equal(q.quotationAnalyticsData(reg,imported,'2025','all').totals.saved,1);
- assert.match(quote,/Quotation value, not revenue/);
+ assert.match(quote,/Quoted value, not revenue/);
 });
 test('converted quote history retains linked order and source revision with access check',()=>{
  const q=instance().__testQuote,{state}=quotation();
