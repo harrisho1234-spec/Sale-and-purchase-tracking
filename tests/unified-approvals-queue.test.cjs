@@ -173,7 +173,7 @@ test('bell/PWA attention and CN timestamps include existing review queues',()=>{
  assert.match(cnDate,/'requested_at',r\.created_at/);
 });
 test('browser cache versions point to newest Approvals, Daily and bell scripts',()=>{
- assert.match(index,/approval-notifications\.js\?v=20261104-type-tabs-v1/);
+ assert.match(index,/approval-notifications\.js\?v=20261104-type-tabs-v2/);
  assert.match(index,/sales-daily-plan\.js\?v=20261104-unified-cn-do-daily1/);
  assert.match(index,/push-notifications\.js\?v=20261104-unified-review-bell1/);
 });
