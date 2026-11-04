@@ -650,6 +650,98 @@
       showToast(err.message||'Could not delete quotation history.','err');
     }
   };
+  function quotationAnalyticsData(registry,imports,year='all',rep='all'){
+    const imported=new Map((imports||[]).map(x=>[String(x.source_record_id||''),x]));
+    const available=(registry||[]).map(row=>{
+      const link=imported.get(String(row.source_record_id||''))||null;
+      const salesperson=String(row.salesperson||'Not specified').trim()||'Not specified';
+      const date=String(row.issue_date||row.confirmed_at||row.saved_at||row.created_at||'').slice(0,10);
+      const yr=date.slice(0,4);
+      const amount=Math.max(0,num(row.amount,quoteSummary(row).total));
+      const imported=!!link;
+      const converted=link?.status==='converted'&&!!link.converted_sales_order_id;
+      const age=date?Math.max(0,Math.floor((Date.now()-Date.parse(date+'T00:00:00Z'))/86400000)):0;
+      return{row,link,salesperson,date,year:yr,amount,imported,converted,age};
+    });
+    const filtered=available.filter(x=>(year==='all'||x.year===year)&&(rep==='all'||x.salesperson===rep));
+    const group=new Map();
+    filtered.forEach(x=>{
+      const s=group.get(x.salesperson)||{salesperson:x.salesperson,saved:0,imported:0,converted:0,totalValue:0};
+      s.saved++;if(x.imported)s.imported++;if(x.converted)s.converted++;
+      s.totalValue+=x.amount;group.set(x.salesperson,s);
+    });
+    const repStats=[...group.values()].sort((a,b)=>b.saved-a.saved||a.salesperson.localeCompare(b.salesperson));
+    const totals={saved:filtered.length,imported:filtered.filter(x=>x.imported).length,
+      converted:filtered.filter(x=>x.converted).length,
+      unconverted:filtered.filter(x=>!x.converted).length,
+      notImported:filtered.filter(x=>!x.imported).length,
+      quoteValue:round2(filtered.reduce((sum,x)=>sum+x.amount,0))};
+    const oldOpen=filtered.filter(x=>!x.converted&&x.age>=30)
+      .sort((a,b)=>b.age-a.age).slice(0,20);
+    return {available,filtered,repStats,totals,oldOpen};
+  }
+  window.setQuotationAnalyticsYear=function(value){
+    quotationAnalyticsYear=String(value||'all');renderQuotationAnalytics();
+  };
+  window.setQuotationAnalyticsRep=function(value){
+    quotationAnalyticsRep=String(value||'all');renderQuotationAnalytics();
+  };
+  async function renderQuotationAnalytics(){
+    const [registry,imports]=await Promise.all([getRegistryRows(),getRows()]);
+    const years=[...new Set(registry.map(r=>String(r.issue_date||r.confirmed_at||r.saved_at||r.created_at||'').slice(0,4))
+      .filter(x=>/^\d{4}$/.test(x)))].sort().reverse();
+    const names=[...new Set(registry.map(r=>String(r.salesperson||'Not specified').trim()||'Not specified'))].sort();
+    if(quotationAnalyticsYear!=='all'&&!years.includes(quotationAnalyticsYear))quotationAnalyticsYear='all';
+    if(quotationAnalyticsRep!=='all'&&!names.includes(quotationAnalyticsRep))quotationAnalyticsRep='all';
+    const data=quotationAnalyticsData(registry,imports,quotationAnalyticsYear,quotationAnalyticsRep);
+    const t=data.totals;
+    const pct=(a,b)=>b?Math.round(a/b*100)+'%':'—';
+    const metric=(name,value,note)=>'<div class="rounded-xl border bg-white p-3"><div class="text-[10px] font-bold uppercase text-gray-500">'+name+'</div>'+
+      '<div class="text-xl font-bold mt-1">'+value+'</div><div class="text-[10px] text-gray-500 mt-1">'+note+'</div></div>';
+    const breakdown=data.repStats.map(rep=>{
+      const rate=pct(rep.converted,rep.saved);
+      return '<tr class="border-b last:border-b-0"><td class="p-3 text-left font-semibold">'+esc(rep.salesperson)+'</td>'+
+        '<td class="p-3 text-right">'+rep.saved+'</td><td class="p-3 text-right">'+rep.imported+'</td>'+
+        '<td class="p-3 text-right">'+rep.converted+'</td><td class="p-3 text-right">'+(rep.saved-rep.converted)+'</td>'+
+        '<td class="p-3 text-right"><b>'+rate+'</b></td><td class="p-3 text-right">'+money(rep.totalValue,'USD')+'</td></tr>';
+    }).join('');
+    const oldOpen=data.oldOpen.map(x=>'<div class="flex flex-wrap items-center justify-between gap-2 border-b p-3">'+
+      '<div class="text-xs"><b>'+esc(x.row.quote_no||x.row.source_record_id)+'</b> · '+esc(x.salesperson)+
+      '<div class="text-gray-500 mt-1">Saved '+esc(x.date||'Unknown date')+' · '+x.age+' days · '+esc(x.imported?'Imported but not converted':'Not imported')+
+      ' · '+money(x.amount,'USD')+'</div></div>'+
+      '<button type="button" onclick="reviewQuotationHistory(\''+esc(x.row.id)+'\')" class="text-xs font-semibold rounded-lg border px-3 py-2">Open quotation</button></div>').join('');
+    document.getElementById('content').innerHTML=
+      '<div class="flex flex-wrap justify-between items-end gap-3 mb-3"><div><h3 class="text-lg font-bold">Quotation Conversion Analytics</h3>'+
+      '<p class="text-xs text-gray-500 mt-1">Derived from saved Showroom quotations and existing imported/converted links. One saved quotation counts once, regardless of revisions.</p></div>'+
+      '<button type="button" onclick="renderImportedQuotations()" class="border rounded-xl bg-white px-3 py-2 text-xs font-semibold">Refresh</button></div>'+
+      quotationTabs()+
+      '<div class="rounded-xl border bg-white p-3 flex flex-wrap gap-3 items-end mb-4">'+
+      '<label class="text-xs font-semibold">Year<select id="quotationAnalyticsYear" class="block mt-1 rounded-lg border p-2" onchange="setQuotationAnalyticsYear(this.value)">'+
+      '<option value="all">All years</option>'+years.map(y=>'<option value="'+y+'" '+(quotationAnalyticsYear===y?'selected':'')+'>'+y+'</option>').join('')+
+      '</select></label><label class="text-xs font-semibold">Showroom salesperson<select id="quotationAnalyticsRep" class="block mt-1 rounded-lg border p-2" onchange="setQuotationAnalyticsRep(this.value)">'+
+      '<option value="all">All salespeople</option>'+names.map(name=>'<option value="'+esc(name)+'" '+(quotationAnalyticsRep===name?'selected':'')+'>'+esc(name)+'</option>').join('')+
+      '</select></label></div>'+
+      '<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mb-5">'+
+      metric('Saved quotes',t.saved,'Original + revisions count once')+
+      metric('Imported',t.imported,'Linked to Sales workflow')+
+      metric('Converted',t.converted,'Linked official SR/TK/RK')+
+      metric('Not converted',t.unconverted,'No official linked order')+
+      metric('Conversion rate',pct(t.converted,t.saved),'Converted ÷ saved')+
+      metric('Quotation value',money(t.quoteValue,'USD'),'Quoted value, not revenue')+'</div>'+
+      '<section class="rounded-xl border bg-white overflow-hidden mb-4">'+
+      '<div class="px-4 py-3 border-b"><b class="text-sm">Salesperson quotation conversion</b>'+
+      '<p class="text-[10px] text-gray-500 mt-1">Attribution uses the saved Showroom salesperson text; it does not change CRM ownership or represent booked sales.</p></div>'+
+      '<div class="overflow-x-auto"><table class="w-full text-xs text-left"><thead class="bg-gray-50 text-gray-600"><tr>'+
+      '<th class="p-3">Showroom salesperson</th><th class="p-3 text-right">Saved</th><th class="p-3 text-right">Imported</th>'+
+      '<th class="p-3 text-right">Converted</th><th class="p-3 text-right">Not converted</th><th class="p-3 text-right">Rate</th><th class="p-3 text-right">Quoted value</th>'+
+      '</tr></thead><tbody>'+(breakdown||'<tr><td colspan="7" class="p-4 text-gray-500">No quotations match these filters.</td></tr>')+'</tbody></table></div></section>'+
+      '<section class="rounded-xl border bg-white overflow-hidden">'+
+      '<div class="p-4 border-b"><b class="text-sm">Follow-up opportunities · Saved 30+ days ago and not converted ('+data.oldOpen.length+' shown)</b>'+
+      '<p class="text-xs text-gray-500 mt-1">These quotations may require customer follow-up; they are not overdue invoices or receivables.</p></div>'+
+      (oldOpen||'<div class="p-4 text-xs text-gray-500">No unconverted quotations older than 30 days for this selection.</div>')+
+      '</section>'+
+      '<p class="text-[11px] text-gray-500 mt-3">Quotation conversion counts do not equal revenue, confirmed orders, or customer collections. Check Sales Reports for the official financial figures.</p>';
+  }
   async function renderQuotationHistoryPage(){
     let [historyRows,imports]=await Promise.all([getRegistryRows(),getRows()]);
 
