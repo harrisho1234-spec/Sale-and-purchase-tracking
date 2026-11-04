@@ -711,6 +711,7 @@ window.invalidateSalesDailyApprovals=()=>{
  dailyAttentionCache.userId=null;dailyAttentionCache.at=0;dailyAttentionCache.data=null;dailyAttentionCache.promise=null;
  window.refreshSalesDailyAttention?.();
  if(typeof window.refreshApprovalNotifications==='function')window.refreshApprovalNotifications();
+ if(typeof window.refreshAppNotifications==='function')Promise.resolve(window.refreshAppNotifications()).catch(err=>console.warn('Daily bell refresh:',err.message||err));
 };
 window.getSalesDailyApprovalQueue=async()=>{
  if(!review())return [];
