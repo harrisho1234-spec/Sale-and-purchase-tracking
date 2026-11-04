@@ -5,7 +5,11 @@ const vm=require('node:vm');
 const path=require('node:path');
 const read=p=>fs.readFileSync(path.join(__dirname,'..',p),'utf8');
 function fixture(){
- let id=0;
+ let id=0,clock=Date.parse('2026-10-23T02:00:00Z');
+ class FrozenDate extends Date{
+  constructor(...args){super(...(args.length?args:[clock]))}
+  static now(){return clock}
+ }
  class Sheet{
   rows=[['header']];
   getDataRange(){return{getDisplayValues:()=>this.rows.map(r=>r.map(String))}}
@@ -15,14 +19,14 @@ function fixture(){
  }
  const sheets=Object.fromEntries(['Daily Reports','Plan Tasks','Manager Reviews','Audit Log'].map(k=>[k,new Sheet()]));
  const ss={getSheetByName:n=>sheets[n],insertSheet:n=>(sheets[n]=new Sheet()),getName:()=> 'Test'};
- const c={Utilities:{getUuid:()=>`id-${++id}`,formatDate:()=> '2026-10-22'},SpreadsheetApp:{flush(){}},LockService:{getScriptLock:()=>({waitLock(){},releaseLock(){}})}};
+ const c={Date:FrozenDate,Utilities:{getUuid:()=>`id-${++id}`,formatDate:()=> '2026-10-22'},SpreadsheetApp:{flush(){}},LockService:{getScriptLock:()=>({waitLock(){},releaseLock(){}})}};
  vm.createContext(c);vm.runInContext(read('google-apps-script/sales-daily-plan/Code.gs'),c);
  const a={user_id:'sales-1',role:'sales',display_name:'=unsafe',can_write:true,can_review:false};
  const b={...a,user_id:'sales-2'};
  const m={user_id:'manager',role:'manager',display_name:'Manager',can_review:true,sales_people:[{user_id:a.user_id}]};
  const task=plan=>({plan,category:'Other'});
  const call=(actor,action,p)=>c.dispatch(ss,actor,action,p);
- return{c,sheets,ss,a,b,m,task,call};
+ return{c,sheets,ss,a,b,m,task,call,setNow:iso=>{clock=Date.parse(iso)}};
 }
 test('AM → PM → corrections → resubmit → review; ownership and weekly filter',()=>{
  const {a,b,m,task,call}=fixture();const date='2026-10-22';
@@ -177,4 +181,43 @@ test('manager review UI does not falsely report success if Google Sheets still s
  assert.equal(info.closed,0);
  assert.ok(info.notices.some(x=>/could not be confirmed/.test(x.message)&&x.type==='err'));
  assert.ok(!info.notices.some(x=>/Manager review completed/.test(x.message)));
+});
+
+test('initial Evening Result deadline is next calendar day 10 AM Phnom Penh, with authenticated late override',()=>{
+ const {a,m,call,task,setNow,sheets}=fixture(),date='2026-10-22';
+ const report=call(a,'submit_am',{date,tasks:[task('Follow-up')]});
+ assert.equal(call(a,'read',{date}).reports[0].pmDeadline,'2026-10-23T10:00:00+07:00');
+ const results=[{id:report.tasks[0].id,status:'Pending',result:'Awaiting reply'}];
+ setNow('2026-10-23T03:00:01Z'); // 10:00:01 in Phnom Penh
+ assert.throws(()=>call(a,'submit_pm',{date,results}),/deadline passed/);
+ assert.equal(call(m,'read',{date}).reports[0].pmStatus,'Not Started');
+ assert.throws(()=>call(a,'allow_late_pm',{reportId:report.id,reason:'Manager decision'}),/management/);
+ assert.throws(()=>call(m,'allow_late_pm',{reportId:report.id,reason:''}),/reason/);
+ const grant=call(m,'allow_late_pm',{reportId:report.id,reason:'Approved delay'});
+ assert.equal(grant.allowed,true);
+ assert.equal(call(m,'allow_late_pm',{reportId:report.id,reason:'Approved delay'}).alreadyAllowed,true);
+ assert.equal(call(a,'read',{date}).reports[0].lateSubmissionAllowed,true);
+ const pm=call(a,'submit_pm',{date,results});
+ assert.equal(pm.reviewStatus,'Pending'); // fresh review is required
+ assert.equal(call(m,'read',{date}).reports[0].pmStatus,'Submitted');
+ assert.ok(sheets['Audit Log'].rows.some(r=>r.includes('LATE_PM_ALLOWED')));
+ call(m,'review',{reportId:report.id,decision:'Reviewed'});
+ assert.equal(call(m,'read',{date}).reports[0].reviewStatus,'Reviewed');
+});
+test('PM resubmission after manager correction requires a new review even after the deadline',()=>{
+ const {a,m,call,task,setNow}=fixture(),date='2026-10-22';
+ const report=call(a,'submit_am',{date,tasks:[task('Follow-up')]});
+ const results=[{id:report.tasks[0].id,status:'Partially Completed',result:'Waiting'}];
+ call(a,'submit_pm',{date,results});
+ setNow('2026-10-23T04:00:00Z');
+ call(m,'review',{reportId:report.id,decision:'Changes Requested',comment:'Need more details'});
+ assert.equal(call(m,'read',{date}).reports[0].reviewStatus,'Changes Requested');
+ const resubmitted=call(a,'submit_pm',{date,results:[{...results[0],result:'Called, customer still considering'}]});
+ assert.equal(resubmitted.reviewStatus,'Pending');
+ const saved=call(m,'read',{date}).reports[0];
+ assert.equal(saved.reviewStatus,'Pending');
+ assert.equal(saved.pmStatus,'Submitted');
+ assert.equal(saved.reviewedBy,'');
+ call(m,'review',{reportId:report.id,decision:'Reviewed'});
+ assert.equal(call(m,'read',{date}).reports[0].reviewStatus,'Reviewed');
 });
