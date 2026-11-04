@@ -54,7 +54,7 @@ function mock(role='admin',permissions={}){
   state:{user:{id:'reviewer'},profile:{role},page:'approvals'},
   document:{
    visibilityState:'visible',
-   getElementById:id=>id==='content'?ui:id==='pageTitle'?{closest:()=>null}:(blocks[id]||null),
+   getElementById:id=>id==='content'?ui:id==='pageTitle'?{closest:()=>null}:id==='pageSubtitle'?{textContent:''}:(blocks[id]||null),
    querySelectorAll:()=>[]
   },
   db:{
@@ -173,7 +173,7 @@ test('bell/PWA attention and CN timestamps include existing review queues',()=>{
  assert.match(cnDate,/'requested_at',r\.created_at/);
 });
 test('browser cache versions point to newest Approvals, Daily and bell scripts',()=>{
- assert.match(index,/approval-notifications\.js\?v=20261104-unified-cn-do-daily1/);
+ assert.match(index,/approval-notifications\.js\?v=20261104-type-tabs-v1/);
  assert.match(index,/sales-daily-plan\.js\?v=20261104-unified-cn-do-daily1/);
  assert.match(index,/push-notifications\.js\?v=20261104-unified-review-bell1/);
 });
@@ -249,7 +249,7 @@ test('Dashboard shortcuts open the same Approvals page with the selected type',a
  const x=mock();
  x.context.state.page='dashboard';
  await x.context.openApprovalType('cn_finance');
- assert.deepEqual(x.pages,['approvals']);
+ assert.equal(x.context.state.page,'approvals');
  await x.context.renderApprovals();
  assert.match(x.blocks.approvalTypeResults.innerHTML,/CN-CREDIT/);
  assert.doesNotMatch(x.blocks.approvalTypeResults.innerHTML,/CN-NEW/);
