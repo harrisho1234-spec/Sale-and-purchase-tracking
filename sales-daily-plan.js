@@ -585,13 +585,13 @@ window.getSalesDailyApprovalQueue=async()=>{
    const rows=[];
    (res.reports||[]).forEach(r=>{
      (r.editRequests||[]).filter(x=>x.status==='Pending').forEach(x=>rows.push({
-       id:'daily-edit:'+String(x.id),kind:'edit',report_id:String(r.id),date:r.date,
+       id:'daily-edit:'+String(x.id),kind:'edit',report_id:String(r.id),date:r.date,userId:String(r.userId||''),
        salesperson:r.salesperson||'Sales',request_id:String(x.id),section:x.section||'',
        reason:x.reason||'',requested_at:x.requestedAt||x.createdAt||r.pmSubmittedAt||r.amSubmittedAt||r.date
      }));
      if(r.pmStatus==='Submitted'&&!['Reviewed','Changes Requested'].includes(r.reviewStatus))
        rows.push({id:'daily-review:'+String(r.id),kind:'review',
-         report_id:String(r.id),date:r.date,salesperson:r.salesperson||'Sales',
+         report_id:String(r.id),date:r.date,userId:String(r.userId||''),salesperson:r.salesperson||'Sales',
          requested_at:r.pmSubmittedAt||r.date});
    });
    dailyApprovalCache.at=Date.now();
