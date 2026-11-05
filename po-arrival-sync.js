@@ -4,6 +4,38 @@
   'use strict';
   const busy=new Set();
   const nice=po=>po?.po_number||po?.po_pending_reference||'this PO';
+  // Single progression order shared by all Procurement tabs. The database
+  // independently enforces this rule for direct/bulk requests too.
+  const stageRank={placed:0,ordered:0,production:1,ready:2,shipping:3,arrived:4,closed:5,delivered:5,complete:5,completed:5,cancelled:-1};
+  const rank=s=>stageRank[String(s||'placed').trim().toLowerCase()]??null;
+  window.poWorkflowRank=rank;
+  window.poCanAdvanceStatus=function(current,next){
+    const before=rank(current),after=rank(next);
+    if(before===null||after===null||before===-1)return false;
+    if(after===-1)return before<4;
+    return after>=before;
+  };
+  window.poForwardStatusOptions=function(current,choices){
+    const list=Array.isArray(choices)?choices:[];
+    return list.map(([value,label])=>{
+      const blocked=!window.poCanAdvanceStatus(current,value);
+      const selected=String(current||'placed')===value;
+      return '<option value="'+value+'" '+(selected?'selected':'')+
+        (blocked?' disabled title="Backward PO status changes are locked"':'')+'>'+label+'</option>';
+    }).join('');
+  };
+  window.saveSupplierPOForwardStatus=async function(poId,status,eta){
+    if(!window.poCanAdvanceStatus(status,status))throw new Error('This PO is cancelled or has an invalid status.');
+    const response=await db.rpc('set_supplier_po_forward_status',{
+      p_po_id:poId,p_status:status,p_eta:eta||null
+    });
+    if(response.error)throw response.error;
+    if(window.documentFlowState)window.documentFlowState.loaded=false;
+    if(typeof window.invalidateInventoryCache==='function')window.invalidateInventoryCache();
+    if(typeof window.invalidateInventoryTasks==='function')window.invalidateInventoryTasks();
+    return response.data||{};
+  };
+
   window.confirmWholePOArrival=async function(poId,eta){
     if(!poId)throw new Error('Supplier PO is required.');
     const id=String(poId);
