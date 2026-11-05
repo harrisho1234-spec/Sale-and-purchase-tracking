@@ -41,7 +41,25 @@
     return `<div style="width:${size}px;height:${size}px" class="rounded-xl border bg-gray-100 overflow-hidden shrink-0"><img src="${esc(u)}" class="w-full h-full object-cover" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div style="display:none" class="w-full h-full items-center justify-center text-[9px] text-gray-400">No Photo</div></div>`;
   }
   function options(current){
-    return STATUSES.map(s=>`<option value="${s}" ${norm(current)===s?'selected':''}>${esc(statusLabel(s))}</option>`).join('');
+    return STATUSES.map(s=>{
+      const blocked=typeof window.poCanAdvanceStatus==='function'&&!window.poCanAdvanceStatus(current,s);
+      return `<option value="${s}" ${norm(current)===s?'selected':''} ${blocked?'disabled title="Backward status changes are locked"':''}>${esc(statusLabel(s))}</option>`;
+    }).join('');
+  }
+  function canAdvance(current,target){
+    return typeof window.poCanAdvanceStatus==='function'
+      ?window.poCanAdvanceStatus(current,target)
+      :norm(target)===norm(current);
+  }
+  async function forwardOnlyPOItemIds(ids,status){
+    if(!ids.length)return {ids:[],skipped:0};
+    const r=await db.from('supplier_po_items')
+      .select('id,procurement_status,historical_stock_reconciled').in('id',ids);
+    if(r.error)throw r.error;
+    const rows=r.data||[];
+    const allowed=rows.filter(x=>!x.historical_stock_reconciled&&
+      canAdvance(x.procurement_status,status)&&norm(x.procurement_status)!==norm(status));
+    return {ids:allowed.map(x=>x.id),skipped:ids.length-allowed.length};
   }
   function poLabel(p){return p?.po_number||p?.po_pending_reference||'PO Pending'}
 
@@ -86,7 +104,7 @@
         <button class="pw-tab" onclick="setProcurementTab('allocations')">SR Allocations</button>
         <button class="pw-tab" onclick="setProcurementTab('flow')">PO → SR → TK/RK</button>
       </div>
-      <div class="rounded-xl bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800 mb-4"><b>Item progress:</b> Admin and Super Admin can update each live PO item separately. Stock Balance treats Ordered / Production / Ready as <b>On Order</b>, Shipping as <b>Incoming</b>, and Arrived as <b>Arrived Pending Receive</b>. <b>Closed / Complete</b> is a finished terminal status and is excluded from the live procurement/stock pipeline. Historical / Reconciled items are locked until reconciliation is undone.</div>
+      <div class="rounded-xl bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800 mb-4"><b>Item progress:</b> Admin and Super Admin can update each live PO item separately. Progress is <b>forward-only</b>; an Arrived or received item cannot return to Shipping. Stock Balance treats Ordered / Production / Ready as <b>On Order</b>, Shipping as <b>Incoming</b>, and Arrived as <b>Arrived Pending Receive</b>. <b>Closed / Complete</b> is a finished terminal status and is excluded from the live procurement/stock pipeline. Historical / Reconciled items are locked until reconciliation is undone.</div>
       <div class="grid sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-4">
         <div class="pw-stat"><div class="pw-stat-label">In Production</div><div class="pw-stat-value text-amber-700">${production}</div></div>
         <div class="pw-stat"><div class="pw-stat-label">Shipping</div><div class="pw-stat-value text-blue-700">${shipping}</div></div>
