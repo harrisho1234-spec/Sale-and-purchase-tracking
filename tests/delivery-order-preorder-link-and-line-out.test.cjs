@@ -140,3 +140,15 @@ test('existing database approval and stock guards are preserved for preorder DO 
  assert.match(src,/submit_stock_action_request/);
  assert.match(src,/release_sales_stock_do/);
 });
+
+test('successful stock movement is never reported as failed when UI refresh breaks',async()=>{
+ const {c,req,calls,elements,toasts}=fixture('admin');
+ req.items[0].inventory_tracking_enabled=true;
+ c.renderStockInventory=async()=>{throw new Error('Refresh failed')};
+ await c.openDoStockRelease('do1','do-line1');
+ await elements.doStockReleaseForm.onsubmit({preventDefault(){}});
+ assert.equal(calls.filter(x=>x.name==='release_sales_stock_do').length,1);
+ assert.ok(toasts.some(x=>/DO OUT was saved, but the screen could not refresh/.test(x.msg)));
+ assert.ok(!toasts.some(x=>/No stock action was recorded/.test(x.msg)));
+ assert.equal(elements.doReleaseSave.disabled,true,'Do not allow accidental duplicate re-submit');
+});
