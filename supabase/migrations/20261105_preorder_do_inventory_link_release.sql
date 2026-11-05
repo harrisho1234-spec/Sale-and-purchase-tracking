@@ -39,7 +39,7 @@ begin
   perform public.sync_sales_item_status_with_stock(p_sales_order_item_id);
   perform public.refresh_inventory_product_snapshot(v_item.product_id);
 end;
-$function$
+$function$;
 
 
 -- get_inventory_fulfillment_queue
@@ -164,7 +164,7 @@ AS $function$
       or lower(coalesce(i.fulfillment_status,'')) like '%'||lower(trim(p_search))||'%'
     )
   order by coalesce(i.inventory_tracking_enabled,false) desc,o.order_date desc,o.created_at desc,i.line_position nulls last,i.created_at;
-$function$
+$function$;
 
 
 -- guard_tracked_stock_delivered_status
@@ -215,7 +215,7 @@ begin
   end if;
   return new;
 end;
-$function$
+$function$;
 
 
 -- guard_tracked_stock_fulfillment_delivered
@@ -257,7 +257,7 @@ begin
   end if;
   return new;
 end;
-$function$
+$function$;
 
 
 -- release_sales_stock
@@ -396,7 +396,7 @@ begin
 
   return v_id;
 end;
-$function$
+$function$;
 
 
 -- release_sales_stock_multi_location
@@ -587,7 +587,7 @@ begin
 
   return v_first_id;
 end
-$function$
+$function$;
 
 
 -- save_inventory_item_status_quantities
@@ -732,7 +732,7 @@ begin
 
   perform public.refresh_inventory_product_snapshot(v_item.product_id);
 end;
-$function$
+$function$;
 
 
 -- submit_sales_stock_multi_location_request
@@ -901,7 +901,7 @@ begin
 
   return v_id;
 end
-$function$
+$function$;
 
 
 -- submit_stock_action_request
@@ -1232,7 +1232,7 @@ begin
 
   return v_id;
 end;
-$function$
+$function$;
 
 
 -- sync_sales_item_status_with_stock
@@ -1369,5 +1369,5 @@ begin
         else null
       end;
 end;
-$function$
+$function$;
 
