@@ -306,13 +306,35 @@
     var out=await baseNew.apply(this,arguments);
     if(!sales())return out;
     var form=document.getElementById('multiCustomerForm');if(!form)return out;
-    var banner=document.createElement('div');banner.className='md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800';banner.innerHTML='<b>Manager/Admin approval required.</b> Submitting creates a <b>provisional Pending Review customer</b> so you can create Sales Orders immediately. It is not official until Manager/Admin reviews and approves it. Sales can still add working leads directly in Customer Database / CRM.';form.prepend(banner);
+    registrationSource={type:'manual',id:'',name:'',phone:''};registrationSourceResults=[];
+    var banner=document.createElement('div');banner.className='md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800';
+    banner.innerHTML='<b>Manager/Admin approval required.</b> Even a first-time buyer without any previous record can be submitted for approval. Link the official TK/RK after approval. This is not confirmed revenue until invoiced.';
+    form.prepend(banner);
+    var controls=document.createElement('div');controls.className='contents';
+    controls.innerHTML=newCustomerQualificationFields();
+    banner.after(controls);
     var note=document.createElement('div');note.className='md:col-span-2';note.innerHTML='<label class="text-xs font-semibold">Request Note</label><textarea id="customerCreateRequestNote" rows="2" class="mt-1 w-full border border-amber-200 bg-amber-50 rounded-xl px-3 py-2" placeholder="Optional context for Manager/Admin"></textarea>';form.insertBefore(note,form.lastElementChild);
     installCreateCustomerNameSuggestions(form);
     var btn=form.querySelector('button:not([type="button"])');if(btn)btn.textContent='Submit New Customer Request';
     form.onsubmit=async function(e){
       e.preventDefault();
       var contacts=contactRows(form),name=clean(document.getElementById('mcName').value);if(!name)return showToast('Customer name is required.','err');
+      var status=purchaseAnswer();if(!status)return;
+      var source=registrationSource,type=clean(document.getElementById('customerCreateSourceType')?.value)||'manual';
+      if(type!=='manual'){
+        if(!source.id||source.type!==type)return showToast('Select a matching source record or choose New Walk-in / Direct Buyer.','err');
+        var chosen=await db.rpc('request_qualified_customer_registration',{
+          p_source:type,p_source_id:source.id,p_purchase_status:status,p_official_name:name,
+          p_request_note:clean(document.getElementById('customerCreateRequestNote').value)||null
+        });
+        if(chosen.error)return showToast(chosen.error.message,'err');
+        var result=chosen.data||{};closeModal();
+        showToast(result.action==='linked'?'Linked to an existing Customer Master. No duplicate created.':
+         result.action==='ownership_request'?'Ownership approval requested. The original owner was not changed.':
+         result.existing_request?'This record has an earlier pending request; it was left unchanged.':
+         'Official customer request submitted for approval. The invoice can be linked afterward.');
+        await go('customers');return;
+      }
       var phone=contacts.find(function(x){return x.contact_type==='phone'})?.contact_value||'';
       if(phone){
         var match=await db.rpc('find_customer_identity_by_phone',{p_phone:phone});
@@ -323,9 +345,11 @@
         }
       }
       var payload={name:name,address:clean(document.getElementById('mcAddress').value)||null,notes:clean(document.getElementById('mcNotes').value)||null,assigned_sales_id:state.user.id,active:true,customer_since:new Date().toISOString().slice(0,10)};
-      var x=await db.rpc('submit_customer_change_request',{p_request_type:'create',p_customer_id:null,p_requested_customer:payload,p_requested_contacts:contacts,p_request_note:clean(document.getElementById('customerCreateRequestNote').value)||null});
+      var x=await db.rpc('submit_qualified_manual_customer_request',{
+        p_customer:payload,p_contacts:contacts,p_purchase_status:status,
+        p_request_note:clean(document.getElementById('customerCreateRequestNote').value)||null});
       if(x.error)return showToast(x.error.message,'err');
-      closeModal();showToast('Customer request sent. Pending Review customer is available for Sales Orders until Manager/Admin finalizes it.');await go('customers');
+      closeModal();showToast('New first-time buyer request submitted. After Manager/Admin approval, link the official TK/RK invoice to this customer.');await go('customers');
     };
     return out;
   };
@@ -411,6 +435,7 @@
     var kind=requestKind(r);
     var html='<form id="reviewCustomerRequestForm" class="grid md:grid-cols-2 gap-4"><div class="md:col-span-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>'+esc(kind)+' awaiting review.</b> Requested by '+esc(r.requested_by_name||'Sales')+'.'+(r.request_type==='create'?(r.customer_id?'<div class="mt-1">This is an older provisional request. Review it before the customer is finalized.</div>':'<div class="mt-1"><b>No Customer Master has been created yet.</b> Approval will create the Customer Master and assign its Customer ID. Rejection creates nothing.</div>'):'')+(r.request_note?'<div class="mt-2"><b>Request note:</b> '+esc(r.request_note)+'</div>':'')+'</div>'
       +customerRequestChangesHtml(r)
+      +qualificationReviewHtml(r,pendingOrders)
       +(pendingOrders.length?'<div class="md:col-span-2 rounded-xl border border-purple-100 bg-purple-50 p-3"><div class="flex items-center justify-between gap-3"><div><b class="text-sm text-purple-900">Orders created while customer review is pending</b><div class="text-[10px] text-purple-700 mt-0.5">These orders remain attached to this provisional customer. Approving or merging the customer will finalize their customer review status automatically.</div></div><span class="min-w-[26px] h-[26px] rounded-full bg-purple-100 text-purple-800 text-[10px] font-bold inline-flex items-center justify-center">'+pendingOrders.length+'</span></div><div class="grid gap-1.5 mt-3">'+pendingOrders.slice(0,8).map(function(o){var doc=o.sales_invoice_no||o.sr_no||o.order_no||'Order';return '<div class="rounded-lg border border-purple-100 bg-white px-3 py-2 flex justify-between gap-3 text-xs"><b>'+esc(doc)+'</b><span class="text-gray-500">'+esc(o.order_date||'')+' · '+esc(o.customer_review_status||'pending')+'</span></div>'}).join('')+'</div></div>':'')
       +'<div class="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800"><b>Final review draft below.</b> Sales\' requested values are prefilled. You can adjust them before approval.'+(r.request_type==='create'&&!r.customer_id?' The Customer Master is created only when you approve.':'')+'</div>'
       +'<div class="md:col-span-2"><label class="text-xs font-semibold">Customer Name</label><input id="rcName" value="'+esc(o.name||'')+'" class="mt-1 w-full border rounded-xl px-3 py-2"></div>'
@@ -468,6 +493,13 @@
     var note=clean(document.getElementById('rcReviewNote')&&document.getElementById('rcReviewNote').value);if(action==='reject'&&!note&&role()!=='super_admin')return showToast('Enter a rejection reason.','err');
     var finalCustomer=null,finalContacts=null;
     if(action==='approve'){
+      if(r.request_type==='create'&&(r.requested_customer||{})._qualification_version){
+        var valid=['purchased_pending_invoice','purchased_invoiced','deal_confirmed'];
+        if(!valid.includes(String(r.requested_customer._purchase_confirmation||'')))
+          return showToast('This new request has no valid purchase confirmation.','err');
+        if(!document.getElementById('reviewCustomerPurchaseAcknowledged')?.checked)
+          return showToast('Confirm that you reviewed the purchase/deal declaration.','err');
+      }
       var name=clean(document.getElementById('rcName').value);if(!name)return showToast('Customer name is required.','err');
       finalContacts=[].slice.call(document.querySelectorAll('#reviewCustomerContacts .review-c-contact')).map(function(x,i){return {contact_type:x.querySelector('.rc-type').value,label:clean(x.querySelector('.rc-label').value)||null,contact_value:clean(x.querySelector('.rc-value').value),is_primary:i===0}}).filter(function(x){return x.contact_value});
       var dups=await duplicateWarning(finalContacts,r.customer_id);if(dups.length&&!confirm('Duplicate contact found: '+dups.join(', ')+'. Approve anyway?'))return;
