@@ -25,7 +25,7 @@ declare
   v_response jsonb;
   v_request_id uuid;
   v_customer_id uuid;
-  v_before timestamptz := clock_timestamp();
+  v_before timestamptz := transaction_timestamp();
   v_request public.customer_change_requests%rowtype;
 begin
   if public.current_app_role() <> 'sales' then
