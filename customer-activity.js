@@ -640,14 +640,35 @@ ${activityAllowed()?`          <select onchange="setActivityStatus(this.value)" 
       '<form id="activityCustomerMasterRequestForm" class="space-y-4">'
       +'<div class="rounded-xl border bg-[#faf9f6] p-4"><div class="text-[10px] uppercase font-bold text-gray-400">Customer</div><div class="font-bold mt-1">'+esc(row.customer_name||'Customer')+'</div><div class="text-xs text-gray-500 mt-1">'+esc(row.phone||'Private / no phone')+' · '+esc(row.business_code||'-')+'</div></div>'
       +'<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>Manager/Admin review required.</b><div class="mt-1">If this is a new/private customer, it will be added immediately to your Customer Master as <b>Pending Review</b> so you can create an order. If it already belongs to another Sales Rep, this becomes an ownership request instead of taking the customer automatically.</div></div>'
-      +'<div><label class="text-xs font-semibold">Request Note</label><textarea id="activityCustomerMasterRequestNote" rows="3" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Optional: why you believe this should be your customer, or any identity details you know"></textarea></div>'
+      +'<div><label class="text-xs font-semibold">Proposed official name (editable)</label>'+
+         '<input id="activityOfficialCustomerName" maxlength="150" class="mt-1 w-full border rounded-xl px-3 py-2.5" value="'+esc(row.customer_name||'')+'">'+
+         '<p class="text-[10px] text-gray-500 mt-1">Original Showroom / Online name stays unchanged.</p></div>'+
+       '<div><label class="text-xs font-semibold">Mandatory: Has this customer purchased or confirmed a deal?</label>'+
+         '<select required id="activityOfficialPurchaseStatus" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">'+
+         '<option value="">Choose purchase situation...</option>'+
+         '<option value="purchased_pending_invoice">Yes — first-time purchase; invoice linked after approval</option>'+
+         '<option value="deal_confirmed">Yes — deal confirmed / deposit</option>'+
+         '<option value="purchased_invoiced">Yes — already invoiced; link afterward</option>'+
+         '<option value="not_purchased">No — still asking / following up (keep as prospect)</option></select>'+
+         '<p class="text-[10px] text-gray-500 mt-1">No existing invoice is required before customer approval.</p></div>'+
+       '<div><label class="text-xs font-semibold">Request Note</label><textarea id="activityCustomerMasterRequestNote" rows="3" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Optional: why you believe this should be your customer, or any identity details you know"></textarea></div>'
       +'<button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Submit for Review</button>'
       +'</form>');
     document.getElementById('activityCustomerMasterRequestForm').onsubmit=async function(e){
       e.preventDefault();
       const btn=e.target.querySelector('button');btn.disabled=true;btn.textContent='Submitting...';
       const note=String(document.getElementById('activityCustomerMasterRequestNote')?.value||'').trim()||null;
-      const res=await db.rpc('request_activity_customer_master',{p_activity_id:id,p_request_note:note});
+      const purchaseStatus=String(document.getElementById('activityOfficialPurchaseStatus')?.value||'');
+       const officialName=String(document.getElementById('activityOfficialCustomerName')?.value||'').trim();
+       if(!purchaseStatus||purchaseStatus==='not_purchased'||!officialName){
+         btn.disabled=false;btn.textContent='Submit for Review';
+         return showToast(!officialName?'Official customer name required.':!purchaseStatus?
+           'Answer the purchase/deal question.':'Keep this person in Showroom / Online until a deal is confirmed.','err');
+       }
+       const res=await db.rpc('request_qualified_customer_registration',{
+         p_source:activityState.type,p_source_id:id,p_purchase_status:purchaseStatus,
+         p_official_name:officialName,p_request_note:note
+       });
       if(res.error){btn.disabled=false;btn.textContent='Submit for Review';return showToast(res.error.message,'err')}
       const out=res.data||{};
       closeModal();
@@ -656,7 +677,7 @@ ${activityAllowed()?`          <select onchange="setActivityStatus(this.value)" 
       }else if(out.action==='ownership_request'){
         showToast('Ownership request sent to Manager/Admin.');
       }else{
-        showToast(out.message||'Customer added as Pending Review. You can create an order while it is reviewed.');
+        showToast(out.existing_request?'This source has an earlier pending request; its original details were unchanged.':'Customer request sent for approval. Link the official invoice afterward.');
       }
       await renderCustomerActivity(activityState.type);
     };
