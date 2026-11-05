@@ -450,7 +450,7 @@ function dailyCompactShareBody(r,pm){
  const noteStyle='font-size:12px;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere';
  const oneTask=(t,i)=>{
    const result=t.status||'Not updated';
-   return '<div data-compact-planned style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;padding:7px 10px;border-bottom:1px solid #e1e5e1;break-inside:avoid;page-break-inside:avoid">'+
+   return '<div data-compact-planned style="display:grid;grid-template-columns:'+(pm?'minmax(0,1fr) minmax(0,1fr)':'minmax(0,1fr)')+';gap:10px;padding:7px 10px;border-bottom:1px solid #e1e5e1;break-inside:avoid;page-break-inside:avoid">'+
      '<div style="'+noteStyle+'"><span style="color:#64748b;font-weight:700">#'+(i+1)+'</span> '+
        '<b>'+h(t.plan||'No morning plan')+'</b>'+
        (t.customerName?'<div style="font-size:11px;color:#5a626a">Customer: '+h(t.customerName)+'</div>':'')+
@@ -633,7 +633,7 @@ function renderSalesHome(){
  const tasks=amLocked?report.tasks:ui.tasks.length?ui.tasks:[empty()];
  ui.tasks=tasks;
  root().innerHTML='<div class="max-w-6xl mx-auto space-y-4">'+header('Daily Plan & Result','One report per day · Morning plan and evening results stay together')+
- '<div class="flex flex-wrap gap-2">'+(report?.amStatus==='Submitted'?'<button onclick="openSalesDailyShare(\'AM\')" class="'+lightButton+'">Compact Morning Share View</button>':'')+(report?.pmStatus==='Submitted'?'<button onclick="openSalesDailyShare(\'PM\')" class="'+lightButton+'">Compact Evening Share View</button>':'')+'</div>'+
+ '<div class="flex flex-wrap gap-2">'+(report?.amStatus==='Submitted'?'<button onclick="openSalesDailyShare(\'AM\')" class="'+lightButton+'">One-Image Morning Share</button>':'')+(report?.pmStatus==='Submitted'?'<button onclick="openSalesDailyShare(\'PM\')" class="'+lightButton+'">One-Image Evening Share</button>':'')+'</div>'+
  '<div class="rounded-2xl border bg-white p-4 flex flex-wrap gap-3 items-end justify-between">'+
  '<label class="text-xs font-bold">Report Date<input id="salesDailyDate" type="date" class="'+common+'" value="'+h(ui.date)+'" onchange="selectSalesDailyDate()"></label>'+
  '<div class="flex flex-wrap gap-2"><span class="rounded-lg bg-amber-50 px-3 py-2 text-xs">AM: <b>'+h(report?.amStatus||'Not Started')+'</b></span>'+
