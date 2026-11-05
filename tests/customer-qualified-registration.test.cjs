@@ -111,3 +111,43 @@ test('secure database functions validate new requests but preserve previous requ
  assert.match(migration,/grant execute on function public\.request_qualified_customer_registration/);
  assert.match(migration,/grant execute on function public\.submit_qualified_manual_customer_request/);
 });
+
+test('manager sees declaration for new requests, but older pending requests approve without retroactive checkbox',async()=>{
+ const newRequest={
+   request_id:'new-request',request_type:'create',customer_id:null,status:'pending',
+   customer_name:'First Time Buyer',requested_by_name:'Sales Rep',requested_at:'2026-11-05T02:00:00Z',
+   requested_customer:{name:'First Time Buyer',assigned_sales_id:'sales-1',
+    _qualification_version:'2026-11-05',_purchase_confirmation:'purchased_pending_invoice',
+    _qualification_source:'manual'},requested_contacts:[],request_note:'First purchase'};
+ const historicRequest={
+   ...newRequest,request_id:'historic-request',requested_at:'2026-09-10T02:00:00Z',
+   requested_customer:{name:'Previous Customer',assigned_sales_id:'sales-1'}};
+ const calls=[],toasts=[],modals=[];
+ const nodes={rcReviewNote:{value:''},rcName:{value:'First Time Buyer'},
+   rcAddress:{value:''},rcNotes:{value:''},rcHandler:{value:'sales-1'},
+   reviewCustomerPurchaseAcknowledged:{checked:false}};
+ const doc={getElementById:id=>nodes[id]||null,
+   querySelectorAll:()=>[]};
+ const db={rpc:async(name,args)=>{
+   calls.push({name,args});
+   if(name==='get_visible_customer_change_requests')return{data:[newRequest,historicRequest]};
+   return{data:{customer_id:'approved-customer'}};
+ },from:()=>({select(){return this},in(){return this},eq(){return this},
+    order(){return this},limit(){return Promise.resolve({data:[],error:null})},
+    then(resolve){return Promise.resolve({data:[],error:null}).then(resolve)}})};
+ const ctx={state:{user:{id:'manager'},profile:{role:'manager'}},
+   document:doc,db,esc:x=>String(x),titleCase:x=>x,confirm:()=>true,
+   openModal:(title,html)=>modals.push({title,html}),closeModal:()=>{},
+   showToast:msg=>toasts.push(msg),go:async()=>{},console};
+ ctx.window=ctx;
+ new Function(...Object.keys(ctx),workflow)(...Object.values(ctx));
+ await ctx.openCustomerRequestDetail('new-request');
+ assert.match(modals.at(-1).html,/Purchase \/ Closed-Deal Verification/);
+ await ctx.reviewCustomerRequest('new-request','approve');
+ assert.equal(calls.filter(c=>c.name==='review_customer_change_request').length,0);
+ assert.ok(toasts.some(x=>/Confirm that you reviewed/.test(x)));
+ await ctx.openCustomerRequestDetail('historic-request');
+ assert.doesNotMatch(modals.at(-1).html,/reviewCustomerPurchaseAcknowledged/);
+ await ctx.reviewCustomerRequest('historic-request','approve');
+ assert.equal(calls.filter(c=>c.name==='review_customer_change_request').length,1);
+});
