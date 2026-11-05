@@ -49,7 +49,7 @@
         <form id="editPOForm" class="grid md:grid-cols-2 gap-4">
           <div><label class="text-xs font-semibold">Official PO Number</label><input id="epoNo" value="${esc(p.po_number||'')}" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Leave blank while pending"></div>
           <div><label class="text-xs font-semibold">Vendor</label><input id="epoVendor" list="epoVendorMasterList" value="${esc(p.vendor_name||'')}" required onchange="applyVendorMasterSelection(this,'epoVendorId','','epoVendorInfo')" class="mt-1 w-full border rounded-xl px-3 py-2" placeholder="Type vendor name or code..."><input id="epoVendorId" type="hidden" value="${esc(p.vendor_id||'')}"><datalist id="epoVendorMasterList">${vendorOptions}</datalist><div id="epoVendorInfo" class="text-[10px] text-gray-400 mt-1">${p.vendor_id?'Linked to Vendor Info.':'Select a Vendor Info suggestion to link this PO.'}</div></div>
-          <div><label class="text-xs font-semibold">Status</label>${historical?`<div class="mt-1 w-full border border-purple-200 rounded-xl px-3 py-2 bg-purple-50 text-purple-700 text-sm font-semibold">Historical / Reconciled</div><input id="epoStatus" type="hidden" value="${esc(p.status||'placed')}"><div class="text-[9px] text-gray-400 mt-1">Original status: ${esc(titleCase(p.status||'placed'))}</div>`:`<select id="epoStatus" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white">${['placed','production','shipping','arrived'].map(s=>`<option value="${s}" ${p.status===s?'selected':''}>${titleCase(s)}</option>`).join('')}</select>`}</div>
+          <div><label class="text-xs font-semibold">Status</label>${historical?`<div class="mt-1 w-full border border-purple-200 rounded-xl px-3 py-2 bg-purple-50 text-purple-700 text-sm font-semibold">Historical / Reconciled</div><input id="epoStatus" type="hidden" value="${esc(p.status||'placed')}"><div class="text-[9px] text-gray-400 mt-1">Original status: ${esc(titleCase(p.status||'placed'))}</div>`:`<select id="epoStatus" class="mt-1 w-full border rounded-xl px-3 py-2 bg-white">${window.poForwardStatusOptions(p.status,[['placed','Ordered'],['production','Production'],['shipping','Shipping'],['arrived','Arrived'],['delivered','Delivered']])}</select>`}</div>
           <div><label class="text-xs font-semibold">ETA</label><input id="epoEta" type="date" value="${esc(p.estimated_arrival||'')}" ${historical?'disabled':''} class="mt-1 w-full border rounded-xl px-3 py-2 ${historical?'bg-gray-50 text-gray-500':''}"><div class="text-[9px] text-gray-400 mt-1">${historical?'Historical ETA is view-only while reconciled.':''}</div></div>
           <div><label class="text-xs font-semibold">Shipping Agent</label><input id="epoAgent" value="${esc(p.shipping_agent||'')}" class="mt-1 w-full border rounded-xl px-3 py-2"></div>
           <div><label class="text-xs font-semibold">PO / Unit Cost Currency</label><div class="mt-1 w-full border rounded-xl px-3 py-2 bg-gray-50 text-sm font-semibold">${esc(p.currency||'USD')}</div><div class="text-[10px] text-gray-400 mt-1">Shipping cost is always USD.</div></div>
@@ -102,18 +102,26 @@
         const file=document.getElementById('epoFile').files[0]||null;
         const selectedVendor=typeof findVendorMaster==='function'?findVendorMaster(document.getElementById('epoVendor').value):null;
         const patch={po_number:document.getElementById('epoNo').value.trim()||null,vendor_id:selectedVendor?.id||document.getElementById('epoVendorId')?.value||null,vendor_name:selectedVendor?.name||document.getElementById('epoVendor').value.trim(),status:historical?(p.status||'placed'):document.getElementById('epoStatus').value,estimated_arrival:historical?(p.estimated_arrival||null):(document.getElementById('epoEta').value||null),shipping_agent:document.getElementById('epoAgent').value.trim()||null,order_date:document.getElementById('epoDate').value||p.order_date,notes:document.getElementById('epoNotes').value.trim()||null};
-        if(!historical&&patch.status==='arrived'){
+        if(!historical){
+          const targetStatus=patch.status,eta=patch.estimated_arrival;
           try{
-            // Same confirmation and atomic PO/item status update used in Manage PO.
-            const confirmed=await window.confirmWholePOArrival(poId,patch.estimated_arrival);
-            if(!confirmed)return;
-            // PO status and ETA were already saved by the arrival RPC.
-            delete patch.status;
-            delete patch.estimated_arrival;
+            if(targetStatus==='arrived'){
+              // The shared arrival confirmation advances all live PO items.
+              const confirmed=await window.confirmWholePOArrival(poId,eta);
+              if(!confirmed)return;
+            }else{
+              // The server atomically advances the PO and eligible item lines.
+              // It refuses a backward change even if a stale client submits one.
+              await window.saveSupplierPOForwardStatus(poId,targetStatus,eta);
+            }
           }catch(err){
-            return showToast(err.message||'Could not mark PO Arrived','err');
+            return showToast(err.message||'Could not save PO progress','err');
           }
         }
+        // The status and ETA are already committed by the workflow action.
+        // Do not overwrite them again when saving document/vendor/notes.
+        delete patch.status;
+        delete patch.estimated_arrival;
         const r=await db.from('supplier_pos').update(patch).eq('id',poId);
         if(r.error)return showToast(r.error.message,'err');
         if(file){const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,'_'),path=`${poId}/${Date.now()}-${safe}`;const up=await db.storage.from('po-documents').upload(path,file,{upsert:false});if(up.error)return showToast(`PO updated but file upload failed: ${up.error.message}`,'err');const u=await db.from('supplier_pos').update({po_document_path:path,po_document_name:file.name}).eq('id',poId);if(u.error)return showToast(u.error.message,'err')}
