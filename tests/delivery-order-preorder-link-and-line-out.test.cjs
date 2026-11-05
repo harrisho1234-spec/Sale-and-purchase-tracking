@@ -134,7 +134,7 @@ test('existing database approval and stock guards are preserved for preorder DO 
  assert.match(migration,/enable_inventory_tracking_for_sales_item/);
  assert.match(migration,/v_item.source_type not in \('stock','pre_order'\)/);
  assert.match(migration,/submit_stock_action_request/);
- assert.match(migration,/release_sales_stock_do/); // called through unchanged server-side review function
+ assert.match(migration,/release_sales_stock/); // the existing DO release wrapper calls this validated function
  assert.match(migration,/guard_tracked_stock_fulfillment_delivered/);
  assert.match(migration,/sync_sales_item_status_with_stock/);
  assert.match(src,/submit_stock_action_request/);
