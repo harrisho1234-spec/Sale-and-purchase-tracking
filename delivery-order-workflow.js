@@ -107,11 +107,14 @@
       let actions='<span class="text-[10px] text-gray-400">View only</span>';
       if(canOperate()&&remaining>0){
         if(!item.inventory_tracking_enabled){
-          actions='<button onclick="linkDoItemToStock(\''+esc(item.sales_order_item_id)+'\')" class="px-3 py-2 border border-amber-300 bg-amber-50 text-amber-800 rounded-lg text-[10px] font-semibold">Link to Stock</button>';
+          actions=item.product_id
+            ?'<button type="button" onclick="linkDoItemToStock(\''+esc(item.sales_order_item_id)+'\')" class="px-3 py-2 border border-amber-300 bg-amber-50 text-amber-800 rounded-lg text-[10px] font-semibold">Link to Stock</button>'
+            :'<span class="text-[10px] text-red-700">No catalog product match. Ask Admin to correct this Sales Order line.</span>';
+          if(hasDo)actions+=' <button type="button" disabled title="Link the catalog product to Stock first" class="px-3 py-2 rounded-lg border bg-gray-100 text-gray-400 cursor-not-allowed text-[10px] font-semibold">'+(role()==='stock_controller'?'Request OUT':'Release OUT')+'</button>';
         }else{
           actions='<button onclick="openStockFulfillmentStatus(\''+esc(item.sales_order_item_id)+'\')" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-semibold">Status</button>';
           if(hasDo){
-            actions+=' <button onclick="openDoStockRelease(\''+esc(req.delivery_request_id)+'\',\''+esc(item.delivery_request_item_id)+'\')" class="px-3 py-2 bg-[#211d18] text-white rounded-lg text-[10px] font-semibold">Release / OUT</button>';
+            actions+=' <button type="button" onclick="openDoStockRelease(\''+esc(req.delivery_request_id)+'\',\''+esc(item.delivery_request_item_id)+'\')" class="px-3 py-2 bg-[#211d18] text-white rounded-lg text-[10px] font-semibold">'+(role()==='stock_controller'?'Request OUT':'Release OUT')+'</button>';
           }else{
             actions+=' <span class="text-[9px] text-gray-400 px-2 py-2">Assign DO No. first</span>';
           }
@@ -409,11 +412,9 @@
   window.openDoStockRelease=async function(requestId,requestItemId){
     if(!canOperate())return;
     try{
-      let req=D.requests.find(function(x){return String(x.delivery_request_id)===String(requestId)});
-      if(!req){
-        await loadRequests('');
-        req=D.requests.find(function(x){return String(x.delivery_request_id)===String(requestId)});
-      }
+      // Never use a stale cached remaining quantity for a stock movement.
+      await loadRequests('');
+      const req=D.requests.find(function(x){return String(x.delivery_request_id)===String(requestId)});
       if(!req)return showToast('DO request not found.','err');
       if(!String(req.do_no||'').trim())return showToast('Assign the official DO number before Stock OUT.','err');
 
@@ -435,6 +436,8 @@
       if(!locations.length)return showToast('No physical stock location has quantity available for this product.','err');
 
       const maxQty=Math.min(num(item.remaining_qty),arrived);
+      const defaultQty=Math.min(maxQty,Math.max(...locations.map(l=>num(l.qty))));
+      const controller=role()==='stock_controller';
       let locOptions='<option value="">Select stock location</option>';
       locations.forEach(function(l){
         locOptions+='<option value="'+esc(l.location_id)+'">'+esc(l.code||l.name||'Location')+' · On Hand '+qty(l.qty)+'</option>';
@@ -443,14 +446,14 @@
       openModal('Release DO '+esc(req.do_no),
         '<form id="doStockReleaseForm" class="space-y-4">'+
           '<div class="rounded-xl border bg-gray-50 p-4"><div class="text-xs text-gray-500">'+esc(req.customer_name||'')+' · '+esc(req.document_no||'Sales Order')+'</div><div class="text-[10px] font-bold text-[#a77d1a] mt-1">'+esc(item.product_code||'')+'</div><div class="font-semibold">'+esc(item.item_name||'')+'</div><div class="text-xs mt-2">DO Qty '+qty(item.requested_qty)+' · OUT '+qty(item.delivered_qty)+' · <b>DO Remaining '+qty(item.remaining_qty)+'</b> · Arrived '+qty(arrived)+'</div></div>'+
-          '<div class="rounded-xl border border-purple-100 bg-purple-50 p-3 text-xs text-purple-800"><b>DO No. '+esc(req.do_no)+'</b> will be stored on this Stock OUT movement automatically.</div>'+
+          '<div class="rounded-xl border border-purple-100 bg-purple-50 p-3 text-xs text-purple-800"><b>DO No. '+esc(req.do_no)+'</b> '+(controller?'will be linked to the requested Stock OUT after Admin/Super Admin approval. Stock is not deducted when you submit.':'will be stored on the Stock OUT movement.')+'</div>'+
           '<div class="grid md:grid-cols-2 gap-4">'+
-            '<div><label class="text-xs font-semibold">Release Qty *</label><input id="doReleaseQty" type="number" min="1" max="'+maxQty+'" step="1" value="'+maxQty+'" required class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>'+
+            '<div><label class="text-xs font-semibold">'+(controller?'Request OUT Qty *':'Release OUT Qty *')+'</label><input id="doReleaseQty" type="number" min="1" max="'+maxQty+'" step="1" value="'+defaultQty+'" required class="mt-1 w-full border rounded-xl px-3 py-2.5"><p class="mt-1 text-[10px] text-gray-500">Partial quantities are allowed. This release must come from one stock location.</p></div>'+
             '<div><label class="text-xs font-semibold">From Location *</label><select id="doReleaseLocation" required class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">'+locOptions+'</select></div>'+
             '<div><label class="text-xs font-semibold">Delivery Date</label><input id="doReleaseDate" type="date" value="'+new Date().toISOString().slice(0,10)+'" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>'+
             '<div><label class="text-xs font-semibold">Remark</label><input id="doReleaseNote" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Optional delivery remark"></div>'+
           '</div>'+
-          '<button id="doReleaseSave" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Confirm DO Stock OUT</button>'+
+          '<button id="doReleaseSave" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">'+(controller?'Request DO OUT Approval':'Confirm Release OUT')+'</button>'+
         '</form>'
       );
 
@@ -460,18 +463,38 @@
         if(!Number.isInteger(releaseQty)||releaseQty<=0||releaseQty>maxQty)return showToast('Release quantity must be a whole number from 1 to '+qty(maxQty)+'.','err');
         const locationId=document.getElementById('doReleaseLocation').value;
         if(!locationId)return showToast('Select a stock location.','err');
-        const btn=document.getElementById('doReleaseSave');btn.disabled=true;btn.textContent='Releasing...';
-        const rr=await db.rpc('release_sales_stock_do',{
-          p_delivery_request_item_id:requestItemId,
-          p_qty:releaseQty,
-          p_location_id:locationId,
-          p_delivery_date:document.getElementById('doReleaseDate').value||null,
-          p_note:String(document.getElementById('doReleaseNote').value||'').trim()||null
-        });
-        if(rr.error){btn.disabled=false;btn.textContent='Confirm DO Stock OUT';return showToast(rr.error.message,'err')}
-        closeModal();showToast('DO '+req.do_no+' Stock OUT recorded and added to Delivery History.');
-        D.view='do';
-        if(typeof window.renderStockInventory==='function')await window.renderStockInventory();
+        const location=locations.find(x=>String(x.location_id)===String(locationId));
+        if(!location||releaseQty>num(location.qty))return showToast('This location has only '+qty(location?.qty||0)+' in stock. Reduce the quantity or choose another location.','err');
+        const btn=document.getElementById('doReleaseSave');
+        if(btn.disabled)return;
+        btn.disabled=true;btn.textContent=controller?'Submitting approval...':'Releasing...';
+        const date=document.getElementById('doReleaseDate').value||null;
+        const note=String(document.getElementById('doReleaseNote').value||'').trim()||null;
+        try{
+          const rr=controller
+            ?await db.rpc('submit_stock_action_request',{
+              p_action_type:'do_delivery',
+              p_payload:{delivery_request_item_id:requestItemId,qty:releaseQty,location_id:locationId,delivery_date:date,note},
+              p_reason:note||'DO '+req.do_no+' individual item Stock OUT'
+            })
+            :await db.rpc('release_sales_stock_do',{
+              p_delivery_request_item_id:requestItemId,p_qty:releaseQty,
+              p_location_id:locationId,p_delivery_date:date,p_note:note
+            });
+          if(rr.error)throw rr.error;
+          closeModal();
+          showToast(controller
+            ?'DO '+req.do_no+': item OUT request submitted to Admin/Super Admin for approval. No stock was deducted.'
+            :'DO '+req.do_no+': '+qty(releaseQty)+' released from Stock and added to Delivery History.');
+          D.view='do';
+          if(typeof window.invalidateInventoryCache==='function')window.invalidateInventoryCache();
+          if(controller&&typeof window.refreshApprovalNotifications==='function')window.refreshApprovalNotifications().catch(()=>{});
+          if(typeof window.renderStockInventory==='function')await window.renderStockInventory();
+          else await renderRequests();
+        }catch(err){
+          showToast(err.message||'DO Stock OUT failed. Nothing was released.','err');
+          if(btn.isConnected){btn.disabled=false;btn.textContent=controller?'Request DO OUT Approval':'Confirm Release OUT';}
+        }
       };
     }catch(err){showToast(err.message||'Could not release this DO item.','err')}
   };
