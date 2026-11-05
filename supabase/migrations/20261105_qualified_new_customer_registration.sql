@@ -111,3 +111,46 @@ $function$;
 
 revoke all on function public.request_qualified_customer_registration(text,uuid,text,text,text) from public;
 grant execute on function public.request_qualified_customer_registration(text,uuid,text,text,text) to authenticated;
+
+-- Manual first-time buyer path: no source, visit, pre-existing CRM or invoice
+-- is required. This wrapper enforces a purchase answer for new app requests.
+create or replace function public.submit_qualified_manual_customer_request(
+ p_customer jsonb,
+ p_contacts jsonb,
+ p_purchase_status text,
+ p_request_note text default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path to public,auth,pg_temp
+as $function$
+declare
+ v_status text:=lower(trim(coalesce(p_purchase_status,'')));
+ v_payload jsonb;
+begin
+ if public.current_app_role() <> 'sales' then
+   raise exception 'Sales account required for official customer requests';
+ end if;
+ if v_status not in ('purchased_pending_invoice','purchased_invoiced','deal_confirmed') then
+   raise exception 'Answer the purchase/closed-deal question. Otherwise keep this contact as a prospect';
+ end if;
+ if p_customer is null or jsonb_typeof(p_customer)<>'object' then
+   raise exception 'Customer details are required';
+ end if;
+ v_payload:=(p_customer - '_workflow_reason')
+    || jsonb_build_object(
+      '_workflow_reason','sales_create',
+      '_qualification_version','2026-11-05',
+      '_purchase_confirmation',v_status,
+      '_qualification_source','manual',
+      '_original_source_name',null,
+      '_invoice_link_status','pending_invoice_or_issued_later');
+ return public.submit_customer_change_request(
+   'create',null,v_payload,coalesce(p_contacts,'[]'::jsonb),p_request_note
+ );
+end
+$function$;
+
+revoke all on function public.submit_qualified_manual_customer_request(jsonb,jsonb,text,text) from public;
+grant execute on function public.submit_qualified_manual_customer_request(jsonb,jsonb,text,text) to authenticated;
