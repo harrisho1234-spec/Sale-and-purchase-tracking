@@ -571,6 +571,24 @@ window.reloadSalesDailyReview=async()=>{
  ui.person=elem('dailyReviewPerson')?.value||'';
  await reload();
 };
+function groupedDailyManagerExtras(extras){
+ const groups=groupDailyExtras(extras).filter(g=>g.rows.length);
+ if(!groups.length)return '';
+ return '<div class="rounded-xl border p-3 space-y-3"><b class="text-sm">Additional Activities (Unplanned)</b>'+
+ groups.map(group=>
+  '<div class="rounded-lg border overflow-hidden"><div class="bg-slate-50 px-3 py-2 font-bold text-xs">'+
+  h(group.label)+' · '+group.rows.length+'</div><div class="divide-y">'+
+  group.rows.map(({entry:x})=>{
+   const sourceAction='openDailyActivitySource('+JSON.stringify(String(x.sourceType||''))+','+
+    JSON.stringify(String(x.sourceId||''))+')';
+   return '<div class="text-xs px-3 py-2"><b>'+h(x.category)+'</b>'+
+    (x.customerName?' · '+h(x.customerName):'')+
+    '<div class="mt-1">'+h(x.result||'No outcome recorded')+'</div>'+
+    (x.nextFollowup?'<div class="text-gray-500">Next follow-up: '+h(x.nextFollowup)+'</div>':'')+
+    (x.sourceId?'<button type="button" class="underline text-blue-700 mt-1" onclick="'+h(sourceAction)+'">Open original activity ↗</button>':'')+
+    '</div>';
+  }).join('')+'</div></div>').join('')+'</div>';
+}
 window.openDailyManagerReport=(id,selectedReport)=>{
  const r=selectedReport||ui.reports.find(x=>String(x.id)===String(id))||cachedDailyReport(id,'','',300000);
  if(!r)return toast('This Daily Report is unavailable. Refresh the review list.',true);
@@ -594,7 +612,7 @@ window.openDailyManagerReport=(id,selectedReport)=>{
    isOverdue(r)&&ui.policyVersion==='next-day-10am-20261104'?
     '<button type="button" class="'+actionButton+' mt-2" onclick="allowSalesDailyLatePm(\''+h(r.id)+'\',\''+h(r.date)+'\')">Allow Late Evening Result</button>':'')+
   '</div>':'')+
- ((r.additionalActivities||[]).length?'<div class="rounded-xl border p-3"><b class="text-sm">Additional Activities (Unplanned)</b>'+(r.additionalActivities||[]).map(x=>'<div class="text-xs border-b py-2"><b>'+h(x.category)+'</b>'+(x.customerName?' · '+h(x.customerName):'')+'<div>'+h(x.result)+'</div>'+(x.nextFollowup?'<div>Next follow-up: '+h(x.nextFollowup)+'</div>':'')+(x.sourceId?'<button class="underline text-blue-700" onclick="openDailyActivitySource(\''+h(x.sourceType)+'\',\''+h(x.sourceId)+'\')">Open original activity ↗</button>':'')+'</div>').join('')+'</div>':'')+
+ groupedDailyManagerExtras(r.additionalActivities||[])+
  (r.managerComment?'<p class="text-xs text-gray-600">Previous Manager comment: '+h(r.managerComment)+'</p>':'')+
  (r.pmStatus==='Submitted'&&r.reviewStatus!=='Reviewed'?
  '<label class="block text-xs font-bold">Manager comments<textarea id="dailyManagerComment" rows="3" maxlength="1500" class="'+common+' mt-1">'+h(r.managerComment||'')+'</textarea></label>'+
