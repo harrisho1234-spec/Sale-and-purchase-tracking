@@ -259,18 +259,82 @@ function capturePm(){
  });
 }
 let additionalDraft=[],additionalDraftDate='';
+// Report sections are presentation categories, distinct from the stored
+// Morning Plan task types and imported Google Sheet activity categories.
+// A source reference is authoritative: staff editing the activity title
+// must never move an imported visit into Other Tasks by accident.
+const dailySections=[
+ {id:'customer',label:'Customer Task'},
+ {id:'visit',label:'Customer Visit'},
+ {id:'online',label:'Online'},
+ {id:'other',label:'Other Task / To Do'}
+];
+function dailyExtraSection(x){
+ const source=String(x?.sourceType||'').trim().toLowerCase().replace(/[\s-]+/g,'_');
+ if(['showroom_visit','showroom','customer_visit'].includes(source))return 'visit';
+ if(['online','online_inquiry','online_visit'].includes(source))return 'online';
+ const category=String(x?.category||'').trim().toLowerCase();
+ if(['customer visit','showroom visit','showroom work'].includes(category))return 'visit';
+ if(['online inquiry','online inquiries','online visit'].includes(category))return 'online';
+ if(['customer follow-up','quotation','sales order','quotation / sr'].includes(category))return 'customer';
+ return 'other';
+}
+function dailyPlannedSection(t){
+ if(t?.todoTaskId)return 'other';
+ const category=String(t?.category||'').trim().toLowerCase();
+ if(['online inquiries','online inquiry','online visit'].includes(category))return 'online';
+ if(['customer visit','showroom visit'].includes(category)||
+    (category==='showroom / page'&&(t.customerName||t.customerId)))return 'visit';
+ if(t?.customerName||t?.customerId||['customer follow-up','quotation / sr'].includes(category))return 'customer';
+ return 'other';
+}
+function groupDailyExtras(extras){
+ return dailySections.map(section=>({...section,rows:(extras||[])
+   .map((entry,index)=>({entry,index}))
+   .filter(({entry})=>dailyExtraSection(entry)===section.id)}));
+}
 const additionalCats=['Customer Visit','Customer Follow-up','Online Inquiry','Quotation','Sales Order','Showroom Work','Other'];
 function captureAdditional(){
  const rows=root()?.querySelectorAll('.additional-daily-row')||[];
- if(rows.length)additionalDraft=[...rows].map((row,i)=>({id:additionalDraft[i]?.id||'',category:row.querySelector('[data-extra="category"]')?.value||'Other',customerName:row.querySelector('[data-extra="customerName"]')?.value||'',result:row.querySelector('[data-extra="result"]')?.value||'',nextFollowup:row.querySelector('[data-extra="nextFollowup"]')?.value||'',sourceType:row.dataset.sourceType||additionalDraft[i]?.sourceType||'',sourceId:row.dataset.sourceId||additionalDraft[i]?.sourceId||''}));
+ if(rows.length){
+  const previous=additionalDraft.length?additionalDraft:(ui.report?.additionalActivities||[]);
+  additionalDraft=[...rows].map(row=>{
+   const index=Number(row.dataset.draftIndex);
+   const prev=previous[Number.isInteger(index)&&index>=0?index:0]||{};
+   return {index,entry:{
+    id:prev.id||'',category:row.querySelector('[data-extra="category"]')?.value||'Other',
+    customerName:row.querySelector('[data-extra="customerName"]')?.value||'',
+    result:row.querySelector('[data-extra="result"]')?.value||'',
+    nextFollowup:row.querySelector('[data-extra="nextFollowup"]')?.value||'',
+    sourceType:row.dataset.sourceType||prev.sourceType||'',
+    sourceId:row.dataset.sourceId||prev.sourceId||''
+   }};
+  }).sort((a,b)=>a.index-b.index).map(x=>x.entry);
+ }
  return additionalDraft;
 }
 function additionalEditor(locked){
  if(additionalDraftDate!==ui.date){additionalDraftDate=ui.date;additionalDraft=[];}
  const data=additionalDraft.length?additionalDraft:(ui.report?.additionalActivities||[]);
- return '<div class="space-y-3 border-t pt-4"><h4 class="font-bold">Additional Activities (Unplanned)</h4><p class="text-xs text-gray-500">Record unexpected showroom visits, inquiries, quotations, or other work. These do not count toward Morning Plan completion.</p>'+
- data.map((x,i)=>'<div class="additional-daily-row border rounded-xl p-3 bg-white" data-source-type="'+h(x.sourceType||'')+'" data-source-id="'+h(x.sourceId||'')+'"><div class="flex justify-between gap-2 items-center mb-2"><b class="text-xs">Additional activity '+(i+1)+'</b>'+(!locked?'<button class="text-xs text-red-600" onclick="removeAdditionalDaily('+i+')">Remove</button>':'')+'</div><div class="grid sm:grid-cols-2 gap-2"><label class="text-xs">Activity type<select data-extra="category" class="'+common+'" '+(locked?'disabled':'')+'>'+additionalCats.map(v=>'<option '+(x.category===v?'selected':'')+'>'+h(v)+'</option>').join('')+'</select></label><label class="text-xs">Customer name (optional)<input data-extra="customerName" class="'+common+'" value="'+h(x.customerName||'')+'" '+(locked?'disabled':'')+'></label></div><label class="text-xs block mt-2">Actual outcome<textarea data-extra="result" class="'+common+'" rows="2" '+(locked?'disabled':'')+'>'+h(x.result||'')+'</textarea></label><label class="text-xs block mt-2">Next follow-up date<input data-extra="nextFollowup" type="date" class="'+common+'" value="'+h(x.nextFollowup||'')+'" '+(locked?'disabled':'')+'></label></div>').join('')+
- (!locked?'<div class="flex flex-wrap gap-2"><button class="'+lightButton+'" onclick="addAdditionalDaily()">+ Add Additional Activity</button><button class="'+lightButton+'" onclick="importRecordedDailyActivities()">Import Showroom / Online</button></div>':'')+'</div>';
+ const sectionHtml=groupDailyExtras(data).filter(group=>group.rows.length).map(group=>
+  '<div class="rounded-xl border border-slate-200 overflow-hidden">'+
+   '<div class="bg-slate-50 border-b px-3 py-2 text-xs font-bold">'+h(group.label)+' · '+group.rows.length+'</div>'+
+   '<div class="p-3 space-y-3">'+group.rows.map(({entry:x,index:i})=>
+    '<div class="additional-daily-row border rounded-xl p-3 bg-white" data-draft-index="'+i+'" data-source-type="'+h(x.sourceType||'')+'" data-source-id="'+h(x.sourceId||'')+'">'+
+    '<div class="flex justify-between gap-2 items-center mb-2"><b class="text-xs">Activity '+(i+1)+
+    (x.sourceId?' · Imported '+h(dailyExtraSection(x)==='online'?'Online':'Customer Visit'):'')+'</b>'+
+    (!locked?'<button class="text-xs text-red-600" onclick="removeAdditionalDaily('+i+')">Remove</button>':'')+'</div>'+
+    '<div class="grid sm:grid-cols-2 gap-2"><label class="text-xs">Activity type<select data-extra="category" class="'+common+'" '+(locked?'disabled':'')+'>'+
+     additionalCats.map(v=>'<option '+(x.category===v?'selected':'')+'>'+h(v)+'</option>').join('')+
+    '</select></label><label class="text-xs">Customer name (optional)<input data-extra="customerName" class="'+common+'" value="'+h(x.customerName||'')+'" '+(locked?'disabled':'')+'></label></div>'+
+    '<label class="text-xs block mt-2">Actual outcome<textarea data-extra="result" class="'+common+'" rows="2" '+(locked?'disabled':'')+'>'+h(x.result||'')+'</textarea></label>'+
+    '<label class="text-xs block mt-2">Next follow-up date<input data-extra="nextFollowup" type="date" class="'+common+'" value="'+h(x.nextFollowup||'')+'" '+(locked?'disabled':'')+'></label></div>'
+   ).join('')+'</div></div>'
+ ).join('');
+ return '<div class="space-y-3 border-t pt-4"><h4 class="font-bold">Additional Activities (Unplanned)</h4>'+
+  '<p class="text-xs text-gray-500">Imported Showroom visits appear under Customer Visit, and online inquiries under Online. These do not count toward Morning Plan completion.</p>'+
+  sectionHtml+
+  (!locked?'<div class="flex flex-wrap gap-2"><button class="'+lightButton+'" onclick="addAdditionalDaily()">+ Add Additional Activity</button><button class="'+lightButton+'" onclick="importRecordedDailyActivities()">Import Showroom / Online</button></div>':'')+'</div>';
 }
 function preserveEveningInputs(){const values=capturePm();if(ui.report?.tasks)values.forEach(v=>{const t=ui.report.tasks.find(x=>x.id===v.id);if(t)Object.assign(t,v)})}
 window.openDailyActivitySource=(type,id)=>{
