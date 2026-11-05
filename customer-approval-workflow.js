@@ -208,6 +208,99 @@
     });
   }
 
+  // Only NEW official customer requests receive this confirmation. Existing
+  // records and historic pending approvals are not retroactively modified.
+  var registrationSource={type:'manual',id:'',name:'',phone:''},registrationSourceResults=[];
+  function purchaseAnswer(){
+    var el=document.getElementById('customerCreatePurchaseStatus'),v=clean(el?.value);
+    if(!v){showToast('Answer the purchase/closed-deal question before requesting an official customer.','err');el?.focus();return ''}
+    if(v==='not_purchased'){showToast('This person is still a prospect. Keep them in Customer Database / Showroom / Online until the deal closes.','err');el?.focus();return ''}
+    return v;
+  }
+  function newCustomerQualificationFields(){
+    return '<div class="md:col-span-2 rounded-xl border border-amber-200 bg-[#fffcf5] p-3 space-y-2">'+
+      '<b class="block text-sm">Customer origin</b>'+
+      '<p class="text-xs text-gray-600">A first-time buyer needs no previous record.</p>'+
+      '<select id="customerCreateSourceType" onchange="customerRegistrationSourceChanged()" class="w-full rounded-xl border bg-white p-2.5 text-sm">'+
+      '<option value="manual">New Walk-in / Direct Buyer (no previous records)</option>'+
+      '<option value="crm">Existing Customer Database / CRM</option>'+
+      '<option value="showroom_visit">Showroom Visit</option>'+
+      '<option value="online">Online Inquiry</option></select>'+
+      '<div id="customerCreateSourcePicker" class="hidden space-y-2">'+
+        '<input id="customerCreateSourceSearch" class="w-full rounded-xl border p-2.5 text-sm" placeholder="Search name or phone" oninput="searchCustomerRegistrationSources()">'+
+        '<div id="customerCreateSourceResults" class="max-h-48 overflow-y-auto space-y-1"></div>'+
+        '<p id="customerCreateSourceSelected" class="text-xs font-semibold text-blue-800"></p>'+
+      '</div></div>'+
+      '<div class="md:col-span-2 rounded-xl border border-blue-200 bg-blue-50 p-3 space-y-2">'+
+      '<b class="block text-sm text-blue-900">Mandatory: Has the customer purchased or confirmed a deal?</b>'+
+      '<select id="customerCreatePurchaseStatus" required class="w-full rounded-xl border bg-white p-2.5 text-sm">'+
+      '<option value="">Choose the actual situation...</option>'+
+      '<option value="purchased_pending_invoice">Yes — first-time purchase; link invoice after approval</option>'+
+      '<option value="deal_confirmed">Yes — confirmed deal / deposit; document will be prepared</option>'+
+      '<option value="purchased_invoiced">Yes — already purchased; invoice will be linked later</option>'+
+      '<option value="not_purchased">No — only asking / following up (keep as prospect)</option></select>'+
+      '<p class="text-xs text-blue-800">You can submit for Manager/Admin approval without a prior visit or invoice. This answer is a declaration, not confirmed revenue. Buyer status still comes from issued TK/RK.</p>'+
+      '</div>';
+  }
+  window.customerRegistrationSourceChanged=async function(){
+    var type=clean(document.getElementById('customerCreateSourceType')?.value)||'manual';
+    registrationSource={type:type,id:'',name:'',phone:''};registrationSourceResults=[];
+    var panel=document.getElementById('customerCreateSourcePicker');
+    panel?.classList.toggle('hidden',type==='manual');
+    if(type==='manual')return;
+    var box=document.getElementById('customerCreateSourceResults');
+    if(box)box.textContent='Loading records you can access...';
+    try{
+      var result=await db.rpc(type==='crm'?'get_customer_lead_rows':'get_customer_activity_rows',
+        type==='crm'?{}:{p_activity_type:type});
+      if(result.error)throw result.error;
+      if(clean(document.getElementById('customerCreateSourceType')?.value)!==type)return;
+      registrationSourceResults=(result.data||[]).filter(function(x){return !x.is_history}).slice(0,1000);
+      window.searchCustomerRegistrationSources();
+    }catch(err){if(box)box.textContent='Unable to load source records: '+err.message}
+  };
+  window.searchCustomerRegistrationSources=function(){
+    var box=document.getElementById('customerCreateSourceResults');if(!box)return;
+    var q=clean(document.getElementById('customerCreateSourceSearch')?.value).toLowerCase();
+    var rows=registrationSourceResults.map(function(x,i){return{x:x,i:i}}).filter(function(z){
+      return !q||[z.x.customer_name,z.x.name,z.x.phone,z.x.business_code].some(function(y){return clean(y).toLowerCase().includes(q)});
+    }).slice(0,35);
+    box.innerHTML=rows.length?rows.map(function(z){
+      return '<button type="button" class="block w-full rounded-lg border bg-white p-2 text-left text-xs hover:bg-blue-50" onclick="useCustomerRegistrationSource('+z.i+')">'+
+        '<b>'+esc(z.x.customer_name||z.x.name||'Customer')+'</b>'+
+        '<p class="text-gray-500">'+esc(z.x.phone||'No phone')+
+        (z.x.sales_rep_name?' · '+esc(z.x.sales_rep_name):'')+'</p></button>';
+    }).join(''):'<p class="p-2 text-xs text-gray-500">No matching records. Choose New Walk-in / Direct Buyer for a first-time visitor.</p>';
+  };
+  window.useCustomerRegistrationSource=function(i){
+    var row=registrationSourceResults[i];if(!row)return;
+    var type=clean(document.getElementById('customerCreateSourceType')?.value);
+    var id=String(type==='crm'?row.lead_id||row.id:row.id||'');
+    if(!id)return showToast('This record has no valid source ID.','err');
+    registrationSource={type:type,id:id,name:clean(row.customer_name||row.name),phone:clean(row.phone)};
+    document.getElementById('mcName').value=registrationSource.name;
+    var selected=document.getElementById('customerCreateSourceSelected');
+    if(selected)selected.textContent='Selected: '+registrationSource.name+' · '+(registrationSource.phone||'No phone')+
+      '. You may edit the official name without changing the source record.';
+  };
+  function qualificationReviewHtml(r,pendingOrders){
+    var q=r.requested_customer||{},v=clean(q._qualification_version);
+    if(r.request_type!=='create'||!v)return '';
+    var statuses={purchased_pending_invoice:'First-time purchase — invoice to link after approval',
+      purchased_invoiced:'Purchased — existing invoice to link after approval',
+      deal_confirmed:'Confirmed deal / deposit — official document pending'};
+    var source={manual:'New first-time buyer',crm:'Customer Database',showroom_visit:'Showroom Visit',online:'Online Inquiry'};
+    return '<section class="md:col-span-2 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs space-y-2">'+
+      '<b class="block text-sm text-blue-900">Purchase / Closed-Deal Verification</b>'+
+      '<p><b>Sales declaration:</b> '+esc(statuses[q._purchase_confirmation]||'Missing / invalid answer')+'</p>'+
+      '<p><b>Source:</b> '+esc(source[q._qualification_source]||'Not specified')+
+      (q._source_record_id?' · '+esc(q._source_record_id):'')+'</p>'+
+      (q._original_source_name?'<p><b>Original name:</b> '+esc(q._original_source_name)+'</p>':'')+
+      '<p><b>Invoice linkage:</b> '+(pendingOrders.length?pendingOrders.length+' existing order(s)':'Not linked yet — permitted after approval')+'</p>'+
+      '<p class="text-blue-900">This answer is not proof of payment or issued TK/RK. Buyer status remains invoice-derived.</p>'+
+      '<label class="flex gap-2 font-semibold"><input type="checkbox" id="reviewCustomerPurchaseAcknowledged" class="mt-0.5">I reviewed this declaration; the invoice may be linked after approval.</label>'+
+      '</section>';
+  }
   var baseNew=window.openNewCustomer;
   if(typeof baseNew==='function')window.openNewCustomer=async function(){
     var out=await baseNew.apply(this,arguments);
