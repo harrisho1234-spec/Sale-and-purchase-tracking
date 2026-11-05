@@ -489,6 +489,7 @@
         btn.disabled=true;btn.textContent=controller?'Submitting approval...':'Releasing...';
         const date=document.getElementById('doReleaseDate').value||null;
         const note=String(document.getElementById('doReleaseNote').value||'').trim()||null;
+        let recorded=false;
         try{
           const rr=controller
             ?await db.rpc('submit_stock_action_request',{
@@ -501,18 +502,25 @@
               p_location_id:locationId,p_delivery_date:date,p_note:note
             });
           if(rr.error)throw rr.error;
+          recorded=true; // Stock action is committed; never tell staff it failed afterward.
           closeModal();
           showToast(controller
             ?'DO '+req.do_no+': item OUT request submitted to Admin/Super Admin for approval. No stock was deducted.'
             :'DO '+req.do_no+': '+qty(releaseQty)+' released from Stock and added to Delivery History.');
           D.view='do';
           if(typeof window.invalidateInventoryCache==='function')window.invalidateInventoryCache();
-          if(controller&&typeof window.refreshApprovalNotifications==='function')window.refreshApprovalNotifications().catch(()=>{});
+          if(controller&&typeof window.refreshApprovalNotifications==='function'){
+            try{Promise.resolve(window.refreshApprovalNotifications()).catch(()=>{})}catch(_){}
+          }
           if(typeof window.renderStockInventory==='function')await window.renderStockInventory();
           else await renderRequests();
         }catch(err){
-          showToast(err.message||'DO Stock OUT failed. Nothing was released.','err');
-          if(btn.isConnected){btn.disabled=false;btn.textContent=controller?'Request DO OUT Approval':'Confirm Release OUT';}
+          if(recorded){
+            showToast('DO OUT was saved, but the screen could not refresh. Reload before taking further action; do not submit again.','err');
+          }else{
+            showToast(err.message||'Could not submit this DO OUT. No stock action was recorded.','err');
+            if(btn.isConnected){btn.disabled=false;btn.textContent=controller?'Request DO OUT Approval':'Confirm Release OUT';}
+          }
         }
       };
     }catch(err){showToast(err.message||'Could not release this DO item.','err')}
