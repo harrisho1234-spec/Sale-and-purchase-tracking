@@ -491,7 +491,7 @@ function dailyCompactShareBody(r,pm){
      ' · '+h(managerReviewStatus(r))+'</footer>'+
  '</div>';
 }
-window.openSalesDailyShare=section=>{
+window.openSalesDailyShare=(section,mode='compact')=>{
  const r=ui.report;if(!r||!(section==='AM'?r.amStatus==='Submitted':r.pmStatus==='Submitted'))return toast('Submit before sharing',true);
  window.closeSalesDailyShare();ensureDailyKhmerFont();const pm=section==='PM';
  const customerCats=['Customer Follow-up','Online Inquiries','Quotation / SR'];
@@ -545,10 +545,27 @@ window.openSalesDailyShare=section=>{
  )+'</table>';
  const extraBlock='';
  const panel=document.createElement('div');panel.id='salesDailyShareOverlay';panel.style.cssText='position:fixed;inset:0;z-index:99999;background:#0009;overflow:auto;padding:16px';
- panel.innerHTML='<div style="max-width:760px;margin:auto"><div data-share-tools style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px"><button onclick="window.print()" style="background:white;padding:9px 14px;border-radius:8px">Print / PDF</button><button onclick="closeSalesDailyShare()" style="background:white;padding:9px 14px;border-radius:8px">Close</button></div>'+
- '<div id="salesDailyShareCard" style="background:white;color:#242424;padding:22px;border-radius:12px;box-shadow:0 8px 32px #0002;font-family:Noto Sans Khmer,Arial,sans-serif;line-height:1.75">'+
- '<div style="border:1px solid #b4cbb1;background:#e3eedf;padding:12px"><div style="font-weight:700;font-size:15px">'+(pm?'Evening Result':'Morning Plan')+'</div><div style="font-size:13px;margin-top:4px"><b>Date:</b> '+h(r.date)+' &nbsp; <b>Name:</b> '+h(r.salesperson||state.profile?.full_name||state.profile?.name||'Sales')+'</div></div>'+
- rows+extraBlock+'<div style="margin-top:12px;font-size:11px;color:#777">Submitted: '+h(formatDailySubmittedAt(pm?r.pmSubmittedAt:r.amSubmittedAt))+' · Manager review: '+h(managerReviewStatus(r))+'</div></div></div>';
+ const compact=mode!=='detailed';
+ const reportBody=compact?dailyCompactShareBody(r,pm):
+   '<div style="border:1px solid #b4cbb1;background:#e3eedf;padding:12px"><div style="font-weight:700;font-size:15px">'+(pm?'Evening Result':'Morning Plan')+'</div>'+
+   '<div style="font-size:13px;margin-top:4px"><b>Date:</b> '+h(r.date)+' &nbsp; <b>Name:</b> '+h(r.salesperson||state.profile?.full_name||state.profile?.name||'Sales')+'</div></div>'+
+   rows+extraBlock+'<div style="margin-top:12px;font-size:11px;color:#777">Submitted: '+h(formatDailySubmittedAt(pm?r.pmSubmittedAt:r.amSubmittedAt))+' · Manager review: '+h(managerReviewStatus(r))+'</div>';
+ const actionStyle='border-radius:7px;padding:8px 11px;font-weight:700;font-size:12px;cursor:pointer;border:1px solid #b9c3b7';
+ const activeStyle='background:#234033;color:white';
+ const inactiveStyle='background:white;color:#253528';
+ panel.innerHTML='<div style="max-width:760px;width:100%;margin:auto">'+
+  '<div data-share-tools style="display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px;margin-bottom:8px;position:sticky;top:0;z-index:2;padding:6px;background:rgba(24,34,26,.93);border-radius:9px">'+
+    '<button type="button" style="'+actionStyle+';'+(compact?activeStyle:inactiveStyle)+'" aria-pressed="'+compact+'" onclick="openSalesDailyShare(\''+section+'\',\'compact\')">One Image</button>'+
+    '<button type="button" style="'+actionStyle+';'+(!compact?activeStyle:inactiveStyle)+'" aria-pressed="'+(!compact)+'" onclick="openSalesDailyShare(\''+section+'\',\'detailed\')">Detailed</button>'+
+    '<button type="button" data-share-export style="'+actionStyle+';background:#dcefd3;color:#21432a" onclick="exportSalesDailyReportImage(true)">Share Image</button>'+
+    '<button type="button" data-share-export style="'+actionStyle+';'+inactiveStyle+'" onclick="exportSalesDailyReportImage(false)">Save PNG</button>'+
+    '<button type="button" style="'+actionStyle+';'+inactiveStyle+'" onclick="window.print()">Print / PDF</button>'+
+    '<button type="button" style="'+actionStyle+';'+inactiveStyle+'" onclick="closeSalesDailyShare()">Close</button>'+
+  '</div>'+
+  '<div id="salesDailyShareCard" data-share-mode="'+(compact?'compact':'detailed')+'" data-share-report-type="'+section+
+    '" style="width:100%;box-sizing:border-box;background:white;color:#242424;padding:'+(compact?'12':'22')+'px;border-radius:11px;box-shadow:0 8px 32px #0002;font-family:Noto Sans Khmer,Arial,sans-serif;line-height:'+(compact?'1.4':'1.75')+'">'+
+    reportBody+'</div>'+
+ '</div>';
  document.body.appendChild(panel);panel.addEventListener('click',e=>{if(e.target===panel)window.closeSalesDailyShare()});
  if(!document.getElementById('salesDailySharePrintStyle')){const st=document.createElement('style');st.id='salesDailySharePrintStyle';st.textContent='@media print{body>*:not(#salesDailyShareOverlay){display:none!important}#salesDailyShareOverlay{position:static!important;background:white!important;overflow:visible!important;padding:0!important}#salesDailyShareOverlay [data-share-tools]{display:none!important}#salesDailyShareCard{box-shadow:none!important}}';document.head.appendChild(st)}
 };
