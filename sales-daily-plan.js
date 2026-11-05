@@ -452,19 +452,10 @@ window.openSalesDailyShare=section=>{
  const resultCell=(t,i)=>'<div style="font-size:12px;line-height:1.85;overflow-wrap:anywhere;white-space:pre-wrap"><span style="font-size:10px;color:#64748b;font-weight:700;margin-right:5px">#'+(i+1)+'</span><b>'+h(t.status||'Not updated')+'</b> — '+h(t.result||'No outcome recorded')+
  (t.nextFollowup?'<div style="font-size:11px;color:#666;padding-left:17px">Next: '+h(t.nextFollowup)+'</div>':'')+'</div>';
  const extras=pm?(r.additionalActivities||[]):[];
- // Imported showroom and online records belong in their own report sections,
- // even when their customer also appears in a Morning Plan. Prefer the source
- // type; legacy or manually entered activities can use their category instead.
- const importedSource=x=>String(x.sourceType||'').toLowerCase().trim();
- const isShowroomExtra=x=>importedSource(x)==='showroom'||
-   (!importedSource(x)&&['Customer Visit','Showroom Work','Showroom Visit'].includes(x.category));
- const isOnlineExtra=x=>importedSource(x)==='online'||
-   (!importedSource(x)&&['Online Inquiry','Online Visit'].includes(x.category));
- const showroomExtra=extras.filter(isShowroomExtra);
- const onlineExtra=extras.filter(x=>!isShowroomExtra(x)&&isOnlineExtra(x));
- const customerExtra=extras.filter(x=>!isShowroomExtra(x)&&!isOnlineExtra(x)&&
-   ['Customer Follow-up','Quotation','Sales Order'].includes(x.category));
- const otherExtra=extras.filter(x=>!showroomExtra.includes(x)&&!onlineExtra.includes(x)&&!customerExtra.includes(x));
+ // Imported Showroom activities use sourceType="showroom_visit" in the
+ // Google Sheet. Classify by source first, then legacy/manual category.
+ const plannedBySection=id=>(r.tasks||[]).filter(t=>dailyPlannedSection(t)===id);
+ const importedBySection=id=>extras.filter(x=>dailyExtraSection(x)===id);
  const rowStyle='vertical-align:top;break-inside:avoid;page-break-inside:avoid';
  const cellStyle='border:1px solid #bbb;padding:10px;vertical-align:top;overflow-wrap:anywhere';
  const unplannedCell=x=>'<div style="font-size:12px;line-height:1.85;overflow-wrap:anywhere;white-space:pre-wrap"><b>Unplanned · '+h(x.category)+(x.customerName?' — '+h(x.customerName):'')+'</b><div>'+h(x.result||'No outcome recorded')+'</div>'+
@@ -475,7 +466,7 @@ window.openSalesDailyShare=section=>{
      .concat(pm?unplanned.map(x=>({task:x,unplanned:true})):[]);
    if(!records.length){
      return '<tbody><tr style="'+rowStyle+'"><th scope="row" style="'+cellStyle+';width:'+(pm?'21':'28')+'%;text-align:left;background:#f8f8f6;font-size:12px">'+h(label)+'</th>'+
-       '<td style="'+cellStyle+';font-size:12px;color:#888">No planned tasks</td>'+
+       '<td style="'+cellStyle+';font-size:12px;color:#888">'+(pm?'— No morning plan or recorded activity':'No planned tasks')+'</td>'+
        (pm?'<td style="'+cellStyle+';font-size:12px;color:#888">—</td>':'')+'</tr></tbody>';
    }
    return '<tbody>'+records.map((entry,i)=>{
@@ -494,10 +485,11 @@ window.openSalesDailyShare=section=>{
  '<thead><tr style="background:#e3eedf"><th style="border:1px solid #bbb;padding:9px;font-size:12px;text-align:left">Category</th>'+
  '<th style="border:1px solid #bbb;padding:9px;font-size:12px;text-align:left">Morning Plan</th>'+
  (pm?'<th style="border:1px solid #bbb;padding:9px;font-size:12px;text-align:left">Evening Result</th>':'')+'</tr></thead>'+
- tableSection('Customer Tasks',customer,customerExtra)+
- (pm&&showroomExtra.length?tableSection('Showroom',[],showroomExtra):'')+
- (pm&&onlineExtra.length?tableSection('Online',[],onlineExtra):'')+
- tableSection('Other Tasks / To-Do',other,otherExtra)+'</table>';
+ (pm?dailySections.map(section=>
+   tableSection(section.label,plannedBySection(section.id),importedBySection(section.id))
+  ).join(''):
+  tableSection('Customer Tasks',customer,[])+tableSection('Other Tasks / To-Do',other,[])
+ )+'</table>';
  const extraBlock='';
  const panel=document.createElement('div');panel.id='salesDailyShareOverlay';panel.style.cssText='position:fixed;inset:0;z-index:99999;background:#0009;overflow:auto;padding:16px';
  panel.innerHTML='<div style="max-width:760px;margin:auto"><div data-share-tools style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px"><button onclick="window.print()" style="background:white;padding:9px 14px;border-radius:8px">Print / PDF</button><button onclick="closeSalesDailyShare()" style="background:white;padding:9px 14px;border-radius:8px">Close</button></div>'+
