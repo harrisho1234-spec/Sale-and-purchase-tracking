@@ -125,9 +125,9 @@
           actions='<span class="px-2 py-1 rounded-lg border bg-amber-50 border-amber-300 text-amber-900 text-[10px] font-bold">OUT Approval Pending</span>';
         }else if(!item.inventory_tracking_enabled){
           actions=item.product_id
-            ?'<button type="button" onclick="linkDoItemToStock(\''+esc(item.sales_order_item_id)+'\')" class="px-3 py-2 border border-amber-300 bg-amber-50 text-amber-800 rounded-lg text-[10px] font-semibold">Link to Stock</button>'
+            ?'<button type="button" onclick="linkDoItemToStock(\''+esc(req.delivery_request_id)+'\',\''+esc(item.delivery_request_item_id)+'\')" class="px-3 py-2 border border-amber-300 bg-amber-50 text-amber-800 rounded-lg text-[10px] font-semibold">Link to Stock</button>'
             :'<span class="text-[10px] text-red-700">No catalog product match. Ask Admin to correct this Sales Order line.</span>';
-          if(hasDo)actions+=' <button type="button" disabled title="Link the catalog product to Stock first" class="px-3 py-2 rounded-lg border bg-gray-100 text-gray-400 cursor-not-allowed text-[10px] font-semibold">'+(role()==='stock_controller'?'Request OUT':'Release OUT')+'</button>';
+          if(hasDo)actions+=' <button type="button" onclick="openDoStockRelease(\''+esc(req.delivery_request_id)+'\',\''+esc(item.delivery_request_item_id)+'\')" title="First link the product to Stock, then verify Arrived quantity and available stock" class="px-3 py-2 rounded-lg border border-blue-300 bg-blue-50 text-blue-800 text-[10px] font-semibold">'+(role()==='stock_controller'?'Request OUT':'Release OUT')+'</button>';
         }else{
           actions='<button onclick="openStockFulfillmentStatus(\''+esc(item.sales_order_item_id)+'\')" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-semibold">Status</button>';
           if(hasDo){
@@ -360,14 +360,99 @@
     };
   };
 
-  window.linkDoItemToStock=async function(itemId){
-    if(!canOperate())return;
+  // Resolve the exact DO item from the latest authorized DO snapshot. The
+  // original handler sent only a Sales Order item ID and gave a generic error.
+  // A stale DO screen or mismatched order item must never update stock links.
+  function findDoItem(requestId,requestItemId){
+    const req=D.requests.find(x=>String(x.delivery_request_id)===String(requestId));
+    const item=(req?.items||[]).find(x=>String(x.delivery_request_item_id)===String(requestItemId));
+    return {req,item};
+  }
+  const linkingDoItems=new Set();
+  function doLinkEligibility(item){
+    if(!item)return 'This DO item was not found in the latest request. Refresh and try again.';
+    if(num(item.remaining_qty)<=0)return 'This DO item is already completed. No further Stock link is needed.';
+    if(!item.sales_order_item_id)return 'This DO item is missing its original Sales Order item reference. Ask Admin to correct the order.';
+    if(!item.product_id)return 'No matching catalog product is linked to this Sales Order line. Ask Admin to match the original product first.';
+    if(!['stock','pre_order'].includes(String(item.source_type||'').trim()))
+      return 'This Sales Order line is not classified as a Stock/Pre-order product. Ask Admin to check its source type before linking.';
+    return '';
+  }
+  window.linkDoItemToStock=async function(requestId,requestItemId,continueToRelease=false){
+    if(!canOperate())return showToast('Stock Controller or Admin access required.','err');
+    const key=String(requestItemId);
+    if(linkingDoItems.has(key))return;
     try{
-      const r=await db.rpc('enable_inventory_tracking_for_sales_item',{p_sales_order_item_id:itemId});
-      if(r.error)throw r.error;
-      showToast('Item linked to Stock.');
-      if(typeof window.renderStockInventory==='function')await window.renderStockInventory();
-    }catch(err){showToast(err.message||'Could not link Sales item to Stock.','err')}
+      await loadRequests('');
+      const {req,item}=findDoItem(requestId,requestItemId);
+      if(!req||!item)return showToast('This DO item could not be found. Refresh the list before linking.','err');
+      const reason=doLinkEligibility(item);
+      if(reason)return showToast(reason,'err');
+      if(item.inventory_tracking_enabled){
+        showToast('This item is already linked to Stock.');
+        if(continueToRelease)return window.openDoStockRelease(requestId,requestItemId);
+        return;
+      }
+      openModal('Confirm Link to Stock',
+        '<form id="linkDoStockForm" class="space-y-4">'+
+        '<div class="rounded-xl border bg-[#faf9f6] p-4">'+
+          '<div class="text-xs text-gray-500">'+esc(req.do_no||'DO not yet numbered')+' · '+esc(req.document_no||'Sales Order')+'</div>'+
+          '<div class="text-[11px] font-bold text-[#a77d1a] mt-2">'+esc(item.product_code||'')+'</div>'+
+          '<div class="font-semibold">'+esc(item.item_name||'Product')+'</div>'+
+          '<div class="text-xs text-gray-600 mt-2">DO remaining: '+qty(item.remaining_qty)+' · Source: '+esc(title(item.source_type||''))+'</div></div>'+
+        '<div class="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">'+
+          '<b>Catalog product already matched.</b> This action enables stock tracking for that exact item. '+
+          'It does not create stock, receive goods, submit an OUT request, or deduct inventory. '+
+          'Linking is allowed even with zero available stock. For a wrong product code, ask Admin to correct the original Sales Order.</div>'+
+        '<button id="linkDoStockSave" class="w-full rounded-xl bg-[#211d18] py-3 text-white font-semibold">'+
+          (continueToRelease?'Link Product & Continue to Item OUT':'Confirm Link to Stock')+'</button>'+
+        '</form>'
+      );
+      const form=document.getElementById('linkDoStockForm');
+      if(!form)return;
+      form.onsubmit=async function(e){
+        e.preventDefault();
+        if(linkingDoItems.has(key))return;
+        linkingDoItems.add(key);
+        const btn=document.getElementById('linkDoStockSave');
+        if(btn){btn.disabled=true;btn.textContent='Verifying product link...'}
+        let recorded=false;
+        try{
+          await loadRequests('');
+          const fresh=findDoItem(requestId,requestItemId);
+          const failure=doLinkEligibility(fresh.item);
+          if(!fresh.req||failure)throw new Error(failure||'This DO is no longer available.');
+          if(String(fresh.item.sales_order_item_id)!==String(item.sales_order_item_id)||
+             String(fresh.item.product_id)!==String(item.product_id))
+            throw new Error('The DO product changed since the confirmation was opened. Refresh and review its code.');
+          if(!fresh.item.inventory_tracking_enabled){
+            const response=await db.rpc('enable_inventory_tracking_for_sales_item',{
+              p_sales_order_item_id:fresh.item.sales_order_item_id
+            });
+            if(response.error)throw response.error;
+          }
+          recorded=true;
+          closeModal();
+          showToast('Product '+(item.product_code||'')+' linked to Stock. No stock was released.');
+          if(typeof window.invalidateInventoryCache==='function')window.invalidateInventoryCache();
+          if(typeof window.renderStockInventory==='function')await window.renderStockInventory();
+          else await renderRequests();
+          if(continueToRelease)await window.openDoStockRelease(requestId,requestItemId);
+        }catch(err){
+          if(recorded){
+            showToast('Product link was saved, but the screen did not refresh. Reload before continuing with Stock OUT.','err');
+          }else{
+            const message=String(err?.message||'Could not link this DO item.');
+            showToast(message.includes('Only linked stock product lines')
+              ?'This product link was rejected because its stored Stock/Pre-order classification changed. Refresh the DO and ask Admin to verify the original order line. No stock was deducted.'
+              :message,'err');
+            if(btn?.isConnected){btn.disabled=false;btn.textContent=continueToRelease?'Link Product & Continue to Item OUT':'Confirm Link to Stock'}
+          }
+        }finally{linkingDoItems.delete(key)}
+      };
+    }catch(err){
+      showToast(err.message||'Could not verify this DO item for Stock linking.','err');
+    }
   };
 
 
@@ -439,7 +524,7 @@
       const item=items.find(function(x){return String(x.delivery_request_item_id)===String(requestItemId)});
       if(!item)return showToast('DO item not found. Refresh and try again.','err');
       if(num(item.remaining_qty)<=0)return showToast('This DO item is already fully delivered.','err');
-      if(!item.inventory_tracking_enabled)return window.linkDoItemToStock(item.sales_order_item_id);
+      if(!item.inventory_tracking_enabled)return window.linkDoItemToStock(requestId,requestItemId,true);
       if(D.pendingOutItems.has(String(item.delivery_request_item_id)))
         return showToast('An OUT request for this DO item is waiting for approval. Check the Approvals tab.','err');
 
