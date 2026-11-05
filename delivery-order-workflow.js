@@ -1,7 +1,7 @@
 // Delivery Order workflow overlay for Customer Fulfillment.
 // Keeps the existing linked-fulfillment screen intact and adds DO Requests + Delivery History.
 (function(){
-  const D={view:'linked',requests:[],history:[],editRequests:[],expandedRequests:new Set()};
+  const D={view:'linked',requests:[],history:[],editRequests:[],expandedRequests:new Set(),pendingOutItems:new Set()};
 
   function num(v){return Number(v||0)}
   function esc(v){
@@ -43,6 +43,20 @@
     const r=await db.rpc('get_inventory_do_requests',{p_search:String(search||'').trim()||null});
     if(r.error)throw r.error;
     D.requests=r.data||[];
+    // The Stock Controller sees their own requests; Admin sees all pending
+    // requests through the existing restricted approval query.
+    D.pendingOutItems=new Set();
+    if(canOperate()){
+      try{
+        const pending=await db.rpc('get_stock_action_requests',{p_status:'pending'});
+        if(!pending.error){
+          (pending.data||[]).forEach(x=>{
+            if(x.action_type==='do_delivery'&&x.payload?.delivery_request_item_id)
+              D.pendingOutItems.add(String(x.payload.delivery_request_item_id));
+          });
+        }
+      }catch(_){/* A notification read must not hide DOs. */}
+    }
     // Separate editable-document workflow. A failure to read edit-request
     // history should never prevent the DO list itself from loading.
     if(canAccessDoEdit()){
@@ -106,7 +120,10 @@
       const remaining=num(item.remaining_qty);
       let actions='<span class="text-[10px] text-gray-400">View only</span>';
       if(canOperate()&&remaining>0){
-        if(!item.inventory_tracking_enabled){
+        const pending=D.pendingOutItems.has(String(item.delivery_request_item_id));
+        if(pending){
+          actions='<span class="px-2 py-1 rounded-lg border bg-amber-50 border-amber-300 text-amber-900 text-[10px] font-bold">OUT Approval Pending</span>';
+        }else if(!item.inventory_tracking_enabled){
           actions=item.product_id
             ?'<button type="button" onclick="linkDoItemToStock(\''+esc(item.sales_order_item_id)+'\')" class="px-3 py-2 border border-amber-300 bg-amber-50 text-amber-800 rounded-lg text-[10px] font-semibold">Link to Stock</button>'
             :'<span class="text-[10px] text-red-700">No catalog product match. Ask Admin to correct this Sales Order line.</span>';
@@ -423,6 +440,8 @@
       if(!item)return showToast('DO item not found. Refresh and try again.','err');
       if(num(item.remaining_qty)<=0)return showToast('This DO item is already fully delivered.','err');
       if(!item.inventory_tracking_enabled)return window.linkDoItemToStock(item.sales_order_item_id);
+      if(D.pendingOutItems.has(String(item.delivery_request_item_id)))
+        return showToast('An OUT request for this DO item is waiting for approval. Check the Approvals tab.','err');
 
       const sr=await db.rpc('get_inventory_item_status_for_stock',{p_sales_order_item_id:item.sales_order_item_id});
       if(sr.error)throw sr.error;
