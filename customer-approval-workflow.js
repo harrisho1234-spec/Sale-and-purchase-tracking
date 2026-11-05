@@ -281,7 +281,7 @@
     document.getElementById('mcName').value=registrationSource.name;
     var selected=document.getElementById('customerCreateSourceSelected');
     if(selected)selected.textContent='Selected: '+registrationSource.name+' · '+(registrationSource.phone||'No phone')+
-      '. You may edit the official name without changing the source record.';
+      '. You can edit the official name; original source records stay unchanged. Contact details come from the selected record and can be corrected during management review.';
   };
   function qualificationReviewHtml(r,pendingOrders){
     var q=r.requested_customer||{},v=clean(q._qualification_version);
