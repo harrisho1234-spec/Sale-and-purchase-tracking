@@ -438,6 +438,59 @@ function ensureDailyKhmerFont(){
  link.href='https://fonts.googleapis.com/css2?family=Noto+Sans+Khmer:wght@400;500;600;700&display=swap';
  document.head.appendChild(link);
 }
+// A one-image, conversation-friendly version: do not repeat blank morning
+// plan cells on imported visits, and use two balanced columns for unrelated
+// Showroom/Online outcomes. Full detail remains available by switching mode.
+function dailyCompactShareBody(r,pm){
+ const list=pm?dailySections:[
+   {id:'customer',label:'Customer Task'},
+   {id:'other',label:'Other Task / To Do'}
+ ];
+ const allTasks=r.tasks||[],extras=pm?(r.additionalActivities||[]):[];
+ const noteStyle='font-size:12px;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere';
+ const oneTask=(t,i)=>{
+   const result=t.status||'Not updated';
+   return '<div data-compact-planned style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;padding:7px 10px;border-bottom:1px solid #e1e5e1;break-inside:avoid;page-break-inside:avoid">'+
+     '<div style="'+noteStyle+'"><span style="color:#64748b;font-weight:700">#'+(i+1)+'</span> '+
+       '<b>'+h(t.plan||'No morning plan')+'</b>'+
+       (t.customerName?'<div style="font-size:11px;color:#5a626a">Customer: '+h(t.customerName)+'</div>':'')+
+       (t.todoTaskId?'<div style="font-size:10px;color:#996715">To-Do</div>':'')+'</div>'+
+     (pm?'<div style="'+noteStyle+'"><b>'+h(result)+'</b> — '+h(t.result||'No outcome recorded')+
+       (t.nextFollowup?'<div style="font-size:11px;color:#475569">Next: '+h(t.nextFollowup)+'</div>':'')+'</div>':'')+
+   '</div>';
+ };
+ const oneExtra=x=>'<div data-compact-extra style="padding:8px 10px;background:#fbfcfa;border:1px solid #e1e5df;border-radius:7px;min-width:0;break-inside:avoid;page-break-inside:avoid">'+
+   '<div style="font-size:12.5px;line-height:1.35;font-weight:750;overflow-wrap:anywhere">'+h(x.customerName||x.category||'Activity')+'</div>'+
+   '<div style="'+noteStyle+';margin-top:3px">'+h(x.result||'No outcome recorded')+'</div>'+
+   (x.nextFollowup?'<div style="font-size:10.5px;line-height:1.3;color:#586779;margin-top:3px">Next: '+h(x.nextFollowup)+'</div>':'')+
+   '</div>';
+ const html=list.map(section=>{
+   const tasks=allTasks.filter(t=>dailyPlannedSection(t)===section.id);
+   const imported=extras.filter(x=>dailyExtraSection(x)===section.id);
+   if(!tasks.length&&!imported.length)return '';
+   const label=section.label+(tasks.length||imported.length?' <span style="font-weight:500;color:#566579">· '+(tasks.length+imported.length)+'</span>':'');
+   return '<section data-compact-section="'+h(section.id)+'" style="border:1px solid #d1d8cd;border-radius:7px;overflow:hidden;margin-top:9px;break-inside:avoid-page">'+
+      '<div style="padding:6px 10px;background:#e7eee2;color:#253625;font-weight:800;font-size:12.5px">'+label+'</div>'+
+      (tasks.length?'<div>'+tasks.map(oneTask).join('')+'</div>':'')+
+      (imported.length?'<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;padding:8px">'+imported.map(oneExtra).join('')+'</div>':'')+
+     '</section>';
+ }).join('');
+ const counts=pm?
+   '<span>'+allTasks.length+' planned</span><span>'+extras.filter(x=>dailyExtraSection(x)==='visit').length+' visits</span>'+
+   '<span>'+extras.filter(x=>dailyExtraSection(x)==='online').length+' online</span>':
+   '<span>'+allTasks.length+' planned tasks</span>';
+ return '<div data-share-compact style="background:white;color:#263026;font-family:Noto Sans Khmer,Arial,sans-serif">'+
+   '<header style="border:1px solid #a8c4a2;border-radius:7px;background:#e4eee0;padding:9px 12px;display:flex;align-items:start;justify-content:space-between;gap:10px">'+
+    '<div><b style="font-size:16px;line-height:1.25">'+(pm?'Evening Result':'Morning Plan')+'</b>'+
+     '<div style="font-size:12.5px;line-height:1.5;margin-top:3px">'+h(r.date)+' · '+h(r.salesperson||state.profile?.full_name||state.profile?.name||'Sales')+'</div></div>'+
+    '<div style="display:flex;flex-wrap:wrap;justify-content:flex-end;gap:5px;font-size:10.5px;color:#42553e">'+counts+'</div>'+
+   '</header>'+
+   (html||'<div style="padding:15px;color:#6b7280;font-size:12px">No activities recorded.</div>')+
+   '<footer style="font-size:10.5px;line-height:1.4;color:#5e6b61;margin-top:10px;border-top:1px solid #dfe4dc;padding-top:6px">'+
+     'Submitted: '+h(formatDailySubmittedAt(pm?r.pmSubmittedAt:r.amSubmittedAt))+
+     ' · '+h(managerReviewStatus(r))+'</footer>'+
+ '</div>';
+}
 window.openSalesDailyShare=section=>{
  const r=ui.report;if(!r||!(section==='AM'?r.amStatus==='Submitted':r.pmStatus==='Submitted'))return toast('Submit before sharing',true);
  window.closeSalesDailyShare();ensureDailyKhmerFont();const pm=section==='PM';
