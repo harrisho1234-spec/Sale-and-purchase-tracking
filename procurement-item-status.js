@@ -170,9 +170,14 @@
     if(!selected.length)return showToast('Select at least one live PO item.','err');
     const status=document.getElementById('poBulkItemStatus')?.value||'placed';
     if(!STATUSES.includes(norm(status)))return showToast('Invalid PO item status.','err');
-    if(!confirm('Update '+selected.length+' selected live PO item(s) to '+statusLabel(status)+'?'))return;
+    let eligible;
+    try{eligible=await forwardOnlyPOItemIds(selected.map(x=>x.id),status)}
+    catch(err){return showToast(err.message||'Could not verify current PO item statuses.','err')}
+    if(!eligible.ids.length)return showToast('None of the selected PO items can advance to '+statusLabel(status)+'. Already-arrived items remain locked.','err');
+    if(!confirm('Advance '+eligible.ids.length+' item(s) to '+statusLabel(status)+
+      (eligible.skipped?'?\\n'+eligible.skipped+' later-stage, unchanged or historical item(s) will be skipped.':'?')))return;
     const r=await db.rpc('set_supplier_po_items_status_bulk',{
-      p_supplier_po_item_ids:selected.map(x=>x.id),
+      p_supplier_po_item_ids:eligible.ids,
       p_status:status
     });
     if(r.error)return showToast(r.error.message,'err');
@@ -180,7 +185,7 @@
     if(window.documentFlowState)window.documentFlowState.loaded=false;
     if(typeof window.invalidateInventoryCache==='function')window.invalidateInventoryCache();
     if(typeof window.invalidateInventoryTasks==='function')window.invalidateInventoryTasks();
-    showToast((r.data||0)+' PO item'+(Number(r.data||0)===1?'':'s')+' updated to '+statusLabel(status)+'.');
+    showToast((r.data||0)+' PO item'+(Number(r.data||0)===1?'':'s')+' advanced to '+statusLabel(status)+'.'+(eligible.skipped?' '+eligible.skipped+' unchanged/later-stage item(s) skipped.':''));
     await renderPOItemsWithStatus();
   };
 
@@ -363,12 +368,25 @@
   window.setAllPOItemStatuses=async function(poId){
     if(!canProcurementEdit())return showToast('You do not have permission to edit PO items.','err');
     const status=document.getElementById('poAllItemStatus')?.value||'placed';
-    const r=await db.from('supplier_po_items').update({procurement_status:status,updated_at:new Date().toISOString()}).eq('supplier_po_id',poId).eq('historical_stock_reconciled',false);
+    if(!STATUSES.includes(norm(status)))return showToast('Invalid PO item status.','err');
+    const latest=await db.from('supplier_po_items')
+      .select('id,procurement_status,historical_stock_reconciled').eq('supplier_po_id',poId);
+    if(latest.error)return showToast(latest.error.message,'err');
+    const all=(latest.data||[]).filter(x=>!x.historical_stock_reconciled);
+    const eligible=all.filter(x=>canAdvance(x.procurement_status,status)&&norm(x.procurement_status)!==norm(status));
+    const skipped=all.length-eligible.length;
+    if(!eligible.length)return showToast('No PO item can advance to '+statusLabel(status)+'. Arrived and later-stage lines remain unchanged.','err');
+    if(eligible.length>500)return showToast('Select up to 500 PO items at once using PO Items tab.','err');
+    if(!confirm('Advance '+eligible.length+' PO items to '+statusLabel(status)+'?'+
+      (skipped?'\\n'+skipped+' already-further/unchanged item(s) will be skipped.':'')))return;
+    const r=await db.rpc('set_supplier_po_items_status_bulk',{
+      p_supplier_po_item_ids:eligible.map(x=>x.id),p_status:status
+    });
     if(r.error)return showToast(r.error.message,'err');
     if(window.documentFlowState)window.documentFlowState.loaded=false;
     if(typeof window.invalidateInventoryCache==='function')window.invalidateInventoryCache();
     if(typeof window.invalidateInventoryTasks==='function')window.invalidateInventoryTasks();
-    showToast(`Live PO items updated: ${statusLabel(status)}`);
+    showToast((r.data||0)+' item(s) advanced to '+statusLabel(status)+'.'+(skipped?' '+skipped+' later-stage/unchanged line(s) preserved.':''));
     await injectPOItemStatusManager(poId);
   };
 
