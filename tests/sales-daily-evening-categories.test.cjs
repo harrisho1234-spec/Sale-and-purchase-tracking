@@ -59,7 +59,7 @@ test('Showroom source, online source, legacy manual categories and To-Do use fou
 test('compact Evening Result/print groups imports into Customer Visit and Online, never Other',()=>{
  const {c,elements}=createApp(),r=exampleReport();
  c.__dailyCategoryTest.setReport(r);
- c.openSalesDailyShare('PM');
+ c.openSalesDailyShare('PM','detailed');
  const html=elements.salesDailyShareOverlay.innerHTML;
  const labels=['Customer Task','Customer Visit','Online','Other Task / To Do'];
  const pos=labels.map(label=>html.indexOf('>'+label+'</th>'));
@@ -78,7 +78,7 @@ test('compact Evening Result/print groups imports into Customer Visit and Online
 });
 test('existing Morning Plan share remains a two-category view',()=>{
  const {c,elements}=createApp();c.__dailyCategoryTest.setReport(exampleReport());
- c.openSalesDailyShare('AM');
+ c.openSalesDailyShare('AM','detailed');
  const html=elements.salesDailyShareOverlay.innerHTML;
  assert.match(html,/>Customer Tasks<\/th>/);
  assert.match(html,/>Other Tasks \/ To-Do<\/th>/);
