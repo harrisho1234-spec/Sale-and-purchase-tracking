@@ -327,7 +327,11 @@
     if(selectEl)selectEl.disabled=true;
     const r=await db.from('supplier_po_items').update({procurement_status:norm(status),updated_at:new Date().toISOString()}).eq('id',itemId);
     if(selectEl)selectEl.disabled=false;
-    if(r.error)return showToast(r.error.message,'err');
+    if(r.error){
+      const original=(poBulk.rows||[]).find(x=>String(x.id)===String(itemId));
+      if(selectEl&&original)selectEl.value=original.procurement_status||'placed';
+      return showToast(r.error.message,'err');
+    }
     if(selectEl){
       selectEl.className=`mt-1 w-full border rounded-xl px-3 py-2 text-xs bg-white ${statusClass(status)}`;
     }
