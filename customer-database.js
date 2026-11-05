@@ -809,6 +809,14 @@
           <div class="text-xs text-gray-500 mt-1">${esc(r.phone||'Private / no phone')} · Current CRM stage: ${esc(r.stage||'-')}</div>
         </div>
         <div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>Choose carefully.</b> Converting/linking registers this CRM record in Customer Master and records <b>Buy (Sales Reported)</b>. Verified Buyer status appears in Customer Master only when a TK/RK invoice is issued. Registration alone never counts as a purchase.</div>
+        ${state.profile?.role==='sales'?`<label class="block text-xs font-semibold">Official customer name (editable)<input id="crmOfficialCustomerName" maxlength="150" value="${esc(r.customer_name||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></label>
+        <label class="block text-xs font-semibold">Mandatory: Has the customer purchased or confirmed a deal?<select id="crmConversionPurchaseStatus" required class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">
+          <option value="">Select purchase situation...</option>
+          <option value="purchased_pending_invoice">Yes — first-time purchase; invoice to link after approval</option>
+          <option value="deal_confirmed">Yes — deal confirmed / deposit</option>
+          <option value="purchased_invoiced">Yes — already invoiced; link after approval</option>
+          <option value="not_purchased">No — still a prospect (do not register)</option></select></label>
+        <p class="text-xs text-gray-500">No invoice or prior Showroom/Online record is required. The original CRM name stays unchanged.</p>` : '' }
         <button type="button" onclick="findExistingCustomerForLead('${id}')" class="w-full border rounded-xl py-3 font-semibold bg-white">Search Existing Customer</button>
         <button type="button" onclick="convertLeadToCustomerNow('${id}')" class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Create / Convert as Customer</button>
         <button type="button" onclick="openCustomerLead('${id}')" class="w-full border rounded-xl py-3 font-semibold">Cancel</button>
@@ -818,7 +826,17 @@
 
   window.convertLeadToCustomerNow=async function(id){
     const r=leadById(id);if(!r)return;
-    const {data,error}=await db.rpc('convert_customer_lead',{p_lead_id:id});
+    const salesRegistration=(state.profile?.role||'')==='sales';
+    let qualification='',officialName='';
+    if(salesRegistration){
+      qualification=String(document.getElementById('crmConversionPurchaseStatus')?.value||'');
+      officialName=String(document.getElementById('crmOfficialCustomerName')?.value||'').trim();
+      if(!officialName)return showToast('Official customer name is required.','err');
+      if(!qualification)return showToast('Answer the mandatory purchase / closed-deal question.','err');
+      if(qualification==='not_purchased')return showToast('Keep this contact as a CRM prospect until the deal is confirmed.','err');
+    }
+    const {data,error}=await db.rpc(salesRegistration?'request_qualified_customer_registration':'convert_customer_lead',
+      salesRegistration?{p_source:'crm',p_source_id:id,p_purchase_status:qualification,p_official_name:officialName,p_request_note:null}:{p_lead_id:id});
     if(error)return showToast(error.message,'err');
     const out=data||{};
     closeModal();
