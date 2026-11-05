@@ -491,6 +491,64 @@ function dailyCompactShareBody(r,pm){
      ' · '+h(managerReviewStatus(r))+'</footer>'+
  '</div>';
 }
+// The image is rendered locally in the user's browser. This avoids manually
+// scrolling and taking two screenshots. Native device sharing is optional;
+// otherwise the exact same single PNG is saved to the device.
+window.exportSalesDailyReportImage=async function(share){
+ const card=document.getElementById('salesDailyShareCard');
+ if(!card)return toast('Open Morning/Evening Share View first.',true);
+ if(typeof window.html2canvas!=='function')
+   return toast('Image capture is unavailable. Please reconnect, then try again or use Print / PDF.',true);
+ const buttons=[...document.querySelectorAll('#salesDailyShareOverlay [data-share-export]')];
+ buttons.forEach(b=>{b.disabled=true;b.dataset.oldText=b.textContent;b.textContent='Creating image...'});
+ try{
+   if(document.fonts?.ready)await document.fonts.ready;
+   // Keep the export readable regardless of phone / tablet screen width.
+   const canvas=await window.html2canvas(card,{
+     scale:2,backgroundColor:'#ffffff',useCORS:true,logging:false,
+     scrollX:0,scrollY:-window.scrollY,windowWidth:1050,
+     onclone:cloned=>{
+       const el=cloned.getElementById('salesDailyShareCard');
+       if(el){
+         el.style.width='760px';el.style.minWidth='760px';el.style.maxWidth='none';
+         el.style.height='auto';el.style.boxSizing='border-box';
+         el.style.borderRadius='0';el.style.boxShadow='none';
+         el.style.overflow='visible';
+       }
+     }
+   });
+   const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));
+   if(!blob)throw new Error('The image could not be created.');
+   const type=card.dataset.shareReportType==='AM'?'Morning-Plan':'Evening-Result';
+   const date=String(ui.report?.date||ui.date||'').replace(/[^0-9-]/g,'');
+   const name=String(ui.report?.salesperson||state.profile?.name||'Sales')
+     .replace(/[^\p{L}\p{N}-]+/gu,'-').replace(/^-+|-+$/g,'').slice(0,45);
+   const filename=[type,date,name].filter(Boolean).join('-')+'.png';
+   const file=new File([blob],filename,{type:'image/png'});
+   if(share&&navigator.share&&(!navigator.canShare||navigator.canShare({files:[file]}))){
+     try{
+       await navigator.share({files:[file],title:(type==='Morning-Plan'?'Morning Plan':'Evening Result')+' · '+date});
+       return;
+     }catch(err){
+       if(err?.name==='AbortError')return; // User cancelled the share sheet.
+       // Unsupported native file sharing falls back to an ordinary PNG.
+       console.warn('Native share fallback:',err);
+     }
+   }
+   const objectUrl=URL.createObjectURL(blob);
+   const link=document.createElement('a');
+   link.href=objectUrl;link.download=filename;
+   document.body.appendChild(link);link.click();link.remove();
+   setTimeout(()=>URL.revokeObjectURL(objectUrl),10000);
+   if(share)toast('One report image saved. Attach the PNG in Telegram or WhatsApp.');
+   else toast('One report PNG downloaded.');
+ }catch(err){
+   console.warn('Daily report image export failed:',err);
+   toast(err?.message||'Could not create the report image. Use Print / PDF instead.',true);
+ }finally{
+   buttons.forEach(b=>{b.disabled=false;b.textContent=b.dataset.oldText||b.textContent;delete b.dataset.oldText});
+ }
+};
 window.openSalesDailyShare=(section,mode='compact')=>{
  const r=ui.report;if(!r||!(section==='AM'?r.amStatus==='Submitted':r.pmStatus==='Submitted'))return toast('Submit before sharing',true);
  window.closeSalesDailyShare();ensureDailyKhmerFont();const pm=section==='PM';
