@@ -16,7 +16,7 @@ const SOURCE_LOOKUP_LIMIT = 2000;
 // to that account. If the sheet cannot be verified, abort product push rather
 // than accidentally creating new physical stock codes.
 async function getVerifiedDisplayOnlyCodes(req: Request): Promise<string[]> {
-  const token = (req.headers.get("authorization") || "").replace(/^Bearer\\s+/i, "").trim();
+  const token = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
   if (!token) throw new Error("Google authorization token unavailable for Tong Lou verification");
   const url = "https://sheets.googleapis.com/v4/spreadsheets/" +
     encodeURIComponent(EXPECTED_SPREADSHEET_ID) + "/values/" +
