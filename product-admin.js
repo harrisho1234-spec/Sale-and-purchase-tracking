@@ -53,10 +53,11 @@ async function openProductDetail(id){
       <div>
         <div class="grid grid-cols-2 gap-3 mb-5">
           <div class="bg-gray-50 rounded-xl p-3"><div class="text-[10px] uppercase text-gray-400 font-bold">Sales Price</div><div class="font-bold text-xl mt-1">${money(p.sales_price,p.currency)}</div></div>
-          <div class="bg-gray-50 rounded-xl p-3"><div class="text-[10px] uppercase text-gray-400 font-bold">Stock</div><div class="font-bold text-xl mt-1">${Number(p.stock_qty||0)}</div></div>
+          <div class="bg-gray-50 rounded-xl p-3"><div class="text-[10px] uppercase text-gray-400 font-bold">Inventory</div><div class="font-bold text-xl mt-1">${p.catalog_role==='catalog_only'?'<span class="text-sm text-amber-700">Catalog Only</span>':Number(p.stock_qty||0)}</div></div>
         </div>
         <div class="space-y-3 text-sm">
           <div><span class="text-gray-400">Code:</span> <b>${esc(p.code)}</b></div>
+          ${p.catalog_role==='catalog_only'?'<div class="rounded-lg bg-amber-50 border border-amber-200 p-2 text-xs text-amber-900"><b>Catalog / Display Only</b> · '+esc(p.source_sheet||'Price Structure')+' reference; not physical stock.'+(p.official_stock_product_id?' <b>Linked official stock code:</b> '+esc(state.products.find(x=>x.id===p.official_stock_product_id)?.code||'Linked product'):' <b>Official stock code:</b> Not linked.')+'</div>':''}
           <div><span class="text-gray-400">Brand:</span> ${esc(p.brand||'-')}</div>
           <div><span class="text-gray-400">Class:</span> ${esc(p.class||'-')}</div>
           <div><span class="text-gray-400">Description:</span><div class="mt-1 text-gray-700 whitespace-pre-wrap">${esc(p.description||'-')}</div></div>
@@ -80,7 +81,9 @@ async function openProductDetail(id){
               <button onclick="openEditProduct('${id}')" class="px-3 py-2.5 bg-[#211d18] text-white rounded-xl text-sm">Edit Product</button>
               <button onclick="openChangeProductCode('${id}')" class="px-3 py-2.5 border border-amber-200 bg-amber-50 text-amber-800 rounded-xl text-sm">Change Product Code</button>
               <button onclick="openProductCodeHistory('${id}')" class="px-3 py-2.5 border border-blue-200 bg-blue-50 text-blue-800 rounded-xl text-sm">Code History</button>
-              <button onclick="openAdjustStock('${id}')" class="px-3 py-2.5 border rounded-xl text-sm">Adjust Stock</button>
+              ${p.catalog_role==='catalog_only'
+                ?`<button onclick="openCatalogReferenceManager('${id}')" class="px-3 py-2.5 border border-amber-300 bg-amber-50 text-amber-900 rounded-xl text-sm font-semibold">Verify Stock Code / Promote</button>`
+                :`<button onclick="openAdjustStock('${id}')" class="px-3 py-2.5 border rounded-xl text-sm">Adjust Stock</button>`}
               <button onclick="openEditCosting('${id}')" class="px-3 py-2.5 border rounded-xl text-sm">Edit Costing</button>
             </div>
             ${state.profile?.role==='super_admin'?(p.archived_at?
