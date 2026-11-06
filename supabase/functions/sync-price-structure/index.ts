@@ -6,6 +6,41 @@ const EXPECTED_SPREADSHEET_ID = "1maKk_lPYMYval44vnorm3_awwrIh5IYPKLovn_gWYtg";
 const ALLOWED_GOOGLE_EMAILS = new Set(["harris.ho1234@gmail.com"]);
 const MAX_PRODUCTS_PER_REQUEST = 250;
 
+const DISPLAY_ONLY_TAB = "Tong Lou";
+const DISPLAY_ONLY_RANGE = "'Tong Lou'!B3:B";
+const SOURCE_LOOKUP_LIMIT = 2000;
+
+// Read the actual source tab, rather than guessing from TD code prefixes,
+// brand labels, or zero quantity. The caller already carries a verified
+// allowlisted Google OAuth token, and the private spreadsheet is accessible
+// to that account. If the sheet cannot be verified, abort product push rather
+// than accidentally creating new physical stock codes.
+async function getVerifiedDisplayOnlyCodes(req: Request): Promise<string[]> {
+  const token = (req.headers.get("authorization") || "").replace(/^Bearer\\s+/i, "").trim();
+  if (!token) throw new Error("Google authorization token unavailable for Tong Lou verification");
+  const url = "https://sheets.googleapis.com/v4/spreadsheets/" +
+    encodeURIComponent(EXPECTED_SPREADSHEET_ID) + "/values/" +
+    encodeURIComponent(DISPLAY_ONLY_RANGE) + "?valueRenderOption=FORMATTED_VALUE";
+  const response = await fetch(url, {
+    headers: {Authorization: "Bearer " + token}
+  });
+  if (!response.ok) {
+    throw new Error("Unable to read verified Tong Lou tab via Google Sheets API (HTTP " +
+      response.status + "). Confirm the Apps Script OAuth token includes spreadsheets read access.");
+  }
+  const payload = await response.json();
+  const values:unknown = payload?.values;
+  if (!Array.isArray(values)) throw new Error("Tong Lou source code range is missing");
+  const codes = [...new Set(values.map((row:any) =>
+      text(Array.isArray(row) ? row[0] : "").toLowerCase()
+    ).filter(Boolean))];
+  if (codes.length < 100 || codes.length > SOURCE_LOOKUP_LIMIT) {
+    throw new Error("Tong Lou source validation failed: unexpected distinct-code count (" + codes.length + ")");
+  }
+  return codes;
+}
+
+
 function text(v: unknown): string { return v == null ? "" : String(v).trim(); }
 function num(v: unknown): number {
   if (typeof v === "number") return Number.isFinite(v) ? v : 0;
@@ -86,6 +121,42 @@ Deno.serve(async (req: Request) => {
       ok:true,
       synced_at:new Date().toISOString(),
       locations:locations || [],
+      rows:rows || [],
+      count:(rows || []).length
+    });
+  }
+
+  // Google Price Structure helper: durable old-code -> active-code mappings.
+  // Uses the same allowlisted Google caller verification as stock mirror sync.
+  // Secure Admin product-code rename queue. The sheet-side Apps Script
+  // polls this endpoint and changes ONLY verified existing brand-tab code cells.
+  if (body?.mode === "pull_product_code_writebacks") {
+    const {data:jobs,error} = await db.rpc("export_pending_product_code_sheet_writebacks");
+    if (error) return resp({ok:false,error:error.message},500);
+    return resp({ok:true,jobs:jobs||[],count:(jobs||[]).length});
+  }
+  if (body?.mode === "ack_product_code_writeback") {
+    const jobId = text(body?.job_id);
+    const changeToken = text(body?.change_token);
+    const status = text(body?.status);
+    if (!/^[0-9a-f-]{36}$/i.test(jobId) || !/^[0-9a-f-]{36}$/i.test(changeToken) ||
+        !["applied","needs_review"].includes(status)) {
+      return resp({ok:false,error:"Invalid writeback acknowledgement"},400);
+    }
+    const {data:acknowledged,error} = await db.rpc("ack_product_code_sheet_writeback",{
+      p_job_id:jobId,p_change_token:changeToken,p_status:status,p_note:text(body?.note).slice(0,1000)
+    });
+    if (error) return resp({ok:false,error:error.message},409);
+    return resp({ok:true,acknowledged:!!acknowledged});
+  }
+
+  if (body?.mode === "pull_product_code_master") {
+    const {data:rows,error} = await db.rpc("export_product_code_master");
+    if (error) return resp({ok:false,error:error.message},500);
+    return resp({
+      ok:true,
+      synced_at:new Date().toISOString(),
+      source:SOURCE_NAME,
       rows:rows || [],
       count:(rows || []).length
     });
@@ -447,6 +518,30 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  // Refresh the secure source-code registry using the actual Price Structure
+  // tab in this same verified Google workbook. Older codes are never removed,
+  // because historical quotations and order references must keep their role.
+  let displayOnlySourceCount = 0;
+  try {
+    const codes = await getVerifiedDisplayOnlyCodes(req);
+    displayOnlySourceCount = codes.length;
+    for (const group of chunks(codes,150)) {
+      const records = group.map(source_code_norm => ({
+        source_code_norm,
+        source_spreadsheet_id:EXPECTED_SPREADSHEET_ID,
+        source_sheet:DISPLAY_ONLY_TAB,
+        verified_at:new Date().toISOString()
+      }));
+      const {error:sourceError} = await db.from("product_display_source_codes")
+        .upsert(records,{onConflict:"source_code_norm"});
+      if (sourceError) throw sourceError;
+    }
+  } catch (err) {
+    console.error("Tong Lou source validation unavailable:",errText(err));
+    return resp({ok:false,error:"Price Structure push paused: Tong Lou display codes could not be verified. "+
+      errText(err)+". Existing catalog and inventory remain unchanged."},503);
+  }
+
   // Product push: update matching IDs, never insert-first on an existing code.
   // A single bad product must not prevent unrelated products syncing.
   const products = Array.isArray(body?.products) ? body.products : [];
@@ -480,8 +575,10 @@ Deno.serve(async (req: Request) => {
         location:text(raw?.location)||null,
         image_url:imageUrl(raw?.image_url),
         stock_qty:num(raw?.stock_qty),
-        sales_price:num(raw?.sales_price),
-        cost:num(raw?.cost),
+        // Keep blank sheet values as null; do not coerce an empty price/cost
+        // to zero and erase an existing product's financial information.
+        sales_price:text(raw?.sales_price)===""?null:num(raw?.sales_price),
+        cost:text(raw?.cost)===""?null:num(raw?.cost),
         vendor:text(raw?.vendor||raw?.brand)||null
       });
     }
@@ -509,8 +606,11 @@ Deno.serve(async (req: Request) => {
     }).eq("id",log.id);
     return resp({
       ok:true,received:seen,upserted:done,created,updated,
-      skipped_app_managed:skipped,conflicted,failed,
-      issues:issues.slice(0,60),has_more_issues:issues.length>60
+      skipped_app_managed:skipped,
+      historical_codes_ignored:issues.filter((x:any)=>x?.status==="skipped"&&String(x?.reason||"").startsWith("Historical product code")).length,
+      conflicted,failed,
+      issues:issues.slice(0,60),has_more_issues:issues.length>60,
+      verified_display_source:"Tong Lou",verified_display_source_codes:displayOnlySourceCount
     });
   } catch(e) {
     const msg=errText(e);
