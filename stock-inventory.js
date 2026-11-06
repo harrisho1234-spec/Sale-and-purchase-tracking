@@ -133,15 +133,19 @@
   async function loadCore(force=false){
     if(!canView())throw new Error('Inventory access required.');
     if(inv.locations.length&&inv.balances.length&&!force)return;
-    const [locs,bals,aging]=await Promise.all([
+    const [locs,bals,aging,displayOnly]=await Promise.all([
       db.from('stock_locations').select('*').order('sort_order').order('code'),
       taxFetchAll('inventory_product_tax_balance','*','product_id').then(data=>({data})),
       taxFetchAll('get_inventory_stock_aging','*','product_id',true).then(data=>({data})),
+      // Catalog-only references have no physical stock, even if historical
+      // quotation/Sales Order codes remain attached to their original IDs.
+      db.from('product_catalog').select('id').eq('catalog_role','catalog_only').eq('active',true),
       loadLocationMetadata(force)
     ]);
-    if(locs.error)throw locs.error;if(bals.error)throw bals.error;if(aging.error)throw aging.error;
+    if(locs.error)throw locs.error;if(bals.error)throw bals.error;if(aging.error)throw aging.error;if(displayOnly.error)throw displayOnly.error;
     inv.locations=locs.data||[];
-    inv.balances=(bals.data||[]).sort((a,b)=>String(a.item_name||'').localeCompare(String(b.item_name||'')));
+    const excludedReferenceIds=new Set((displayOnly.data||[]).map(x=>String(x.id)));
+    inv.balances=(bals.data||[]).filter(x=>!excludedReferenceIds.has(String(x.product_id))).sort((a,b)=>String(a.item_name||'').localeCompare(String(b.item_name||'')));
     inv.agingRows=aging.data||[];
     inv.agingMap=new Map(inv.agingRows.map(x=>[x.product_id,x]));
     inv.balanceMap=new Map(inv.balances.map(x=>[x.product_id,x]));
@@ -1015,7 +1019,8 @@
     try{
       const r=await db.from('product_catalog')
         .select('id',{count:'exact',head:true})
-        .or('active.eq.true,active.is.null');
+        .or('active.eq.true,active.is.null')
+        .eq('catalog_role','stock');
       if(r.error)throw r.error;
       return Number(r.count||0);
     }catch(err){
@@ -1051,7 +1056,7 @@
       <div class="inv-stat"><div class="inv-stat-label">On Order</div><div class="inv-stat-value text-amber-700">${q(onOrder)}</div><div class="text-[9px] text-gray-400 mt-1">Ordered / Production / Ready units</div></div>
       <div class="inv-stat"><div class="inv-stat-label">Incoming</div><div class="inv-stat-value text-blue-600">${q(incoming)}</div><div class="text-[9px] text-gray-400 mt-1">Shipping units</div></div>
       <div class="inv-stat"><div class="inv-stat-label">Arrived Pending Receive</div><div class="inv-stat-value text-purple-600">${q(arrivedPending)}</div><div class="text-[9px] text-gray-400 mt-1">Arrived units not received yet</div></div>
-      <button onclick="go('products')" class="inv-stat text-left hover:shadow-sm transition" title="Open the full active Product Catalog"><div class="inv-stat-label">Product Catalog</div><div class="inv-stat-value">${Number(catalogTotal||0).toLocaleString()}</div><div class="text-[9px] text-gray-400 mt-1">All active product codes</div></button>
+      <button onclick="go('products')" class="inv-stat text-left hover:shadow-sm transition" title="Open the official physical Stock Products catalog"><div class="inv-stat-label">Stock Product Codes</div><div class="inv-stat-value">${Number(catalogTotal||0).toLocaleString()}</div><div class="text-[9px] text-gray-400 mt-1">Excludes Catalog Only / display references</div></button>
       <div class="inv-stat"><div class="inv-stat-label">Codes In Stock</div><div class="inv-stat-value">${stocked.toLocaleString()}</div><div class="text-[9px] text-gray-400 mt-1">Active codes with On Hand &gt; 0</div></div>
       <div class="inv-stat"><div class="inv-stat-label">Out of Stock</div><div class="inv-stat-value ${outOfStock?'text-red-500':''}">${outOfStock.toLocaleString()}</div><div class="text-[9px] text-gray-400 mt-1">Active codes with On Hand = 0</div></div>
       <div class="inv-stat"><div class="inv-stat-label">Fully Reserved</div><div class="inv-stat-value ${noAvail?'text-red-500':''}">${noAvail.toLocaleString()}</div><div class="text-[9px] text-gray-400 mt-1">In-stock codes with no available qty</div></div>
