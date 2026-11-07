@@ -171,28 +171,35 @@
       // The database powers real web-push alerts. Daily Plan reviews live only
       // in Google Sheets, so add their authenticated count to the IN-APP bell.
       // Do not store or duplicate report content in Supabase.
-      let dailyCount=0;
-      if(typeof window.getSalesDailyApprovalQueue==='function'){
-        try{
-          const rows=await window.getSalesDailyApprovalQueue();
-          dailyCount=Array.isArray(rows)?rows.length:0;
-        }catch(err){
-          console.warn('Google Sheet daily reviews could not update app bell:',err.message||err);
-        }
-      }
-      // Daily missed-PM and unfinished-task alerts stay in Google Sheets,
-      // and are counted only for the signed-in manager or salesperson.
-      let dailyAlerts={count:0,missingCount:0,unfinishedCount:0,target:'dashboard'};
-      if(typeof window.getSalesDailyAttention==='function'){
-        try{dailyAlerts=await window.getSalesDailyAttention()}
-        catch(err){console.warn('Google Sheet Daily Plan alerts unavailable:',err.message||err)}
-      }
-      // Overdue To-Do is independent of the AM/PM Daily Plan task alerts.
-      let todoAlerts={count:0,overdueCount:0,items:[],target:'sales-todo'};
-      if(typeof window.getSalesTodoAttention==='function'){
-        try{todoAlerts=await window.getSalesTodoAttention()}
-        catch(err){console.warn('Google Sheet overdue To-Do alerts unavailable:',err.message||err)}
-      }
+      // Independent permission-checked Google Sheets lookups run in parallel.
+      // This avoids adding three separate relay delays to the notification bell.
+      const [dailyCount,dailyAlerts,todoAlerts]=await Promise.all([
+        (async()=>{
+          if(typeof window.getSalesDailyApprovalQueue!=='function')return 0;
+          try{
+            const rows=await window.getSalesDailyApprovalQueue();
+            return Array.isArray(rows)?rows.length:0;
+          }catch(err){console.warn('Google Sheet daily reviews could not update app bell:',err.message||err);return 0}
+        })(),
+        (async()=>{
+          if(typeof window.getSalesDailyAttention!=='function')
+            return {count:0,missingCount:0,unfinishedCount:0,target:'dashboard'};
+          try{return await window.getSalesDailyAttention()}
+          catch(err){
+            console.warn('Google Sheet Daily Plan alerts unavailable:',err.message||err);
+            return {count:0,missingCount:0,unfinishedCount:0,target:'dashboard'};
+          }
+        })(),
+        (async()=>{
+          if(typeof window.getSalesTodoAttention!=='function')
+            return {count:0,overdueCount:0,items:[],target:'sales-todo'};
+          try{return await window.getSalesTodoAttention()}
+          catch(err){
+            console.warn('Google Sheet overdue To-Do alerts unavailable:',err.message||err);
+            return {count:0,overdueCount:0,items:[],target:'sales-todo'};
+          }
+        })()
+      ]);
       const overdueCount=Math.max(0,Number(todoAlerts.overdueCount||0));
       const summaries=[];
       if(overdueCount)summaries.push(overdueCount+' overdue Sales To-Do task'+(overdueCount===1?'':'s'));
