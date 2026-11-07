@@ -142,3 +142,87 @@ test('frontend uses Cambodia time, supports legacy rows and guards unsynced dead
  assert.match(frontendSource,/expectedUpdatedAt/);
  assert.match(backendSource,/todoAuditVersion:'field-revisions-20261107'/);
 });
+
+
+test('legacy task dates are recovered only from matching original Audit Log snapshots',()=>{
+ const {b,ss,actor,previous,history}=contextWithTask();
+ const audit=ss.getSheetByName('Audit Log');
+ const snapshot=(start,due,progress)=>{
+  const row=previous.slice();row[5]=start;row[6]=due;row[9]=progress;
+  return row;
+ };
+ const versions=[
+  snapshot('2026-11-04','2026-11-06',0),
+  snapshot('2026-11-04','2026-11-06',15),
+  snapshot('2026-11-06','2026-11-06',15),
+  snapshot('2026-11-06','2026-11-06',30),
+  snapshot('2026-11-06','2026-11-06',50),
+  snapshot('2026-11-06','2026-11-07',50)
+ ];
+ const stamps=[
+  '2026-11-04T01:25:19Z','2026-11-04T10:29:11Z',
+  '2026-11-05T01:24:33Z','2026-11-06T01:35:43Z',
+  '2026-11-06T10:28:30Z','2026-11-07T01:32:48Z'
+ ];
+ stamps.forEach((stamp,i)=>audit.appendRow([
+  'event-'+i,stamp,'sale-1','task-1','','TODO_'+(i?'UPDATED':'CREATED'),
+  JSON.stringify({task:i?versions[i-1]:null}),JSON.stringify({task:versions[i]})
+ ]));
+ const beforeRows=JSON.stringify(history.rows);
+ const result=b.todoHistory(ss,actor,{id:'task-1'});
+ assert.equal(result.auditRecoveredCount,6);
+ assert.equal(result.summary.startDateRevisions,1);
+ assert.equal(result.summary.deadlineRevisions,1);
+ assert.equal(result.summary.progressIncreases,3);
+ assert.equal(result.summary.legacyUnverified,0);
+ const original=result.events.at(-1);
+ assert.equal(original.after.startDate,'2026-11-04');
+ assert.equal(original.after.dueDate,'2026-11-06');
+ const startChange=result.events.find(e=>e.changes.some(c=>c.field==='startDate'));
+ assert.equal(startChange.actor,'Koem Nalis');
+ assert.equal(startChange.changes.find(c=>c.field==='startDate').before,'2026-11-04');
+ assert.equal(startChange.changes.find(c=>c.field==='startDate').after,'2026-11-06');
+ const deadlineChange=result.events.find(e=>e.changes.some(c=>c.field==='dueDate'));
+ assert.equal(deadlineChange.changes.find(c=>c.field==='dueDate').before,'2026-11-06');
+ assert.equal(deadlineChange.changes.find(c=>c.field==='dueDate').after,'2026-11-07');
+ assert.equal(deadlineChange.changes.some(c=>c.field==='progress'),false);
+ assert.equal(JSON.stringify(history.rows),beforeRows,'reconstruction must not rewrite history');
+});
+
+test('incomplete or unrelated audit snapshots never fabricate a past date edit',()=>{
+ const {b,ss,actor}=contextWithTask();
+ ss.getSheetByName('Audit Log').appendRow([
+  'event-bad','2026-11-05T01:24:33Z','sale-1','task-1','','TODO_UPDATED',
+  '{"task":["task-1"]}', '{"task":"truncated'
+ ]);
+ ss.getSheetByName('Audit Log').appendRow([
+  'event-other','2026-11-07T01:32:48Z','sale-1','someone-else','','TODO_UPDATED',
+  '{"task":["someone-else"]}', '{"task":["someone-else"]}'
+ ]);
+ const result=b.todoHistory(ss,actor,{id:'task-1'});
+ assert.equal(result.auditRecoveredCount,0);
+ assert.equal(result.summary.startDateRevisions,0);
+ assert.equal(result.summary.deadlineRevisions,0);
+ assert.equal(result.summary.legacyUnverified,2);
+});
+
+test('server cache is per task, retains authorization, and invalidates on a save',()=>{
+ const {b,ss,actor}=contextWithTask();
+ const storage=new Map();
+ b.CacheService={getScriptCache:()=>({
+  get:key=>storage.get(key)||null,
+  put:(key,value)=>storage.set(key,value),
+  remove:key=>storage.delete(key)
+ })};
+ const first=b.todoHistory(ss,actor,{id:'task-1'});
+ assert.equal(storage.size,1);
+ const cached=b.todoHistory(ss,actor,{id:'task-1'});
+ assert.equal(JSON.stringify(cached),JSON.stringify(first));
+ const stranger={...actor,user_id:'sale-2'};
+ assert.throws(()=>b.todoHistory(ss,stranger,{id:'task-1'}),/access denied/i);
+ b.todoSave(ss,actor,{id:'task-1',progress:60});
+ assert.equal(storage.size,0);
+ const fresh=b.todoHistory(ss,actor,{id:'task-1'});
+ assert.equal(fresh.totalEvents,first.totalEvents+1);
+ assert.equal(fresh.events[0].progress,60);
+});
