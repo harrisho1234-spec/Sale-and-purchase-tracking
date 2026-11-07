@@ -59,8 +59,12 @@ window.getSalesTodoAttention=async()=>{
 window.openSalesTodoOverdue=async()=>{
  if(!permitted())return;
  query='';priorityFilter='All';statusFilter='Overdue';sortMode='due';
- if(state.page===PAGE){if(loaded)render();else await window.loadSalesTodo(true)}
- else if(typeof window.go==='function'){await window.go(PAGE);statusFilter='Overdue';if(state.page===PAGE&&loaded)render()}
+ if(state.page===PAGE){
+  if(loaded&&cacheUser===todoAccount())render();
+  else{await window.loadSalesTodo(true);statusFilter='Overdue';if(state.page===PAGE&&loaded)render()}
+ }else if(typeof window.go==='function'){
+  await window.go(PAGE);statusFilter='Overdue';if(state.page===PAGE&&loaded)render();
+ }
 };
 const api=async(action,payload={})=>{const r=await db.functions.invoke('sales-daily-google-proxy',{body:{action,payload}});if(r.error)throw Error(r.error.message||'Connection error');if(!r.data?.ok)throw Error(r.data?.error||'Unable to load tasks');return r.data.data};
 const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Phnom_Penh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
