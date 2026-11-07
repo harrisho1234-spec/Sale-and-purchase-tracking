@@ -180,7 +180,7 @@ window.quickSalesTodo=id=>{
  '<label class="text-sm font-semibold block">Status<select id="todoQuickStatus" onchange="setQuickTodoStatus(this.value)" class="block w-full border rounded-xl p-3 mt-2 text-sm bg-white">'+choice.map(v=>'<option value="'+h(v)+'" '+(t.status===v?'selected':'')+'>'+h(v)+'</option>').join('')+'</select></label>'+
  '<label class="text-sm font-semibold block">Progress: <span id="todoQuickPercent">'+Number(t.progress||0)+'</span>%<input id="todoQuickProgress" type="range" min="0" max="100" step="5" value="'+Number(t.progress||0)+'" oninput="document.getElementById(\'todoQuickPercent\').textContent=this.value" class="w-full mt-3"></label>'+
  '<div class="flex flex-wrap gap-2">'+[0,25,50,75,100].map(n=>'<button type="button" class="rounded-lg border px-3 py-2 text-xs" onclick="setQuickTodoProgress('+n+')">'+n+'%</button>').join('')+'</div>'+
- '<label class="text-xs font-semibold block">Progress note / Cancellation reason<textarea id="todoQuickRemarks" rows="3" class="mt-1 block w-full border rounded-xl p-3" placeholder="What changed?">'+h(t.remarks||'')+'</textarea></label>'+
+ '<label class="text-xs font-semibold block">Progress note / Cancellation reason<textarea id="todoQuickRemarks" rows="3" class="mt-1 block w-full border rounded-xl p-3" placeholder="What changed since the last update? (optional unless cancelling)"></textarea></label>'+'<p class="text-xs text-slate-500">Previously saved note: '+h(t.remarks||'None')+'</p>'+
  '<div class="flex gap-2"><button id="todoQuickSave" class="bg-black text-white rounded-xl px-5 py-2.5" onclick="saveQuickSalesTodo(\''+h(t.id)+'\')">Save Progress</button><button class="border rounded-xl px-4 py-2" onclick="closeModal()">Cancel</button></div></div>');
  window.todoQuickStatus=t.status;
 };
@@ -193,22 +193,47 @@ window.saveQuickSalesTodo=async id=>{
  if(saving)return;
  const t=items.find(x=>x.id===id);if(!t)return;
  const status=window.todoQuickStatus||t.status,progress=Number(document.getElementById('todoQuickProgress')?.value||0);
- const remarks=document.getElementById('todoQuickRemarks')?.value.trim()||'';
- if(status==='Cancelled'&&!remarks)return showToast('Cancellation reason required','err');
+ const newNote=document.getElementById('todoQuickRemarks')?.value.trim()||'';
+ if(status==='Cancelled'&&t.status!=='Cancelled'&&!newNote)return showToast('Enter the cancellation reason','err');
+ const remarks=newNote||t.remarks||'';
  saving=true;const button=document.getElementById('todoQuickSave');if(button){button.disabled=true;button.textContent='Saving…'}
- try{await api('todo_save',{id,status,progress,remarks});closeModal();showToast('Progress updated');await window.loadSalesTodo(true)}
+ try{await api('todo_save',{id,status,progress,remarks,expectedUpdatedAt:t.updatedAt});closeModal();showToast('Task update recorded');await window.loadSalesTodo(true)}
  catch(e){showToast(e.message,'err')}finally{saving=false;if(button){button.disabled=false;button.textContent='Save Progress'}}
+};
+let editingTodoId='';
+window.updateTodoRevisionHint=()=>{
+ const task=items.find(t=>t.id===editingTodoId);
+ const panel=document.getElementById('todoRevisionReasonPanel');
+ if(!panel)return;
+ const due=document.getElementById('todo_dueDate')?.value||'';
+ const desc=(document.getElementById('todo_description')?.value||'').trim();
+ const deadlineChanged=!!task&&due!==String(task.dueDate||'');
+ const descriptionChanged=!!task&&desc!==String(task.description||'').trim();
+ const changed=deadlineChanged||descriptionChanged;
+ panel.classList.toggle('hidden',!changed);
+ const input=document.getElementById('todo_revisionReason');
+ if(input)input.required=changed;
+ const info=document.getElementById('todoRevisionWhy');
+ if(info)info.textContent='Reason required for '+[
+   deadlineChanged?'deadline revision':'',descriptionChanged?'description revision':''
+ ].filter(Boolean).join(' and ')+'.';
 };
 window.openSalesTodo=id=>{
  const t=items.find(x=>x.id===id)||{},newTask=!t.id;
+ editingTodoId=id||'';
+ const dueInput=field('dueDate','Due Date','date',t.dueDate||'')
+  .replace('id="todo_dueDate"','id="todo_dueDate" onchange="updateTodoRevisionHint()"');
  newTaskId=newTask?(crypto?.randomUUID?.()||('todo-'+Date.now()+'-'+Math.random().toString(36).slice(2))):'';
  if(newTask&&!permitted())return;
  const sel=(id,label,values,current)=>'<label class="text-xs font-semibold">'+label+'<select id="todo_'+id+'" class="block border rounded-lg px-3 py-2 w-full mt-1 text-sm">'+values.map(v=>'<option value="'+h(v.value??v)+'" '+((v.value??v)===current?'selected':'')+'>'+h(v.label??v)+'</option>').join('')+'</select></label>';
  const opts=people.map(p=>({value:p.id,label:p.name}));
- openModal(newTask?'Assign Sales Task':'Update Task','<div class="grid sm:grid-cols-2 gap-3">'+field('title','Task Title','text',t.title||'')+field('startDate','Start Date','date',t.startDate||today())+field('dueDate','Due Date','date',t.dueDate||'')+
+ openModal(newTask?'Assign Sales Task':'Update Task','<div class="grid sm:grid-cols-2 gap-3">'+field('title','Task Title','text',t.title||'')+field('startDate','Start Date','date',t.startDate||today())+dueInput+
  (manager()?sel('assigneeId','Salesperson',opts,t.assigneeId||opts[0]?.value):'<input type="hidden" id="todo_assigneeId" value="'+h(t.assigneeId||'')+'">')+
  sel('priority','Priority',['High','Medium','Low'],t.priority||'Medium')+sel('status','Status',['Pending','In Progress','Completed','Cancelled'],t.status||'Pending')+field('progress','Progress %','number',t.progress??0)+'</div>'+
- '<label class="text-xs font-semibold block mt-3">Description<textarea id="todo_description" class="block border rounded-lg p-2 w-full mt-1">'+h(t.description||'')+'</textarea></label>'+
+ '<label class="text-xs font-semibold block mt-3">Description<textarea id="todo_description" oninput="updateTodoRevisionHint()" class="block border rounded-lg p-2 w-full mt-1">'+h(t.description||'')+'</textarea></label>'+
+ '<div id="todoRevisionReasonPanel" class="hidden rounded-lg border border-amber-200 bg-amber-50 p-3 mt-3">'+
+ '<label class="block text-xs font-semibold">Reason for revision (mandatory)<textarea id="todo_revisionReason" maxlength="750" rows="2" class="block border rounded-lg p-2 w-full bg-white mt-1" placeholder="Why did the deadline or task description change?"></textarea></label>'+
+ '<p id="todoRevisionWhy" class="text-[11px] mt-1 text-amber-800"></p></div>'+
  '<label class="text-xs font-semibold block mt-3">Remarks (required for cancellation)<textarea id="todo_remarks" class="block border rounded-lg p-2 w-full mt-1">'+h(t.remarks||'')+'</textarea></label>'+
  '<div class="mt-4 flex gap-2"><button id="todoSaveButton" class="bg-black text-white rounded-xl px-4 py-2 disabled:opacity-50" onclick="saveSalesTodo(\''+h(t.id||'')+'\')">Save Task</button><button class="border rounded-xl px-4 py-2" onclick="closeModal()">Cancel</button></div>');
 };
@@ -221,7 +246,11 @@ window.deleteSalesTodo=async id=>{
 window.saveSalesTodo=async id=>{
  if(saving)return;
  const get=k=>document.getElementById('todo_'+k)?.value||'';
- const payload={id:id||newTaskId,title:get('title'),startDate:get('startDate'),dueDate:get('dueDate'),assigneeId:get('assigneeId'),priority:get('priority'),status:get('status'),progress:Number(get('progress')),description:get('description'),remarks:get('remarks')};
+ const existing=items.find(x=>x.id===id);
+ const payload={id:id||newTaskId,title:get('title'),startDate:get('startDate'),dueDate:get('dueDate'),assigneeId:get('assigneeId'),priority:get('priority'),status:get('status'),progress:Number(get('progress')),description:get('description'),remarks:get('remarks'),
+  revisionReason:get('revisionReason'),...(existing?{expectedUpdatedAt:existing.updatedAt}:{})};
+ if(existing&&(payload.dueDate!==String(existing.dueDate||'')||payload.description.trim()!==String(existing.description||'').trim())&&!payload.revisionReason.trim())
+  return showToast('Explain why you revised the deadline or task description.','err');
  if(!payload.title.trim())return showToast('Task title required','err');
  if(payload.status==='Cancelled'&&!payload.remarks.trim())return showToast('Enter a cancellation reason in Remarks','err');
  saving=true;const btn=document.getElementById('todoSaveButton');if(btn){btn.disabled=true;btn.textContent='Saving…'}
