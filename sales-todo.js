@@ -163,8 +163,9 @@ function todoHistoryMarkup(id,data){
 window.openSalesTodoHistory=async id=>{
  const user=String(state.user?.id||'');
  const task=items.find(x=>x.id===id);
- if(!task)return showToast('Task is not available to this account','err');
- const key=user+':'+id+':'+String(task.updatedAt||'');
+ // A linked history can open before the task list has hydrated; the server
+ // still enforces ownership and team access for every uncached request.
+ const key=user+':'+id+':'+String(task?.updatedAt||'');
  const seq=++todoHistoryRequest;
  const cached=todoHistoryCache.get(key);
  if(cached&&Date.now()-cached.at<TODO_HISTORY_FRESH_MS){
