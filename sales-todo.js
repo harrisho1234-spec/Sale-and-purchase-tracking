@@ -11,6 +11,57 @@ const todoHistoryCache=new Map();
 let todoHistoryRequest=0;
 const TODO_HISTORY_FRESH_MS=120000;
 const FRESH_MS=20000;
+// Derived only from authenticated Google Sheets tasks; no new storage.
+const todoAttentionCache={key:'',date:'',at:0,data:null,promise:null,revision:0};
+const TODO_ATTENTION_MS=60000;
+const todoAccount=()=>String(state.user?.id||'')+'|'+String(state.profile?.role||'');
+const isTodoOverdue=t=>!!t?.dueDate&&/^\d{4}-\d{2}-\d{2}$/.test(String(t.dueDate))&&
+ !['Completed','Cancelled'].includes(t.status)&&String(t.dueDate)<today();
+const emptyTodoAttention=()=>({count:0,overdueCount:0,items:[],target:'sales-todo'});
+function summarizeTodoAttention(tasks){
+ const list=(tasks||[]).filter(isTodoOverdue).sort((a,b)=>
+  String(a.dueDate).localeCompare(String(b.dueDate))||String(a.title||'').localeCompare(String(b.title||'')));
+ return{count:list.length,overdueCount:list.length,target:'sales-todo',
+  items:list.slice(0,30).map(t=>({id:String(t.id||''),title:String(t.title||'Untitled task'),
+   assignee:String(t.assignee||''),dueDate:String(t.dueDate),
+   daysOverdue:Math.max(1,-dayDiff(t.dueDate))}))};
+}
+function clearTodoAttention(){
+ todoAttentionCache.revision++;todoAttentionCache.key='';todoAttentionCache.date='';
+ todoAttentionCache.at=0;todoAttentionCache.data=null;todoAttentionCache.promise=null;
+}
+function rememberTodoAttention(tasks,account){
+ todoAttentionCache.revision++;
+ todoAttentionCache.key=account;todoAttentionCache.date=today();todoAttentionCache.at=Date.now();
+ todoAttentionCache.data=summarizeTodoAttention(tasks);todoAttentionCache.promise=null;
+}
+window.getSalesTodoAttention=async()=>{
+ if(!permitted()||!state.user?.id)return emptyTodoAttention();
+ const account=todoAccount(),day=today();
+ if(todoAttentionCache.key!==account||todoAttentionCache.date!==day)clearTodoAttention();
+ if(todoAttentionCache.data&&Date.now()-todoAttentionCache.at<TODO_ATTENTION_MS)return todoAttentionCache.data;
+ if(todoAttentionCache.promise)return todoAttentionCache.promise;
+ if(loaded&&cacheUser===account&&Date.now()-lastLoaded<TODO_ATTENTION_MS){
+  rememberTodoAttention(items,account);return todoAttentionCache.data;
+ }
+ todoAttentionCache.key=account;todoAttentionCache.date=day;
+ const revision=++todoAttentionCache.revision;
+ const pending=(async()=>{
+  const result=await api('todo_list');
+  if(revision!==todoAttentionCache.revision||todoAccount()!==account||!permitted())
+   return emptyTodoAttention();
+  rememberTodoAttention(result.items||[],account);
+  return todoAttentionCache.data;
+ })();
+ todoAttentionCache.promise=pending;
+ try{return await pending}finally{if(todoAttentionCache.promise===pending)todoAttentionCache.promise=null}
+};
+window.openSalesTodoOverdue=async()=>{
+ if(!permitted())return;
+ query='';priorityFilter='All';statusFilter='Overdue';sortMode='due';
+ if(state.page===PAGE){if(loaded)render();else await window.loadSalesTodo(true)}
+ else if(typeof window.go==='function'){await window.go(PAGE);statusFilter='Overdue';if(state.page===PAGE&&loaded)render()}
+};
 const api=async(action,payload={})=>{const r=await db.functions.invoke('sales-daily-google-proxy',{body:{action,payload}});if(r.error)throw Error(r.error.message||'Connection error');if(!r.data?.ok)throw Error(r.data?.error||'Unable to load tasks');return r.data.data};
 const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Phnom_Penh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const box=()=>document.getElementById('content');
@@ -204,7 +255,7 @@ window.addTodoToDailyPlan=id=>{
  if(typeof window.go==='function')window.go('sales-daily');
 };
 function render(){
- const closed=x=>['Completed','Cancelled'].includes(x.status),overdue=x=>!closed(x)&&x.dueDate&&x.dueDate<today();
+ const closed=x=>['Completed','Cancelled'].includes(x.status),overdue=isTodoOverdue;
  const filtered=items.filter(t=>{
   const q=query.trim().toLowerCase();
   if(q&&![t.title,t.description,t.assignee,t.remarks].some(v=>String(v||'').toLowerCase().includes(q)))return false;
@@ -216,8 +267,11 @@ function render(){
  }).sort((a,b)=>sortMode==='priority'?({High:0,Medium:1,Low:2}[a.priority]??9)-({High:0,Medium:1,Low:2}[b.priority]??9):
  sortMode==='recent'?String(b.updatedAt).localeCompare(String(a.updatedAt)):String(a.dueDate||'9999').localeCompare(String(b.dueDate||'9999')));
  const alerts=items.map(t=>({t,a:alertFor(t)})).filter(x=>x.a);
+ const overdueAlerts=items.filter(isTodoOverdue);
  const auditNotice=!todoAuditReady?'<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Advanced To-Do revision history requires the updated Google Apps Script deployment. Progress updates still work; deadline and description edits are temporarily protected.</div>':'';
- const alertPanel=alerts.length?'<div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3"><b class="text-sm">Task alerts · '+alerts.length+'</b><div class="mt-2 grid gap-1">'+alerts.map(({t,a})=>'<div class="text-xs flex flex-wrap gap-2"><span class="'+(a.kind==='overdue'||a.kind==='critical'?'text-red-700':'text-amber-800')+' font-bold">'+h(a.label)+'</span><span>'+h(t.assignee)+' · '+h(t.title)+'</span>'+(a.kind==='cancelled'&&t.remarks?'<span>Reason: '+h(t.remarks)+'</span>':'')+'</div>').join('')+'</div></div>':'';
+ const alertPanel=alerts.length?'<div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">'+
+  (overdueAlerts.length?'<div class="flex flex-wrap items-center justify-between gap-2 mb-2"><b class="text-sm text-red-700">⚠ '+overdueAlerts.length+' overdue Sales To-Do task'+(overdueAlerts.length===1?'':'s')+'</b><button class="border border-red-200 bg-white rounded-lg px-3 py-1 text-xs text-red-700 font-semibold" onclick="openSalesTodoOverdue()">View overdue tasks</button></div>':'')+
+  '<b class="text-sm">Task alerts · '+alerts.length+'</b><div class="mt-2 grid gap-1">'+alerts.map(({t,a})=>'<div class="text-xs flex flex-wrap gap-2"><span class="'+(a.kind==='overdue'||a.kind==='critical'?'text-red-700':'text-amber-800')+' font-bold">'+h(a.label)+'</span><span>'+h(t.assignee)+' · '+h(t.title)+'</span>'+(a.kind==='cancelled'&&t.remarks?'<span>Reason: '+h(t.remarks)+'</span>':'')+'</div>').join('')+'</div></div>':'';
  box().innerHTML='<div data-sales-todo-root class="max-w-6xl mx-auto space-y-4"><div class="bg-white rounded-2xl border p-4 flex flex-wrap justify-between gap-3"><div><h2 class="text-xl font-bold">Sales To-Do List</h2><p class="text-xs text-gray-500">Assignments, deadlines and progress · Google Sheets</p></div>'+'<button class="bg-black text-white rounded-xl px-4 py-2 text-sm" onclick="openSalesTodo()">+ Add Task</button>'+'</div>'+
  auditNotice+alertPanel+'<div class="bg-white border rounded-xl p-3 grid sm:grid-cols-4 gap-2"><input id="todoSearch" class="border rounded-lg p-2 text-sm" placeholder="Search tasks" value="'+h(query)+'" oninput="filterSalesTodo()"><select id="todoStatusFilter" class="border rounded-lg p-2 text-sm" onchange="filterSalesTodo()">'+['Active','All','Pending','In Progress','Completed','Cancelled','Overdue'].map(v=>'<option '+(v===statusFilter?'selected':'')+'>'+v+'</option>').join('')+'</select><select id="todoPriorityFilter" class="border rounded-lg p-2 text-sm" onchange="filterSalesTodo()">'+['All','High','Medium','Low'].map(v=>'<option '+(v===priorityFilter?'selected':'')+'>'+v+'</option>').join('')+'</select><select id="todoSort" class="border rounded-lg p-2 text-sm" onchange="filterSalesTodo()">'+[['due','Deadline'],['priority','Priority'],['recent','Recently Updated']].map(v=>'<option value="'+v[0]+'" '+(v[0]===sortMode?'selected':'')+'>'+v[1]+'</option>').join('')+'</select></div>'+'<div class="grid grid-cols-3 gap-2">'+[['Total',items.length],['Completed',items.filter(x=>x.status==='Completed').length],['Overdue',items.filter(overdue).length]].map(([k,v])=>'<div class="bg-white border rounded-xl p-3"><div class="text-xs text-gray-500">'+k+'</div><b class="text-xl">'+v+'</b></div>').join('')+'</div>'+
  '<div class="grid gap-3">'+(filtered.length?filtered.map(t=>'<div class="bg-white rounded-xl border p-4"><div class="flex justify-between gap-2"><div><b>'+h(t.title)+'</b><div class="text-xs text-gray-500 mt-1">'+h(t.assignee)+' · '+h(t.startDate)+' → '+h(t.dueDate||'No deadline')+'</div></div><span class="text-xs font-bold '+(overdue(t)?'text-red-600':'text-gray-600')+'">'+(overdue(t)?'OVERDUE':h(t.priority))+'</span></div>'+
@@ -248,7 +302,7 @@ window.saveQuickSalesTodo=async id=>{
  if(status==='Cancelled'&&t.status!=='Cancelled'&&!newNote)return showToast('Enter the cancellation reason','err');
  const remarks=newNote||t.remarks||'';
  saving=true;const button=document.getElementById('todoQuickSave');if(button){button.disabled=true;button.textContent='Saving…'}
- try{await api('todo_save',{id,status,progress,remarks,expectedUpdatedAt:t.updatedAt});closeModal();showToast('Task update recorded');await window.loadSalesTodo(true)}
+ try{await api('todo_save',{id,status,progress,remarks,expectedUpdatedAt:t.updatedAt});clearTodoAttention();lastLoaded=0;closeModal();showToast('Task update recorded');await window.loadSalesTodo(true)}
  catch(e){showToast(e.message,'err')}finally{saving=false;if(button){button.disabled=false;button.textContent='Save Progress'}}
 };
 let editingTodoId='';
@@ -292,7 +346,7 @@ window.deleteSalesTodo=async id=>{
  if(!manager())return showToast('Management permission required','err');
  const item=items.find(t=>t.id===id);if(!item)return;
  if(!confirm('Delete task: '+item.title+'? This cannot be undone.'))return;
- try{await api('todo_delete',{id});todoHistoryCache.clear();showToast('Task deleted; audit retained');await window.loadSalesTodo()}catch(e){showToast(e.message,'err')}
+ try{await api('todo_delete',{id});todoHistoryCache.clear();clearTodoAttention();lastLoaded=0;showToast('Task deleted; audit retained');await window.loadSalesTodo(true)}catch(e){showToast(e.message,'err')}
 };
 window.saveSalesTodo=async id=>{
  if(saving)return;
@@ -307,13 +361,13 @@ window.saveSalesTodo=async id=>{
  if(!payload.title.trim())return showToast('Task title required','err');
  if(payload.status==='Cancelled'&&!payload.remarks.trim())return showToast('Enter a cancellation reason in Remarks','err');
  saving=true;const btn=document.getElementById('todoSaveButton');if(btn){btn.disabled=true;btn.textContent='Saving…'}
- try{await api('todo_save',payload);todoHistoryCache.clear();closeModal();newTaskId='';showToast('Task saved');await window.loadSalesTodo()}catch(e){showToast(e.message,'err')}finally{saving=false;if(btn){btn.disabled=false;btn.textContent='Save Task'}}
+ try{await api('todo_save',payload);todoHistoryCache.clear();clearTodoAttention();lastLoaded=0;closeModal();newTaskId='';showToast('Task saved');await window.loadSalesTodo(true)}catch(e){showToast(e.message,'err')}finally{saving=false;if(btn){btn.disabled=false;btn.textContent='Save Task'}}
 };
 let todoRequestSequence=0;
 window.loadSalesTodo=async(force=false)=>{
  if(state.page!==PAGE)return;
- const user=state.user?.id||null;
- if(cacheUser!==user){cacheUser=user;items=[];people=[];loaded=false;lastLoaded=0;todoAuditReady=false;todoHistoryCache.clear();todoHistoryRequest++;todoRequestSequence++;}
+ const user=state.user?.id||null,account=todoAccount();
+ if(cacheUser!==account){cacheUser=account;items=[];people=[];loaded=false;lastLoaded=0;todoAuditReady=false;todoHistoryCache.clear();todoHistoryRequest++;todoRequestSequence++;clearTodoAttention();statusFilter='Active';}
  if(loaded){render();if(!force&&Date.now()-lastLoaded<FRESH_MS)return;}
  const seq=++todoRequestSequence;
  if(!loaded)box().innerHTML='<div data-sales-todo-root class="max-w-6xl mx-auto space-y-3 p-4"><div class="text-sm text-gray-500">Opening your tasks…</div><button class="border rounded-lg px-3 py-2 text-sm" onclick="loadSalesTodo(true)">Retry loading</button></div>';
@@ -323,12 +377,13 @@ window.loadSalesTodo=async(force=false)=>{
    api('todo_list'),
    new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Google Sheets is taking too long to respond. Please retry.')),18000)})
   ]);
-  if(seq!==todoRequestSequence||state.page!==PAGE||state.user?.id!==user)return;
-  items=result.items||[];people=result.people||[];todoAuditReady=result.todoAuditVersion==='field-revisions-20261107';loaded=true;lastLoaded=Date.now();render();
+  if(seq!==todoRequestSequence||state.page!==PAGE||state.user?.id!==user||todoAccount()!==account)return;
+  items=result.items||[];people=result.people||[];todoAuditReady=result.todoAuditVersion==='field-revisions-20261107';loaded=true;lastLoaded=Date.now();rememberTodoAttention(items,account);render();
+  if(typeof window.refreshAppNotifications==='function')Promise.resolve(window.refreshAppNotifications()).catch(err=>console.warn('To-Do notification refresh:',err.message||err));
   const linked=sessionStorage.getItem('salesDailyOpenTodo');
   if(linked){sessionStorage.removeItem('salesDailyOpenTodo');if(items.some(x=>x.id===linked))window.openSalesTodoHistory(linked);else showToast('Linked To-Do task is not available to this account','err');}
  }catch(err){
-  if(seq!==todoRequestSequence||state.page!==PAGE||state.user?.id!==user)return;
+  if(seq!==todoRequestSequence||state.page!==PAGE||state.user?.id!==user||todoAccount()!==account)return;
   if(loaded){render();showToast('Task refresh failed: '+err.message,'err')}
   else box().innerHTML='<div data-sales-todo-root class="max-w-6xl mx-auto bg-white rounded-xl border p-6"><b>Unable to load Sales To-Do</b><p class="text-sm text-gray-600 mt-2">'+h(err.message)+'</p><button onclick="loadSalesTodo(true)" class="mt-3 border rounded-lg px-4 py-2">Retry</button></div>';
  }finally{clearTimeout(timer)}
