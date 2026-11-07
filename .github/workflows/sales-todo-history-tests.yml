@@ -1,10 +1,12 @@
-name: Sales To-Do revision history regression
+name: Sales To-Do history and overdue alert regression
 
 on:
   push:
     paths:
       - 'google-apps-script/sales-daily-plan/Code.gs'
       - 'sales-todo.js'
+      - 'push-notifications.js'
+      - 'tests/sales-todo-overdue-alerts.test.cjs'
       - 'tests/sales-todo-revision-history.test.cjs'
       - 'tests/sales-todo-revision-ui.test.cjs'
       - '.github/workflows/sales-todo-history-tests.yml'
@@ -18,5 +20,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Test task history and Audit Log recovery
-        run: node --test tests/sales-todo-revision-history.test.cjs tests/sales-todo-revision-ui.test.cjs
+      - name: Test To-Do history, audit recovery, and overdue alerts
+        run: node --test tests/sales-todo-revision-history.test.cjs tests/sales-todo-revision-ui.test.cjs tests/sales-todo-overdue-alerts.test.cjs
