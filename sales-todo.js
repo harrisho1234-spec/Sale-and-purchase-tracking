@@ -6,7 +6,7 @@ const h=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt
 const manager=()=>['manager','admin','super_admin'].includes(state?.profile?.role||'');
 const permitted=()=>manager()||state?.profile?.role==='sales';
 let items=[],people=[],loaded=false,saving=false,newTaskId='',query='',statusFilter='Active',priorityFilter='All',sortMode='due';
-let cacheUser=null,lastLoaded=0;
+let cacheUser=null,lastLoaded=0,todoAuditReady=false;
 const FRESH_MS=20000;
 const api=async(action,payload={})=>{const r=await db.functions.invoke('sales-daily-google-proxy',{body:{action,payload}});if(r.error)throw Error(r.error.message||'Connection error');if(!r.data?.ok)throw Error(r.data?.error||'Unable to load tasks');return r.data.data};
 const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Phnom_Penh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
@@ -166,9 +166,10 @@ function render(){
  }).sort((a,b)=>sortMode==='priority'?({High:0,Medium:1,Low:2}[a.priority]??9)-({High:0,Medium:1,Low:2}[b.priority]??9):
  sortMode==='recent'?String(b.updatedAt).localeCompare(String(a.updatedAt)):String(a.dueDate||'9999').localeCompare(String(b.dueDate||'9999')));
  const alerts=items.map(t=>({t,a:alertFor(t)})).filter(x=>x.a);
+ const auditNotice=!todoAuditReady?'<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Advanced To-Do revision history requires the updated Google Apps Script deployment. Progress updates still work; deadline and description edits are temporarily protected.</div>':'';
  const alertPanel=alerts.length?'<div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3"><b class="text-sm">Task alerts · '+alerts.length+'</b><div class="mt-2 grid gap-1">'+alerts.map(({t,a})=>'<div class="text-xs flex flex-wrap gap-2"><span class="'+(a.kind==='overdue'||a.kind==='critical'?'text-red-700':'text-amber-800')+' font-bold">'+h(a.label)+'</span><span>'+h(t.assignee)+' · '+h(t.title)+'</span>'+(a.kind==='cancelled'&&t.remarks?'<span>Reason: '+h(t.remarks)+'</span>':'')+'</div>').join('')+'</div></div>':'';
  box().innerHTML='<div data-sales-todo-root class="max-w-6xl mx-auto space-y-4"><div class="bg-white rounded-2xl border p-4 flex flex-wrap justify-between gap-3"><div><h2 class="text-xl font-bold">Sales To-Do List</h2><p class="text-xs text-gray-500">Assignments, deadlines and progress · Google Sheets</p></div>'+'<button class="bg-black text-white rounded-xl px-4 py-2 text-sm" onclick="openSalesTodo()">+ Add Task</button>'+'</div>'+
- alertPanel+'<div class="bg-white border rounded-xl p-3 grid sm:grid-cols-4 gap-2"><input id="todoSearch" class="border rounded-lg p-2 text-sm" placeholder="Search tasks" value="'+h(query)+'" oninput="filterSalesTodo()"><select id="todoStatusFilter" class="border rounded-lg p-2 text-sm" onchange="filterSalesTodo()">'+['Active','All','Pending','In Progress','Completed','Cancelled','Overdue'].map(v=>'<option '+(v===statusFilter?'selected':'')+'>'+v+'</option>').join('')+'</select><select id="todoPriorityFilter" class="border rounded-lg p-2 text-sm" onchange="filterSalesTodo()">'+['All','High','Medium','Low'].map(v=>'<option '+(v===priorityFilter?'selected':'')+'>'+v+'</option>').join('')+'</select><select id="todoSort" class="border rounded-lg p-2 text-sm" onchange="filterSalesTodo()">'+[['due','Deadline'],['priority','Priority'],['recent','Recently Updated']].map(v=>'<option value="'+v[0]+'" '+(v[0]===sortMode?'selected':'')+'>'+v[1]+'</option>').join('')+'</select></div>'+'<div class="grid grid-cols-3 gap-2">'+[['Total',items.length],['Completed',items.filter(x=>x.status==='Completed').length],['Overdue',items.filter(overdue).length]].map(([k,v])=>'<div class="bg-white border rounded-xl p-3"><div class="text-xs text-gray-500">'+k+'</div><b class="text-xl">'+v+'</b></div>').join('')+'</div>'+
+ auditNotice+alertPanel+'<div class="bg-white border rounded-xl p-3 grid sm:grid-cols-4 gap-2"><input id="todoSearch" class="border rounded-lg p-2 text-sm" placeholder="Search tasks" value="'+h(query)+'" oninput="filterSalesTodo()"><select id="todoStatusFilter" class="border rounded-lg p-2 text-sm" onchange="filterSalesTodo()">'+['Active','All','Pending','In Progress','Completed','Cancelled','Overdue'].map(v=>'<option '+(v===statusFilter?'selected':'')+'>'+v+'</option>').join('')+'</select><select id="todoPriorityFilter" class="border rounded-lg p-2 text-sm" onchange="filterSalesTodo()">'+['All','High','Medium','Low'].map(v=>'<option '+(v===priorityFilter?'selected':'')+'>'+v+'</option>').join('')+'</select><select id="todoSort" class="border rounded-lg p-2 text-sm" onchange="filterSalesTodo()">'+[['due','Deadline'],['priority','Priority'],['recent','Recently Updated']].map(v=>'<option value="'+v[0]+'" '+(v[0]===sortMode?'selected':'')+'>'+v[1]+'</option>').join('')+'</select></div>'+'<div class="grid grid-cols-3 gap-2">'+[['Total',items.length],['Completed',items.filter(x=>x.status==='Completed').length],['Overdue',items.filter(overdue).length]].map(([k,v])=>'<div class="bg-white border rounded-xl p-3"><div class="text-xs text-gray-500">'+k+'</div><b class="text-xl">'+v+'</b></div>').join('')+'</div>'+
  '<div class="grid gap-3">'+(filtered.length?filtered.map(t=>'<div class="bg-white rounded-xl border p-4"><div class="flex justify-between gap-2"><div><b>'+h(t.title)+'</b><div class="text-xs text-gray-500 mt-1">'+h(t.assignee)+' · '+h(t.startDate)+' → '+h(t.dueDate||'No deadline')+'</div></div><span class="text-xs font-bold '+(overdue(t)?'text-red-600':'text-gray-600')+'">'+(overdue(t)?'OVERDUE':h(t.priority))+'</span></div>'+
  (t.description?'<p class="text-sm mt-2">'+h(t.description)+'</p>':'')+'<div class="flex items-center justify-between gap-2 text-xs mt-3"><span>'+h(t.status)+' · '+t.progress+'%</span><div class="flex gap-2"><button class="border rounded-lg px-3 py-1.5" onclick="openSalesTodoHistory(\''+h(t.id)+'\')">History</button>'+(state?.profile?.role==='sales'?'<button class="border rounded-lg px-3 py-1.5" onclick="addTodoToDailyPlan(\''+h(t.id)+'\')">Add to Daily Plan</button>':'')+'<button class="bg-[#211d18] text-white rounded-lg px-3 py-1.5" onclick="quickSalesTodo(\''+h(t.id)+'\')">Quick Update</button><button class="border rounded-lg px-3 py-1.5" onclick="openSalesTodo(\''+h(t.id)+'\')">Edit Details</button>'+(manager()?'<button class="border border-red-200 text-red-700 rounded-lg px-3 py-1.5" onclick="deleteSalesTodo(\''+h(t.id)+'\')">Delete</button>':'')+'</div></div><div class="h-2 bg-gray-100 rounded-full mt-2 overflow-hidden"><div class="h-full bg-amber-600 rounded-full" style="width:'+t.progress+'%"></div></div>'+(t.remarks?'<p class="text-xs text-gray-500 mt-2">'+h(t.remarks)+'</p>':'')+'</div>').join(''):'<div class="bg-white border rounded-xl p-8 text-gray-500 text-center">No assigned tasks yet.</div>')+'</div></div>';
 }
@@ -249,6 +250,8 @@ window.saveSalesTodo=async id=>{
  const existing=items.find(x=>x.id===id);
  const payload={id:id||newTaskId,title:get('title'),startDate:get('startDate'),dueDate:get('dueDate'),assigneeId:get('assigneeId'),priority:get('priority'),status:get('status'),progress:Number(get('progress')),description:get('description'),remarks:get('remarks'),
   revisionReason:get('revisionReason'),...(existing?{expectedUpdatedAt:existing.updatedAt}:{})};
+ if(existing&&(payload.dueDate!==String(existing.dueDate||'')||payload.description.trim()!==String(existing.description||'').trim())&&!todoAuditReady)
+  return showToast('Redeploy the updated Google Apps Script before revising deadlines or descriptions; the old history cannot record the changes.','err');
  if(existing&&(payload.dueDate!==String(existing.dueDate||'')||payload.description.trim()!==String(existing.description||'').trim())&&!payload.revisionReason.trim())
   return showToast('Explain why you revised the deadline or task description.','err');
  if(!payload.title.trim())return showToast('Task title required','err');
@@ -260,7 +263,7 @@ let todoRequestSequence=0;
 window.loadSalesTodo=async(force=false)=>{
  if(state.page!==PAGE)return;
  const user=state.user?.id||null;
- if(cacheUser!==user){cacheUser=user;items=[];people=[];loaded=false;lastLoaded=0;todoRequestSequence++;}
+ if(cacheUser!==user){cacheUser=user;items=[];people=[];loaded=false;lastLoaded=0;todoAuditReady=false;todoRequestSequence++;}
  if(loaded){render();if(!force&&Date.now()-lastLoaded<FRESH_MS)return;}
  const seq=++todoRequestSequence;
  if(!loaded)box().innerHTML='<div data-sales-todo-root class="max-w-6xl mx-auto space-y-3 p-4"><div class="text-sm text-gray-500">Opening your tasks…</div><button class="border rounded-lg px-3 py-2 text-sm" onclick="loadSalesTodo(true)">Retry loading</button></div>';
@@ -271,7 +274,7 @@ window.loadSalesTodo=async(force=false)=>{
    new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Google Sheets is taking too long to respond. Please retry.')),18000)})
   ]);
   if(seq!==todoRequestSequence||state.page!==PAGE||state.user?.id!==user)return;
-  items=result.items||[];people=result.people||[];loaded=true;lastLoaded=Date.now();render();
+  items=result.items||[];people=result.people||[];todoAuditReady=result.todoAuditVersion==='field-revisions-20261107';loaded=true;lastLoaded=Date.now();render();
   const linked=sessionStorage.getItem('salesDailyOpenTodo');
   if(linked){sessionStorage.removeItem('salesDailyOpenTodo');if(items.some(x=>x.id===linked))window.openSalesTodoHistory(linked);else showToast('Linked To-Do task is not available to this account','err');}
  }catch(err){
