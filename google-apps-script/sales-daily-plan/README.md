@@ -63,3 +63,16 @@ The Apps Script `verifyImportedActivities` function now checks that each importe
 
 
 Telegram submission reminders and automated task completion based on other system actions are not enabled in this initial version. The recorded activity panel is advisory: staff still confirm actual results.
+
+
+## Task History speed + verified older date changes (7 Nov 2026)
+
+The Sales To-Do **Task Revision & Progress History** panel now opens immediately with a loading message and reuses a recently viewed history. The Apps Script endpoint uses a short-lived server-side cache and searches just the Audit Log task ID column for historical revisions, avoiding a full download of unrelated daily-report audit records on each first view.
+
+Older To-Do History rows only captured status/progress, but the separate append-only **Audit Log** stores the task's complete before/after snapshots. The updated history endpoint matches the original task ID, editor, event type, and timestamp to recover verified original start/deadline dates and subsequent schedule changes. It **does not write or change** historical records, and does not invent a revision when the audit row is missing, malformed, or cannot be matched. Every history request still checks task ownership and authorized management team access before reading the cache.
+
+**Activation (required after GitHub deploy):** This is an Apps Script backend change. Update the existing bound Apps Script project from the latest [Code.gs](./Code.gs), save, and select **Deploy → Manage deployments → Edit existing web app → Version: New version → Deploy**. Preserve the deployment's existing /exec URL and Script Properties. Do not create a new deployment and do not change the Google Sheet data. Frontend improvements deploy through GitHub Pages, but recovered historical date edits require this new Apps Script version.
+
+**Verification:** Open the task's history again in the app. On the task originally created on 4 Nov 2026 at 8:25 AM by Koem Nalis, original start date should display as 4 Nov, the 5 Nov revision as 4 Nov → 6 Nov, and the 7 Nov deadline revision as 6 Nov → 7 Nov. All times are shown in Phnom Penh time.
+
+The new workflow .github/workflows/sales-todo-history-tests.yml executes the two Sales To-Do revision tests after relevant GitHub commits.
