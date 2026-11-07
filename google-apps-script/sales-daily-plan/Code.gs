@@ -432,7 +432,7 @@ function todoList(ss,a){
  const items=data(todoSheet(ss)).filter(r=>r[0]&&(a.can_review?fetchTeam(a).has(String(r[3])):String(r[3])===String(a.user_id))).map(r=>({
  id:r[0],title:r[1],description:r[2],assigneeId:r[3],assignee:r[4],startDate:r[5],dueDate:r[6],priority:r[7],status:r[8],progress:Number(r[9]||0),remarks:r[10],completedAt:r[11],createdBy:r[12],createdAt:r[13],updatedAt:r[14]
  }));
- return{items,people:a.can_review?people:[],today:today()};
+ return{items,people:a.can_review?people:[],today:today(),todoAuditVersion:'field-revisions-20261107'};
 }
 // Columns 1–9 preserve existing history; appended columns describe future revisions.
 function todoHistorySheet(ss){
