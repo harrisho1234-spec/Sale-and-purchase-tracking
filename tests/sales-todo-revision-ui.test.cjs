@@ -55,7 +55,7 @@ test('timeline renders Cambodia local time, truthful legacy warning and progress
  const h=harness();
  await h.win.openSalesTodoHistory('todo-1');
  const html=h.modals.at(-1).html;
- assert.match(html,/Task Revision/);
+ assert.match(h.modals.at(-1).title,/Task Revision/);
  assert.match(html,/Cambodia/);
  assert.match(html,/8:32/);
  assert.match(html,/30%/);assert.match(html,/50%/);
