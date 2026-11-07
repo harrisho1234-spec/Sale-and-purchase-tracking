@@ -7,6 +7,9 @@ const manager=()=>['manager','admin','super_admin'].includes(state?.profile?.rol
 const permitted=()=>manager()||state?.profile?.role==='sales';
 let items=[],people=[],loaded=false,saving=false,newTaskId='',query='',statusFilter='Active',priorityFilter='All',sortMode='due';
 let cacheUser=null,lastLoaded=0,todoAuditReady=false;
+const todoHistoryCache=new Map();
+let todoHistoryRequest=0;
+const TODO_HISTORY_FRESH_MS=120000;
 const FRESH_MS=20000;
 const api=async(action,payload={})=>{const r=await db.functions.invoke('sales-daily-google-proxy',{body:{action,payload}});if(r.error)throw Error(r.error.message||'Connection error');if(!r.data?.ok)throw Error(r.data?.error||'Unable to load tasks');return r.data.data};
 const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Phnom_Penh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
@@ -57,7 +60,7 @@ function todoHistoryChanges(e){
  return changes;
 }
 function todoHistorySummary(events){
- const result={total:events.length,created:0,updates:0,progressIncreases:0,progressDecreases:0,
+ const result={total:events.length,created:0,updates:0,progressIncreases:0,progressDecreases:0,startDateRevisions:0,
   deadlineRevisions:0,descriptionRevisions:0,otherDetailEdits:0,statusChanges:0,
   noChangeSaves:0,legacyUnverified:0};
  events.forEach(e=>{
@@ -68,6 +71,7 @@ function todoHistorySummary(events){
   const p=changes.find(x=>x.field==='progress');
   if(p&&Number(p.after)>Number(p.before))result.progressIncreases++;
   if(p&&Number(p.after)<Number(p.before))result.progressDecreases++;
+  if(keys.includes('startDate'))result.startDateRevisions++;
   if(keys.includes('dueDate'))result.deadlineRevisions++;
   if(keys.includes('description'))result.descriptionRevisions++;
   if(keys.includes('status'))result.statusChanges++;
@@ -83,6 +87,9 @@ function todoHistorySummary(events){
 const todoChangeValue=(key,value)=>{
  if(key==='progress')return String(Number(value||0))+'%';
  if(key==='completedAt'&&value)return todoTime(value);
+ if(['startDate','dueDate'].includes(key)&&/^\d{4}-\d{2}-\d{2}$/.test(String(value||''))){
+  return new Intl.DateTimeFormat('en-GB',{timeZone:'UTC',day:'numeric',month:'short',year:'numeric'}).format(new Date(value+'T00:00:00Z'));
+ }
  return String(value??'').trim()||'Not set';
 };
 function todoHistoryEventHtml(e){
@@ -93,6 +100,7 @@ function todoHistoryEventHtml(e){
  const reduction=changes.find(x=>x.field==='progress'&&Number(x.after)<Number(x.before));
  const badge=isCreated?'Created':increase?'Progress increased':reduction?'Progress corrected':
   changes.some(x=>x.field==='dueDate')?'Deadline revised':
+  changes.some(x=>x.field==='startDate')?'Start date revised':
   changes.some(x=>x.field==='description')?'Description revised':
   changes.length?'Task edited':complete?'No changes saved':'Legacy entry';
  const badgeColor=increase?'bg-green-100 text-green-800':reduction?'bg-amber-100 text-amber-900':
@@ -108,7 +116,9 @@ function todoHistoryEventHtml(e){
  const noChange=!changes.length&&!isCreated?
   '<p class="text-xs text-slate-500">'+(complete?
     'No tracked task fields changed in this save.':'Progress and status did not change. Older history does not record whether other details were edited.')+'</p>':'';
- const init=isCreated?'<p class="text-xs text-slate-600">Initial record · '+h(e.status||'')+' · '+Number(e.progress||0)+'%</p>':'';
+ const init=isCreated?'<div class="text-xs text-slate-600 space-y-1"><p>Initial record · '+h(e.status||'')+' · '+Number(e.progress||0)+'%</p>'+
+  (e.after?'<p><b>Original start date:</b> '+h(todoChangeValue('startDate',e.after.startDate))+'</p>'+
+    '<p><b>Original deadline:</b> '+h(todoChangeValue('dueDate',e.after.dueDate))+'</p>':'')+'</div>':'';
  return '<article class="border-l-[3px] border-slate-200 pl-3 pb-4" data-todo-history-event>'+
   '<div class="flex flex-wrap items-center justify-between gap-2"><b class="text-sm">'+h(todoTime(e.timestamp))+'</b>'+
    '<span class="rounded-full px-2.5 py-1 text-[11px] font-bold '+badgeColor+'">'+badge+'</span></div>'+
@@ -117,35 +127,74 @@ function todoHistoryEventHtml(e){
   (e.reason?'<div class="bg-blue-50 border border-blue-100 rounded-lg p-2 mt-2 text-xs"><b>Revision reason: </b>'+h(e.reason)+'</div>':'')+
   oldNote+'</article>';
 }
+function todoHistoryMarkup(id,data){
+ const events=data.events||[];
+ const summary=data.summary||todoHistorySummary(events);
+ const metric=(label,n,note)=>'<div class="rounded-xl border bg-white px-3 py-2"><div class="text-[11px] text-slate-500">'+label+
+  '</div><b class="text-xl">'+Number(n||0)+'</b>'+(note?'<p class="text-[10px] text-slate-500">'+note+'</p>':'')+'</div>';
+ const name=items.find(x=>x.id===id)?.title||'Task';
+ return '<div class="space-y-4 max-h-[75vh] overflow-y-auto">'+
+  '<div><b class="block text-sm">'+h(name)+'</b><p class="text-xs text-slate-500 mt-1">'+
+   'See the original schedule, each verified change, the editor, and the time (Phnom Penh).</p></div>'+
+  '<div class="grid grid-cols-2 sm:grid-cols-3 gap-2">'+
+   metric('Updates after creation',summary.updates)+
+   metric('Progress increases',summary.progressIncreases)+
+   metric('Start date revisions',summary.startDateRevisions)+
+   metric('Deadline revisions',summary.deadlineRevisions)+
+   metric('Description revisions',summary.descriptionRevisions)+
+   metric('No-change saves',summary.noChangeSaves)+
+   metric('Older entries not fully verifiable',summary.legacyUnverified)+'</div>'+
+  (Number(summary.progressDecreases||0)>0?'<p class="text-xs text-amber-800">Progress reductions: '+Number(summary.progressDecreases)+'</p>':'')+
+  '<div class="text-xs text-slate-500">Created: '+Number(summary.created||0)+
+   ' · Status changes: '+Number(summary.statusChanges||0)+
+   ' · Other detail edits: '+Number(summary.otherDetailEdits||0)+'</div>'+
+  (Number(data.auditRecoveredCount||0)>0?
+   '<p class="text-xs text-slate-600">Earlier date and task changes verified against the original Audit Log ('+
+   Number(data.auditRecoveredCount)+' entries recovered).</p>':'')+
+  (summary.legacyUnverified||events.some(e=>e.historyVersion==='legacy'&&e.fieldsComplete!==true)?
+   '<p class="text-xs rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">'+
+   '<b>Historical limitation:</b> Older entries only saved status and percentage. An unchanged 50% is not progress. '+
+   'Unmatched Audit Log entries cannot prove earlier date or description changes.</p>':'')+
+  (data.historyLimited?'<p class="text-xs">Showing the most recent 100 of '+Number(data.totalEvents||0)+
+   ' history entries. Summary covers all entries.</p>':'')+
+  '<div class="space-y-2 border-t pt-3">'+(events.length?events.map(todoHistoryEventHtml).join(''):
+   '<p class="text-sm text-slate-500">No history yet.</p>')+'</div></div>';
+}
 window.openSalesTodoHistory=async id=>{
+ const user=String(state.user?.id||'');
+ const task=items.find(x=>x.id===id);
+ if(!task)return showToast('Task is not available to this account','err');
+ const key=user+':'+id+':'+String(task.updatedAt||'');
+ const seq=++todoHistoryRequest;
+ const cached=todoHistoryCache.get(key);
+ if(cached&&Date.now()-cached.at<TODO_HISTORY_FRESH_MS){
+  openModal('Task Revision & Progress History',todoHistoryMarkup(id,cached.data));
+  return;
+ }
+ // Open immediately instead of leaving the button unresponsive while Google
+ // Apps Script, authentication and Sheets retrieve the first history result.
+ openModal('Task Revision & Progress History',
+  '<div id="todoHistoryPanel" class="text-sm text-slate-600 p-4" role="status">'+
+  'Loading verified task history…</div>');
  try{
-  const data=await api('todo_history',{id}),events=data.events||[];
-  const summary=data.summary||todoHistorySummary(events);
-  const metric=(label,n,note)=>'<div class="rounded-xl border bg-white px-3 py-2"><div class="text-[11px] text-slate-500">'+label+
-   '</div><b class="text-xl">'+Number(n||0)+'</b>'+(note?'<p class="text-[10px] text-slate-500">'+note+'</p>':'')+'</div>';
-  const name=items.find(x=>x.id===id)?.title||'Task';
-  openModal('Task Revision & Progress History',
-   '<div class="space-y-4 max-h-[75vh] overflow-y-auto">'+
-    '<div><b class="block text-sm">'+h(name)+'</b><p class="text-xs text-slate-500 mt-1">'+
-     'See what changed, who changed it, and when (Phnom Penh time).</p></div>'+
-    '<div class="grid grid-cols-2 sm:grid-cols-3 gap-2">'+
-     metric('Updates after creation',summary.updates)+
-     metric('Progress increases',summary.progressIncreases)+
-     metric('Deadline revisions',summary.deadlineRevisions)+
-     metric('Description revisions',summary.descriptionRevisions)+
-     metric('No-change saves',summary.noChangeSaves)+
-     metric('Older entries not fully verifiable',summary.legacyUnverified)+'</div>'+
-    (Number(summary.progressDecreases||0)>0?'<p class="text-xs text-amber-800">Progress reductions: '+Number(summary.progressDecreases)+'</p>':'')+
-    '<div class="text-xs text-slate-500">Created: '+Number(summary.created||0)+
-     ' · Status changes: '+Number(summary.statusChanges||0)+
-     ' · Other detail edits: '+Number(summary.otherDetailEdits||0)+'</div>'+
-    (summary.legacyUnverified||events.some(e=>e.historyVersion!=='v2'&&e.fieldsComplete!==true)?
-     '<p class="text-xs rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">'+
-     '<b>Historical limitation:</b> Older entries only saved status and percentage. An unchanged 50% is not progress, but earlier deadline/description edits cannot be reconstructed.</p>':'')+
-    (data.historyLimited?'<p class="text-xs">Showing the most recent 100 of '+Number(data.totalEvents||0)+' history entries. Summary covers all entries.</p>':'')+
-    '<div class="space-y-2 border-t pt-3">'+(events.length?events.map(todoHistoryEventHtml).join(''):'<p class="text-sm text-slate-500">No history yet.</p>')+'</div>'+
-   '</div>');
- }catch(e){showToast(e.message,'err')}
+  const result=await api('todo_history',{id});
+  if(seq!==todoHistoryRequest||String(state.user?.id||'')!==user)return;
+  const modal=document.getElementById('modal');
+  if(modal?.classList?.contains('hidden'))return;
+  const title=document.getElementById('modalTitle');
+  if(title&&title.textContent!=='Task Revision & Progress History')return;
+  if(todoHistoryCache.size>=25)todoHistoryCache.clear();
+  todoHistoryCache.set(key,{at:Date.now(),data:result});
+  const panel=document.getElementById('todoHistoryPanel');
+  if(panel)panel.innerHTML=todoHistoryMarkup(id,result);
+  else if(!modal)openModal('Task Revision & Progress History',todoHistoryMarkup(id,result));
+ }catch(e){
+  if(seq!==todoHistoryRequest)return;
+  const panel=document.getElementById('todoHistoryPanel');
+  if(panel)panel.innerHTML='<p>Could not load task history: '+h(e.message)+
+   '</p><button class="mt-2 underline" onclick="openSalesTodoHistory(\''+h(id)+'\')">Retry</button>';
+  else showToast(e.message,'err');
+ }
 };
 window.addTodoToDailyPlan=id=>{
  const task=items.find(x=>x.id===id);if(!task)return;
@@ -242,7 +291,7 @@ window.deleteSalesTodo=async id=>{
  if(!manager())return showToast('Management permission required','err');
  const item=items.find(t=>t.id===id);if(!item)return;
  if(!confirm('Delete task: '+item.title+'? This cannot be undone.'))return;
- try{await api('todo_delete',{id});showToast('Task deleted; audit retained');await window.loadSalesTodo()}catch(e){showToast(e.message,'err')}
+ try{await api('todo_delete',{id});todoHistoryCache.clear();showToast('Task deleted; audit retained');await window.loadSalesTodo()}catch(e){showToast(e.message,'err')}
 };
 window.saveSalesTodo=async id=>{
  if(saving)return;
@@ -257,13 +306,13 @@ window.saveSalesTodo=async id=>{
  if(!payload.title.trim())return showToast('Task title required','err');
  if(payload.status==='Cancelled'&&!payload.remarks.trim())return showToast('Enter a cancellation reason in Remarks','err');
  saving=true;const btn=document.getElementById('todoSaveButton');if(btn){btn.disabled=true;btn.textContent='Saving…'}
- try{await api('todo_save',payload);closeModal();newTaskId='';showToast('Task saved');await window.loadSalesTodo()}catch(e){showToast(e.message,'err')}finally{saving=false;if(btn){btn.disabled=false;btn.textContent='Save Task'}}
+ try{await api('todo_save',payload);todoHistoryCache.clear();closeModal();newTaskId='';showToast('Task saved');await window.loadSalesTodo()}catch(e){showToast(e.message,'err')}finally{saving=false;if(btn){btn.disabled=false;btn.textContent='Save Task'}}
 };
 let todoRequestSequence=0;
 window.loadSalesTodo=async(force=false)=>{
  if(state.page!==PAGE)return;
  const user=state.user?.id||null;
- if(cacheUser!==user){cacheUser=user;items=[];people=[];loaded=false;lastLoaded=0;todoAuditReady=false;todoRequestSequence++;}
+ if(cacheUser!==user){cacheUser=user;items=[];people=[];loaded=false;lastLoaded=0;todoAuditReady=false;todoHistoryCache.clear();todoHistoryRequest++;todoRequestSequence++;}
  if(loaded){render();if(!force&&Date.now()-lastLoaded<FRESH_MS)return;}
  const seq=++todoRequestSequence;
  if(!loaded)box().innerHTML='<div data-sales-todo-root class="max-w-6xl mx-auto space-y-3 p-4"><div class="text-sm text-gray-500">Opening your tasks…</div><button class="border rounded-lg px-3 py-2 text-sm" onclick="loadSalesTodo(true)">Retry loading</button></div>';
