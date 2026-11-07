@@ -91,13 +91,14 @@ function makeNotifications({base=1,daily=1,overdue=2}={}){
   openSalesTodoOverdue:async()=>{routes.push('overdue')},
   addEventListener:()=>{}
  };
- const document={getElementById:()=>null,querySelector:()=>null,addEventListener:()=>{}};
+ const badge={innerHTML:'',title:'',classList:{toggle(){}}};
+ const document={getElementById:id=>id==='appNotificationBtn'?badge:null,querySelector:()=>null,addEventListener:()=>{}};
  const navigator={};
  const ctx={window,state,db,document,navigator,console,setTimeout:()=>0,clearTimeout:()=>{},
   setInterval:()=>0,clearInterval:()=>{},openModal:(title,html)=>modals.push({title,html}),
   closeModal:()=>routes.push('close'),showToast:()=>{},location:{search:''}};
  vm.createContext(ctx);vm.runInContext(pushSource,ctx);
- return{window,modals,routes};
+ return{window,modals,routes,badge};
 }
 
 test('in-app notification center includes overdue To-Do and keeps other actions accessible',async()=>{
@@ -119,4 +120,13 @@ test('when overdue is the only category, bell opens overdue list directly',async
  await h.window.openAppNotifications();
  assert.ok(h.routes.includes('overdue'));
  assert.equal(h.modals.length,0);
+});
+
+
+test('notification bell badge includes overdue counts alongside existing categories',async()=>{
+ const h=makeNotifications({base:1,daily:1,overdue:2});
+ await h.window.refreshAppNotifications();
+ assert.match(h.badge.innerHTML,/>4<\/span>/);
+ assert.match(h.badge.title,/2 overdue Sales To-Do tasks/);
+ assert.match(h.badge.title,/1 unfinished sales task/);
 });
