@@ -161,9 +161,9 @@ test('Daily approval queue is loaded from the authenticated Google Sheets relay,
  assert.match(daily,/window\.getSalesDailyApprovalQueue=async/);
  assert.match(daily,/api\('read',\{start:backDays\(today\(\),30\),end:today\(\),userId:null\}\)/);
  assert.match(daily,/window\.openSalesDailyApprovalItem=async/);
- assert.doesNotMatch(daily,/await window\\.go\\(R\\)/);
- assert.match(daily,/cachedDailyReport\\(reportId,reportDate,personId\\)/);
- assert.match(daily,/window\\.openDailyManagerReport\\(String\\(reportId\\),cached\\)/);
+ assert.ok(!daily.includes('await window.go(R)'), 'do not route away from in-place Daily review');
+ assert.ok(daily.includes('cachedDailyReport(reportId,reportDate,personId)'), 'use authorized report cache');
+ assert.ok(daily.includes('window.openDailyManagerReport(String(reportId),cached)'), 'open cached report directly');
  assert.match(daily,/window\.openDailyManagerReport/);
 });
 test('bell/PWA attention and CN timestamps include existing review queues',()=>{
@@ -176,8 +176,9 @@ test('bell/PWA attention and CN timestamps include existing review queues',()=>{
 });
 test('browser cache versions point to newest Approvals, Daily and bell scripts',()=>{
  assert.match(index,/approval-notifications\.js\?v=20261104-type-tabs-v2/);
- assert.match(index,/sales-daily-plan\.js\?v=20261104-direct-daily-modal1/);
- assert.match(index,/push-notifications\.js\?v=20261104-daily-pm-alerts1/);
+ assert.match(index,/sales-daily-plan\.js\?v=20261105-oneimage-report-share1/);
+ assert.match(index,/push-notifications\.js\?v=20261107-overdue-todo-alert1/);
+ assert.match(index,/sales-todo\.js\?v=20261107-overdue-bell-alert1/);
 });
 
 test('PWA bell combines SQL attention with authenticated recent Daily review count',async()=>{
