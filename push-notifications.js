@@ -5,12 +5,15 @@
     key:null,
     registration:null,
     refreshTimer:null,
-    openingTarget:false
+    openingTarget:false,
+    sections:[]
   };
 
   function readyUser(){
     return !!(window.state&&state.user&&state.user.id&&window.db);
   }
+
+  function esc(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
   function toast(msg,type){
     if(typeof showToast==='function')showToast(msg,type);
@@ -159,9 +162,12 @@
   async function refreshAttention(){
     if(!readyUser())return;
     try{
-      const {data,error}=await db.rpc('get_my_app_attention');
-      if(error)throw error;
-      const base=data||{count:0,target:'dashboard',body:'No action items'};
+      let base={count:0,target:'dashboard',body:'No action items'};
+      try{
+        const {data,error}=await db.rpc('get_my_app_attention');
+        if(error)throw error;
+        if(data)base=data;
+      }catch(err){console.warn('Other app attention unavailable; continuing Google Sheet alerts:',err.message||err)}
       // The database powers real web-push alerts. Daily Plan reviews live only
       // in Google Sheets, so add their authenticated count to the IN-APP bell.
       // Do not store or duplicate report content in Supabase.
@@ -181,19 +187,35 @@
         try{dailyAlerts=await window.getSalesDailyAttention()}
         catch(err){console.warn('Google Sheet Daily Plan alerts unavailable:',err.message||err)}
       }
+      // Overdue To-Do is independent of the AM/PM Daily Plan task alerts.
+      let todoAlerts={count:0,overdueCount:0,items:[],target:'sales-todo'};
+      if(typeof window.getSalesTodoAttention==='function'){
+        try{todoAlerts=await window.getSalesTodoAttention()}
+        catch(err){console.warn('Google Sheet overdue To-Do alerts unavailable:',err.message||err)}
+      }
+      const overdueCount=Math.max(0,Number(todoAlerts.overdueCount||0));
       const summaries=[];
+      if(overdueCount)summaries.push(overdueCount+' overdue Sales To-Do task'+(overdueCount===1?'':'s'));
       if(dailyCount)summaries.push(dailyCount+' pending Team Daily Review'+(dailyCount===1?'':'s'));
       if(dailyAlerts.missingCount)summaries.push(dailyAlerts.missingCount+' missing Evening Result'+(dailyAlerts.missingCount===1?'':'s'));
       if(dailyAlerts.unfinishedCount)summaries.push(dailyAlerts.unfinishedCount+' unfinished sales task'+(dailyAlerts.unfinishedCount===1?'':'s'));
       if(Number(base.count||0))summaries.push(base.body||Number(base.count)+' other action items');
+      P.sections=[
+        ...(overdueCount?[{name:'Overdue Sales To-Do',count:overdueCount,target:'sales-todo-overdue',items:Array.isArray(todoAlerts.items)?todoAlerts.items:[]}]:[]),
+        ...(dailyAlerts.missingCount?[{name:'Missing Evening Results',count:Number(dailyAlerts.missingCount),target:dailyAlerts.target}]:[]),
+        ...(dailyCount?[{name:'Pending Team Daily Reviews',count:dailyCount,target:'approvals'}]:[]),
+        ...(dailyAlerts.unfinishedCount?[{name:'Unfinished Daily Plan tasks',count:Number(dailyAlerts.unfinishedCount),target:dailyAlerts.target}]:[]),
+        ...(Number(base.count||0)?[{name:'Other app action items',count:Number(base.count),target:base.target||'dashboard'}]:[])
+      ];
       P.attention={
         ...base,
-        count:Number(base.count||0)+dailyCount+Number(dailyAlerts.count||0),
+        count:Number(base.count||0)+dailyCount+Number(dailyAlerts.count||0)+overdueCount,
         body:summaries.length?summaries.join(' · '):(base.body||'No action items'),
         // Missing PM deadlines are important to management, but are NOT
         // misclassified as pending manager approvals.
         target:Number(dailyAlerts.missingCount||0)>0?dailyAlerts.target:
           dailyCount>0?'approvals':
+          overdueCount>0?'sales-todo':
           Number(dailyAlerts.count||0)>0?dailyAlerts.target:base.target
       };
       renderButton();
@@ -234,6 +256,37 @@
     }
   }
 
+  function openAttentionList(){
+    if(!P.sections.length)return;
+    if(P.sections.length===1)return window.openAppNotificationSection(0);
+    if(typeof openModal!=='function')return window.openAppNotificationSection(0);
+    const html='<div class="space-y-3">'+
+      '<p class="text-sm text-slate-600">Choose which notifications to review. Overdue Sales To-Do tasks remain visible until completed, cancelled, or rescheduled.</p>'+
+      P.sections.map((section,i)=>{
+        const overdue=section.target==='sales-todo-overdue';
+        const sample=overdue?'<div class="mt-2 space-y-1">'+
+          section.items.slice(0,5).map(t=>'<div class="text-xs text-slate-600">'+
+            esc(t.assignee?String(t.assignee)+' · ':'')+esc(t.title)+' · '+esc(t.dueDate)+
+            ' ('+Math.max(1,Number(t.daysOverdue||1))+' day(s) overdue)</div>').join('')+
+          (section.count>5?'<div class="text-xs text-slate-500">And more overdue tasks…</div>':'')+'</div>':'';
+        return '<button type="button" class="block text-left w-full border rounded-xl px-4 py-3 bg-white hover:bg-slate-50" onclick="openAppNotificationSection('+i+')">'+
+          '<span class="flex items-center justify-between gap-3"><b class="text-sm '+(overdue?'text-red-700':'text-slate-800')+'">'+esc(section.name)+'</b>'+
+          '<span class="rounded-full bg-red-100 text-red-800 px-2.5 py-1 text-xs font-bold">'+section.count+'</span></span>'+
+          sample+'</button>';
+      }).join('')+'</div>';
+    openModal('Notifications',html);
+  }
+  window.openAppNotificationSection=async function(index){
+    const section=P.sections[Number(index)];
+    if(!section)return;
+    if(typeof closeModal==='function')closeModal();
+    if(section.target==='sales-todo-overdue'){
+      if(typeof window.openSalesTodoOverdue==='function')return window.openSalesTodoOverdue();
+      return openTarget('sales-todo');
+    }
+    return openTarget(section.target||'dashboard');
+  };
+
   window.refreshAppNotifications=refreshAttention;
 
   window.openAppNotifications=async function(){
@@ -243,14 +296,14 @@
 
     // In-app attention works even when browser/OS push is unavailable or blocked.
     if(!supported){
-      if(count>0)return openTarget(P.attention.target||'dashboard');
+      if(count>0)return openAttentionList();
       return toast('No action items right now. Browser push is not supported on this browser.');
     }
 
     if(Notification.permission==='denied'){
       if(count>0){
         toast('Browser notifications are blocked, but your in-app requests are still available.');
-        return openTarget(P.attention.target||'dashboard');
+        return openAttentionList();
       }
       return toast('Notifications are blocked. Allow notifications for this site in your browser/app settings.','err');
     }
@@ -267,12 +320,12 @@
       }catch(err){
         toast(err.message||'Could not enable browser notifications.','err');
       }
-      if(attentionCount()>0)return openTarget(P.attention.target||'dashboard');
+      if(attentionCount()>0)return openAttentionList();
       return;
     }
 
     if(count>0){
-      await openTarget(P.attention.target||'dashboard');
+      await openAttentionList();
     }else{
       toast('Notifications are enabled. No action items right now.');
     }
