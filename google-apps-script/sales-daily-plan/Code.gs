@@ -469,7 +469,7 @@ function todoHistoryEvent(r){
  return {...base,historyVersion:'legacy',type:oldStatus?'updated':'created',changes,reason:'',before:null,after:null,fieldsComplete:false};
 }
 function todoHistorySummary(events){
- const result={total:events.length,created:0,updates:0,progressIncreases:0,progressDecreases:0,deadlineRevisions:0,descriptionRevisions:0,otherDetailEdits:0,statusChanges:0,noChangeSaves:0,legacyUnverified:0};
+ const result={total:events.length,created:0,updates:0,progressIncreases:0,progressDecreases:0,startDateRevisions:0,deadlineRevisions:0,descriptionRevisions:0,otherDetailEdits:0,statusChanges:0,noChangeSaves:0,legacyUnverified:0};
  events.forEach(e=>{
   if(e.type==='created'){result.created++;return}
   result.updates++;
@@ -479,6 +479,7 @@ function todoHistorySummary(events){
    if(Number(progress.after)>Number(progress.before))result.progressIncreases++;
    else if(Number(progress.after)<Number(progress.before))result.progressDecreases++;
   }
+  if(names.includes('startDate'))result.startDateRevisions++;
   if(names.includes('dueDate'))result.deadlineRevisions++;
   if(names.includes('description'))result.descriptionRevisions++;
   if(names.includes('status'))result.statusChanges++;
@@ -490,6 +491,61 @@ function todoHistorySummary(events){
  });
  return result;
 }
+// Recover verified pre-v2 task edits from the independent append-only Audit Log.
+// Never guess field changes when an audit snapshot is missing or truncated.
+function todoAuditLegacyRows(ss,id){
+ const sh=tab(ss,'audit');
+ // TextFinder searches a single ID column on Google's side. This avoids reading
+ // thousands of unrelated Daily Plan snapshots (and their large JSON values).
+ if(typeof sh.getLastRow==='function'&&sh.getLastRow()>1){
+  const search=sh.getRange(2,4,sh.getLastRow()-1,1);
+  if(typeof search.createTextFinder==='function'){
+   const found=search.createTextFinder(id).matchEntireCell(true).findAll();
+   return found.map(cell=>sh.getRange(cell.getRow(),1,1,8).getDisplayValues()[0]);
+  }
+ }
+ // Small in-memory Sheets mocks, used only in automated tests.
+ return data(sh).filter(r=>String(r[3]||'')===id);
+}
+function todoRecoverAudit(ss,id,events){
+ if(!events.some(e=>e.historyVersion==='legacy'))return 0;
+ const audits=todoAuditLegacyRows(ss,id).map(r=>{
+  const type=r[5]==='TODO_CREATED'?'created':r[5]==='TODO_UPDATED'?'updated':'';
+  if(!type)return null;
+  const rawBefore=todoReadJson(r[6],{}),rawAfter=todoReadJson(r[7],{});
+  if(!Array.isArray(rawAfter.task)||String(rawAfter.task[0])!==id)return null;
+  if(type==='updated'&&(!Array.isArray(rawBefore.task)||String(rawBefore.task[0])!==id))return null;
+  const before=type==='updated'?todoSnapshot(rawBefore.task):null;
+  const after=todoSnapshot(rawAfter.task);
+  return{type,actorId:String(r[2]||''),timestamp:r[1],before,after,changes:todoChanges(before,after)};
+ }).filter(Boolean);
+ const used=new Set();
+ let recovered=0;
+ events.forEach(event=>{
+  if(event.historyVersion!=='legacy')return;
+  const stamp=Date.parse(String(event.timestamp||''));
+  if(!Number.isFinite(stamp))return;
+  let selected=-1,best=30001;
+  audits.forEach((audit,i)=>{
+   if(used.has(i)||audit.type!==event.type||audit.actorId!==String(event.actorId||''))return;
+   const distance=Math.abs(Date.parse(String(audit.timestamp||''))-stamp);
+   if(Number.isFinite(distance)&&distance<best){selected=i;best=distance}
+  });
+  if(selected<0)return;
+  const verified=audits[selected];used.add(selected);
+  event.historyVersion='audit-recovered';
+  event.auditVerified=true;
+  event.fieldsComplete=true;
+  event.before=verified.before;
+  event.after=verified.after;
+  event.changes=verified.changes;
+  recovered++;
+ });
+ return recovered;
+}
+function todoHistoryCache(){
+ return typeof CacheService==='undefined'?null:CacheService.getScriptCache();
+}
 function todoHistory(ss,a,p){
  if(!a.can_write&&!a.can_review)throw Error('Sales task access denied');
  const id=val(p.id,80),record=data(todoSheet(ss)).find(r=>r[0]===id);
@@ -497,8 +553,22 @@ function todoHistory(ss,a,p){
  const management=a.can_review&&['manager','admin','super_admin'].includes(a.role);
  if(!management&&String(record[3])!==String(a.user_id))throw Error('Task access denied');
  if(management&&!fetchTeam(a).has(String(record[3])))throw Error('Sales assignment is not authorized');
+ // Authorization is checked before cache access; callers can never fetch another
+ // salesperson's cached task history.
+ const cache=todoHistoryCache(),key='todo-history-audit-v1:'+id;
+ if(cache){
+  const cached=cache.get(key);
+  if(cached){try{return JSON.parse(cached)}catch(_){}}
+ }
  const all=data(todoHistorySheet(ss)).filter(r=>r[0]===id).map(todoHistoryEvent);
- return{events:all.slice().reverse().slice(0,100),summary:todoHistorySummary(all),totalEvents:all.length,historyLimited:all.length>100};
+ const auditRecoveredCount=todoRecoverAudit(ss,id,all);
+ const result={events:all.slice().reverse().slice(0,100),summary:todoHistorySummary(all),
+  totalEvents:all.length,historyLimited:all.length>100,auditRecoveredCount};
+ if(cache){
+  const json=JSON.stringify(result);
+  if(json.length<90000)cache.put(key,json,120);
+ }
+ return result;
 }
 function todoSave(ss,a,p){
  if(!a.can_write&&!a.can_review)throw Error('Sales task access denied');
@@ -537,6 +607,7 @@ function todoSave(ss,a,p){
  if(existing)sh.getRange(ix+2,1,1,15).setValues([row]);else sh.appendRow(row);
  todoHistorySheet(ss).appendRow([row[0],eventTime,a.user_id,saveText(a.display_name,200),row[8],row[9],row[10],existing?.[8]||'',existing?.[9]||'','v2',JSON.stringify(changes),reason,JSON.stringify(before),JSON.stringify(after)]);
  audit(ss,a,row[0],existing?'TODO_UPDATED':'TODO_CREATED',{task:existing||null},{task:row});
+ const historyCache=todoHistoryCache();if(historyCache)historyCache.remove('todo-history-audit-v1:'+row[0]);
  return{id:row[0],saved:true};
  }finally{SpreadsheetApp.flush();lock.releaseLock()}
 }
