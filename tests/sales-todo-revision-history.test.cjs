@@ -46,7 +46,8 @@ function contextWithTask(){
  ['task-1','2026-11-06T10:28:29Z','sale-1','Koem Nalis','In Progress',50,'','In Progress',30],
  ['task-1','2026-11-07T01:32:47Z','sale-1','Koem Nalis','In Progress',50,'','In Progress',50]
  ]);
- const sheetMap={'Sales To-Do':tasks,'Sales To-Do History':history};
+ const sheetMap={'Sales To-Do':tasks,'Sales To-Do History':history,
+  'Audit Log':makeSheet(['ID','Time','Actor ID','Report ID','Task ID','Action','Before','After'])};
  const ss={getSheetByName:name=>sheetMap[name],insertSheet:name=>{
   const sh=makeSheet([]);sheetMap[name]=sh;return sh;
  }};
