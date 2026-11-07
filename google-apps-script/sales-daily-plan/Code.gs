@@ -434,10 +434,61 @@ function todoList(ss,a){
  }));
  return{items,people:a.can_review?people:[],today:today()};
 }
+// Columns 1–9 preserve existing history; appended columns describe future revisions.
 function todoHistorySheet(ss){
  let sh=ss.getSheetByName('Sales To-Do History');
- if(!sh){sh=ss.insertSheet('Sales To-Do History');sh.appendRow(['Task ID','Time','Actor ID','Actor Name','Status','Progress','Remarks','Previous Status','Previous Progress'])}
+ if(!sh){sh=ss.insertSheet('Sales To-Do History');sh.appendRow(['Task ID','Time','Actor ID','Actor Name','Status','Progress','Remarks','Previous Status','Previous Progress','History Version','Changes JSON','Revision Reason','Before Snapshot JSON','After Snapshot JSON'])}
+ else if(sh.getLastColumn()<14)sh.getRange(1,10,1,5).setValues([['History Version','Changes JSON','Revision Reason','Before Snapshot JSON','After Snapshot JSON']]);
  return sh;
+}
+function todoSnapshot(r){
+ if(!r)return null;
+ return{title:String(r[1]||''),description:String(r[2]||''),assigneeId:String(r[3]||''),assignee:String(r[4]||''),startDate:String(r[5]||''),dueDate:String(r[6]||''),priority:String(r[7]||''),status:String(r[8]||''),progress:Number(r[9]||0),remarks:String(r[10]||''),completedAt:String(r[11]||'')};
+}
+function todoChanges(before,after){
+ if(!before||!after)return [];
+ return ['title','description','assigneeId','assignee','startDate','dueDate','priority','status','progress','remarks','completedAt']
+ .filter(k=>String(before[k]??'')!==String(after[k]??''))
+ .map(field=>({field,before:before[field]??'',after:after[field]??''}));
+}
+function todoReadJson(cell,fallback){
+ try{if(!cell)return fallback;const v=JSON.parse(String(cell));return v===null?fallback:v}
+ catch(_){return fallback}
+}
+function todoHistoryEvent(r){
+ const oldStatus=String(r[7]||''),status=String(r[4]||''),oldProgress=Number(r[8]||0),progress=Number(r[5]||0);
+ const base={timestamp:r[1],actorId:r[2],actor:r[3],status,progress,remarks:r[6],previousStatus:oldStatus,previousProgress:oldProgress};
+ if(String(r[9]||'')==='v2'){
+  const changes=todoReadJson(r[10],[]);
+  return {...base,historyVersion:'v2',type:oldStatus?'updated':'created',changes:Array.isArray(changes)?changes:[],reason:String(r[11]||''),before:todoReadJson(r[12],null),after:todoReadJson(r[13],null),fieldsComplete:true};
+ }
+ // Old history proves only progress/status changes, not other field revisions.
+ const changes=[];
+ if(oldStatus&&oldStatus!==status)changes.push({field:'status',before:oldStatus,after:status});
+ if(oldStatus&&oldProgress!==progress)changes.push({field:'progress',before:oldProgress,after:progress});
+ return {...base,historyVersion:'legacy',type:oldStatus?'updated':'created',changes,reason:'',before:null,after:null,fieldsComplete:false};
+}
+function todoHistorySummary(events){
+ const result={total:events.length,created:0,updates:0,progressIncreases:0,progressDecreases:0,deadlineRevisions:0,descriptionRevisions:0,otherDetailEdits:0,statusChanges:0,noChangeSaves:0,legacyUnverified:0};
+ events.forEach(e=>{
+  if(e.type==='created'){result.created++;return}
+  result.updates++;
+  const names=(e.changes||[]).map(x=>x.field);
+  const progress=(e.changes||[]).find(x=>x.field==='progress');
+  if(progress){
+   if(Number(progress.after)>Number(progress.before))result.progressIncreases++;
+   else if(Number(progress.after)<Number(progress.before))result.progressDecreases++;
+  }
+  if(names.includes('dueDate'))result.deadlineRevisions++;
+  if(names.includes('description'))result.descriptionRevisions++;
+  if(names.includes('status'))result.statusChanges++;
+  if(names.some(x=>['title','assigneeId','assignee','startDate','priority','remarks','completedAt'].includes(x)))result.otherDetailEdits++;
+  if(!names.length){
+   if(e.fieldsComplete)result.noChangeSaves++;
+   else result.legacyUnverified++;
+  }
+ });
+ return result;
 }
 function todoHistory(ss,a,p){
  if(!a.can_write&&!a.can_review)throw Error('Sales task access denied');
@@ -446,7 +497,8 @@ function todoHistory(ss,a,p){
  const management=a.can_review&&['manager','admin','super_admin'].includes(a.role);
  if(!management&&String(record[3])!==String(a.user_id))throw Error('Task access denied');
  if(management&&!fetchTeam(a).has(String(record[3])))throw Error('Sales assignment is not authorized');
- return{events:data(todoHistorySheet(ss)).filter(r=>r[0]===id).map(r=>({timestamp:r[1],actor:r[3],status:r[4],progress:Number(r[5]||0),remarks:r[6],previousStatus:r[7],previousProgress:Number(r[8]||0)})).reverse().slice(0,100)};
+ const all=data(todoHistorySheet(ss)).filter(r=>r[0]===id).map(todoHistoryEvent);
+ return{events:all.slice().reverse().slice(0,100),summary:todoHistorySummary(all),totalEvents:all.length,historyLimited:all.length>100};
 }
 function todoSave(ss,a,p){
  if(!a.can_write&&!a.can_review)throw Error('Sales task access denied');
