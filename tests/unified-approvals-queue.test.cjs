@@ -177,7 +177,7 @@ test('bell/PWA attention and CN timestamps include existing review queues',()=>{
 test('browser cache versions point to newest Approvals, Daily and bell scripts',()=>{
  assert.match(index,/approval-notifications\.js\?v=20261104-type-tabs-v2/);
  assert.match(index,/sales-daily-plan\.js\?v=20261105-oneimage-report-share1/);
- assert.match(index,/push-notifications\.js\?v=20261107-overdue-todo-alert1/);
+ assert.match(index,/push-notifications\.js\?v=20261107-overdue-todo-alert2/);
  assert.match(index,/sales-todo\.js\?v=20261107-overdue-bell-alert1/);
 });
 
