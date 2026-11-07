@@ -508,6 +508,8 @@ function todoSave(ss,a,p){
  if(!existing&&id&&!/^[0-9a-f-]{36}$/i.test(id)&&!/^todo-[0-9]+-[a-z0-9]+$/.test(id))throw Error('Invalid task identifier');
  const manager=!!a.can_review&&['manager','admin','super_admin'].includes(a.role);
  if(existing&&String(existing[3])!==String(a.user_id)&&!manager)throw Error('You may update only your own tasks');
+ if(existing&&manager&&!fetchTeam(a).has(String(existing[3])))throw Error('Task outside your authorized team');
+ if(existing&&p.expectedUpdatedAt!==undefined&&String(p.expectedUpdatedAt)!==String(existing[14]||''))throw Error('This task changed since you opened it. Refresh before saving.');
  if(!existing&&!manager&&a.role!=='sales')throw Error('Only Sales or management can create tasks');
  const title=saveText(p.title||existing?.[1],200);if(!title)throw Error('Task title is required');
  const assigneeId=manager?val(p.assigneeId||existing?.[3],80):a.user_id;
@@ -518,17 +520,22 @@ function todoSave(ss,a,p){
  const priority=val(p.priority||existing?.[7]||'Medium',20);
  if(!['High','Medium','Low'].includes(priority))throw Error('Invalid priority');
  const start=p.startDate?iso(p.startDate):existing?.[5]||today();
- const due=p.dueDate?iso(p.dueDate):existing?.[6]||'';
+ const due=p.dueDate===undefined?(existing?.[6]||''):(p.dueDate?iso(p.dueDate):'');
  if(due&&start>due)throw Error('Deadline must be on or after start date');
  const remarks=saveText(p.remarks===undefined?existing?.[10]:p.remarks,1500);
  if(status==='Cancelled'&&!remarks.trim())throw Error('Cancellation reason is required in Remarks');
  const completed=status==='Completed'?(existing?.[11]||now()):'';
  const name=(a.sales_people||[]).find(x=>String(x.user_id)===String(assigneeId));
- const row=[existing?.[0]||id||uid(),title,saveText(p.description===undefined?existing?.[2]:p.description,1500),assigneeId,
+ const description=saveText(p.description===undefined?existing?.[2]:p.description,1500);
+ const reason=saveText(p.revisionReason,750);
+ if(existing&&(String(existing[6]||'')!==String(due)||String(existing[2]||'')!==String(description))&&!reason.trim())throw Error('Enter a reason for changing the task deadline or description');
+ const row=[existing?.[0]||id||uid(),title,description,assigneeId,
  name?.name||name?.display_name||existing?.[4]||a.display_name,start,due,priority,status,status==='Completed'?100:progress,
  remarks,completed,existing?.[12]||a.user_id,existing?.[13]||now(),now()];
+ const before=todoSnapshot(existing),after=todoSnapshot(row),changes=todoChanges(before,after);
+ const eventTime=now();
  if(existing)sh.getRange(ix+2,1,1,15).setValues([row]);else sh.appendRow(row);
- todoHistorySheet(ss).appendRow([row[0],now(),a.user_id,saveText(a.display_name,200),row[8],row[9],row[10],existing?.[8]||'',existing?.[9]||'']);
+ todoHistorySheet(ss).appendRow([row[0],eventTime,a.user_id,saveText(a.display_name,200),row[8],row[9],row[10],existing?.[8]||'',existing?.[9]||'','v2',JSON.stringify(changes),reason,JSON.stringify(before),JSON.stringify(after)]);
  audit(ss,a,row[0],existing?'TODO_UPDATED':'TODO_CREATED',{task:existing||null},{task:row});
  return{id:row[0],saved:true};
  }finally{SpreadsheetApp.flush();lock.releaseLock()}
