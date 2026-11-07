@@ -31,9 +31,120 @@ window.filterSalesTodo=()=>{
  sortMode=document.getElementById('todoSort')?.value||'due';render();
  if(active==='todoSearch'){const input=document.getElementById('todoSearch');input?.focus();if(caret!==null)input?.setSelectionRange(caret,caret)}
 };
+// Display the full audit in Cambodia time, without mistaking a repeated
+// percentage for completed work. Old Google Sheet rows only tracked progress
+// and status, so we must not invent earlier deadline/description changes.
+const todoTime=value=>{
+ const ms=Date.parse(String(value||''));
+ if(!Number.isFinite(ms))return String(value||'Date not recorded');
+ return new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Phnom_Penh',year:'numeric',month:'short',day:'numeric',
+  hour:'numeric',minute:'2-digit',hour12:true}).format(new Date(ms))+' (Cambodia)';
+};
+const todoLabels={
+ title:'Task title',description:'Task description',assigneeId:'Assignee ID',assignee:'Assigned salesperson',
+ startDate:'Start date',dueDate:'Deadline',priority:'Priority',status:'Status',
+ progress:'Progress',remarks:'Progress note / remarks',completedAt:'Completion time'
+};
+function todoHistoryChanges(e){
+ if(Array.isArray(e.changes))return e.changes;
+ // Fallback if the user's Apps Script has not yet been redeployed.
+ const before=String(e.previousStatus||''),after=String(e.status||'');
+ if(!before)return [];
+ const changes=[];
+ if(before!==after)changes.push({field:'status',before,after});
+ if(Number(e.previousProgress||0)!==Number(e.progress||0))
+  changes.push({field:'progress',before:Number(e.previousProgress||0),after:Number(e.progress||0)});
+ return changes;
+}
+function todoHistorySummary(events){
+ const result={total:events.length,created:0,updates:0,progressIncreases:0,progressDecreases:0,
+  deadlineRevisions:0,descriptionRevisions:0,otherDetailEdits:0,statusChanges:0,
+  noChangeSaves:0,legacyUnverified:0};
+ events.forEach(e=>{
+  const type=e.type||(!e.previousStatus?'created':'updated');
+  if(type==='created'){result.created++;return}
+  result.updates++;
+  const changes=todoHistoryChanges(e),keys=changes.map(x=>x.field);
+  const p=changes.find(x=>x.field==='progress');
+  if(p&&Number(p.after)>Number(p.before))result.progressIncreases++;
+  if(p&&Number(p.after)<Number(p.before))result.progressDecreases++;
+  if(keys.includes('dueDate'))result.deadlineRevisions++;
+  if(keys.includes('description'))result.descriptionRevisions++;
+  if(keys.includes('status'))result.statusChanges++;
+  if(keys.some(x=>['title','assigneeId','assignee','startDate','priority','remarks','completedAt'].includes(x)))
+   result.otherDetailEdits++;
+  if(!keys.length){
+   if(e.fieldsComplete===true||e.historyVersion==='v2')result.noChangeSaves++;
+   else result.legacyUnverified++;
+  }
+ });
+ return result;
+}
+const todoChangeValue=(key,value)=>{
+ if(key==='progress')return String(Number(value||0))+'%';
+ if(key==='completedAt'&&value)return todoTime(value);
+ return String(value??'').trim()||'Not set';
+};
+function todoHistoryEventHtml(e){
+ const changes=todoHistoryChanges(e);
+ const isCreated=e.type==='created'||(!e.type&&!e.previousStatus);
+ const complete=e.fieldsComplete===true||e.historyVersion==='v2';
+ const increase=changes.find(x=>x.field==='progress'&&Number(x.after)>Number(x.before));
+ const reduction=changes.find(x=>x.field==='progress'&&Number(x.after)<Number(x.before));
+ const badge=isCreated?'Created':increase?'Progress increased':reduction?'Progress corrected':
+  changes.some(x=>x.field==='dueDate')?'Deadline revised':
+  changes.some(x=>x.field==='description')?'Description revised':
+  changes.length?'Task edited':complete?'No changes saved':'Legacy entry';
+ const badgeColor=increase?'bg-green-100 text-green-800':reduction?'bg-amber-100 text-amber-900':
+  changes.some(x=>x.field==='dueDate')?'bg-amber-100 text-amber-900':'bg-slate-100 text-slate-700';
+ const detail=changes.map(x=>
+  '<div class="grid sm:grid-cols-[145px_minmax(0,1fr)] gap-1 sm:gap-3 py-2 border-b last:border-b-0 border-slate-100">'+
+    '<b class="text-xs text-slate-600">'+h(todoLabels[x.field]||x.field)+'</b>'+
+    '<div class="min-w-0 text-xs break-words"><span class="text-slate-500 line-through">'+h(todoChangeValue(x.field,x.before))+'</span>'+
+    ' <span class="text-slate-400">→</span> <span class="font-semibold text-slate-900">'+h(todoChangeValue(x.field,x.after))+'</span></div></div>'
+ ).join('');
+ const oldNote=!complete&&e.remarks?'<p class="text-xs text-slate-500 mt-2">Note saved: '+h(e.remarks)+
+  ' <span class="italic">(earlier note changes cannot be verified)</span></p>':'';
+ const noChange=!changes.length&&!isCreated?
+  '<p class="text-xs text-slate-500">'+(complete?
+    'No tracked task fields changed in this save.':'Progress and status did not change. Older history does not record whether other details were edited.')+'</p>':'';
+ const init=isCreated?'<p class="text-xs text-slate-600">Initial record · '+h(e.status||'')+' · '+Number(e.progress||0)+'%</p>':'';
+ return '<article class="border-l-[3px] border-slate-200 pl-3 pb-4" data-todo-history-event>'+
+  '<div class="flex flex-wrap items-center justify-between gap-2"><b class="text-sm">'+h(todoTime(e.timestamp))+'</b>'+
+   '<span class="rounded-full px-2.5 py-1 text-[11px] font-bold '+badgeColor+'">'+badge+'</span></div>'+
+  '<p class="text-xs text-slate-500 mt-1">Updated by: '+h(e.actor||'Unknown user')+'</p>'+
+  '<div class="mt-2">'+(detail||init||noChange)+'</div>'+
+  (e.reason?'<div class="bg-blue-50 border border-blue-100 rounded-lg p-2 mt-2 text-xs"><b>Revision reason: </b>'+h(e.reason)+'</div>':'')+
+  oldNote+'</article>';
+}
 window.openSalesTodoHistory=async id=>{
- try{const data=await api('todo_history',{id});const rows=data.events||[];
- openModal('Task Progress History','<div class="space-y-3 max-h-[65vh] overflow-auto">'+(rows.length?rows.map(e=>'<div class="border-b pb-3 text-xs"><b>'+h(e.timestamp)+' · '+h(e.actor)+'</b><p class="mt-1">Status: '+h(e.status)+' · Progress: '+h(e.progress)+'%</p><p class="mt-1">'+h(e.remarks||'')+'</p></div>').join(''):'<p>No progress updates recorded yet.</p>')+'</div>');
+ try{
+  const data=await api('todo_history',{id}),events=data.events||[];
+  const summary=data.summary||todoHistorySummary(events);
+  const metric=(label,n,note)=>'<div class="rounded-xl border bg-white px-3 py-2"><div class="text-[11px] text-slate-500">'+label+
+   '</div><b class="text-xl">'+Number(n||0)+'</b>'+(note?'<p class="text-[10px] text-slate-500">'+note+'</p>':'')+'</div>';
+  const name=items.find(x=>x.id===id)?.title||'Task';
+  openModal('Task Revision & Progress History',
+   '<div class="space-y-4 max-h-[75vh] overflow-y-auto">'+
+    '<div><b class="block text-sm">'+h(name)+'</b><p class="text-xs text-slate-500 mt-1">'+
+     'See what changed, who changed it, and when (Phnom Penh time).</p></div>'+
+    '<div class="grid grid-cols-2 sm:grid-cols-3 gap-2">'+
+     metric('Updates after creation',summary.updates)+
+     metric('Progress increases',summary.progressIncreases)+
+     metric('Deadline revisions',summary.deadlineRevisions)+
+     metric('Description revisions',summary.descriptionRevisions)+
+     metric('No-change saves',summary.noChangeSaves)+
+     metric('Older entries not fully verifiable',summary.legacyUnverified)+'</div>'+
+    (Number(summary.progressDecreases||0)>0?'<p class="text-xs text-amber-800">Progress reductions: '+Number(summary.progressDecreases)+'</p>':'')+
+    '<div class="text-xs text-slate-500">Created: '+Number(summary.created||0)+
+     ' · Status changes: '+Number(summary.statusChanges||0)+
+     ' · Other detail edits: '+Number(summary.otherDetailEdits||0)+'</div>'+
+    (summary.legacyUnverified||events.some(e=>e.historyVersion!=='v2'&&e.fieldsComplete!==true)?
+     '<p class="text-xs rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">'+
+     '<b>Historical limitation:</b> Older entries only saved status and percentage. An unchanged 50% is not progress, but earlier deadline/description edits cannot be reconstructed.</p>':'')+
+    (data.historyLimited?'<p class="text-xs">Showing the most recent 100 of '+Number(data.totalEvents||0)+' history entries. Summary covers all entries.</p>':'')+
+    '<div class="space-y-2 border-t pt-3">'+(events.length?events.map(todoHistoryEventHtml).join(''):'<p class="text-sm text-slate-500">No history yet.</p>')+'</div>'+
+   '</div>');
  }catch(e){showToast(e.message,'err')}
 };
 window.addTodoToDailyPlan=id=>{
