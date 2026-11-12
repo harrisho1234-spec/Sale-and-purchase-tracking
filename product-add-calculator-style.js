@@ -223,7 +223,7 @@
               </div>
               <div class="pa-field">
                 <label>Stock Qty</label>
-                <input id="paQty" type="number" min="0" step="0.01" value="0">
+                <input ${isSuper()?'':'disabled title="Receive stock through the PO workflow; manual initial quantity requires Super Admin."'} id="paQty" type="number" min="0" step="0.01" value="0">
               </div>
               <div class="pa-field">
                 <label>Class</label>
@@ -329,7 +329,7 @@
           brand,
           class:document.getElementById('paClass').value.trim()||null,
           description:document.getElementById('paDescription').value.trim()||null,
-          stock_qty:Number(document.getElementById('paQty').value||0),
+          stock_qty:isSuper()?Number(document.getElementById('paQty').value||0):0,
           sales_price:Number(document.getElementById('paPrice').value||0),
           currency:'USD',
           active:true,

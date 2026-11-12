@@ -16,7 +16,10 @@
     return after>=before;
   };
   window.poForwardStatusOptions=function(current,choices){
-    const list=Array.isArray(choices)?choices:[];
+    const list=Array.isArray(choices)?choices.slice():[];
+    // Keep imported/terminal statuses selected when they are absent from the menu.
+    const value=String(current||'placed');
+    if(!list.some(([key])=>key===value))list.unshift([value,value.replace(/[^a-zA-Z0-9 _-]/g,'')]);
     return list.map(([value,label])=>{
       const blocked=!window.poCanAdvanceStatus(current,value);
       const selected=String(current||'placed')===value;

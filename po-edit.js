@@ -40,6 +40,7 @@
 
   window.openEditSupplierPO=async function(poId){
     try{
+      if(!(typeof window.hasAppPermission==='function'?window.hasAppPermission('procurement.po_edit'):isAdmin()))throw new Error('You do not have permission to edit Supplier POs.');
       const d=await loadPOEditData(poId),p=d.po;
       const historical=String(d.reconciliation?.reconciliation_state||'live')==='historical_reconciled';
       if(typeof loadVendorMaster==='function')await loadVendorMaster(true);
@@ -102,10 +103,15 @@
         const file=document.getElementById('epoFile').files[0]||null;
         const selectedVendor=typeof findVendorMaster==='function'?findVendorMaster(document.getElementById('epoVendor').value):null;
         const patch={po_number:document.getElementById('epoNo').value.trim()||null,vendor_id:selectedVendor?.id||document.getElementById('epoVendorId')?.value||null,vendor_name:selectedVendor?.name||document.getElementById('epoVendor').value.trim(),status:historical?(p.status||'placed'):document.getElementById('epoStatus').value,estimated_arrival:historical?(p.estimated_arrival||null):(document.getElementById('epoEta').value||null),shipping_agent:document.getElementById('epoAgent').value.trim()||null,order_date:document.getElementById('epoDate').value||p.order_date,notes:document.getElementById('epoNotes').value.trim()||null};
-        if(!historical){
+        if(!historical && (patch.status!==p.status || patch.estimated_arrival!==(p.estimated_arrival||null))){
           const targetStatus=patch.status,eta=patch.estimated_arrival;
           try{
-            if(targetStatus==='arrived'){
+            if(targetStatus===p.status){
+              // ETA-only edits must not replay arrival/closure or change item stages.
+              const etaSave=await db.from('supplier_pos').update({estimated_arrival:eta})
+                .eq('id',poId).eq('status',p.status).select('id').single();
+              if(etaSave.error)throw etaSave.error;
+            }else if(targetStatus==='arrived'){
               // The shared arrival confirmation advances all live PO items.
               const confirmed=await window.confirmWholePOArrival(poId,eta);
               if(!confirmed)return;
@@ -122,9 +128,9 @@
         // Do not overwrite them again when saving document/vendor/notes.
         delete patch.status;
         delete patch.estimated_arrival;
-        const r=await db.from('supplier_pos').update(patch).eq('id',poId);
+        const r=await db.from('supplier_pos').update(patch).eq('id',poId).select('id').single();
         if(r.error)return showToast(r.error.message,'err');
-        if(file){const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,'_'),path=`${poId}/${Date.now()}-${safe}`;const up=await db.storage.from('po-documents').upload(path,file,{upsert:false});if(up.error)return showToast(`PO updated but file upload failed: ${up.error.message}`,'err');const u=await db.from('supplier_pos').update({po_document_path:path,po_document_name:file.name}).eq('id',poId);if(u.error)return showToast(u.error.message,'err')}
+        if(file){const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,'_'),path=`${poId}/${Date.now()}-${safe}`;const up=await db.storage.from('po-documents').upload(path,file,{upsert:false});if(up.error)return showToast(`PO updated but file upload failed: ${up.error.message}`,'err');const u=await db.from('supplier_pos').update({po_document_path:path,po_document_name:file.name}).eq('id',poId).select('id').single();if(u.error)return showToast(u.error.message,'err')}
         showToast('Supplier PO updated');closeModal();if(window.documentFlowState)window.documentFlowState.loaded=false;await go('supplier-pos');
       };
 

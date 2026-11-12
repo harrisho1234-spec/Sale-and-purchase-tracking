@@ -122,7 +122,8 @@
     if(cur.error)return showToast(cur.error.message,'err');
 
     const link=await db.from('fulfillment_links').select('id').eq('supplier_po_item_id',itemId).limit(1);
-    const linked=!link.error&&(link.data||[]).length>0;
+    if(link.error)return showToast(link.error.message,'err');
+    const linked=(link.data||[]).length>0;
 
     let code=cur.data.product_code_snapshot;
     let name=cur.data.item_name_snapshot;
@@ -135,9 +136,12 @@
       qty=n(row.querySelector('.pei-qty').value);
       if(!code||!name)return showToast('Code and item name are required.','err');
       if(qty<=0)return showToast('Quantity must be greater than zero.','err');
-      const p=await db.from('product_catalog').select('id').eq('code',code).maybeSingle();
-      if(p.error)return showToast(p.error.message,'err');
-      productId=p.data?.id||null;
+      // Cost-only corrections preserve the original product link, including legacy codes.
+      if(code!==cur.data.product_code_snapshot){
+        const p=await db.from('product_catalog').select('id').eq('code',code).maybeSingle();
+        if(p.error)return showToast(p.error.message,'err');
+        productId=p.data?.id||null;
+      }
     }
 
     const unitCost=n(row.querySelector('.pei-cost').value);
@@ -154,7 +158,7 @@
       shipping_currency:'USD',
       updated_at:new Date().toISOString()
     };
-    const save=await db.from('supplier_po_items').update(patch).eq('id',itemId);
+    const save=await db.from('supplier_po_items').update(patch).eq('id',itemId).select('id').single();
     if(save.error)return showToast(save.error.message,'err');
 
     showToast('PO item updated');

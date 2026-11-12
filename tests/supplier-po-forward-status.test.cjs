@@ -92,8 +92,8 @@ test('last Arrived item advances parent PO, partial shipments do not',()=>{
  assert.doesNotMatch(arrival,/insert into public\.stock_movements/i);
 });
 test('new scripts have explicit cache versions',()=>{
- assert.match(html,/po-arrival-sync\.js\?v=20261105-forward-only-po1/);
- assert.match(html,/po-edit\.js\?v=20261105-forward-only-po1/);
+ assert.match(html,/po-arrival-sync\.js\?v=20261112-admin-po-edit1/);
+ assert.match(html,/po-edit\.js\?v=20261112-admin-po-edit1/);
  assert.match(html,/procurement-workspace\.js\?v=20261105-forward-only-po1/);
  assert.match(html,/procurement-item-status\.js\?v=20261105-forward-only-items1/);
 });
