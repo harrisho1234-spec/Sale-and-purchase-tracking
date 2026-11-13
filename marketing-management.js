@@ -4,7 +4,7 @@
 'use strict';
 const PAGE='marketing';
 const TABS=['Overview','Daily Plan & Result','My To-Do','Content Calendar','Campaigns','Reviews','Reports'];
-const DATA={tab:'Overview',tasks:[],daily:[],staff:[],date:'',month:'',filter:'',brand:'all',ready:false,config:false,loading:false,todoStatus:'Active',todoPriority:'All',todoSort:'due',dailyDraftIds:[],dailyUnplannedIds:[],dailyView:'My Daily',calendarBrand:'LPL',calendarView:'list',calendarDraftDate:''};
+const DATA={tab:'Overview',tasks:[],daily:[],staff:[],date:'',month:'',filter:'',brand:'all',ready:false,config:false,loading:false,todoStatus:'Active',todoPriority:'All',todoSort:'due',dailyDraftIds:[],dailyUnplannedIds:[],dailyReportVersion:1,dailyView:'My Daily',calendarBrand:'LPL',calendarView:'list',calendarDraftDate:''};
 const h=v=>typeof esc==='function'?esc(v==null?'':String(v)):String(v==null?'':v).replace(/[&<>"']/g,'');
 const role=()=>String(state.profile&&state.profile.role||'');
 const marketingRole=()=>role()==='marketing'||role()==='marketing_manager';
@@ -46,6 +46,7 @@ async function fetchMarketing(){
   if(results[0].status==='rejected')throw results[0].reason;
   DATA.tasks=results[0].value.tasks||[];
   DATA.daily=results[0].value.daily||[];
+  DATA.dailyReportVersion=Number(results[0].value.daily_report_version||1);
   DATA.ready=true;
  }catch(error){
   DATA.ready=false;
@@ -425,6 +426,7 @@ function drawDaily(){
   (extraPM.length?'<div class="space-y-2"><h4 class="text-xs font-bold text-amber-900">Additional / Unplanned Work · '+extraPM.length+'</h4>'+
    dailySection(extraPM,t=>dailyResultRow(t,values,true))+'</div>':'')+
   '<label class="block text-xs font-bold">Evening Result Summary<textarea id="mktEveningNotes" rows="3" class="mt-2 w-full border rounded-xl p-3 text-sm" placeholder="Overall accomplishments, delays, and support needed">'+h(summary)+'</textarea></label>'+
+  (DATA.dailyReportVersion<2?'<div class="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900">Your Marketing Google Apps Script requires a new deployment to save each task\'s Evening Result. Existing daily reports remain safe; ask Super Admin to redeploy the updated Marketing Code.gs.</div>':'')+
   '<div class="flex flex-wrap items-center gap-2">'+btn(hasPM?'Update Evening Result':'Submit Evening Result','submitMarketingDaily(\'pm\')','gold')+
     '<span class="text-xs text-slate-500">Every task must have a result status and a remark. Daily results do not bypass task approval.</span></div></section>':
   '<section class="rounded-xl border border-slate-200 bg-slate-50 p-4"><h3 class="text-base font-bold">Evening Result</h3>'+
@@ -613,6 +615,7 @@ async function submitDaily(phase){
    DATA.dailyDraftIds=[];
    note('Morning Plan submitted with '+ids.length+' linked Marketing tasks');
   }else if(phase==='pm'){
+   if(DATA.dailyReportVersion<2)return note('Update the Marketing Google Apps Script deployment before saving per-task Evening Results.',true);
    if(!day?.am_submitted_at)return note('Submit your Morning Plan first.',true);
    const planned=dailyParsed(day.plan_json,[]);
    const rows=Array.from(document.querySelectorAll('.mkt-daily-result-row'));
