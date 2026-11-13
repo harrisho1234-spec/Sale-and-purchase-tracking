@@ -7,7 +7,8 @@
     {key:'finance',label:'Finance & Control',icon:'$',ids:['approvals','payments','returns']},
     {key:'operations',label:'Products & Procurement',icon:'◇',ids:['products','stock-inventory','procurement','vendor-info','supplier-pos']},
     {key:'management',label:'Management',icon:'▥',ids:['sales-access','stock-locations','users','sales-daily-review']},
-    {key:'reports',label:'Report',icon:'▥',ids:['reports','customer-database','showroom-visit','online']}
+    {key:'reports',label:'Report',icon:'▥',ids:['reports','customer-database','showroom-visit','online']},
+    {key:'marketing',label:'Marketing Department',icon:'✦',ids:['marketing']}
   ];
 
   function readState(){
@@ -52,7 +53,8 @@
       finance:!!saved.finance,
       operations:!!saved.operations,
       management:!!saved.management,
-      reports:!!saved.reports
+      reports:!!saved.reports,
+      marketing:saved.marketing!==false
     };
     if(active)map[active]=true;
     return map;
