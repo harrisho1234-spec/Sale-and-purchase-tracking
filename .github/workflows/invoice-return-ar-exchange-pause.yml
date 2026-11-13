@@ -36,7 +36,7 @@ jobs:
           node --check return-credit-workflow.js
           node --check cn-case-workflow.js
       - name: Install UI test dependencies
-        run: npm ci --ignore-scripts
+        run: npm install --no-save --ignore-scripts --package-lock=false --no-audit --no-fund
       - name: Verify issued-invoice return and uninvoiced SR cancellation interactions
         run: node tests/cancel-undelivered-ui.test.cjs
       - name: Test issued TK/RK return sources and preserved legacy CN mapping
