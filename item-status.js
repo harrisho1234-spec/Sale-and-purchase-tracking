@@ -13,7 +13,7 @@
 
   async function loadOrder(id){
     const local=findOrder(id);if(local?.items?.length)return local;
-    const {data,error}=await db.from('sales_orders').select(`id,order_no,invoice_no,sr_no,sales_invoice_no,customer_id,customers(name),sales_order_items(id,product_code_snapshot,item_name_snapshot,qty,line_kind,source_type,fulfillment_status)`).eq('id',id).single();
+    const {data,error}=await db.from('sales_orders').select(`id,order_no,invoice_no,sr_no,sales_invoice_no,customer_id,customers(name),sales_order_items(id,product_code_snapshot,item_name_snapshot,qty,line_kind,source_type,fulfillment_status,item_tracking(status,actual_arrival))`).eq('id',id).single();
     if(error)throw error;
     return {...data,customer_name:data.customers?.name||'',items:data.sales_order_items||[]};
   }
@@ -27,7 +27,7 @@
         <form id="itemStatusForm" class="space-y-4">
           <div class="rounded-xl border bg-gray-50 p-4"><div class="text-[10px] uppercase font-bold text-gray-400">Order / Invoice</div><div class="font-bold mt-1">${esc(doc)}</div><div class="text-xs text-gray-500 mt-1">${esc(o.customer_name||'')}</div></div>
           <div class="rounded-xl border border-green-100 bg-green-50 p-3 text-xs text-green-800">Use the simplified progress flow: <b>Ordered → Production → Shipping → Arrived → Delivered</b>.</div>
-          <div class="grid gap-3">${(o.items||[]).filter(i=>!isServiceLine(i)).map(i=>`<div class="grid md:grid-cols-[1fr_210px] gap-3 items-center rounded-xl border p-3"><div><div class="font-bold text-sm">${esc(i.product_code_snapshot||'No Code')} · ${esc(i.item_name_snapshot||'Item')}</div><div class="text-[10px] text-gray-400 mt-1">Qty ${Number(i.qty||0)}</div></div><select class="item-status-select border rounded-xl px-3 py-2 bg-white" data-item-id="${i.id}">${statusOptions.map(s=>`<option value="${s}" ${canonical(i.fulfillment_status)===s?'selected':''}>${label(s)}</option>`).join('')}</select></div>`).join('')}</div>
+          <div class="grid gap-3">${(o.items||[]).filter(i=>!isServiceLine(i)).map(i=>`<div class="grid md:grid-cols-[1fr_210px] gap-3 items-center rounded-xl border p-3"><div><div class="font-bold text-sm">${esc(i.product_code_snapshot||'No Code')} · ${esc(i.item_name_snapshot||'Item')}</div><div class="text-[10px] text-gray-400 mt-1">Qty ${Number(i.qty||0)}</div></div><select class="item-status-select border rounded-xl px-3 py-2 bg-white" data-item-id="${i.id}">${statusOptions.map(s=>`<option value="${s}" ${canonical(window.SalesTrackingDisplayRules?.itemStatus(i)||i.fulfillment_status)===s?'selected':''}>${label(s)}</option>`).join('')}</select></div>`).join('')}</div>
           <button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Item Status</button>
         </form>`);
       document.getElementById('itemStatusForm').onsubmit=saveItemStatuses;
