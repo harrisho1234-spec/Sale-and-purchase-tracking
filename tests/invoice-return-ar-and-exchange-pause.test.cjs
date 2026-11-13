@@ -44,46 +44,76 @@ function render(values){
  vm.runInNewContext(tracking.slice(start,end)+'\nthis.render=salesInvoiceReturnBalanceSummary;',sandbox,{timeout:2000});
  return sandbox.render(values);
 }
-test('invoice with $1,000 sale, $300 deposit and $200 credit displays adjusted AR $500',()=>{
+test('invoice $1,000 / $300 paid / $200 applied credit shows current AR $500 and an informational return',()=>{
  const html=render({
   currency:'USD',order_total:1000,amount_paid:300,gross_balance_due:700,
   credit_applied:200,balance_due:500,return_financial:{
    recorded_return_value:200,received_return_value:200,cn_count:1,cn_numbers:'CN-DEMO'
-  }
+  },
+  return_cn_cases:[{cn_no:'CN-DEMO',approval_status:'approved',financial_decision:'credit_ar'}]
  });
- for(const line of [
+ for(const label of [
   'Return / CN &amp; AR Breakdown','Original invoice amount','$1000.00',
-  'Actual payments / deposits','−$300.00','Recorded return value (after discounts)','−$200.00',
-  'Approved customer credit applied','Adjusted AR / Balance Due','$500.00','CN-DEMO'
- ])assert.ok(html.includes(line),line);
- assert.ok(!html.includes('$300.00</b></div><div class="border-t'),'return is not automatically deducted again');
+  'Actual payments / deposits','−$300.00','Return value (reference only)',
+  '$200.00','(not deducted)','Financial decision','Customer credit approved',
+  'Approved credit applied to this invoice','−$200.00','Current AR / Balance Due','$500.00','CN-DEMO'
+ ])assert.ok(html.includes(label),label);
+ assert.match(html,/Return value \(reference only\)<\/span><b[^>]*>\$200.00/);
+ assert.match(html,/Current AR \/ Balance Due<\/span><b[^>]*>\$500.00<\/b>/);
 });
-test('recorded CN with NO applied credit keeps full unpaid AR and shows pending-credit guidance',()=>{
+test('real-case style approved CN pending financial decision keeps AR $248, despite $280 return',()=>{
+ const html=render({
+  order_total:520,amount_paid:272,gross_balance_due:248,
+  credit_applied:0,balance_due:248,return_financial:{
+   recorded_return_value:280,cn_count:1,cn_numbers:'CN-2026-027'
+  },
+  return_cn_cases:[{cn_no:'CN-2026-027',approval_status:'approved',financial_decision:'pending'}]
+ });
+ assert.match(html,/Return value \(reference only\)<\/span><b[^>]*>\$280.00/);
+ assert.match(html,/Financial decision<\/span><b[^>]*>Pending<\/b>/);
+ assert.match(html,/Approved credit applied to this invoice<\/span><b[^>]*>\$0.00<\/b>/);
+ assert.match(html,/Current AR \/ Balance Due<\/span><b[^>]*>\$248.00<\/b>/);
+ assert.match(html,/The CN has not completed all approval\/financial steps/);
+ assert.doesNotMatch(html,/Return value \(reference only\)<\/span><b[^>]*>−\$280.00/);
+});
+test('CN manager decides no credit: display no credit but keep actual AR unchanged',()=>{
  const html=render({
   order_total:1000,amount_paid:300,gross_balance_due:700,
   credit_applied:0,balance_due:700,return_financial:{
    recorded_return_value:200,cn_count:1,cn_numbers:'CN-DEMO'
-  }
+  },
+  return_cn_cases:[{cn_no:'CN-DEMO',approval_status:'approved',financial_decision:'no_credit'}]
  });
- assert.match(html,/Adjusted AR \/ Balance Due<\/span><b[^>]*>\$700.00<\/b>/);
- assert.match(html,/Return recorded, but no Customer Credit is applied to this invoice yet/);
+ assert.match(html,/Financial decision<\/span><b[^>]*>No customer credit<\/b>/);
+ assert.match(html,/Current AR \/ Balance Due<\/span><b[^>]*>\$700.00<\/b>/);
 });
-test('credit from another CN is shown as allocation on this invoice, not falsely tied to return',()=>{
+test('credit from another CN may reduce this invoice without a recorded CN for this invoice',()=>{
  const html=render({
   order_total:1000,amount_paid:300,gross_balance_due:700,
   credit_applied:50,balance_due:650,return_financial:{
    recorded_return_value:0,cn_count:0,cn_numbers:''
   }
  });
- assert.match(html,/\$650.00/);
- assert.match(html,/Only approved credit allocated to THIS invoice reduces its AR/);
+ assert.match(html,/Approved credit applied to this invoice<\/span><b[^>]*>−\$50.00<\/b>/);
+ assert.match(html,/Current AR \/ Balance Due<\/span><b[^>]*>\$650.00<\/b>/);
+ assert.match(html,/Credit from a CN may be used on another outstanding invoice/);
 });
-test('missing read-only return data is not silently shown as a zero return',()=>{
+test('missing read-only return data is shown as unavailable rather than a zero return',()=>{
  const html=render({
   order_total:1000,amount_paid:300,credit_applied:0,balance_due:700,
   return_financial:null
  });
- assert.match(html,/Recorded return value \(after discounts\)<\/span><b[^>]*>Unavailable<\/b>/);
+ assert.match(html,/Return value \(reference only\)<\/span><b[^>]*>Unavailable/);
+ assert.match(html,/Financial decision<\/span><b[^>]*>Status unavailable/);
+});
+test('CN status lookup access failures never falsely imply a financial decision',()=>{
+ const html=render({
+  order_total:520,amount_paid:272,balance_due:248,gross_balance_due:248,credit_applied:0,
+  return_financial:{recorded_return_value:280,cn_count:1,cn_numbers:'CN-2026-027'},
+  return_cn_cases:[]
+ });
+ assert.match(html,/Financial decision<\/span><b[^>]*>Status unavailable/);
+ assert.match(html,/Current AR \/ Balance Due<\/span><b[^>]*>\$248.00<\/b>/);
 });
 test('new report RPC respects Sales permissions and calculates net returned value after discounts',()=>{
  assert.match(sql,/public\.get_sales_tracking_return_financial_breakdown\(\)/);
@@ -94,10 +124,11 @@ test('new report RPC respects Sales permissions and calculates net returned valu
 });
 test('frontend uses read-only return RPC and separately displays current approved credit and AR',()=>{
  assert.match(tracking,/db\.rpc\('get_sales_tracking_return_financial_breakdown'\)/);
- assert.match(tracking,/return_financial:financialReturns.error\?null:/);
+ assert.match(tracking,/return_financial:finance,/);
+ assert.match(tracking,/db\.rpc\('get_visible_cn_case_workflows'\)/);
  assert.match(tracking,/Number\(o\.credit_applied\|\|0\)/);
  assert.match(tracking,/Number\(o\.balance_due\|\|0\)/);
  assert.match(tracking,/salesInvoiceReturnBalanceSummary\(o\)/);
  assert.match(index,/sales-returns\.js\?v=20261104-exchange-pause-and-ar1/);
- assert.match(index,/tracking-redesign\.js\?v=20261104-exchange-pause-and-ar1/);
+ assert.match(index,/tracking-redesign\.js\?v=20261113-cn-ar-clarity1/);
 });
