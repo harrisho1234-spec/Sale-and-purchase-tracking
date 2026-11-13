@@ -216,7 +216,30 @@ function mktDailySave(payload,user){
     if(!ids.length)mktFail('Select the tasks you worked on today');
     var note=mktStr(payload.note,2000);
     if(!note)mktFail('Enter an evening progress summary');
-    next.result_json=JSON.stringify({task_ids:ids,note:note});
+    // Version 2 stores a same-day result per linked task (no extra Sheets tab
+    // or duplicate task records). Old version-1 daily reports remain readable.
+    if(Number(payload.report_version)===2){
+      var planned=[];
+      try{planned=JSON.parse(current.plan_json||'[]');}catch(_){mktFail('Morning Plan is invalid');}
+      if(!Array.isArray(planned)||!planned.length)mktFail('Morning Plan must contain linked tasks');
+      var incoming=payload.task_results;
+      if(!Array.isArray(incoming)||incoming.length!==ids.length)mktFail('Every reported task needs a result and remark');
+      if(planned.some(function(id){return ids.indexOf(id)<0;}))
+        mktFail('All Morning Plan tasks must be included in the Evening Result');
+      var validStatuses=['Completed','Partially Completed','Pending','Not Done'];
+      var results=incoming.map(function(r){
+        if(!r||typeof r!=='object'||Array.isArray(r))mktFail('Invalid task result');
+        var id=mktStr(r.id,40),status=mktStr(r.status,30),remark=mktStr(r.note,1000);
+        if(ids.indexOf(id)<0||validStatuses.indexOf(status)<0||!remark)
+          mktFail('Each selected Marketing task requires a valid result status and remark');
+        return {id:id,status:status,note:remark};
+      });
+      if(new Set(results.map(function(r){return r.id;})).size!==results.length)
+        mktFail('Duplicate task result');
+      next.result_json=JSON.stringify({task_ids:ids,task_results:results,note:note,version:2});
+    }else{
+      next.result_json=JSON.stringify({task_ids:ids,note:note});
+    }
     next.pm_submitted_at=now;
   }
   next.updated_at=now;
