@@ -6,6 +6,10 @@ on:
     paths:
       - 'sales-returns.js'
       - 'tracking-redesign.js'
+      - 'cn-ar-preview.js'
+      - 'return-credit-workflow.js'
+      - 'cn-case-workflow.js'
+      - 'tests/cn-ar-preview-and-approval.test.cjs'
       - 'index.html'
       - 'tests/invoice-return-ar-and-exchange-pause.test.cjs'
       - 'tests/invoice-price-breakdown.test.cjs'
@@ -25,7 +29,12 @@ jobs:
         run: |
           node --check sales-returns.js
           node --check tracking-redesign.js
+          node --check cn-ar-preview.js
+          node --check return-credit-workflow.js
+          node --check cn-case-workflow.js
       - name: Test Return/CN financial breakdown and Exchange lock
         run: node --test tests/invoice-return-ar-and-exchange-pause.test.cjs
+      - name: Verify approved CN return AR and excess customer credit preview
+        run: node --test tests/cn-ar-preview-and-approval.test.cjs
       - name: Recheck prior invoice pricing view
         run: node --test tests/invoice-price-breakdown.test.cjs
