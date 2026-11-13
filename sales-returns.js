@@ -139,8 +139,8 @@
   }
 
   window.openNewSalesReturn=async function(){
-    const {data,error}=await db.rpc('get_returnable_sales_orders');if(error)return showToast(error.message,'err');
-    let orders=data||[];
+    const {data,error}=await db.rpc('get_return_source_documents');if(error)return showToast(error.message,'err');
+    let orders=(data||[]).map(x=>({...x,order_id:x.source_key}));
     if(managerContext())orders=orders.filter(x=>x.sales_rep_id===managerRepId());
     window._returnableSalesOrders=orders;
     openModal('Create Customer Return / CN',`<form id="salesReturnForm" class="grid md:grid-cols-2 gap-4">
@@ -148,13 +148,13 @@
       <div><label class="text-xs font-semibold">Return Date</label><input id="returnDate" type="date" value="${today()}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
       <div class="md:col-span-2 relative">
         <label class="text-xs font-semibold">Start With Invoice / Customer</label>
-        <input id="returnOrderSearch" autocomplete="off" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white" placeholder="Type TK / RK / SR number or customer name..." onfocus="showReturnOrderSuggestions(this.value)" oninput="returnOrderSearchChanged(this.value)">
+        <input id="returnOrderSearch" autocomplete="off" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white" placeholder="Type issued TK / RK or SR cancellation number..." onfocus="showReturnOrderSuggestions(this.value)" oninput="returnOrderSearchChanged(this.value)">
         <input id="returnOrder" type="hidden">
         <div id="returnOrderSuggestions" class="hidden absolute z-[120] left-0 right-0 top-full mt-1 max-h-72 overflow-y-auto bg-white border rounded-xl shadow-xl"></div>
-        <div class="text-[10px] text-gray-400 mt-1">Choose one invoice first. You can then add more invoices belonging to the same customer.</div>
+        <div class="text-[10px] text-gray-400 mt-1">Choose issued TK/RK for invoiced items. SR · Uninvoiced is available only for cancelling quantities not yet invoiced.</div>
       </div>
       <div class="md:col-span-2">
-        <div class="flex items-center justify-between gap-3"><div><div class="font-bold text-sm">Source Invoices</div><div class="text-[10px] text-gray-400 mt-0.5">One CN can include multiple invoices for the same customer.</div></div><div id="returnInvoiceCount" class="text-[10px] font-semibold text-gray-400"></div></div>
+        <div class="flex items-center justify-between gap-3"><div><div class="font-bold text-sm">Source Invoices</div><div class="text-[10px] text-gray-400 mt-0.5">You may combine invoices for the same customer. If the same product row was split across invoices, create separate CNs.</div></div><div id="returnInvoiceCount" class="text-[10px] font-semibold text-gray-400"></div></div>
         <div id="returnAdditionalInvoicesArea" class="mt-2 rounded-xl border bg-gray-50 p-4 text-sm text-gray-400">Choose the first invoice above.</div>
       </div>
       <div><label class="text-xs font-semibold">Return Action</label><select id="returnAction" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="cancel_undelivered">Cancel Undelivered Items</option><option value="return_only" selected>Return Only / No Refund</option><option value="return_to_stock">Return to Stock</option><option value="damaged_return">Damaged / Defective Return</option></select><p class="mt-1 text-[11px] text-gray-600">For physical returns, choose Return to Stock or another normal return action. If the customer buys something else, create a separate new TK/RK invoice. Exchange is temporarily unavailable.</p></div>
@@ -166,6 +166,16 @@
     </form>`);
     document.getElementById('returnAction').onchange=async e=>{
       syncReturnDisposition(e.target.value);
+      const primaryKey=document.getElementById('returnOrder')?.value||'';
+      const primary=(window._returnableSalesOrders||[]).find(o=>o.order_id===primaryKey);
+      if(primary?.source_kind==='sr_uninvoiced'&&e.target.value!=='cancel_undelivered'){
+        document.getElementById('returnOrder').value='';
+        document.getElementById('returnOrderSearch').value='';
+        document.getElementById('returnAdditionalInvoicesArea').textContent='Choose an issued TK/RK invoice.';
+      }else if(primary){
+        renderAdditionalReturnInvoices(primary);
+      }
+      showReturnOrderSuggestions(document.getElementById('returnOrderSearch')?.value||'');
       await loadReturnableItemsMulti(selectedReturnOrderIds());
     };
     showReturnOrderSuggestions('');
@@ -179,10 +189,11 @@
 
   function matchingReturnOrders(q){
     const s=String(q||'').trim().toLowerCase();
-    const orders=window._returnableSalesOrders||[];
+    const action=document.getElementById('returnAction')?.value||'return_only';
+    const orders=(window._returnableSalesOrders||[]).filter(o=>action==='cancel_undelivered'||o.source_kind!=='sr_uninvoiced');
     if(!s)return orders.slice(0,30);
     return orders.filter(o=>{
-      const hay=[o.document_no,o.customer_name,o.order_date,o.customer_code]
+      const hay=[o.document_no,o.customer_name,o.order_date,o.customer_code,o.source_kind]
         .filter(Boolean).join(' ').toLowerCase();
       return hay.includes(s);
     }).slice(0,30);
@@ -215,6 +226,9 @@
   window.chooseReturnOrder=async function(orderId){
     const order=(window._returnableSalesOrders||[]).find(o=>o.order_id===orderId);
     if(!order)return;
+    if(order.source_kind==='sr_uninvoiced'&&document.getElementById('returnAction')?.value!=='cancel_undelivered'){
+      return showToast('Use Cancel Undelivered Items for uninvoiced SR quantities.','err');
+    }
     const hidden=document.getElementById('returnOrder');
     const input=document.getElementById('returnOrderSearch');
     const box=document.getElementById('returnOrderSuggestions');
@@ -233,7 +247,10 @@
 
   function renderAdditionalReturnInvoices(primary){
     const root=document.getElementById('returnAdditionalInvoicesArea');if(!root)return;
-    const others=(window._returnableSalesOrders||[]).filter(o=>o.customer_id===primary.customer_id&&o.order_id!==primary.order_id);
+    const action=document.getElementById('returnAction')?.value||'return_only';
+    const others=(window._returnableSalesOrders||[]).filter(o=>
+      o.customer_id===primary.customer_id&&o.order_id!==primary.order_id&&
+      (action==='cancel_undelivered'||o.source_kind!=='sr_uninvoiced'));
     root.innerHTML=`<div class="rounded-xl border border-amber-100 bg-amber-50/40 p-3 mb-2"><div class="text-[10px] uppercase font-bold text-amber-700">Primary Invoice</div><div class="font-semibold text-sm mt-1">${esc(primary.document_no||'Sale')} · ${esc(fmtDate(primary.order_date))}</div></div>`
       +(others.length?`<div class="grid sm:grid-cols-2 gap-2">${others.map(o=>`<label class="flex items-start gap-3 bg-white border rounded-xl p-3 cursor-pointer hover:border-amber-300"><input type="checkbox" class="return-extra-invoice mt-0.5 w-4 h-4" value="${o.order_id}" onchange="returnAdditionalInvoiceChanged()"><div><div class="font-semibold text-sm">${esc(o.document_no||'Sale')}</div><div class="text-[10px] text-gray-400 mt-0.5">${esc(fmtDate(o.order_date))}</div></div></label>`).join('')}</div>`:'<div class="text-xs text-gray-400">No other invoices for this customer.</div>');
     const count=document.getElementById('returnInvoiceCount');if(count)count.textContent='1 selected';
@@ -271,7 +288,10 @@
 
     const results=await Promise.all(orderIds.map(async orderId=>{
       const order=(window._returnableSalesOrders||[]).find(o=>o.order_id===orderId);
-      const res=await db.rpc(action==='cancel_undelivered'?'get_cancellable_order_items':'get_returnable_order_items',{p_sales_order_id:orderId});
+      const res=order?await db.rpc('get_return_source_items',{
+        p_source_kind:order.source_kind,p_source_id:order.source_id,p_action:action
+      }):{data:[],error:{message:'Selected source is no longer available'}};
+
       return {order,res};
     }));
 
@@ -297,7 +317,7 @@
           <div class="text-[10px] text-gray-600">${g.rows.length} returnable item${g.rows.length===1?'':'s'}</div>
         </div>
         <div class="grid gap-2 p-3">
-          ${g.rows.length?g.rows.map(x=>`<div class="sales-return-item bg-white text-gray-900 border border-gray-200 rounded-xl p-3 transition-colors" data-id="${x.sales_order_item_id}" data-order-id="${g.order?.order_id||''}" data-max="${Number(x.qty_available||0)}">
+          ${g.rows.length?g.rows.map(x=>`<div class="sales-return-item bg-white text-gray-900 border border-gray-200 rounded-xl p-3 transition-colors" data-id="${x.sales_order_item_id}" data-order-id="${x.source_order_id||''}" data-source-invoice-part-id="${x.source_invoice_part_id||''}" data-max="${Number(x.qty_available||0)}">
             <div class="grid grid-cols-[30px_minmax(0,1fr)] lg:grid-cols-[30px_minmax(0,1.5fr)_100px_150px_170px] gap-3 items-center">
               <input type="checkbox" class="return-item-check w-4 h-4 accent-amber-600" aria-label="Select ${esc(x.item_name||'Item')} for return" onchange="returnItemSelectionChanged(this)">
               <div class="min-w-0"><div class="font-semibold text-sm text-gray-900 truncate">${esc(x.item_name||'Item')}</div><div class="text-[10px] text-gray-600">${esc(x.product_code||'')}${x.product_code?' • ':''}Sold ${Number(x.qty_sold||0)} • ${action==='cancel_undelivered'?'Unavailable':'Returned'} ${Number(x.qty_returned||0)} • Available ${Number(x.qty_available||0)}</div></div>
@@ -325,9 +345,14 @@
       const qty=Number(r.querySelector('.return-item-qty').value||0),max=Number(r.dataset.max||0);
       if(!Number.isFinite(qty)||!Number.isInteger(qty)||qty<=0||qty>max)return showToast(`Return quantity must be between 1 and ${max}.`,'err');
       if(r.dataset.orderId&&!usedOrderIds.includes(r.dataset.orderId))usedOrderIds.push(r.dataset.orderId);
-      items.push({sales_order_item_id:r.dataset.id,qty,condition:r.querySelector('.return-item-condition').value,disposition:r.querySelector('.return-item-disposition').value,notes:r.querySelector('.return-item-note').value.trim()||null});
+      items.push({sales_order_item_id:r.dataset.id,source_invoice_part_id:r.dataset.sourceInvoicePartId||null,
+        qty,condition:r.querySelector('.return-item-condition').value,
+        disposition:r.querySelector('.return-item-disposition').value,
+        notes:r.querySelector('.return-item-note').value.trim()||null});
     }
     if(!usedOrderIds.length)return showToast('Select returned items from at least one source invoice.','err');
+    if(new Set(items.map(x=>x.sales_order_item_id)).size!==items.length)
+      return showToast('The same SR product was issued on multiple TK/RK invoices. Create a separate CN for each invoice.','err');
     if(items.some(x=>x.disposition==='exchange'))return showToast('Exchange handling is temporarily disabled. Use Return/CN and a separate new TK/RK.','err');
     const btn=e.target.querySelector('button:not([type]),button[type="submit"]');if(btn){btn.disabled=true;btn.textContent='Creating CN...'}
     const action=document.getElementById('returnAction').value;
