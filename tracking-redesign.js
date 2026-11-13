@@ -131,6 +131,10 @@
     return `<img src="${esc(u)}" class="${cls}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div style="display:none" class="w-full h-full bg-gray-100 items-center justify-center text-[9px] text-gray-400">No image</div>`;
   }
 
+  const displayRules=window.SalesTrackingDisplayRules;
+  const isServiceLine=i=>displayRules?.isServiceLine(i)===true;
+  const physicalStatus=i=>displayRules?.itemStatus(i)||'ordered';
+
   function salesStatusBadge(o) {
     const pay = cleanStatus(o.payment_status);
     const type = cleanStatus(o.order_type);
@@ -154,7 +158,7 @@
 
   function itemStage(item, order) {
     const t = Array.isArray(item.item_tracking) ? item.item_tracking[0] : item.item_tracking;
-    const s = cleanStatus(t?.status || item.fulfillment_status || order?.status);
+    const s = isServiceLine(item)?'':cleanStatus(physicalStatus(item));
     if (['delivered','ready','arrived','completed','paid'].includes(s)) return 'completed';
     if (['shipping','shipped','in_transit','transit'].includes(s)) return 'shipping';
     if (['production','in_production','processing','manufacturing'].includes(s)) return 'production';
@@ -169,7 +173,8 @@
       if (['processing'].includes(s)) return 'production';
       return 'placed';
     }
-    const stages = items.map(i => itemStage(i,order));
+    const stages = items.filter(i=>!isServiceLine(i)).map(i => itemStage(i,order));
+    if(!stages.length)return 'placed';
     if (stages.every(s=>s==='completed')) return 'completed';
     if (stages.includes('shipping')) return 'shipping';
     if (stages.includes('production')) return 'production';
@@ -213,7 +218,8 @@
       id,order_no,invoice_no,customer_id,sales_rep_id,sales_rep_name_snapshot,order_date,order_type,status,currency,order_discount,notes,created_at,updated_at,
       customers(id,name,customer_code,phone),
       sales_order_items(
-        id,product_id,product_code_snapshot,item_name_snapshot,image_url_snapshot,qty,unit_price,discount_amount,line_total,source_type,fulfillment_status,notes,
+        id,product_id,product_code_snapshot,item_name_snapshot,image_url_snapshot,qty,unit_price,discount_amount,line_total,source_type,line_kind,fulfillment_status,notes,
+        item_tracking(status,estimated_arrival,actual_arrival,delivered_at),
         product_catalog(code,item_name,brand,class,image_url)
       )
     `).order('created_at',{ascending:false});
@@ -363,8 +369,8 @@
     if(status==='active') return cleanStatus(o.status)!=='cancelled';
     if(status==='uncleared') return Number(o.balance_due||0)>0 && cleanStatus(o.status)!=='cancelled';
     if(status==='preorder') return ['pre_order','mixed'].includes(cleanStatus(o.order_type)) && cleanStatus(o.status)!=='cancelled';
-    if(status==='not_taken') return items.some(i=>['arrived','ready'].includes(cleanStatus(i.fulfillment_status)));
-    if(status==='taken_unpaid') return Number(o.balance_due||0)>0 && items.some(i=>cleanStatus(i.fulfillment_status)==='delivered');
+    if(status==='not_taken') return items.some(i=>!isServiceLine(i)&&physicalStatus(i)==='arrived');
+    if(status==='taken_unpaid') return Number(o.balance_due||0)>0 && items.some(i=>!isServiceLine(i)&&physicalStatus(i)==='delivered');
     if(status==='settled') return cleanStatus(o.payment_status)==='paid';
     return true;
   }
@@ -430,7 +436,7 @@
     const paid = active.reduce((a,o)=>a+fin(o,'received','amount_paid'),0);
     const balance = active.reduce((a,o)=>a+fin(o,'balance','balance_due'),0);
     const uncleared = active.filter(o=>fin(o,'balance','balance_due')>0.001);
-    const readyItems = active.flatMap(o=>(o.items||[]).filter(i=>['arrived','ready'].includes(cleanStatus(i.fulfillment_status))));
+    const readyItems = active.flatMap(o=>(o.items||[]).filter(i=>!isServiceLine(i)&&physicalStatus(i)==='arrived'));
     const readyQty = readyItems.reduce((a,i)=>a+Number(i.qty||0),0);
     const readyValue = readyItems.reduce((a,i)=>a+Number(i.line_total||0),0);
     // Fully issued SR invoices are AR, never pending pre-order balances.
@@ -607,7 +613,7 @@
               <div class="lr-item-row">
                 <div class="lr-thumb">${imageHtml(i.image_url_snapshot||i.product_catalog?.image_url)}</div>
                 <div class="min-w-0">
-                  <div class="flex flex-wrap gap-2 items-center"><b>${esc(i.product_code_snapshot||'No Code')}</b><span class="lr-badge lr-badge-gray">${esc(titleCase(i.fulfillment_status||'ordered'))}</span></div>
+                  <div class="flex flex-wrap gap-2 items-center"><b>${esc(i.product_code_snapshot||'No Code')}</b>${!isServiceLine(i)?`<span class="lr-badge lr-badge-gray lr-fulfillment-badge">${esc(titleCase(physicalStatus(i)))}</span>`:''}</div>
                   <div class="text-sm mt-0.5 truncate">${esc(i.item_name_snapshot||i.product_catalog?.item_name||'Item')}</div>
                   <div class="text-[10px] text-gray-400">${esc(i.product_catalog?.brand||'')} ${i.product_catalog?.class?'· '+esc(i.product_catalog.class):''}</div>
                   ${returnInfo(i)?`<div class="mt-1.5 flex flex-wrap items-center gap-2">${returnBadge(i)}<span class="text-[10px] text-gray-500">Remaining with customer: <b>${Number(returnInfo(i).remaining_with_customer||0)}</b></span></div>`:''}
@@ -637,7 +643,7 @@
           <b>${esc(srTkRkLabel(o))}</b>
           <span class="font-bold">${Number(i.qty||0)}x</span>
           <span class="lr-badge lr-badge-gray">${esc(i.product_code_snapshot||'No Code')}</span>
-          <span class="lr-badge ${cleanStatus(i.fulfillment_status)==='delivered'?'lr-badge-green':['arrived','ready'].includes(cleanStatus(i.fulfillment_status))?'lr-badge-blue':'lr-badge-amber'}">${esc(titleCase(i.fulfillment_status||'ordered'))}</span>
+          ${!isServiceLine(i)?`<span class="lr-badge lr-fulfillment-badge ${physicalStatus(i)==='delivered'?'lr-badge-green':physicalStatus(i)==='arrived'?'lr-badge-blue':'lr-badge-amber'}">${esc(titleCase(physicalStatus(i)))}</span>`:''}
           ${returnBadge(i)}
         </div>
         <div class="text-sm font-semibold mt-1">${esc(i.item_name_snapshot||i.product_catalog?.item_name||'Item')}</div>
@@ -851,9 +857,9 @@ function invoiceAdminItemEditor(item, currency) {
           <option value="pre_order" ${cleanStatus(item.source_type)==='pre_order'?'selected':''}>Pre-Order</option>
         </select>
       </label>
-      <label class="text-[10px] font-bold text-gray-500">Fulfillment
-        <select class="invoice-admin-fulfillment lr-select mt-1">${invoiceAdminFulfillmentOptions(item.fulfillment_status)}</select>
-      </label>
+      ${!isServiceLine(item)?`<label class="text-[10px] font-bold text-gray-500">Fulfillment
+        <select class="invoice-admin-fulfillment lr-select mt-1">${invoiceAdminFulfillmentOptions(physicalStatus(item))}</select>
+      </label>`:''}
     </div>
     <textarea class="invoice-admin-item-notes lr-input mt-2" rows="2" placeholder="Item notes">${esc(item.notes||'')}</textarea>
     ${returnLocked?`<div class="mt-2 text-[10px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-2">Quantity, unit price and discount are locked because this item already has a Return/Credit Note.</div>`:''}
@@ -956,13 +962,14 @@ async function saveSuperAdminInvoiceEdit(e,id) {
 
   const btn=document.getElementById('invoiceAdminSaveBtn');
   const itemRows=[...document.querySelectorAll('.invoice-admin-item')];
+  const originalItems=invoiceById(id)?.items||[];
   const items=itemRows.map(row=>({
     id:row.dataset.id,
     qty:Number(row.querySelector('.invoice-admin-qty')?.value||0),
     unit_price:Number(row.querySelector('.invoice-admin-price')?.value||0),
     discount_amount:Number(row.querySelector('.invoice-admin-discount')?.value||0),
     source_type:row.querySelector('.invoice-admin-source')?.value||'stock',
-    fulfillment_status:row.querySelector('.invoice-admin-fulfillment')?.value||'ordered',
+    fulfillment_status:row.querySelector('.invoice-admin-fulfillment')?.value||originalItems.find(x=>String(x.id)===String(row.dataset.id))?.fulfillment_status||'ordered',
     notes:row.querySelector('.invoice-admin-item-notes')?.value||''
   }));
 
@@ -1297,7 +1304,7 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
       id,order_no,invoice_no,customer_id,sales_rep_id,sales_rep_name_snapshot,order_date,order_type,status,currency,notes,created_at,updated_at,
       customers(id,name,customer_code),
       sales_order_items(
-        id,product_id,product_code_snapshot,item_name_snapshot,image_url_snapshot,qty,source_type,fulfillment_status,notes,created_at,
+        id,product_id,product_code_snapshot,item_name_snapshot,image_url_snapshot,qty,source_type,line_kind,fulfillment_status,notes,created_at,
         product_catalog(code,item_name,brand,class,image_url),
         item_tracking(status,estimated_arrival,actual_arrival,delivered_at,customer_visible_note,updated_at)
       )
