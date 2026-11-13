@@ -274,7 +274,7 @@ function dailyExtraSection(x){
  if(['showroom_visit','showroom','customer_visit'].includes(source))return 'visit';
  if(['online','online_inquiry','online_visit'].includes(source))return 'online';
  const category=String(x?.category||'').trim().toLowerCase();
- if(['customer visit','showroom visit','showroom work'].includes(category))return 'visit';
+ if(['customer visit','showroom visit'].includes(category))return 'visit';
  if(['online inquiry','online inquiries','online visit'].includes(category))return 'online';
  if(['customer follow-up','quotation','sales order','quotation / sr'].includes(category))return 'customer';
  return 'other';
@@ -324,7 +324,7 @@ function additionalEditor(locked){
     '<div class="flex justify-between gap-2 items-center mb-2"><b class="text-xs">Activity '+(i+1)+
     (x.sourceId?' · Imported '+h(dailyExtraSection(x)==='online'?'Online':'Customer Visit'):'')+'</b>'+
     (!locked?'<button class="text-xs text-red-600" onclick="removeAdditionalDaily('+i+')">Remove</button>':'')+'</div>'+
-    '<div class="grid sm:grid-cols-2 gap-2"><label class="text-xs">Activity type<select data-extra="category" class="'+common+'" '+(locked?'disabled':'')+'>'+
+    '<div class="grid sm:grid-cols-2 gap-2"><label class="text-xs">Activity type<select data-extra="category" class="'+common+'" onchange="reclassifyAdditionalDaily()" '+(locked?'disabled':'')+'>'+
      additionalCats.map(v=>'<option '+(x.category===v?'selected':'')+'>'+h(v)+'</option>').join('')+
     '</select></label><label class="text-xs">Customer name (optional)<input data-extra="customerName" class="'+common+'" value="'+h(x.customerName||'')+'" '+(locked?'disabled':'')+'></label></div>'+
     '<label class="text-xs block mt-2">Actual outcome<textarea data-extra="result" class="'+common+'" rows="2" '+(locked?'disabled':'')+'>'+h(x.result||'')+'</textarea></label>'+
@@ -332,7 +332,7 @@ function additionalEditor(locked){
    ).join('')+'</div></div>'
  ).join('');
  return '<div class="space-y-3 border-t pt-4"><h4 class="font-bold">Additional Activities (Unplanned)</h4>'+
-  '<p class="text-xs text-gray-500">Imported Showroom visits appear under Customer Visit, and online inquiries under Online. These do not count toward Morning Plan completion.</p>'+
+  '<p class="text-xs text-gray-500">Unplanned activities are grouped by type: Showroom Work appears under Other Task / To Do. Imported Showroom visits remain Customer Visit, and online inquiries remain Online. These do not count toward Morning Plan completion.</p>'+
   sectionHtml+
   (!locked?'<div class="flex flex-wrap gap-2"><button class="'+lightButton+'" onclick="addAdditionalDaily()">+ Add Additional Activity</button><button class="'+lightButton+'" onclick="importRecordedDailyActivities()">Import Showroom / Online</button></div>':'')+'</div>';
 }
@@ -389,6 +389,9 @@ window.confirmRecordedDailyActivities=()=>{
  }
  closeModal();renderSalesHome();toast(fresh.length+' activities added to your Evening Result draft. Original customer assignments were not changed.');
 };
+// Move changed unplanned activities into their new section immediately, without
+// dropping unsaved Morning Plan outcomes or other Additional Activity fields.
+window.reclassifyAdditionalDaily=()=>{preserveEveningInputs();captureAdditional();renderSalesHome()};
 window.addAdditionalDaily=()=>{preserveEveningInputs();captureAdditional();if(additionalDraft.length>=30)return toast('Maximum 30 additional activities',true);additionalDraft.push({category:'Customer Visit',customerName:'',result:'',nextFollowup:''});renderSalesHome()};
 window.removeAdditionalDaily=i=>{preserveEveningInputs();captureAdditional();additionalDraft.splice(i,1);renderSalesHome()};
 window.saveSalesDailyEvening=async submit=>{
@@ -461,6 +464,7 @@ function dailyCompactShareBody(r,pm){
  };
  const oneExtra=x=>'<div data-compact-extra style="padding:8px 10px;background:#fbfcfa;border:1px solid #e1e5df;border-radius:7px;min-width:0;break-inside:avoid;page-break-inside:avoid">'+
    '<div style="font-size:12.5px;line-height:1.35;font-weight:750;overflow-wrap:anywhere">'+h(x.customerName||x.category||'Activity')+'</div>'+
+   '<div style="font-size:10px;color:#677469;margin-top:2px">Unplanned · '+h(x.category||'Other')+'</div>'+
    '<div style="'+noteStyle+';margin-top:3px">'+h(x.result||'No outcome recorded')+'</div>'+
    (x.nextFollowup?'<div style="font-size:10.5px;line-height:1.3;color:#586779;margin-top:3px">Next: '+h(x.nextFollowup)+'</div>':'')+
    '</div>';

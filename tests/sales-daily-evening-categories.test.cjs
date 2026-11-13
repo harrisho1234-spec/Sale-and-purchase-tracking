@@ -50,6 +50,8 @@ test('Showroom source, online source, legacy manual categories and To-Do use fou
  assert.equal(g.extra({sourceType:'showroom',category:'Other'}),'visit');
  assert.equal(g.extra({sourceType:'online',category:'Other'}),'online');
  assert.equal(g.extra({category:'Customer Visit'}),'visit');
+ assert.equal(g.extra({category:'Showroom Work'}),'other');
+ assert.equal(g.extra({category:'Showroom Work',sourceType:'showroom_visit',sourceId:'real-visit'}),'visit');
  assert.equal(g.extra({category:'Online Inquiry'}),'online');
  assert.equal(g.extra({category:'Customer Follow-up'}),'customer');
  assert.equal(g.extra({category:'Other'}),'other');
@@ -120,4 +122,38 @@ test('manager review shows matching grouped categories and retains links to orig
  assert.match(html,/Open original activity/);
  assert.match(html,/showroom-456/);
  assert.match(html,/online-123/);
+});
+
+test('manual Showroom Work is displayed as unplanned Other in editor, compact image, detailed export and manager review',()=>{
+ const {c,elements}=createApp(),r=exampleReport();
+ r.additionalActivities=[
+  {id:'manual-visit',category:'Customer Visit',customerName:'',result:'done test 1'},
+  {id:'manual-work',category:'Showroom Work',customerName:'',result:'done test 2'}
+ ];
+ const g=c.__dailyCategoryTest;g.setReport(r);
+ const editor=g.editor();
+ assert.match(editor,/Customer Visit · 1/);
+ assert.match(editor,/Other Task \/ To Do · 1/);
+ assert.match(editor,/onchange="reclassifyAdditionalDaily\(\)"/);
+ c.openSalesDailyShare('PM');
+ const compact=elements.salesDailyShareOverlay.innerHTML;
+ assert.match(compact,/data-compact-section="visit"/);
+ assert.match(compact,/data-compact-section="other"/);
+ assert.match(compact,/1 visits/);
+ assert.match(compact,/0 online/);
+ assert.match(compact,/Unplanned · Showroom Work/);
+ c.openSalesDailyShare('PM','detailed');
+ const detailed=elements.salesDailyShareOverlay.innerHTML;
+ const visitPos=detailed.indexOf('>Customer Visit</th>');
+ const otherPos=detailed.indexOf('>Other Task / To Do</th>');
+ const visitResult=detailed.indexOf('done test 1');
+ const workResult=detailed.indexOf('done test 2');
+ assert.ok(visitPos>=0&&otherPos>visitPos,'Customer Visit and Other sections exist in order');
+ assert.ok(visitResult>visitPos&&visitResult<otherPos,'Manual visit stays under visits');
+ assert.ok(workResult>otherPos,'Showroom Work is placed in Other');
+ assert.match(detailed,/Unplanned · Showroom Work/);
+ const manager=g.manager(r.additionalActivities);
+ assert.match(manager,/Customer Visit · 1/);
+ assert.match(manager,/Other Task \/ To Do · 1/);
+ assert.match(manager,/done test 2/);
 });
