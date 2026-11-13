@@ -1,0 +1,35 @@
+name: Marketing Department Module Tests
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'marketing-management.js'
+      - 'google-apps-script/marketing-management/**'
+      - 'supabase/functions/marketing-google-proxy/**'
+      - 'granular-access-control.js'
+      - 'index.html'
+      - 'tests/marketing-module.test.cjs'
+      - '.github/workflows/marketing-module-tests.yml'
+  pull_request:
+    paths:
+      - 'marketing-management.js'
+      - 'google-apps-script/marketing-management/**'
+      - 'supabase/functions/marketing-google-proxy/**'
+      - 'granular-access-control.js'
+      - 'index.html'
+      - 'tests/marketing-module.test.cjs'
+      - '.github/workflows/marketing-module-tests.yml'
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check frontend JavaScript syntax
+        run: node --check marketing-management.js
+      - name: Check Apps Script JavaScript syntax
+        run: node --check < google-apps-script/marketing-management/Code.gs
+      - name: Test department navigation and access
+        run: node tests/marketing-module.test.cjs
