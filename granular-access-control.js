@@ -18,6 +18,17 @@
 
   const AREAS=[
     {
+      id:'marketing',label:'Marketing Department',icon:'✦',
+      activities:[
+        {key:'marketing.view',label:'View Marketing',description:'Open the Marketing Department workspace.',view:true},
+        {key:'marketing.task_own',label:'Manage own marketing tasks',description:'Create personal tasks and submit task progress.'},
+        {key:'marketing.daily_own',label:'Submit Daily Plan & Evening Result',description:'Record personal daily work without duplicating tasks.'},
+        {key:'marketing.manage',label:'Manage team Marketing tasks',description:'Assign, edit and review the whole marketing team.'},
+        {key:'marketing.approve',label:'Approve marketing creative work',description:'Approve artwork and request revisions.'},
+        {key:'marketing.reports',label:'View team Marketing reports',description:'View production, deadlines, calendar and staff reports.',view:true}
+      ]
+    },
+    {
       id:'customers',label:'Customers & credit',icon:'◉',
       activities:[
         {key:'customers.view',label:'View customers',description:'View customer profiles and customer sales history.',view:true},
@@ -150,6 +161,7 @@
   ];
 
   const PAGE_PERMISSIONS={
+    marketing:'marketing.view',
     customers:'customers.view',
     'sales-orders':'sales_orders.view',
     tracking:'tracking.view',
@@ -173,6 +185,8 @@
   };
 
   const ROLE_FALLBACK={
+    marketing:new Set(['marketing.view','marketing.task_own','marketing.daily_own']),
+    marketing_manager:new Set(['marketing.view','marketing.task_own','marketing.daily_own','marketing.manage','marketing.approve','marketing.reports']),
     sales:new Set(['customers.view','customers.create','customers.edit','sales_orders.view','sales_orders.create','sales_orders.edit','sales_orders.convert_request','sales_orders.print','quotations.view','quotations.create','tracking.view','tracking.edit','payments.view','returns.view','returns.create','products.view','products.sales_price_view','reports.view','targets.view_own','sales_activity.view_own','sales_daily.plan_own']),
     accountant:new Set(['customers.view','sales_orders.view','quotations.view','tracking.view','payments.view','payments.create','payments.edit','returns.view','products.view','products.sales_price_view','inventory.view','inventory.reports','reports.view','reports.export','finance.ar_view','finance.cost_margin_view','finance.payment_records']),
     stock_controller:new Set(['products.view','inventory.view','inventory.operate','inventory.transfer','inventory.count','inventory.reports','procurement.view','procurement.po_receive']),
@@ -182,6 +196,8 @@
   };
 
   const ROLE_LABELS={
+    marketing:'Marketing Staff',
+    marketing_manager:'Marketing Manager',
     sales:'Sales',
     accountant:'Accountant',
     stock_controller:'Stock Controller',
