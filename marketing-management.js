@@ -4,7 +4,7 @@
 'use strict';
 const PAGE='marketing';
 const TABS=['Overview','Daily Plan & Result','My To-Do','Content Calendar','Campaigns','Reviews','Reports'];
-const DATA={tab:'Overview',tasks:[],daily:[],staff:[],date:'',month:'',filter:'',brand:'all',ready:false,config:false,loading:false,todoStatus:'Active',todoPriority:'All',todoSort:'due',dailyDraftIds:[],dailyView:'My Daily'};
+const DATA={tab:'Overview',tasks:[],daily:[],staff:[],date:'',month:'',filter:'',brand:'all',ready:false,config:false,loading:false,todoStatus:'Active',todoPriority:'All',todoSort:'due',dailyDraftIds:[],dailyView:'My Daily',calendarBrand:'LPL',calendarView:'list',calendarDraftDate:''};
 const h=v=>typeof esc==='function'?esc(v==null?'':String(v)):String(v==null?'':v).replace(/[&<>"']/g,'');
 const role=()=>String(state.profile&&state.profile.role||'');
 const marketingRole=()=>role()==='marketing'||role()==='marketing_manager';
@@ -302,17 +302,139 @@ function drawDaily(){
    statusBar+morning+evening+marketingWeekSummary(date));
 }
 
-function drawCalendar(){
- const month=DATA.month||today().slice(0,7),all=tasks().filter(t=>formatDate(t.post_date).startsWith(month)).sort((a,b)=>formatDate(a.post_date).localeCompare(formatDate(b.post_date)));
- frame('Content Calendar','One publishing schedule for LPL and LPH, linked to production and approval.',
- '<div class="flex flex-wrap gap-3 items-center bg-white rounded-xl border p-3"><label class="text-xs font-semibold">Month <input type="month" class="ml-2 border rounded-lg p-2" value="'+h(month)+'" onchange="marketingMonth(this.value)"></label>'+
- btn('+ Schedule Content','openMarketingTask()','gold')+'</div>'+
- '<div class="grid gap-2">'+(all.length?all.map(t=>
- '<div class="bg-white rounded-xl border p-3 flex flex-wrap items-center justify-between gap-2"><div>'+
- '<div class="text-xs text-stone-500">'+h(t.post_date)+' · '+h(t.business||'Other')+' · '+h(t.platforms||'Not assigned')+'</div>'+
- '<b class="text-sm">'+h(t.title)+'</b><p class="text-xs text-stone-500">'+h(t.brand||'')+' · '+h(ownerLabel(t))+'</p></div>'+
- '<div class="flex flex-wrap items-center gap-2">'+badge(t.status)+badge(t.approval_status)+btn('Details','openMarketingHistory(\''+uid(t)+'\')')+'</div></div>').join(''):empty('No scheduled posts for this month.'))+'</div>');
+const CALENDAR_BUSINESSES=[
+ {id:'LPL',name:"L'Imperial Luxury"},
+ {id:'LPH',name:'LP Home'}
+];
+function calendarBusiness(task){
+ const value=String(task?.business||'').trim().toUpperCase();
+ return value==='LPL'||value==='LPH'||value==='BOTH'?value:'';
 }
+function calendarPosts(){
+ const month=DATA.month||today().slice(0,7);
+ return tasks().filter(t=>/^\d{4}-\d{2}-\d{2}$/.test(formatDate(t.post_date))&&
+  formatDate(t.post_date).slice(0,7)===month);
+}
+function monthLabel(month){
+ const match=/^(\d{4})-(\d{2})$/.exec(month);
+ if(!match)return month;
+ const date=new Date(Date.UTC(Number(match[1]),Number(match[2])-1,1));
+ return new Intl.DateTimeFormat('en-US',{month:'long',year:'numeric',timeZone:'UTC'}).format(date);
+}
+function calendarTaskRow(t,compact){
+ const id=uid(t),date=formatDate(t.post_date);
+ const desc='<div class="min-w-0"><div class="text-[10px] text-stone-500">'+h(date)+
+  ' · '+h(t.platforms||'Platform not set')+
+  (calendarBusiness(t)==='BOTH'?' · Both brands':'')+'</div>'+
+  '<div class="text-sm font-bold text-stone-900 mt-1 break-words">'+h(t.title)+'</div>'+
+  (!compact?'<div class="text-xs text-stone-500 mt-1">'+h(t.campaign||t.category||'Content')+' · '+h(ownerLabel(t))+
+    (t.brand?' · '+h(t.brand):'')+'</div>':'')+'</div>';
+ return '<article class="bg-white border border-stone-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3">'+
+  desc+'<div class="flex flex-wrap gap-2 items-center">'+badge(t.status)+
+  (!compact?badge(t.approval_status):'')+
+  btn('Details','openMarketingCalendarItem(\''+id+'\')')+
+  '</div></article>';
+}
+function drawCalendar(){
+ const month=DATA.month||today().slice(0,7),brand=DATA.calendarBrand,view=DATA.calendarView;
+ const all=calendarPosts(),visible=all.filter(t=>calendarBusiness(t)===brand||calendarBusiness(t)==='BOTH')
+   .sort((a,b)=>formatDate(a.post_date).localeCompare(formatDate(b.post_date))||
+      String(a.title||'').localeCompare(String(b.title||'')));
+ const unassigned=all.filter(t=>!calendarBusiness(t));
+ const brandTabs='<div class="flex flex-wrap gap-2" role="tablist" aria-label="Content business">'+
+  CALENDAR_BUSINESSES.map(b=>'<button type="button" role="tab" aria-selected="'+(brand===b.id)+
+   '" onclick="marketingCalendarBrand(\''+b.id+'\')" class="px-4 py-2.5 rounded-xl border text-xs font-bold '+
+   (brand===b.id?'bg-[#211d18] text-white border-[#211d18]':'bg-white text-stone-700 border-stone-200 hover:bg-stone-50')+'">'+
+   h(b.name)+' <span class="opacity-70">('+all.filter(t=>calendarBusiness(t)===b.id||calendarBusiness(t)==='BOTH').length+')</span></button>').join('')+
+  '</div>';
+ const viewTabs='<div class="inline-flex rounded-xl border border-stone-200 p-1 bg-stone-50" role="tablist" aria-label="Content calendar view">'+
+  [['list','List View'],['calendar','Calendar View']].map(([id,label])=>
+    '<button type="button" role="tab" aria-selected="'+(id===view)+'" onclick="marketingCalendarView(\''+id+'\')" class="px-4 py-2 rounded-lg text-xs font-bold '+
+    (id===view?'bg-[#211d18] text-white shadow-sm':'bg-transparent text-stone-600 hover:bg-white')+'">'+label+'</button>').join('')+
+  '</div>';
+ const toolbar='<div class="bg-white rounded-xl border p-3 space-y-3">'+
+  '<div class="flex flex-wrap items-center justify-between gap-3">'+
+   '<div class="flex flex-wrap items-center gap-2"><label class="text-xs font-semibold text-stone-600">Month '+
+     '<input type="month" aria-label="Content publishing month" class="ml-1 border rounded-lg px-2 py-2" value="'+h(month)+'" onchange="marketingMonth(this.value)"></label>'+
+     '<button type="button" onclick="marketingCalendarShift(-1)" class="rounded-lg border px-3 py-2 text-xs font-semibold" aria-label="Previous month">‹</button>'+
+     '<button type="button" onclick="marketingCalendarShift(1)" class="rounded-lg border px-3 py-2 text-xs font-semibold" aria-label="Next month">›</button></div>'+
+   btn('+ Schedule Content','marketingCalendarSchedule()','gold')+'</div>'+brandTabs+'</div>';
+ const notice=unassigned.length?'<div class="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900">'+
+   unassigned.length+' scheduled task(s) do not yet have a business assigned. They are excluded from both brand tabs to avoid mixing content. '+
+   (manager()?btn('Assign a business','openMarketingTask(\''+uid(unassigned[0])+'\')'):'Ask your Marketing Manager to assign their business.')+
+   '</div>':'';
+ const list='<div class="grid gap-2">'+(visible.length?visible.map(t=>calendarTaskRow(t,false)).join(''):
+  empty('No content scheduled for '+CALENDAR_BUSINESSES.find(b=>b.id===brand).name+' in '+monthLabel(month)+'.'))+'</div>';
+ let calendar='';
+ if(view==='calendar'){
+  const match=/^(\d{4})-(\d{2})$/.exec(month),year=Number(match?.[1]||today().slice(0,4)),m=Number(match?.[2]||today().slice(5,7));
+  const offset=new Date(Date.UTC(year,m-1,1)).getUTCDay();
+  const days=new Date(Date.UTC(year,m,0)).getUTCDate();
+  const cells=Math.ceil((offset+days)/7)*7;
+  const byDate=new Map();
+  visible.forEach(t=>{const date=formatDate(t.post_date);if(!byDate.has(date))byDate.set(date,[]);byDate.get(date).push(t);});
+  const weekdays=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  calendar='<div class="bg-white border border-stone-200 rounded-xl p-3">'+
+   '<div class="flex items-center justify-between gap-2 mb-3"><b class="text-sm">'+h(monthLabel(month))+'</b>'+
+    '<span class="text-xs text-stone-500">'+visible.length+' scheduled content item(s)</span></div>'+
+   '<div class="overflow-x-auto"><div class="min-w-[700px]">'+
+   '<div class="grid grid-cols-7 gap-1 mb-1">'+weekdays.map(x=>'<div class="text-center py-2 text-xs font-bold text-stone-500">'+x+'</div>').join('')+'</div>'+
+   '<div class="grid grid-cols-7 gap-1">'+Array.from({length:cells},(_,i)=>{
+    const day=i-offset+1;
+    if(day<1||day>days)return '<div class="min-h-[106px] rounded-lg bg-stone-50 border border-stone-100"></div>';
+    const date=month+'-'+String(day).padStart(2,'0'),entries=byDate.get(date)||[];
+    return '<div class="min-h-[106px] rounded-lg border p-1.5 '+(date===today()?'border-amber-400 bg-amber-50':'border-stone-200')+'">'+
+      '<button type="button" onclick="marketingCalendarDay(\''+date+'\')" class="w-full text-left text-xs font-bold hover:underline" aria-label="View content on '+date+'">'+day+
+        (entries.length?'<span class="float-right rounded-full bg-stone-200 px-1.5 text-[10px]">'+entries.length+'</span>':'')+'</button>'+
+      '<div class="space-y-1 mt-1">'+entries.slice(0,2).map(t=>
+        '<button type="button" onclick="openMarketingCalendarItem(\''+uid(t)+'\')" title="'+h(t.title)+
+        '" class="w-full text-left truncate rounded-md bg-amber-100 text-amber-950 px-1.5 py-1 text-[10px] font-semibold">'+h(t.title)+'</button>').join('')+
+       (entries.length>2?'<button type="button" class="text-[10px] text-blue-700 font-bold" onclick="marketingCalendarDay(\''+date+'\')">+'+(entries.length-2)+' more</button>':'')+
+      '</div></div>';
+   }).join('')+'</div></div></div></div>';
+ }
+ frame('Content Calendar','Separate publishing schedules for L’Imperial Luxury and LP Home · Same content in list and monthly calendar.',
+  toolbar+notice+'<div class="flex flex-wrap items-center justify-between gap-2">'+viewTabs+
+  '<span class="text-xs text-stone-500">'+visible.length+' scheduled item(s) · '+h(monthLabel(month))+'</span></div>'+
+  (view==='calendar'?calendar:list));
+}
+function calendarDetails(id){
+ const t=DATA.tasks.find(x=>x.id===safeId(id));
+ if(!t||!own(t))return note('Content item not found or unavailable',true);
+ const info=[['Business',calendarBusiness(t)==='LPL'?"L'Imperial Luxury":calendarBusiness(t)==='LPH'?'LP Home':calendarBusiness(t)==='BOTH'?'Both brands':'Unassigned'],
+  ['Publishing date',t.post_date],['Platform(s)',t.platforms],['Assigned to',ownerLabel(t)],['Status',t.status],
+  ['Approval',t.approval_status],['Campaign',t.campaign],['Product brand',t.brand],['Category',t.category],['Concept',t.concept]];
+ const fields=info.filter(x=>x[1]).map(([label,val])=>'<div class="text-xs"><span class="text-stone-500">'+h(label)+': </span><b>'+h(val)+'</b></div>').join('');
+ const link=(url,label)=>/^https:\/\//i.test(String(url||''))?'<a href="'+h(url)+'" target="_blank" rel="noopener noreferrer" class="text-blue-700 underline text-xs">'+h(label)+'</a>':'';
+ openModal('Scheduled Content · '+t.title,
+  '<div class="space-y-4"><div class="grid grid-cols-2 gap-2">'+fields+'</div>'+
+  (t.description?'<div class="border rounded-xl p-3 text-xs whitespace-pre-wrap">'+h(t.description)+'</div>':'')+
+  '<div class="flex flex-wrap gap-4">'+link(t.asset_url,'View artwork / Drive')+link(t.published_url,'Open published post')+'</div>'+
+  '<div class="flex flex-wrap gap-2">'+btn('History','openMarketingHistory(\''+uid(t)+'\')')+
+  btn('Progress','openMarketingProgress(\''+uid(t)+'\')')+
+  (manager()?btn('Edit Content','openMarketingTask(\''+uid(t)+'\')','gold'):'')+
+  '</div></div>');
+}
+function calendarDay(date){
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(String(date||'')))return;
+ const matches=calendarPosts().filter(t=>formatDate(t.post_date)===date&&
+  (calendarBusiness(t)===DATA.calendarBrand||calendarBusiness(t)==='BOTH'));
+ openModal('Scheduled Content · '+date,'<div class="space-y-2">'+
+  (matches.length?matches.map(t=>calendarTaskRow(t,true)).join(''):empty('No content scheduled on this date.'))+
+  '<div class="pt-2">'+btn('+ Schedule Content','marketingCalendarSchedule(\''+date+'\')','gold')+'</div></div>');
+}
+function calendarShift(delta){
+ const month=DATA.month||today().slice(0,7),match=/^(\d{4})-(\d{2})$/.exec(month);
+ if(!match||!Number.isInteger(delta)||Math.abs(delta)!==1)return;
+ const d=new Date(Date.UTC(Number(match[1]),Number(match[2])-1+delta,1));
+ DATA.month=d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0');
+ drawCalendar();
+}
+function calendarSchedule(date){
+ DATA.calendarDraftDate=/^\d{4}-\d{2}-\d{2}$/.test(String(date||''))?date:'';
+ openTask();
+}
+
 function drawCampaigns(){
  const groups=new Map();
  tasks().forEach(t=>{const name=t.campaign||'Unassigned / General Work';if(!groups.has(name))groups.set(name,[]);groups.get(name).push(t);});
@@ -357,22 +479,24 @@ async function submitDaily(phase){
  }catch(e){note(e.message,true);}
 }
 function taskForm(t){
- const val=k=>h(t&&t[k]||'');
+ const val=k=>h((t&&t[k])||(k==='post_date'&&!t?DATA.calendarDraftDate:'')||'');
  const sel=(name,items,selected)=>'<label class="block text-xs font-semibold">'+h(name)+'<select name="'+h(name)+'" class="mt-1 block w-full border rounded-lg px-3 py-2 text-sm">'+opts(items,selected)+'</select></label>';
  const input=(name,label,type='text',placeholder='')=>'<label class="block text-xs font-semibold">'+h(label)+'<input name="'+h(name)+'" type="'+type+'" value="'+val(name)+'" placeholder="'+h(placeholder)+'" class="mt-1 block w-full border rounded-lg px-3 py-2 text-sm"></label>';
  const currentId=t?uid(t):'';
+ const calendarContext=DATA.tab==='Content Calendar'&&!t;
+ const defaultBusiness=calendarContext?DATA.calendarBrand:'';
  const people=DATA.staff.filter(s=>s.role==='marketing'||s.role==='marketing_manager');
  return '<form id="marketingTaskForm" onsubmit="saveMarketingTask(event)" class="space-y-3">'+
  '<input type="hidden" name="id" value="'+h(currentId)+'">'+
  input('title','Task / deliverable title','text','e.g. Asfour Chandelier Poster')+
  '<label class="block text-xs font-semibold">Description / brief<textarea name="description" rows="3" class="mt-1 block w-full border rounded-lg p-2 text-sm">'+val('description')+'</textarea></label>'+
  '<div class="grid grid-cols-2 gap-3">'+
- sel('business',['','LPH','LPL','BOTH','OTHER'],t?.business||'')+
+ sel('business',['','LPH','LPL','BOTH','OTHER'],t?.business||defaultBusiness)+
  sel('priority',['Low','Medium','High','Urgent'],t?.priority||'Medium')+
  input('brand','Brand')+sel('category',[''].concat(categories),t?.category||'')+
  input('campaign','Project / campaign')+input('concept','Concept')+
  input('start_date','Start date','date')+input('due_date','Task deadline','date')+
- input('post_date','Publishing date','date')+input('platforms','Platforms','text','Facebook, Instagram, Telegram')+
+ (calendarContext?'<label class="block text-xs font-semibold">Publishing date<input name="post_date" type="date" required value="'+val('post_date')+'" class="mt-1 block w-full border rounded-lg px-3 py-2 text-sm"></label>':input('post_date','Publishing date','date'))+input('platforms','Platforms','text','Facebook, Instagram, Telegram')+
  '</div>'+
  (manager()?'<label class="block text-xs font-semibold">Assign Marketing staff<select name="assignee_id" class="mt-1 block w-full border rounded-lg p-2 text-sm">'+
  '<option value="">Unassigned</option>'+people.map(s=>'<option value="'+h(s.id)+'" '+(s.id===t?.assignee_id?'selected':'')+'>'+h(s.name)+'</option>').join('')+'</select></label>':'')+
@@ -385,6 +509,7 @@ function openTask(id){
  if(t&&!own(t))return note('Permission denied',true);
  if(t&&!manager())return note('Use Progress to update your assigned task',true);
  openModal(t?'Edit Marketing Task':'Create Marketing Task',taskForm(t));
+ DATA.calendarDraftDate='';
 }
 async function saveTask(e){
  e.preventDefault();
@@ -582,7 +707,13 @@ window.carryMarketingUnfinished=function(){
  drawDaily();
  note(carrying.length+' unfinished task(s) selected. Submit the Morning Plan to save.');
 };
-window.marketingMonth=function(v){DATA.month=v;drawCalendar();};
+window.marketingMonth=function(v){if(!/^d{4}-d{2}$/.test(String(v||'')))return;DATA.month=v;drawCalendar();};
+window.marketingCalendarBrand=function(v){if(!CALENDAR_BUSINESSES.some(b=>b.id===v))return;DATA.calendarBrand=v;drawCalendar();};
+window.marketingCalendarView=function(v){if(v!=='list'&&v!=='calendar')return;DATA.calendarView=v;drawCalendar();};
+window.marketingCalendarShift=calendarShift;
+window.marketingCalendarDay=calendarDay;
+window.marketingCalendarSchedule=calendarSchedule;
+window.openMarketingCalendarItem=calendarDetails;
 window.openMarketingTask=openTask;
 window.saveMarketingTask=saveTask;
 window.openMarketingProgress=openProgress;
