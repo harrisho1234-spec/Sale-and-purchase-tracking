@@ -114,13 +114,20 @@ test('PM submission saves per-task outcome and remarks with planned task IDs, no
  assert.equal(req.payload.note,'Overall report summary');
  assert.equal(m.requests.some(x=>x.action==='save_task'||x.action==='update_task'),false);
 });
-test('stale Google Apps Script deployment blocks itemized data loss and shows upgrade notice',async()=>{
+test('older Apps Script keeps legacy summary-only reports working without losing unsaved task results',async()=>{
  const m=make({backendVersion:1});await m.ctx.window.go('marketing');m.ctx.window.marketingTab('Daily Plan & Result');
  m.ctx.window.marketingDate('2026-11-13');
- assert.match(m.html(),/requires a new deployment/);
+ assert.match(m.html(),/original summary-only format/);
+ assert.match(m.html(),/Submit Summary Only/);
+ assert.doesNotMatch(m.html(),/mkt-daily-result-row/);
  await m.ctx.window.submitMarketingDaily('pm');
- assert.equal(m.requests.some(x=>x.action==='daily_save'),false);
- assert.match(m.toasts.at(-1).msg,/Update the Marketing Google Apps Script deployment/);
+ const req=m.requests.filter(x=>x.action==='daily_save').at(-1);
+ assert.ok(req,'old backend still accepts the original summary');
+ assert.equal(req.payload.note,'Overall report summary');
+ assert.equal(req.payload.report_version,undefined);
+ assert.equal(req.payload.task_results,undefined);
+ assert.deepEqual(Array.from(req.payload.task_ids),[uuid(1),uuid(2)]);
+ assert.match(m.toasts.at(-1).msg,/Summary-only Evening Result saved/);
 });
 test('Marketing manager team review shows planned and additional results separately',async()=>{
  const completed={...day,result_json:JSON.stringify({
