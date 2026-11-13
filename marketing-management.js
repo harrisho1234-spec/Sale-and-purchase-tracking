@@ -4,7 +4,7 @@
 'use strict';
 const PAGE='marketing';
 const TABS=['Overview','Daily Plan & Result','My To-Do','Content Calendar','Campaigns','Reviews','Reports'];
-const DATA={tab:'Overview',tasks:[],daily:[],staff:[],date:'',month:'',filter:'',brand:'all',ready:false,config:false,loading:false,todoStatus:'Active',todoPriority:'All',todoSort:'due',dailyDraftIds:[],dailyView:'My Daily',calendarBrand:'LPL',calendarView:'list',calendarDraftDate:''};
+const DATA={tab:'Overview',tasks:[],daily:[],staff:[],date:'',month:'',filter:'',brand:'all',ready:false,config:false,loading:false,todoStatus:'Active',todoPriority:'All',todoSort:'due',dailyDraftIds:[],dailyUnplannedIds:[],dailyView:'My Daily',calendarBrand:'LPL',calendarView:'list',calendarDraftDate:''};
 const h=v=>typeof esc==='function'?esc(v==null?'':String(v)):String(v==null?'':v).replace(/[&<>"']/g,'');
 const role=()=>String(state.profile&&state.profile.role||'');
 const marketingRole=()=>role()==='marketing'||role()==='marketing_manager';
@@ -195,19 +195,135 @@ function drawTodo(){
   '<div class="flex flex-wrap items-center justify-between gap-2"><p class="text-xs text-slate-500">'+matched.length+' results · '+active.length+' active tasks</p>'+btn('+ Add Task','openMarketingTask()','gold')+'</div>'+
   '<div class="grid gap-3">'+(matched.length?matched.map(marketingTodoRow).join(''):empty('No tasks match these filters. Try All status or create a new task.'))+'</div>');
 }
+const DAILY_RESULT_STATUSES=['Completed','Partially Completed','Pending','Not Done'];
+function dailyParsed(value,fallback){
+ try{const d=JSON.parse(value||'');return d&&typeof d==='object'?d:fallback;}
+ catch(_){return fallback;}
+}
+function dailyTaskName(t){return (t&&t.title)||'Deleted task';}
+function dailyBusinessName(t){
+ const b=String(t?.business||'').toUpperCase();
+ return b==='LPL'?"L'Imperial Luxury":b==='LPH'?'LP Home':b==='BOTH'?'Both brands':'Other Marketing Tasks';
+}
+function dailySection(tasks,render){
+ const groups=new Map();
+ tasks.forEach(t=>{
+  const key=dailyBusinessName(t);
+  if(!groups.has(key))groups.set(key,[]);
+  groups.get(key).push(t);
+ });
+ return [...groups].map(([business,rows])=>
+  '<section class="rounded-xl border border-emerald-100 overflow-hidden bg-white">'+
+  '<div class="bg-emerald-50 border-b border-emerald-100 px-3 py-2 flex justify-between items-center gap-2"><b class="text-xs text-emerald-950">'+h(business)+
+  '</b><span class="text-[10px] text-emerald-900">'+rows.length+' task(s)</span></div>'+
+  '<div class="divide-y divide-stone-100">'+rows.map(render).join('')+'</div></section>'
+ ).join('');
+}
+function dailyCalendarLink(t){
+ if(!t?.post_date)return '';
+ return '<button type="button" class="text-[11px] text-blue-700 font-semibold hover:underline" onclick="marketingDailyOpenCalendar(\''+uid(t)+'\')">'+
+  'Calendar · '+h(formatDate(t.post_date))+'</button>';
+}
 function marketingDailyRow(t,checked,disabled){
  const id=uid(t);
- return '<label class="flex items-start gap-3 p-3 border-b border-slate-100 last:border-b-0 hover:bg-stone-50">'+
+ return '<label class="flex items-start gap-3 p-3 hover:bg-stone-50">'+
   '<input type="checkbox" class="mkt-daily-task mt-1 w-4 h-4 accent-amber-700" value="'+h(id)+'" '+(checked?'checked ':'')+
-   (disabled?'disabled ':'')+'aria-label="Select '+h(t.title)+'">'+
+   (disabled?'disabled ':'')+'onchange="marketingDailyDraftToggle(this.value,this.checked)" aria-label="Select '+h(t.title)+'">'+
   '<span class="min-w-0 flex-1"><b class="text-sm text-slate-900">'+h(t.title)+'</b>'+
-   '<span class="block text-xs text-slate-500 mt-1">'+h(t.business||'Other')+' · '+h(t.category||'General')+
-   ' · '+h(t.priority||'Medium')+' · Due '+h(t.due_date||'not set')+'</span>'+
-   '<span class="block text-xs text-slate-500 mt-1">'+h(t.status||'Not Started')+' · '+h(t.progress||0)+'%'+
-   (t.approval_status==='Changes Requested'?' · Revisions requested':'')+'</span></span>'+
-  (!disabled?'<span class="text-[10px] font-semibold text-stone-400">Select</span>':'')+
- '</label>';
+   '<span class="block text-xs text-slate-500 mt-1">'+h(t.category||'General')+' · '+h(t.priority||'Medium')+
+   ' · Due '+h(t.due_date||'not set')+'</span>'+
+   '<span class="block text-xs text-slate-500 mt-1">'+h(t.status||'Not Started')+' · '+h(t.progress||0)+'%</span>'+
+   (t.post_date?'<span class="block mt-1">'+dailyCalendarLink(t)+'</span>':'')+
+   '</span></label>';
 }
+function dailyResultRow(t,values,unplanned){
+ const id=uid(t),v=values?.[id]||{},status=DAILY_RESULT_STATUSES.includes(v.status)?v.status:'Pending';
+ return '<article class="mkt-daily-result-row p-3 space-y-2" data-task-id="'+h(id)+'">'+
+ '<div class="flex flex-wrap gap-3 justify-between"><div class="min-w-0"><b class="text-sm">'+h(t.title)+'</b>'+
+ '<p class="text-xs text-stone-500">'+h(t.category||'Marketing')+' · '+h(t.progress||0)+'% complete · '+h(t.business||'Other')+
+ (unplanned?' · <b>Additional work</b>':'')+'</p>'+
+ (t.post_date?dailyCalendarLink(t):'')+'</div>'+
+ btn('Quick Update','openMarketingProgress(\''+id+'\')')+'</div>'+
+ '<div class="grid sm:grid-cols-[190px_1fr] gap-2">'+
+ '<label class="block text-xs font-semibold">Today\'s Result<select class="mkt-daily-result-status mt-1 w-full border rounded-lg px-2 py-2 text-xs" aria-label="Result status for '+h(t.title)+'">'+
+ opts(DAILY_RESULT_STATUSES,status)+'</select></label>'+
+ '<label class="block text-xs font-semibold">Remark / Outcome<textarea class="mkt-daily-result-note mt-1 w-full border rounded-lg px-2 py-2 text-xs" rows="2" maxlength="1000" placeholder="What was done, what remains, or what blocked this task?">'+h(v.note||'')+'</textarea></label>'+
+ '</div></article>';
+}
+function dailyReviewResults(ids,result){
+ const values=new Map((Array.isArray(result?.task_results)?result.task_results:[]).map(r=>[r.id,r]));
+ return ids.map(id=>{
+  const t=DATA.tasks.find(x=>x.id===id),v=values.get(id);
+  return '<div class="p-3 border-b border-stone-100 last:border-b-0 grid sm:grid-cols-2 gap-2">'+
+   '<div><b class="text-xs">'+h(t?.title||'Task not available')+'</b><p class="text-[11px] text-stone-500">'+
+    h(dailyBusinessName(t))+(t?.post_date?' · '+h(formatDate(t.post_date)):'')+'</p>'+
+    (t?dailyCalendarLink(t):'')+'</div>'+
+   '<div class="text-xs"><b>'+h(v?.status||'Not recorded')+'</b>'+
+    (v?.note?'<p class="mt-1 whitespace-pre-wrap">'+h(v.note)+'</p>':'')+'</div></div>';
+ }).join('');
+}
+function openDailyCalendarSelector(){
+ if(DATA.dailyView!=='My Daily')return;
+ const date=DATA.date||today();
+ const day=DATA.daily.find(r=>String(r.user_id)===me()&&formatDate(r.work_date)===date);
+ if(day?.am_submitted_at)return note('Morning Plan has been submitted. Scheduled task selection is locked.',true);
+ const list=DATA.tasks.filter(t=>marketingOwnDaily(t)&&t.post_date&&safeId(t.id)&&!marketingClosed(t))
+   .sort((a,b)=>{
+    const da=Math.abs(new Date(a.post_date+'T00:00:00Z')-new Date(date+'T00:00:00Z'));
+    const db=Math.abs(new Date(b.post_date+'T00:00:00Z')-new Date(date+'T00:00:00Z'));
+    return da-db||String(a.title).localeCompare(String(b.title));
+   });
+ openModal('Choose Tasks from Content Calendar','<div class="space-y-3">'+
+  '<p class="text-xs text-stone-500">Select existing scheduled Marketing tasks to link to this Morning Plan. They remain the same tasks in Content Calendar and My To-Do.</p>'+
+  '<p class="text-xs text-stone-500">Report date: '+h(date)+' · '+list.length+' assigned scheduled tasks</p>'+
+  '<div class="max-h-[55vh] overflow-y-auto space-y-2">'+
+  (list.length?list.map(t=>
+   '<div class="flex items-center justify-between gap-2 border rounded-lg p-3"><div class="min-w-0"><b class="text-xs">'+h(t.title)+'</b>'+
+    '<p class="text-[11px] text-stone-500">'+h(dailyBusinessName(t))+' · Scheduled '+h(formatDate(t.post_date))+'</p></div>'+
+   btn(DATA.dailyDraftIds.includes(t.id)?'Selected':'Add to Morning Plan','marketingDailyAddCalendarTask(\''+uid(t)+'\')',DATA.dailyDraftIds.includes(t.id)?'':'gold')+
+   '</div>').join(''):empty('No assigned scheduled content. Ask your manager to assign Content Calendar tasks first.'))+
+  '</div></div>');
+}
+function dailyAddCalendarTask(id){
+ const t=DATA.tasks.find(x=>x.id===safeId(id));
+ if(!t||!marketingOwnDaily(t)||!t.post_date)return note('Choose an assigned Content Calendar task',true);
+ DATA.dailyDraftIds=[...new Set(DATA.dailyDraftIds.concat([t.id]))];
+ closeModal();
+ drawDaily();
+ note('Calendar task added to Morning Plan — submit to save.');
+}
+function dailyOpenCalendar(id){
+ const t=DATA.tasks.find(x=>x.id===safeId(id));
+ if(!t||!own(t)||!t.post_date)return note('Linked Content Calendar task unavailable',true);
+ DATA.month=formatDate(t.post_date).slice(0,7);
+ DATA.calendarBrand=['LPL','LPH'].includes(String(t.business||'').toUpperCase())?t.business.toUpperCase():'LPL';
+ DATA.tab='Content Calendar';DATA.calendarView='calendar';
+ draw();
+ calendarDetails(id);
+}
+function dailyAddUnplanned(){
+ const date=DATA.date||today(),r=DATA.daily.find(x=>String(x.user_id)===me()&&formatDate(x.work_date)===date);
+ const planned=dailyParsed(r?.plan_json,[]),saved=dailyParsed(r?.result_json,{});
+ const ids=[...new Set([...(Array.isArray(planned)?planned:[]),...(Array.isArray(saved.task_ids)?saved.task_ids:[]),...DATA.dailyUnplannedIds])];
+ const extra=DATA.tasks.filter(t=>marketingOwnDaily(t)&&safeId(t.id)&&!ids.includes(t.id));
+ openModal('Add Additional Marketing Work','<div class="space-y-3"><p class="text-xs text-stone-500">'+
+  'Link another existing Marketing task to the Evening Result. It will appear separately as additional/unplanned work.</p>'+
+  '<div class="max-h-[60vh] overflow-y-auto space-y-2">'+
+  (extra.length?extra.map(t=>'<div class="flex justify-between items-center border rounded-lg px-3 py-2 gap-2"><div>'+
+   '<b class="text-xs">'+h(t.title)+'</b><p class="text-[11px] text-stone-500">'+h(dailyBusinessName(t))+
+   (t.post_date?' · '+h(formatDate(t.post_date)):'')+'</p></div>'+
+    btn('Add to Evening Result','marketingDailyAttachUnplanned(\''+uid(t)+'\')','gold')+'</div>').join(''):
+   empty('No more assigned Marketing tasks available.'))+'</div></div>');
+}
+function dailyAttachUnplanned(id){
+ const t=DATA.tasks.find(x=>x.id===safeId(id));
+ if(!t||!marketingOwnDaily(t))return note('Task is not assigned to you',true);
+ DATA.dailyUnplannedIds=[...new Set(DATA.dailyUnplannedIds.concat([id]))];
+ closeModal();
+ drawDaily();
+ note('Additional task linked. Record its result and remark before submission.');
+}
+
 function marketingWeekSummary(date){
  const first=new Date(date+'T12:00:00Z');
  if(Number.isNaN(first.getTime()))return '';
