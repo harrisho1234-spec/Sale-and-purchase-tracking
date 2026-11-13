@@ -13,7 +13,7 @@ const manager=()=>['marketing_manager','admin','super_admin'].includes(role());
 const superAdmin=()=>role()==='super_admin';
 const me=()=>String(state.user&&state.user.id||'');
 const root=()=>document.getElementById('content');
-const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Phnom_Penh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+const today=()=>{const d=new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Phnom_Penh',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());const p=Object.fromEntries(d.map(x=>[x.type,x.value]));return p.year+'-'+p.month+'-'+p.day;};
 const formatDate=v=>v?String(v).slice(0,10):'';
 const safeId=id=>/^[a-f0-9-]{36}$/i.test(String(id||''))?String(id):'';
 const own=t=>manager()||t.assignee_id===me()||t.created_by===me();
@@ -132,7 +132,7 @@ function drawDaily(){
  let planned=[];
  try{planned=JSON.parse(day&&day.plan_json||'[]');if(!Array.isArray(planned))planned=[];}catch(_){}
  const selected=planned.length?planned:[];
- const ownTasks=DATA.tasks.filter(t=>t.assignee_id===me()||t.created_by===me());
+ const ownTasks=DATA.tasks.filter(t=>t.assignee_id===me()||(t.created_by===me()&&!t.assignee_id));
  const box=ownTasks.map(t=>'<label class="flex gap-3 items-start px-3 py-2 border-b last:border-0 text-sm"><input type="checkbox" class="mkt-daily-task mt-1" value="'+h(uid(t))+'" '+(selected.includes(t.id)?'checked':'')+'><span><b>'+h(t.title)+'</b><small class="block text-stone-500">'+h(t.business||'')+' · '+h(t.status)+' · '+h(t.progress||0)+'%</small></span></label>').join('');
  const hasAM=!!day?.am_submitted_at;
  let summary='';try{summary=JSON.parse(day?.result_json||'{}').note||'';}catch(_){}
@@ -332,7 +332,7 @@ window.go=async function(page){
 };
 window.marketingTab=changeTab;
 window.refreshMarketing=fetchMarketing;
-window.marketingFilter=function(s){DATA.filter=s;drawTodo();};
+window.marketingFilter=function(s){const pos=document.getElementById('mktFilter')?.selectionStart||s.length;DATA.filter=s;drawTodo();const el=document.getElementById('mktFilter');if(el){el.focus();el.setSelectionRange(pos,pos);}};
 window.marketingDate=function(v){DATA.date=v;drawDaily();};
 window.marketingMonth=function(v){DATA.month=v;drawCalendar();};
 window.openMarketingTask=openTask;
