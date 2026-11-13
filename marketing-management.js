@@ -4,7 +4,7 @@
 'use strict';
 const PAGE='marketing';
 const TABS=['Overview','Daily Plan & Result','My To-Do','Content Calendar','Campaigns','Reviews','Reports'];
-const DATA={tab:'Overview',tasks:[],daily:[],staff:[],date:'',month:'',filter:'',brand:'all',ready:false,config:false,loading:false};
+const DATA={tab:'Overview',tasks:[],daily:[],staff:[],date:'',month:'',filter:'',brand:'all',ready:false,config:false,loading:false,todoStatus:'Active',todoPriority:'All',todoSort:'due',dailyDraftIds:[],dailyView:'My Daily'};
 const h=v=>typeof esc==='function'?esc(v==null?'':String(v)):String(v==null?'':v).replace(/[&<>"']/g,'');
 const role=()=>String(state.profile&&state.profile.role||'');
 const marketingRole=()=>role()==='marketing'||role()==='marketing_manager';
@@ -117,37 +117,191 @@ function drawOverview(){
   '</section><section class="space-y-3"><h3 class="font-bold">Upcoming task deadlines</h3>'+
   (thisWeek.length?thisWeek.map(taskCard).join(''):empty('No upcoming deadlines.'))+'</section></div>');
 }
+
+function marketingOwnDaily(t){
+ return String(t.assignee_id||'')===me()||(!t.assignee_id&&String(t.created_by||'')===me());
+}
+function marketingClosed(t){return ['Completed','Published','Cancelled'].includes(t.status);}
+function marketingTodoStatus(t){return due(t)?'Overdue':t.status||'Not Started';}
+function marketingTodoSort(a,b){
+ const mode=DATA.todoSort;
+ const rank={Urgent:0,High:1,Medium:2,Low:3};
+ if(mode==='priority')return (rank[a.priority]??9)-(rank[b.priority]??9)||formatDate(a.due_date||'9999').localeCompare(formatDate(b.due_date||'9999'));
+ if(mode==='recent')return String(b.updated_at||'').localeCompare(String(a.updated_at||''));
+ return Number(due(b))-Number(due(a))||formatDate(a.due_date||'9999').localeCompare(formatDate(b.due_date||'9999'));
+}
+function marketingTodoRow(t){
+ const id=uid(t),late=due(t),progress=Math.max(0,Math.min(100,Number(t.progress)||0));
+ const isDaily=marketingOwnDaily(t),status=marketingTodoStatus(t);
+ const urgency=late?'text-red-700 bg-red-50':t.priority==='Urgent'?'text-amber-900 bg-amber-50':'text-slate-700 bg-slate-100';
+ return '<article class="bg-white rounded-xl border border-slate-200 p-4 space-y-3" data-marketing-todo-row="'+id+'">'+
+  '<div class="flex flex-wrap justify-between gap-3">'+
+   '<div class="min-w-0 flex-1"><div class="text-sm sm:text-base font-bold text-slate-900">'+h(t.title)+'</div>'+
+   '<div class="text-xs text-slate-500 mt-1">'+h(ownerLabel(t))+' · '+h(t.business||'Other')+(t.brand?' · '+h(t.brand):'')+
+   ' · '+h(t.start_date||'Start not set')+' → '+h(t.due_date||'No deadline')+'</div></div>'+
+   '<div class="flex flex-wrap gap-1.5 items-start">'+badge(status,late?'bg-red-50 text-red-700':'bg-slate-100 text-slate-700')+
+   badge(t.priority||'Medium',urgency)+'</div></div>'+
+  (t.description?'<p class="text-xs sm:text-sm text-slate-600 whitespace-pre-wrap break-words">'+h(t.description.length>350?t.description.slice(0,350)+'…':t.description)+'</p>':'')+
+  '<div class="flex flex-wrap items-center gap-2 text-xs">'+
+   (t.campaign?badge(t.campaign,'bg-indigo-50 text-indigo-700'):'')+
+   (t.approval_status&&t.approval_status!=='Not Submitted'?badge(t.approval_status,t.approval_status==='Changes Requested'?'bg-amber-50 text-amber-800':'bg-sky-50 text-sky-700'):'')+
+   (t.post_date?'<span class="text-slate-500">Scheduled post: '+h(t.post_date)+'</span>':'')+
+  '</div>'+
+  '<div class="flex items-center justify-between gap-3 text-xs"><span class="font-semibold text-slate-700">'+h(t.status)+' · '+progress+'%</span>'+
+   (late?'<b class="text-red-700">Overdue — action required</b>':'')+'</div>'+
+  '<div class="h-2 bg-slate-100 rounded-full overflow-hidden"><div class="h-2 bg-amber-600 rounded-full" style="width:'+progress+'%"></div></div>'+
+  '<div class="flex flex-wrap items-center gap-2">'+
+   btn('History','openMarketingHistory(\''+id+'\')')+
+   (isDaily?btn('Add to Daily Plan','addMarketingTodoToDaily(\''+id+'\')'):'')+
+   btn('Quick Update','openMarketingProgress(\''+id+'\')','gold')+
+   (manager()?btn('Edit Details','openMarketingTask(\''+id+'\')'):'')+
+   (manager()&&t.approval_status==='Pending'?btn('Review','openMarketingReview(\''+id+'\')'):'')+
+   (t.approval_status==='Approved'&&t.status!=='Published'?btn('Publish','openMarketingPublish(\''+id+'\')'):'')+
+   (t.asset_url?'<a class="rounded-lg border px-3 py-2 text-xs text-blue-700" target="_blank" rel="noopener noreferrer" href="'+h(t.asset_url)+'">View artwork</a>':'')+
+   (t.published_url?'<a class="rounded-lg border px-3 py-2 text-xs text-blue-700" target="_blank" rel="noopener noreferrer" href="'+h(t.published_url)+'">Published post</a>':'')+
+  '</div></article>';
+}
 function drawTodo(){
- const all=tasks(),filter=DATA.filter.toLowerCase();
- const filtered=all.filter(t=>!filter||[t.title,t.description,t.brand,t.campaign,t.assignee_name].some(x=>String(x||'').toLowerCase().includes(filter)));
- const sorted=filtered.sort((a,b)=>Number(due(b))-Number(due(a))||formatDate(a.due_date||'9999').localeCompare(formatDate(b.due_date||'9999')));
- frame('My To-Do','Each task stays one record, even when work continues across several days.',
- '<div class="bg-white border rounded-xl p-3 flex flex-wrap gap-2 items-center"><input id="mktFilter" placeholder="Search tasks, campaign or brand" value="'+h(DATA.filter)+'" oninput="marketingFilter(this.value)" class="flex-1 min-w-[190px] border rounded-lg px-3 py-2 text-sm">'+
- '<span class="text-xs text-stone-500">'+sorted.length+' task(s)</span></div>'+
- '<div class="grid md:grid-cols-2 gap-3">'+(sorted.length?sorted.map(taskCard).join(''):empty('No matching tasks.'))+'</div>');
+ const all=tasks(),term=DATA.filter.trim().toLowerCase();
+ const active=all.filter(t=>!marketingClosed(t));
+ const matched=all.filter(t=>{
+  if(term&&!['title','description','assignee_name','brand','campaign','business'].some(k=>String(t[k]||'').toLowerCase().includes(term)))return false;
+  if(DATA.todoPriority!=='All'&&t.priority!==DATA.todoPriority)return false;
+  if(DATA.todoStatus==='Active'&&marketingClosed(t))return false;
+  if(DATA.todoStatus==='Overdue'&&!due(t))return false;
+  if(!['Active','All','Overdue'].includes(DATA.todoStatus)&&String(t.status)!==DATA.todoStatus)return false;
+  return true;
+ }).sort(marketingTodoSort);
+ const alerts=all.filter(t=>due(t)||t.approval_status==='Changes Requested');
+ const metric=(label,n,sub)=>'<div class="rounded-xl border border-slate-200 bg-white px-4 py-3"><div class="text-xs text-slate-500">'+label+'</div><b class="block text-xl mt-1">'+n+'</b><div class="text-[10px] text-slate-400">'+sub+'</div></div>';
+ const filterOption=(v,selected,label)=>'<option value="'+h(v)+'" '+(v===selected?'selected':'')+'>'+h(label||v)+'</option>';
+ frame('Marketing To-Do List','Assignments, deadlines and progress · Google Sheets · Sales-style task management',
+  (alerts.length?'<div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex flex-wrap items-center justify-between gap-2">'+
+   '<div><b class="text-sm text-amber-900">⚠ '+alerts.length+' tasks need attention</b><p class="text-xs text-amber-800 mt-1">'+
+   all.filter(due).length+' overdue · '+all.filter(t=>t.approval_status==='Changes Requested').length+' revisions requested</p></div>'+
+   btn('View Overdue','marketingTodoSetStatus(\'Overdue\')')+'</div>':'')+
+  '<div class="grid grid-cols-3 gap-2">'+metric('Total',all.length,'All accessible tasks')+
+   metric('Completed',all.filter(t=>['Completed','Published'].includes(t.status)).length,'Finished / published')+
+   metric('Overdue',all.filter(due).length,'Unfinished past deadline')+'</div>'+
+  '<div class="bg-white border border-slate-200 rounded-xl p-3 grid grid-cols-2 lg:grid-cols-4 gap-2">'+
+   '<input id="mktFilter" value="'+h(DATA.filter)+'" placeholder="Search tasks" oninput="marketingFilter(this.value)" class="col-span-2 lg:col-span-1 border rounded-lg px-3 py-2 text-sm min-w-0" aria-label="Search Marketing tasks">'+
+   '<select id="mktStatusFilter" onchange="marketingTodoSetStatus(this.value)" aria-label="Status filter" class="border rounded-lg px-3 py-2 text-sm bg-white">'+
+    ['Active','All','Not Started','In Progress','Blocked','Ready for Review','Completed','Published','Cancelled','Overdue'].map(x=>filterOption(x,DATA.todoStatus)).join('')+'</select>'+
+   '<select id="mktPriorityFilter" onchange="marketingTodoSetPriority(this.value)" aria-label="Priority filter" class="border rounded-lg px-3 py-2 text-sm bg-white">'+
+    ['All','Urgent','High','Medium','Low'].map(x=>filterOption(x,DATA.todoPriority)).join('')+'</select>'+
+   '<select id="mktSortFilter" onchange="marketingTodoSetSort(this.value)" aria-label="Sort tasks" class="border rounded-lg px-3 py-2 text-sm bg-white">'+
+    [['due','Deadline'],['priority','Priority'],['recent','Recently Updated']].map(x=>filterOption(x[0],DATA.todoSort,x[1])).join('')+'</select>'+
+  '</div>'+
+  '<div class="flex flex-wrap items-center justify-between gap-2"><p class="text-xs text-slate-500">'+matched.length+' results · '+active.length+' active tasks</p>'+btn('+ Add Task','openMarketingTask()','gold')+'</div>'+
+  '<div class="grid gap-3">'+(matched.length?matched.map(marketingTodoRow).join(''):empty('No tasks match these filters. Try All status or create a new task.'))+'</div>');
+}
+function marketingDailyRow(t,checked,disabled){
+ const id=uid(t);
+ return '<label class="flex items-start gap-3 p-3 border-b border-slate-100 last:border-b-0 hover:bg-stone-50">'+
+  '<input type="checkbox" class="mkt-daily-task mt-1 w-4 h-4 accent-amber-700" value="'+h(id)+'" '+(checked?'checked ':'')+
+   (disabled?'disabled ':'')+'aria-label="Select '+h(t.title)+'">'+
+  '<span class="min-w-0 flex-1"><b class="text-sm text-slate-900">'+h(t.title)+'</b>'+
+   '<span class="block text-xs text-slate-500 mt-1">'+h(t.business||'Other')+' · '+h(t.category||'General')+
+   ' · '+h(t.priority||'Medium')+' · Due '+h(t.due_date||'not set')+'</span>'+
+   '<span class="block text-xs text-slate-500 mt-1">'+h(t.status||'Not Started')+' · '+h(t.progress||0)+'%'+
+   (t.approval_status==='Changes Requested'?' · Revisions requested':'')+'</span></span>'+
+  (!disabled?'<span class="text-[10px] font-semibold text-stone-400">Select</span>':'')+
+ '</label>';
+}
+function marketingWeekSummary(date){
+ const first=new Date(date+'T12:00:00Z');
+ if(Number.isNaN(first.getTime()))return '';
+ first.setUTCDate(first.getUTCDate()-6);
+ const from=first.toISOString().slice(0,10);
+ const mine=DATA.daily.filter(r=>String(r.user_id)===me()&&formatDate(r.work_date)>=from&&formatDate(r.work_date)<=date);
+ const am=mine.filter(r=>!!r.am_submitted_at).length,pm=mine.filter(r=>!!r.pm_submitted_at).length;
+ const count=mine.reduce((sum,r)=>{try{const p=JSON.parse(r.plan_json||'[]');return sum+(Array.isArray(p)?p.length:0);}catch(_){return sum;}},0);
+ return '<section class="rounded-2xl border bg-white p-4 space-y-3">'+
+  '<h3 class="text-sm font-bold">Last 7 Days · Daily Report Summary</h3>'+
+  '<p class="text-xs text-slate-500">'+h(from)+' to '+h(date)+' · Your own reports</p>'+
+  '<div class="grid grid-cols-3 gap-2">'+[['Morning Plans',am],['Evening Results',pm],['Planned Tasks',count]].map(x=>
+   '<div class="rounded-xl border p-3"><p class="text-[10px] text-slate-500">'+x[0]+'</p><b class="text-xl">'+x[1]+'</b></div>').join('')+'</div></section>';
+}
+function drawMarketingTeamDaily(){
+ const date=DATA.date||today();
+ const reportRows=DATA.daily.filter(r=>formatDate(r.work_date)===date);
+ const ownHeader='<div class="flex flex-wrap justify-between items-end gap-3 rounded-xl bg-white border p-3">'+
+  '<label class="text-xs font-bold">Report Date<input type="date" value="'+h(date)+'" onchange="marketingDate(this.value)" class="block border rounded-lg px-3 py-2 mt-1 text-sm"></label>'+
+  '<div class="flex gap-2">'+btn('My Daily Plan','marketingDailyView(\'My Daily\')')+'</div></div>';
+ const rows=reportRows.map(r=>{
+  let ids=[],result={};
+  try{ids=JSON.parse(r.plan_json||'[]');if(!Array.isArray(ids))ids=[];}catch(_){}
+  try{result=JSON.parse(r.result_json||'{}');}catch(_){}
+  const who=DATA.staff.find(p=>p.id===r.user_id);
+  return '<article class="border rounded-xl bg-white p-4 space-y-3">'+
+   '<div class="flex flex-wrap justify-between gap-2"><b class="text-sm">'+h(who?.name||r.user_name||'Marketing Staff')+'</b>'+
+    '<div class="flex flex-wrap gap-2">'+badge(r.am_submitted_at?'AM Submitted':'AM Pending')+
+     badge(r.pm_submitted_at?'PM Submitted':'PM Pending',r.pm_submitted_at?'bg-green-50 text-green-700':'bg-amber-50 text-amber-800')+'</div></div>'+
+   '<p class="text-xs text-slate-500">'+ids.length+' planned tasks</p>'+
+   '<div class="rounded-lg border divide-y">'+ids.map(id=>{const t=DATA.tasks.find(x=>x.id===id);return '<div class="px-3 py-2 text-xs">'+h(t?.title||'Task '+id.slice(0,8))+
+      (t?' · '+h(t.status)+' · '+h(t.progress)+'%':'')+'</div>';}).join('')+'</div>'+
+   (r.pm_submitted_at?'<p class="text-sm whitespace-pre-wrap"><b>Evening Result:</b> '+h(result.note||'No summary recorded')+'</p>':
+     '<p class="text-xs text-amber-800">Evening Result has not been submitted.</p>')+'</article>';
+ }).join('');
+ frame('Marketing Team Daily Review','Morning plans and evening results for Marketing staff only.',
+  ownHeader+'<div class="grid md:grid-cols-2 gap-3">'+(rows||empty('No Marketing Daily Reports submitted for this date.'))+'</div>');
 }
 function drawDaily(){
- const date=DATA.date||today();
- const day=DATA.daily.find(r=>String(r.user_id)===me()&&formatDate(r.work_date)===date);
- let planned=[];
- try{planned=JSON.parse(day&&day.plan_json||'[]');if(!Array.isArray(planned))planned=[];}catch(_){}
- const selected=planned.length?planned:[];
- const ownTasks=DATA.tasks.filter(t=>t.assignee_id===me()||(t.created_by===me()&&!t.assignee_id));
- const box=ownTasks.map(t=>'<label class="flex gap-3 items-start px-3 py-2 border-b last:border-0 text-sm"><input type="checkbox" class="mkt-daily-task mt-1" value="'+h(uid(t))+'" '+(selected.includes(t.id)?'checked':'')+'><span><b>'+h(t.title)+'</b><small class="block text-stone-500">'+h(t.business||'')+' · '+h(t.status)+' · '+h(t.progress||0)+'%</small></span></label>').join('');
- const hasAM=!!day?.am_submitted_at;
- let summary='';try{summary=JSON.parse(day?.result_json||'{}').note||'';}catch(_){}
- frame('Daily Plan & Evening Result','Choose existing tasks — updating the same task never duplicates it.',
- '<div class="bg-white border rounded-2xl p-4 space-y-3">'+
- '<div class="flex justify-between flex-wrap items-center gap-3"><label class="text-sm font-bold">Work date <input type="date" value="'+h(date)+'" onchange="marketingDate(this.value)" class="ml-2 border rounded-lg px-2 py-2 text-sm"></label>'+
- badge(hasAM?'Morning submitted':'Morning not submitted',hasAM?'bg-green-50 text-green-700':'bg-amber-50 text-amber-700')+
- badge(day?.pm_submitted_at?'Evening submitted':'Evening pending')+'</div>'+
- '<p class="text-xs text-stone-500">Select tasks planned for today. Leave the task in progress when work takes multiple days; use Progress to record status and work notes.</p>'+
- '<div class="border rounded-xl max-h-[300px] overflow-y-auto">'+(box||empty('Create or assign a task to start your Daily Plan.'))+'</div>'+
- (!hasAM?btn('Submit Morning Plan','submitMarketingDaily(\'am\')','gold'):'<p class="text-xs text-green-700">Morning Plan locked; edit progress through your existing To-Do tasks.</p>')+
- '<label class="block text-sm font-semibold">Evening result summary<textarea id="mktEveningNotes" rows="3" placeholder="What did you finish? What is still pending?" class="mt-1 block w-full border rounded-lg p-3 text-sm">'+h(summary)+'</textarea></label>'+
- btn(day?.pm_submitted_at?'Update Evening Result':'Submit Evening Result','submitMarketingDaily(\'pm\')','gold')+
- '</div>');
+ if(manager()&&DATA.dailyView==='Team Review')return drawMarketingTeamDaily();
+ const date=DATA.date||today(),day=DATA.daily.find(r=>String(r.user_id)===me()&&formatDate(r.work_date)===date);
+ let planned=[],result={};
+ try{planned=JSON.parse(day?.plan_json||'[]');if(!Array.isArray(planned))planned=[];}catch(_){}
+ try{result=JSON.parse(day?.result_json||'{}')||{};}catch(_){}
+ const hasAM=!!day?.am_submitted_at,hasPM=!!day?.pm_submitted_at;
+ const ownTasks=DATA.tasks.filter(marketingOwnDaily);
+ const draft=DATA.dailyDraftIds.length?DATA.dailyDraftIds:planned;
+ const planRows=hasAM?planned.map(id=>DATA.tasks.find(t=>t.id===id)).filter(Boolean):ownTasks.filter(t=>!marketingClosed(t)||draft.includes(t.id));
+ const pmIds=Array.isArray(result.task_ids)?result.task_ids:planned;
+ const eveningRows=hasAM?ownTasks.filter(t=>planned.includes(t.id)||!marketingClosed(t)):[];
+ const selected=hasAM?pmIds:draft;
+ const summary=String(result.note||'');
+ const statusBar='<div class="rounded-2xl border bg-white p-4 flex flex-wrap gap-3 items-end justify-between">'+
+  '<label class="text-xs font-bold">Report Date<input type="date" value="'+h(date)+'" onchange="marketingDate(this.value)" class="block mt-1 border rounded-lg px-3 py-2 text-sm"></label>'+
+  '<div class="flex flex-wrap items-center gap-2">'+badge('AM: '+(hasAM?'Submitted':'Not Started'),hasAM?'bg-green-50 text-green-700':'bg-amber-50 text-amber-800')+
+   badge('PM: '+(hasPM?'Submitted':'Not Started'),hasPM?'bg-green-50 text-green-700':'bg-blue-50 text-blue-800')+
+   badge('Planned: '+planned.length)+'</div></div>';
+ const morning='<section class="space-y-3"><div class="flex flex-wrap items-center justify-between gap-2">'+
+  '<div><h3 class="text-base font-bold">Morning Plan</h3><p class="text-xs text-slate-500 mt-1">Select your existing Marketing To-Do tasks for today.</p></div>'+
+  (!hasAM?'<div class="flex flex-wrap gap-2">'+btn('Carry Forward Unfinished','carryMarketingUnfinished()')+
+   btn('+ Add Task','openMarketingTask()')+'</div>':'')+'</div>'+
+  '<div class="bg-white rounded-xl border overflow-hidden">'+
+   (planRows.length?planRows.map(t=>hasAM?
+    '<div class="flex justify-between items-center gap-3 border-b last:border-b-0 p-3"><div><b class="text-sm">'+h(t.title)+'</b>'+
+      '<p class="text-xs text-slate-500">'+h(t.category||'General')+' · '+h(t.business||'Other')+' · '+h(t.priority||'Medium')+'</p></div>'+
+      badge(t.status)+'</div>':
+    marketingDailyRow(t,selected.includes(t.id),false)).join(''):
+    '<div class="text-sm text-center p-8 text-slate-500">No personal To-Do tasks yet. Create a task or have your manager assign one.</div>')+
+   '</div>'+
+   (!hasAM?'<div class="flex flex-wrap gap-2">'+btn('Submit Morning Plan','submitMarketingDaily(\'am\')','gold')+
+    '<span class="text-xs text-slate-500 self-center">Submitting locks the morning task selection.</span></div>':
+    '<div class="text-xs text-green-700">Morning Plan submitted '+h(formatDate(day.am_submitted_at))+' · '+planned.length+' linked tasks. No duplicate tasks were created.</div>')+
+  '</section>';
+ const evening=hasAM?'<section class="space-y-3 border-t pt-5">'+
+   '<div><h3 class="text-base font-bold">Evening Result</h3>'+
+    '<p class="text-xs text-slate-500 mt-1">Update each task\'s progress through Quick Update, then select work done today and summarize the results.</p></div>'+
+   '<div class="bg-white rounded-xl border divide-y">'+
+    (eveningRows.length?eveningRows.map(t=>'<div class="p-3 flex gap-3 items-start">'+
+      '<input type="checkbox" class="mkt-daily-task mt-1 w-4 h-4 accent-amber-700" value="'+h(uid(t))+'" '+(selected.includes(t.id)?'checked':'')+'>'+
+      '<div class="min-w-0 flex-1"><b class="text-sm">'+h(t.title)+'</b>'+
+       '<p class="text-xs text-slate-500">'+h(t.status)+' · '+h(t.progress||0)+'% · '+h(t.business||'Other')+'</p></div>'+
+      btn('Quick Update','openMarketingProgress(\''+uid(t)+'\')')+'</div>').join(''):empty('No active tasks available.'))+
+    '</div>'+
+   '<label class="block text-xs font-bold">Evening Result Summary<textarea id="mktEveningNotes" rows="3" class="mt-2 w-full border rounded-xl p-3 text-sm" placeholder="What was completed, what is pending, and what needs support?">'+h(summary)+'</textarea></label>'+
+   '<div class="flex flex-wrap items-center gap-2">'+btn(hasPM?'Update Evening Result':'Submit Evening Result','submitMarketingDaily(\'pm\')','gold')+
+    '<span class="text-xs text-slate-500">Individual progress updates stay in To-Do history.</span></div></section>':
+   '<section class="rounded-xl border border-slate-200 bg-slate-50 p-4"><h3 class="text-base font-bold">Evening Result</h3>'+
+    '<p class="text-xs text-slate-600 mt-1">Submit today\'s Morning Plan first. The Evening Result will then show the same tasks with progress update buttons.</p></section>';
+ frame('Daily Plan & Evening Result','One report per day · Morning Plan and Evening Result stay together, like Sales Daily Reports.',
+  (manager()?'<div class="flex gap-2">'+btn('My Daily Plan','marketingDailyView(\'My Daily\')','gold')+
+   btn('Team Daily Review','marketingDailyView(\'Team Review\')')+'</div>':'')+
+   statusBar+morning+evening+marketingWeekSummary(date));
 }
+
 function drawCalendar(){
  const month=DATA.month||today().slice(0,7),all=tasks().filter(t=>formatDate(t.post_date).startsWith(month)).sort((a,b)=>formatDate(a.post_date).localeCompare(formatDate(b.post_date)));
  frame('Content Calendar','One publishing schedule for LPL and LPH, linked to production and approval.',
