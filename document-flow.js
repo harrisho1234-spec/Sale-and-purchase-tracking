@@ -6,6 +6,10 @@
   window.documentFlowState=df;
 
   function norm(v=''){return String(v||'').trim().toLowerCase().replace(/[\s-]+/g,'_')}
+  const displayRules=window.SalesTrackingDisplayRules;
+  const isServiceLine=item=>displayRules?.isServiceLine(item)===true;
+  const physicalStatus=item=>displayRules?.itemStatus(item)||'ordered';
+  function physicalItems(o){return (o.items||[]).filter(i=>!isServiceLine(i));}
   function isPre(o){return (o.sales_flow_type||o.order_type)==='pre_order'||String(o.sr_no||o.order_no||'').toUpperCase().startsWith('SR')}
   function isAdminRole(){return typeof isAdmin==='function'&&isAdmin()}
   function stockControllerTrackingRole(){return (state.profile?.role||'')==='stock_controller'}
@@ -35,14 +39,14 @@
   function refsForItem(id){return df.refs.filter(r=>r.sales_order_item_id===id)}
   function eventsForOrder(id){return df.events.filter(e=>e.sales_order_id===id)}
   function allArrived(o){
-    const items=o.items||[];if(!items.length)return false;
+    const items=physicalItems(o);if(!items.length)return false;
     return items.every(i=>{
       const linked=refsForItem(i.id);
       if(linked.length)return linked.every(r=>['arrived','completed'].includes(norm(r.po_status)));
-      return ['arrived','ready','delivered'].includes(norm(i.fulfillment_status));
+      return ['arrived','delivered'].includes(physicalStatus(i));
     });
   }
-  function allDelivered(o){const items=o.items||[];return !!items.length&&items.every(i=>norm(i.fulfillment_status)==='delivered')}
+  function allDelivered(o){const items=physicalItems(o);return !!items.length&&items.every(i=>physicalStatus(i)==='delivered')}
   function uniquePOs(o){
     const seen=new Map();refsForOrder(o).forEach(r=>seen.set(r.po_number,{no:r.po_number,status:r.po_status,eta:r.estimated_arrival}));return [...seen.values()];
   }
@@ -110,7 +114,7 @@
       steps=[
         stepHtml('TK/RK Issued',!!o.sales_invoice_no,false,o.sales_invoice_no||o.invoice_no||o.order_no||''),
         stepHtml('Paid',settled,!settled),
-        stepHtml('Arrived',(o.items||[]).some(i=>['arrived','ready','delivered'].includes(norm(i.fulfillment_status))),false),
+        stepHtml('Arrived',physicalItems(o).some(i=>['arrived','delivered'].includes(physicalStatus(i))),false),
         stepHtml('Delivered',delivered,settled&&!delivered)
       ].join('');
     }
@@ -192,7 +196,8 @@
           sales_order_items(
             id,product_id,product_code_snapshot,item_name_snapshot,image_url_snapshot,
             qty,unit_price,discount_amount,line_total,source_type,fulfillment_status,
-            notes,product_class_snapshot,product_type_snapshot,line_kind,created_at
+            notes,product_class_snapshot,product_type_snapshot,line_kind,created_at,
+            item_tracking(status,actual_arrival,delivered_at)
           )
         `).eq('id',orderId).single(),
         db.rpc('get_visible_sales_procurement_refs'),
@@ -229,15 +234,15 @@
 
       const itemRows=items.map(i=>{
         const links=refsByItem.get(i.id)||[];
-        const poText=links.length
-          ?links.map(r=>`<span class="inline-flex px-2 py-1 rounded-lg border border-blue-100 bg-blue-50 text-blue-700 text-[9px] font-bold">${esc(r.po_number||'PO Pending')} · Qty ${Number(r.qty_allocated||0)} · ${esc(titleCase(r.po_status||'pending'))}${r.estimated_arrival?' · ETA '+esc(fmtDate(r.estimated_arrival)):''}</span>`).join(' ')
+        const poText=isServiceLine(i)?''
+          :links.length?links.map(r=>`<span class="inline-flex px-2 py-1 rounded-lg border border-blue-100 bg-blue-50 text-blue-700 text-[9px] font-bold">${esc(r.po_number||'PO Pending')} · Qty ${Number(r.qty_allocated||0)} · ${esc(titleCase(r.po_status||'pending'))}${r.estimated_arrival?' · ETA '+esc(fmtDate(r.estimated_arrival)):''}</span>`).join(' ')
           :'<span class="text-[10px] text-gray-400">Not linked to supplier PO</span>';
         return `<div class="rounded-xl border bg-white p-3">
           <div class="grid md:grid-cols-[minmax(0,1fr)_80px_110px_110px] gap-3 items-start">
             <div class="min-w-0">
               <div class="flex flex-wrap items-center gap-2">
                 <b class="text-sm">${esc(i.product_code_snapshot||'No Code')}</b>
-                <span class="lr-badge lr-badge-gray">${esc(titleCase(i.fulfillment_status||'pending'))}</span>
+                ${!isServiceLine(i)?`<span class="lr-badge lr-badge-gray lr-fulfillment-badge">${esc(titleCase(physicalStatus(i)))}</span>`:''}
               </div>
               <div class="text-xs text-gray-600 mt-1">${esc(i.item_name_snapshot||'Item')}</div>
               ${i.notes?`<div class="text-[10px] text-gray-400 mt-1">${esc(i.notes)}</div>`:''}
