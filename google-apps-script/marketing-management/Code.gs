@@ -45,7 +45,7 @@ function mktRows(sh,headers){
   var data=sh.getRange(2,1,total,headers.length).getValues();
   return data.map(function(row,i){
     var obj={_row:i+2};
-    headers.forEach(function(h,j){var v=row[j];obj[h]=v instanceof Date?v.toISOString():v;});
+    headers.forEach(function(h,j){var v=row[j];obj[h]=v instanceof Date?(/(^|_)date$/.test(h)||h==='work_date'?Utilities.formatDate(v,'Asia/Phnom_Penh','yyyy-MM-dd'):v.toISOString()):v;});
     return obj;
   }).filter(function(r){return !!r.id;});
 }
@@ -69,7 +69,14 @@ function mktGetAuth(token){
   var canManage=['marketing_manager','admin','super_admin'].indexOf(role)>=0;
   var canApprove=canManage;
   if(!access.permissions || (!access.permissions['marketing.view'] && role!=='super_admin'))mktFail('Marketing permission is disabled');
-  return {id:String(user.id),name:mktStr(user.email,150),role:role,manage:canManage,approve:canApprove};
+  var rosterResponse=UrlFetchApp.fetch(url+'/rest/v1/rpc/get_marketing_staff',{
+    method:'post',headers:{Authorization:h.Authorization,apikey:key,'Content-Type':'application/json'},
+    payload:'{}',muteHttpExceptions:true
+  });
+  var roster=rosterResponse.getResponseCode()===200?JSON.parse(rosterResponse.getContentText()):[];
+  if(!Array.isArray(roster))roster=[];
+  var person=roster.find(function(x){return String(x.id)===String(user.id);});
+  return {id:String(user.id),name:mktStr(person&&person.name||user.email,150),role:role,manage:canManage,approve:canApprove,roster:roster};
 }
 function mktOwned(task,user){return !!task&&(user.manage||String(task.assignee_id)===user.id||String(task.created_by)===user.id);}
 function mktTaskById(tasks,id){return tasks.find(function(t){return String(t.id)===String(id);});}
@@ -121,7 +128,7 @@ function mktTaskFields(input,current,user){
       ['title','description','business','brand','category','concept','platforms','campaign','priority','start_date','due_date','post_date','asset_url'].forEach(function(k){v[k]=base[k];});
     }
   }
-  if(user.manage && v.assignee_id && !/^[a-f0-9-]{36}$/i.test(v.assignee_id))mktFail('Assignee must be a registered Marketing account');
+  if(user.manage && v.assignee_id && !user.roster.some(function(x){return String(x.id)===v.assignee_id && ['marketing','marketing_manager'].indexOf(String(x.role))>=0;}))mktFail('Assignee must be a registered active Marketing account');
   if(!current && !v.assignee_id && !user.manage)v.assignee_id=user.id;
   if(v.status==='Ready for Review')v.approval_status='Pending';
   if(current && v.asset_url!==mktStr(base.asset_url,600) && base.approval_status==='Approved')v.approval_status='Pending';
@@ -189,7 +196,7 @@ function mktDailySave(payload,user){
   var taskRows=mktRows(mktSheet('Tasks',MKT_TASK_HEADERS),MKT_TASK_HEADERS);
   var ids=Array.isArray(payload.task_ids)?payload.task_ids.map(function(x){return mktStr(x,40);}):[];
   if(ids.length>30||new Set(ids).size!==ids.length)mktFail('Invalid task selection');
-  ids.forEach(function(id){if(!mktOwned(mktTaskById(taskRows,id),user))mktFail('A selected task is not assigned to you');});
+  ids.forEach(function(id){var task=mktTaskById(taskRows,id);if(!task||(String(task.assignee_id)!==user.id && !(String(task.created_by)===user.id && !task.assignee_id)))mktFail('Daily Plan only includes your own assigned work');});
   var sh=mktSheet('Daily',MKT_DAILY_HEADERS),rows=mktRows(sh,MKT_DAILY_HEADERS);
   var current=rows.find(function(r){return String(r.user_id)===user.id&&String(r.work_date).slice(0,10)===date;});
   var now=mktNow(),next=current?Object.assign({},current):{id:Utilities.getUuid(),user_id:user.id,user_name:user.name,work_date:date,plan_json:'[]',result_json:'[]',am_submitted_at:'',pm_submitted_at:''};
