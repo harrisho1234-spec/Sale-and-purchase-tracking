@@ -519,7 +519,7 @@
     const cases=Array.isArray(o.return_cn_cases)?o.return_cn_cases:[];
     // Don't infer approval from a zero-dollar credit. A CN may be pending,
     // declined, or its credit may have been allocated to another invoice.
-    const decision=cnCount===0?'Not applicable'
+    const decision=!rf?'Status unavailable':cnCount===0?'Not applicable'
       :cases.length<cnCount?'Status unavailable'
       :cases.some(c=>c.approval_status==='pending')?'CN approval pending'
       :cases.some(c=>c.financial_decision==='pending')?'Pending'
@@ -533,8 +533,8 @@
       row('Original invoice amount',m(o.order_total))+
       row('Actual payments / deposits','−'+m(o.amount_paid),'text-green-700')+
       row('AR before customer credit',m(beforeCredit))+
-      (cnCount?row('Return value (reference only)',returnValue===null?'Unavailable':m(returnValue)+' <span class="font-normal text-[10px] text-amber-700">(not deducted)</span>','text-amber-700'):'')+
-      (cnCount?row('Financial decision',esc(decision),pending?'text-amber-700':'text-blue-700'):'')+
+      ((cnCount||!rf)?row('Return value (reference only)',returnValue===null?'Unavailable':m(returnValue)+' <span class="font-normal text-[10px] text-amber-700">(not deducted)</span>','text-amber-700'):'')+
+      ((cnCount||!rf)?row('Financial decision',esc(decision),pending?'text-amber-700':'text-blue-700'):'')+
       row('Approved credit applied to this invoice',applied>0?'−'+m(applied):m(0),'text-blue-700')+
       '<div class="border-t border-blue-200 mt-2 pt-2">'+row('Current AR / Balance Due',m(ar),ar>0?'text-red-600 text-sm':'text-green-700 text-sm')+'</div>'+
       (rf?.cn_numbers?'<div class="text-[10px] text-gray-500 mt-1">CN: '+esc(rf.cn_numbers)+'</div>':'')+
