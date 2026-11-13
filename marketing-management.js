@@ -394,34 +394,89 @@ async function saveTask(e){
  try{await api('save_task',{task:t});closeModal();note('Marketing task saved');await fetchMarketing();}
  catch(err){note(err.message,true);}
 }
+
 function openProgress(id){
  const t=DATA.tasks.find(x=>x.id===safeId(id));
  if(!own(t))return note('Task is not available',true);
- openModal('Update task progress',
- '<form onsubmit="saveMarketingProgress(event,\''+uid(t)+'\')" class="space-y-3">'+
- '<b class="text-sm">'+h(t.title)+'</b>'+
- '<label class="block text-xs font-semibold">Status<select id="mktProgressStatus" class="mt-1 w-full border rounded-lg p-2">'+opts(statuses,t.status)+'</select></label>'+
- '<label class="block text-xs font-semibold">Progress %<input id="mktProgressPct" type="number" min="0" max="100" value="'+h(t.progress||0)+'" class="mt-1 w-full border rounded-lg p-2"></label>'+
- '<label class="block text-xs font-semibold">What changed today?<textarea id="mktProgressNote" rows="3" class="mt-1 w-full border rounded-lg p-2" placeholder="Describe work completed or any blocker"></textarea></label>'+
- '<button class="rounded-lg px-4 py-2 bg-[#211d18] text-white text-sm">Save Progress</button></form>');
+ const n=Math.max(0,Math.min(100,Number(t.progress)||0));
+ openModal('Quick Update · '+h(t.title),
+  '<form onsubmit="saveMarketingProgress(event,\''+uid(t)+'\')" class="space-y-4">'+
+   '<p class="text-xs text-slate-500">Update status and progress without reopening task details. Every change goes into the task history.</p>'+
+   '<label class="block text-xs font-bold">Status<select id="mktProgressStatus" onchange="marketingQuickStatus(this.value)" class="block mt-2 w-full border rounded-xl p-3 text-sm bg-white">'+
+    opts(statuses,t.status)+'</select></label>'+
+   '<div><label class="block text-sm font-semibold">Progress: <span id="mktProgressLabel">'+n+'</span>%</label>'+
+    '<input id="mktProgressPct" type="range" min="0" max="100" step="5" value="'+n+'" oninput="document.getElementById(\'mktProgressLabel\').textContent=this.value" class="block w-full mt-3 accent-amber-700" aria-label="Task progress percentage">'+
+    '<div class="flex flex-wrap gap-2 mt-3">'+[0,25,50,75,100].map(x=>
+     btn(x+'%','marketingQuickPercent('+x+')')).join('')+'</div></div>'+
+   '<label class="block text-xs font-semibold">Progress Note / Blocked Reason<textarea id="mktProgressNote" rows="3" class="mt-2 block w-full border rounded-xl p-3 text-sm" placeholder="What changed since your previous update?"></textarea></label>'+
+   '<p class="text-xs text-slate-500">Completing or submitting work for review sends it to Marketing approval; published posts still require approval.</p>'+
+   '<div class="flex flex-wrap gap-2"><button class="bg-[#211d18] text-white rounded-xl px-5 py-2.5 text-sm font-semibold">Save Progress</button>'+
+    btn('Cancel','closeModal()')+'</div>'+
+  '</form>');
 }
 async function saveProgress(e,id){
  e.preventDefault();
- const p={id,status:document.getElementById('mktProgressStatus').value,progress:Number(document.getElementById('mktProgressPct').value),note:document.getElementById('mktProgressNote').value};
- try{await api('update_task',p);closeModal();note('Progress recorded in task history');await fetchMarketing();}
- catch(err){note(err.message,true);}
+ const progress=Number(document.getElementById('mktProgressPct')?.value||0);
+ const status=document.getElementById('mktProgressStatus')?.value||'In Progress';
+ const remark=document.getElementById('mktProgressNote')?.value.trim()||'';
+ if(status==='Blocked'&&!remark)return note('Enter a reason when marking a task Blocked',true);
+ if(status==='Cancelled'&&!remark)return note('Enter a reason when cancelling a task',true);
+ try{
+  await api('update_task',{id,status,progress,note:remark});
+  closeModal();
+  note('Marketing task progress and history saved');
+  await fetchMarketing();
+ }catch(err){note(err.message,true);}
+}
+function marketingDateTime(v){
+ try{return new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Phnom_Penh',day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(v));}
+ catch(_){return String(v||'');}
+}
+function marketingSnapshot(value){
+ if(!value)return null;
+ try{const result=JSON.parse(value);return result&&typeof result==='object'?result:null;}catch(_){return null;}
+}
+function marketingHistoryChange(e){
+ const before=marketingSnapshot(e.before_json),after=marketingSnapshot(e.after_json);
+ if(!before||!after)return [];
+ const fields=[['title','Task title'],['description','Description'],['status','Status'],['progress','Progress'],
+  ['start_date','Start date'],['due_date','Deadline'],['post_date','Posting date'],['priority','Priority'],
+  ['assignee_name','Assignee'],['campaign','Campaign'],['brand','Brand'],['approval_status','Review status']];
+ return fields.filter(x=>String(before[x[0]]??'')!==String(after[x[0]]??'')).map(x=>({
+   label:x[1],before:String(before[x[0]]??'Not set'),after:String(after[x[0]]??'Not set'),field:x[0]
+ }));
 }
 async function openHistory(id){
  const t=DATA.tasks.find(x=>x.id===safeId(id));
  if(!own(t))return;
- openModal('Task history — '+t.title,'<div id="mktHistory">Loading history…</div>');
+ openModal('Task Revision & Progress History',
+   '<div id="mktHistory" class="space-y-3 text-sm text-slate-500">Retrieving verified changes from the Marketing Activity Log…</div>');
  try{
- const events=await api('history',{id});
- document.getElementById('mktHistory').innerHTML=events.length?events.map(x=>
- '<div class="border-b p-3 text-sm"><b>'+h(x.event_type)+'</b> <span class="text-xs text-stone-500">'+h(x.created_at)+'</span>'+
- '<p class="text-xs">'+h(x.actor_name)+'</p>'+ (x.notes?'<p class="mt-1">'+h(x.notes)+'</p>':'')+'</div>').join(''):empty('No history yet.');
- }catch(err){document.getElementById('mktHistory').textContent=err.message;}
+  const events=await api('history',{id});
+  const target=document.getElementById('mktHistory');
+  if(!target)return;
+  const updates=events.filter(x=>x.event_type!=='task_created');
+  const revisionCount=updates.filter(x=>marketingHistoryChange(x).some(c=>['start_date','due_date','description'].includes(c.field))).length;
+  const progressCount=updates.filter(x=>marketingHistoryChange(x).some(c=>c.field==='progress')).length;
+  const meter=(text,value)=>'<div class="border rounded-xl p-3"><span class="text-[10px] text-slate-500">'+text+'</span><b class="block text-xl">'+value+'</b></div>';
+  target.innerHTML='<div class="space-y-4 max-h-[70vh] overflow-y-auto">'+
+   '<div><b class="block text-sm text-slate-900">'+h(t.title)+'</b><p class="text-xs text-slate-500 mt-1">Original updates, changes and review decisions · Phnom Penh time</p></div>'+
+   '<div class="grid grid-cols-3 gap-2">'+meter('Saved updates',updates.length)+meter('Progress changes',progressCount)+meter('Task revisions',revisionCount)+'</div>'+
+   '<div class="space-y-2 border-t pt-3">'+(events.length?events.map(e=>{
+    const changes=marketingHistoryChange(e);
+    return '<article class="border-l-[3px] border-slate-200 pl-3 py-2">'+
+     '<div class="flex flex-wrap items-center justify-between gap-2"><b class="text-sm text-slate-900">'+h(marketingDateTime(e.created_at))+'</b>'+
+     badge(String(e.event_type||'update').replaceAll('_',' '),'bg-slate-100 text-slate-700')+'</div>'+
+     '<p class="text-xs text-slate-500 mt-1">By '+h(e.actor_name||'Unknown')+'</p>'+
+     (changes.length?'<div class="mt-2 divide-y">'+changes.map(c=>
+      '<div class="grid sm:grid-cols-[110px_1fr] gap-1 py-2 text-xs"><b>'+h(c.label)+'</b><div class="break-words">'+
+      '<span class="text-slate-500 line-through">'+h(c.before.slice(0,200))+'</span> <span class="text-slate-400">→</span> '+
+      '<span class="font-semibold text-slate-900">'+h(c.after.slice(0,200))+'</span></div></div>').join('')+'</div>':'')+
+     (e.notes?'<div class="text-xs rounded-lg bg-slate-50 p-2 mt-2"><b>Note: </b>'+h(e.notes)+'</div>':'')+'</article>';
+   }).join(''):empty('No task changes recorded yet.'))+'</div></div>';
+ }catch(err){const target=document.getElementById('mktHistory');if(target)target.textContent=err.message;}
 }
+
 function openReview(id){
  if(!manager())return;
  const t=DATA.tasks.find(x=>x.id===safeId(id));
@@ -487,7 +542,46 @@ window.go=async function(page){
 window.marketingTab=changeTab;
 window.refreshMarketing=fetchMarketing;
 window.marketingFilter=function(s){const pos=document.getElementById('mktFilter')?.selectionStart||s.length;DATA.filter=s;drawTodo();const el=document.getElementById('mktFilter');if(el){el.focus();el.setSelectionRange(pos,pos);}};
-window.marketingDate=function(v){DATA.date=v;drawDaily();};
+window.marketingDate=function(v){DATA.date=v;DATA.dailyDraftIds=[];drawDaily();};
+window.marketingTodoSetStatus=function(v){DATA.todoStatus=v;drawTodo();};
+window.marketingTodoSetPriority=function(v){DATA.todoPriority=v;drawTodo();};
+window.marketingTodoSetSort=function(v){DATA.todoSort=v;drawTodo();};
+window.marketingDailyView=function(v){if(v==='Team Review'&&!manager())return;DATA.dailyView=v;drawDaily();};
+window.marketingQuickPercent=function(v){
+ const el=document.getElementById('mktProgressPct'),label=document.getElementById('mktProgressLabel');
+ if(el)el.value=v;
+ if(label)label.textContent=v;
+};
+window.marketingQuickStatus=function(v){if(v==='Completed')window.marketingQuickPercent(100);};
+window.addMarketingTodoToDaily=function(id){
+ const t=DATA.tasks.find(x=>x.id===safeId(id));
+ if(!t||!marketingOwnDaily(t))return note('Select one of your own Marketing tasks',true);
+ const date=DATA.date||today();
+ const current=DATA.daily.find(r=>r.user_id===me()&&formatDate(r.work_date)===date);
+ if(current?.am_submitted_at){
+  DATA.tab='Daily Plan & Result';DATA.dailyView='My Daily';draw();
+  return note('Morning Plan already submitted. Use Quick Update in Evening Result.',true);
+ }
+ DATA.dailyDraftIds=Array.from(new Set(DATA.dailyDraftIds.concat([t.id])));
+ DATA.tab='Daily Plan & Result';DATA.dailyView='My Daily';draw();
+ note('Task selected for today’s Morning Plan. Submit to save.');
+};
+window.carryMarketingUnfinished=function(){
+ const date=DATA.date||today();
+ const previous=DATA.daily.filter(r=>r.user_id===me()&&formatDate(r.work_date)<date&&r.am_submitted_at)
+   .sort((a,b)=>formatDate(b.work_date).localeCompare(formatDate(a.work_date)))[0];
+ if(!previous)return note('No earlier submitted Morning Plan to carry forward',true);
+ let ids=[];
+ try{ids=JSON.parse(previous.plan_json||'[]');if(!Array.isArray(ids))ids=[];}catch(_){}
+ const carrying=ids.filter(id=>{
+  const t=DATA.tasks.find(x=>x.id===id);
+  return t&&marketingOwnDaily(t)&&!marketingClosed(t);
+ });
+ if(!carrying.length)return note('No unfinished tasks found in your last Morning Plan',true);
+ DATA.dailyDraftIds=Array.from(new Set(DATA.dailyDraftIds.concat(carrying)));
+ drawDaily();
+ note(carrying.length+' unfinished task(s) selected. Submit the Morning Plan to save.');
+};
 window.marketingMonth=function(v){DATA.month=v;drawCalendar();};
 window.openMarketingTask=openTask;
 window.saveMarketingTask=saveTask;
