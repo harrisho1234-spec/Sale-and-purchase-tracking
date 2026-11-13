@@ -31,8 +31,24 @@ function make(role){
  assert.equal(mkt.ctx.state.page,'marketing');
  assert.equal(mkt.ctx.oldCalls.length,0);
  assert.match(mkt.els.get('content').innerHTML,/Marketing Overview|Marketing Management/);
+ mkt.ctx.window.marketingTab('My To-Do');
+ assert.match(mkt.els.get('content').innerHTML,/Marketing To-Do List/);
+ assert.match(mkt.els.get('content').innerHTML,/Status filter/);
+ assert.match(mkt.els.get('content').innerHTML,/Priority filter/);
+ assert.match(mkt.els.get('content').innerHTML,/Recently Updated/);
+ mkt.ctx.window.marketingTab('Daily Plan & Result');
+ assert.match(mkt.els.get('content').innerHTML,/Morning Plan/);
+ assert.match(mkt.els.get('content').innerHTML,/Evening Result/);
+ assert.match(mkt.els.get('content').innerHTML,/Last 7 Days/);
+ mkt.ctx.window.marketingDailyView('Team Review');
+ assert.doesNotMatch(mkt.els.get('content').innerHTML,/Marketing Team Daily Review/);
+
  const manager=make('marketing_manager');
  assert.deepEqual(Array.from(manager.ctx.window.navItems()).map(x=>x[0]),['marketing']);
+ await manager.ctx.window.go('marketing');
+ manager.ctx.window.marketingDailyView('Team Review');
+ assert.match(manager.els.get('content').innerHTML,/Marketing Team Daily Review/);
+
  const sales=make('sales');
  assert.equal(sales.ctx.window.navItems().some(x=>x[0]==='marketing'),false);
  await sales.ctx.window.go('marketing');
