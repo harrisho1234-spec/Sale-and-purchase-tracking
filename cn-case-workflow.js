@@ -44,7 +44,7 @@ function actions(){
      const t=b.textContent.trim();
      if(t==='Received')b.style.display='none';
      if(['Edit','Cancel','Delete'].includes(t)&&c.approval_status==='approved')b.style.display='none';
-     if(t==='Apply Customer Credit'&&
+     if(['Apply Customer Credit','Approve Credit & Update AR'].includes(t)&&
        (c.approval_status!=='approved'||!c.stock_complete||!!c.closed_at))b.style.display='none';
      if(t==='Remove Credit'&&!!c.closed_at)b.style.display='none';
    });
@@ -119,7 +119,7 @@ if(typeof priorView==='function')window.viewSalesReturn=async function(id){
  }
  if(c.approval_status==='rejected')add('Resubmit CN',()=>window.resubmitCNCase(id),'bg-amber-50 text-amber-800');
  if(c.approval_status==='approved'&&c.stock_complete&&c.financial_decision==='pending'&&canApprove()){
-  add('Apply Customer Credit',()=>window.setSalesReturnFinancialTreatment(id,'credit_ar'),'bg-blue-50 text-blue-700');
+  add('Approve Credit & Update AR',()=>window.setSalesReturnFinancialTreatment(id,'credit_ar'),'bg-blue-50 text-blue-700');
   add('Close Without Credit',()=>window.finalizeCNNoCredit(id),'bg-white text-gray-700');
  }
  if(c.approval_status==='approved'){
@@ -128,7 +128,7 @@ if(typeof priorView==='function')window.viewSalesReturn=async function(id){
    });
  }
  [...body.querySelectorAll('button')].forEach(button=>{
-  if(['Received','Remove Customer Credit','Apply Customer Credit'].includes(button.textContent.trim())&&
+  if(['Received','Remove Customer Credit','Apply Customer Credit','Approve Credit & Update AR'].includes(button.textContent.trim())&&
    (!c.stock_complete||c.approval_status!=='approved'||!!c.closed_at))button.style.display='none';
  });
 };
