@@ -223,12 +223,13 @@
       ordersQ = ordersQ.eq('sales_rep_id',repContextId());
     }
 
-    const [sr,or,rr,linked,financialReturns] = await Promise.all([
+    const [sr,or,rr,linked,financialReturns,cnWorkflows] = await Promise.all([
       summaryQ,
       ordersQ,
       db.rpc('get_sales_tracking_return_summary'),
       db.rpc('get_visible_sr_split_invoice_list'),
-      db.rpc('get_sales_tracking_return_financial_breakdown')
+      db.rpc('get_sales_tracking_return_financial_breakdown'),
+      db.rpc('get_visible_cn_case_workflows')
     ]);
     if(sr.error) throw sr.error;
     if(or.error) throw or.error;
@@ -237,6 +238,11 @@
     const returnMap=new Map((rr.data||[]).map(x=>[x.sales_order_item_id,x]));
     if(financialReturns.error)console.warn('Invoice return financial breakdown unavailable:',financialReturns.error.message);
     const returnFinancialMap=new Map((financialReturns.data||[]).map(x=>[String(x.sales_order_id),x]));
+    // Reuse the existing permission-checked CN workflow RPC. A recorded
+    // return is not automatically a finance approval; status must be read.
+    if(cnWorkflows.error)console.warn('CN financial decision status unavailable:',cnWorkflows.error.message);
+    const visibleCNs=Array.isArray(cnWorkflows.data)?cnWorkflows.data:[];
+    const caseByCN=new Map(visibleCNs.map(c=>[String(c.cn_no||'').trim().toUpperCase(),c]));
     // Original SR remains the single accounting record. Invoice aliases are display/search metadata.
     if(linked.error)console.warn('TK/RK reference lookup:',linked.error.message);
     const splitBySr=new Map((Array.isArray(linked.data)?linked.data:[]).map(x=>[String(x.sr_id),x]));
@@ -248,6 +254,9 @@
         return_info:returnMap.get(i.id)||null
       }));
       const split=splitBySr.get(String(s.id))||null;
+      const finance=financialReturns.error?null:(returnFinancialMap.get(String(s.id))||{recorded_return_value:0,received_return_value:0,cn_count:0,cn_numbers:''});
+      const associatedCNs=String(finance?.cn_numbers||'').split(',').map(x=>x.trim().toUpperCase()).filter(Boolean);
+      const financeCases=associatedCNs.map(no=>caseByCN.get(no)).filter(Boolean);
       const legacy=String(s.sales_invoice_no||'').trim();
       const docs=[
         ...(legacy?[{invoice_no:legacy,type:legacy.slice(0,2).toUpperCase(),status:'issued',kind:'legacy'}]:[]),
@@ -259,7 +268,8 @@
       return {
         ...s,
         ...d,
-        return_financial:financialReturns.error?null:(returnFinancialMap.get(String(s.id))||{recorded_return_value:0,received_return_value:0,cn_count:0,cn_numbers:''}),
+        return_financial:finance,
+        return_cn_cases:financeCases,
         linked_documents:docs,
         linked_issued_count:docs.length,
         linked_pending_count:Number(split?.pending_count||0),
@@ -495,8 +505,8 @@
 
 
   function salesInvoiceReturnBalanceSummary(o){
-    // Balance Due is already NET of approved credit allocations in
-    // sales_order_summary. Do not subtract recorded returns a second time.
+    // Only approved credit ALLOCATED to this invoice reduces its saved AR.
+    // A recorded CN value is informational, never subtracted from AR twice.
     const rf=o.return_financial;
     const m=v=>money(Number(v||0),o.currency);
     const row=(label,value,style='')=>
@@ -506,21 +516,31 @@
     const ar=Number(o.balance_due||0);
     const beforeCredit=Number(o.gross_balance_due??Math.max(0,Number(o.order_total||0)-Number(o.amount_paid||0)));
     const cnCount=Number(rf?.cn_count||0);
+    const cases=Array.isArray(o.return_cn_cases)?o.return_cn_cases:[];
+    // Don't infer approval from a zero-dollar credit. A CN may be pending,
+    // declined, or its credit may have been allocated to another invoice.
+    const decision=cnCount===0?'Not applicable'
+      :cases.length<cnCount?'Status unavailable'
+      :cases.some(c=>c.approval_status==='pending')?'CN approval pending'
+      :cases.some(c=>c.financial_decision==='pending')?'Pending'
+      :cases.every(c=>c.financial_decision==='no_credit')?'No customer credit'
+      :cases.every(c=>c.financial_decision==='credit_ar')?'Customer credit approved'
+      :'Multiple CN decisions';
+    const pending=decision==='Pending'||decision==='CN approval pending';
     return '<section class="mt-3 rounded-xl border border-blue-100 bg-blue-50/40 p-3 text-xs">'+
       '<div class="flex flex-wrap items-center justify-between gap-2 mb-2"><h4 class="text-sm font-bold text-blue-950">Return / CN &amp; AR Breakdown</h4>'+
         (cnCount?'<span class="text-[10px] font-semibold text-blue-700">'+cnCount+' recorded CN'+(cnCount===1?'':'s')+'</span>':'')+'</div>'+
       row('Original invoice amount',m(o.order_total))+
       row('Actual payments / deposits','−'+m(o.amount_paid),'text-green-700')+
       row('AR before customer credit',m(beforeCredit))+
-      row('Recorded return value (after discounts)',returnValue===null?'Unavailable':'−'+m(returnValue),'text-amber-700')+
-      row('Approved customer credit applied','−'+m(applied),'text-blue-700')+
-      '<div class="border-t border-blue-200 mt-2 pt-2">'+row('Adjusted AR / Balance Due',m(ar),ar>0?'text-red-600 text-sm':'text-green-700 text-sm')+'</div>'+
+      (cnCount?row('Return value (reference only)',returnValue===null?'Unavailable':m(returnValue)+' <span class="font-normal text-[10px] text-amber-700">(not deducted)</span>','text-amber-700'):'')+
+      (cnCount?row('Financial decision',esc(decision),pending?'text-amber-700':'text-blue-700'):'')+
+      row('Approved credit applied to this invoice',applied>0?'−'+m(applied):m(0),'text-blue-700')+
+      '<div class="border-t border-blue-200 mt-2 pt-2">'+row('Current AR / Balance Due',m(ar),ar>0?'text-red-600 text-sm':'text-green-700 text-sm')+'</div>'+
       (rf?.cn_numbers?'<div class="text-[10px] text-gray-500 mt-1">CN: '+esc(rf.cn_numbers)+'</div>':'')+
       '<p class="text-[10px] text-gray-500 mt-2">'+
-        (returnValue!==null&&returnValue>0&&applied<=0
-          ?'Return recorded, but no Customer Credit is applied to this invoice yet. Manager/Admin must approve and apply credit to reduce AR. '
-          :'')+
-        'The recorded return is shown for reference, not deducted twice. Only approved credit allocated to THIS invoice reduces its AR; credit from a CN may be applied to another outstanding invoice. Actual payments are unchanged.</p>'+
+        (pending?'The CN has not completed all approval/financial steps. ':'')+
+        'The return value is for reference and is NOT deducted from AR. Only approved customer credit actually applied to this invoice reduces its balance. Credit from a CN may be used on another outstanding invoice. Actual cash payments are unchanged.</p>'+
       '</section>';
   }
 
