@@ -419,7 +419,18 @@ function drawDaily(){
     '<span class="text-xs text-slate-500 self-center">Submitting locks task selection. Each task remains linked to My To-Do / Content Calendar.</span></div>':
    '<div class="text-xs text-green-700">Morning Plan submitted · '+planned.length+' linked task(s).</div>')+
   '</section>';
- const evening=hasAM?'<section class="space-y-3 border-t pt-5">'+
+ const legacyEvening=hasAM&&DATA.dailyReportVersion<2?
+  '<section class="space-y-3 border-t pt-5"><div><h3 class="text-base font-bold">Evening Result · Summary Only</h3>'+
+  '<p class="text-xs text-slate-600 mt-1">The current Marketing Apps Script supports the original summary-only format. Per-task statuses and remarks will become available after management redeploys Code.gs.</p></div>'+
+  '<div class="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900">Existing daily reporting remains available. This legacy submission saves the overall summary and task links only; it does not save individual task results.</div>'+
+  '<div class="space-y-2">'+(plannedPM.length?dailySection(plannedPM,t=>
+    '<div class="p-3 flex flex-wrap gap-2 justify-between items-center"><div><b class="text-xs">'+h(t.title)+'</b>'+
+    (t.post_date?'<div>'+dailyCalendarLink(t)+'</div>':'')+'</div>'+
+    btn('Quick Update','openMarketingProgress(\''+uid(t)+'\')')+'</div>'):
+    empty('No planned Marketing tasks.'))+'</div>'+
+  '<label class="block text-xs font-bold">Evening Result Summary<textarea id="mktEveningNotes" rows="3" class="mt-2 w-full border rounded-xl p-3 text-sm" placeholder="Overall work completed and pending">'+h(summary)+'</textarea></label>'+
+  btn(hasPM?'Update Summary Only':'Submit Summary Only','submitMarketingDaily(\'pm\')','gold')+'</section>':'';
+ const evening=hasAM&&DATA.dailyReportVersion<2?legacyEvening:hasAM?'<section class="space-y-3 border-t pt-5">'+
   '<div class="flex flex-wrap justify-between items-center gap-2">'+
    '<div><h3 class="text-base font-bold">Evening Result</h3>'+
     '<p class="text-xs text-slate-500 mt-1">Report today\'s outcome and remark for each task planned this morning. Quick Update separately tracks overall task progress.</p></div>'+
@@ -618,7 +629,16 @@ async function submitDaily(phase){
    DATA.dailyDraftIds=[];
    note('Morning Plan submitted with '+ids.length+' linked Marketing tasks');
   }else if(phase==='pm'){
-   if(DATA.dailyReportVersion<2)return note('Update the Marketing Google Apps Script deployment before saving per-task Evening Results.',true);
+   if(!day?.am_submitted_at)return note('Submit your Morning Plan first.',true);
+   if(DATA.dailyReportVersion<2){
+    const planned=dailyParsed(day.plan_json,[]);
+    const summary=document.getElementById('mktEveningNotes')?.value.trim()||'';
+    if(!summary)return note('Enter the overall Evening Result Summary.',true);
+    await api('daily_save',{date,phase,task_ids:Array.isArray(planned)?planned:[],note:summary});
+    note('Summary-only Evening Result saved. Redeploy the Marketing Apps Script to enable individual task remarks.');
+    await fetchMarketing();
+    return;
+   }
    if(!day?.am_submitted_at)return note('Submit your Morning Plan first.',true);
    const planned=dailyParsed(day.plan_json,[]);
    const rows=Array.from(document.querySelectorAll('.mkt-daily-result-row'));
