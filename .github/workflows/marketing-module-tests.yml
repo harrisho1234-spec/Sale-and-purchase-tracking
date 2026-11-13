@@ -9,6 +9,7 @@ on:
       - 'granular-access-control.js'
       - 'index.html'
       - 'tests/marketing-module.test.cjs'
+      - 'tests/marketing-content-calendar.test.cjs'
       - '.github/workflows/marketing-module-tests.yml'
   pull_request:
     paths:
@@ -18,6 +19,7 @@ on:
       - 'granular-access-control.js'
       - 'index.html'
       - 'tests/marketing-module.test.cjs'
+      - 'tests/marketing-content-calendar.test.cjs'
       - '.github/workflows/marketing-module-tests.yml'
 jobs:
   verify:
@@ -33,3 +35,5 @@ jobs:
         run: node --check < google-apps-script/marketing-management/Code.gs
       - name: Test department navigation and access
         run: node tests/marketing-module.test.cjs
+      - name: Test brand-specific Marketing Content Calendar and shared list/month views
+        run: node --test tests/marketing-content-calendar.test.cjs
