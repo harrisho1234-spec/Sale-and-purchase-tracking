@@ -76,9 +76,9 @@ test('real-case style approved CN pending financial decision keeps AR $248, desp
  assert.match(html,/Approved credit applied to this invoice<\/span><b[^>]*>\$0.00<\/b>/);
  assert.match(html,/Current AR \/ Balance Due<\/span><b[^>]*>\$248.00<\/b>/);
  assert.match(html,/The CN has not completed all approval\/financial steps/);
- assert.match(html,/Invoice after return \\$240.00/);
- assert.match(html,/Expected outstanding AR \\$0.00/);
- assert.match(html,/Potential excess customer credit \\$32.00/);
+ assert.match(html,/Invoice after return \$240.00/);
+ assert.match(html,/Expected outstanding AR \$0.00/);
+ assert.match(html,/Potential excess customer credit \$32.00/);
  assert.doesNotMatch(html,/Return value \(reference only\)<\/span><b[^>]*>−\$280.00/);
 });
 test('CN manager decides no credit: display no credit but keep actual AR unchanged',()=>{
