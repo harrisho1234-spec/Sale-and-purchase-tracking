@@ -11,6 +11,10 @@
   function norm(v=''){return String(v||'').trim().toLowerCase().replace(/[\s-]+/g,'_')}
   function n(v){const x=Number(v||0);return Number.isFinite(x)?x:0}
   function repName(o){return o?.sales_rep_name_snapshot||o?.rep_name||''}
+  const rules=window.SalesTrackingDisplayRules;
+  function hasIssuedTkRk(o){return !!rules?.hasIssuedTkRk(o)}
+  function isPhysical(i){return !rules?.isServiceLine(i)}
+  function itemStatus(i){return rules?.itemStatus(i)||'ordered'}
   function isCancelled(o){return norm(o?.status)==='cancelled'}
   function financial(o,k,raw){return o?._srFinancial?o._srFinancial[k]:n(o?.[raw]);}
   function isSettled(o){return norm(o?.payment_status)==='paid'||financial(o,'balance','balance_due')<=0.001}
@@ -42,8 +46,8 @@
     if(s==='active')return isOpen(o);
     if(s==='uncleared')return isOpen(o)&&!isPendingPre(o);
     if(s==='preorder')return isOpen(o)&&isPendingPre(o);
-    if(s==='not_taken')return !isCancelled(o)&&items.some(i=>norm(i.fulfillment_status)==='ready');
-    if(s==='taken_unpaid')return isOpen(o)&&!isPendingPre(o)&&items.some(i=>['delivered','installed'].includes(norm(i.fulfillment_status)));
+    if(s==='not_taken')return !isCancelled(o)&&items.some(i=>isPhysical(i)&&itemStatus(i)==='arrived');
+    if(s==='taken_unpaid')return isOpen(o)&&!isPendingPre(o)&&items.some(i=>isPhysical(i)&&itemStatus(i)==='delivered');
     if(s==='settled')return !isCancelled(o)&&!o?._srFinancial?.historyOnly&&isSettled(o);
     return true;
   }
@@ -94,7 +98,7 @@
     const pre=rows.filter(isPendingPre);
     const prePaid=pre.reduce((a,o)=>a+financial(o,'received','amount_paid'),0);
     const preQty=pre.reduce((a,o)=>a+(o.items||[]).reduce((x,i)=>x+n(i.qty),0),0);
-    const readyItems=rows.flatMap(o=>(o.items||[]).filter(i=>norm(i.fulfillment_status)==='ready'));
+    const readyItems=rows.flatMap(o=>(o.items||[]).filter(i=>isPhysical(i)&&itemStatus(i)==='arrived'));
     const readyQty=readyItems.reduce((a,i)=>a+n(i.qty),0);
     const readyValue=readyItems.reduce((a,i)=>a+n(i.line_total),0);
     return {total,paid,activeBalance,pendingBalance,activeUncleared,prePaid,preQty,readyQty,readyValue};
@@ -154,28 +158,46 @@
       const card=trigger?.closest('.lr-order-card');
       if(!card)continue;
       const moneyBlocks=[...card.querySelectorAll('.lr-order-main > div:last-child > div')];
+      const hasIssued=hasIssuedTkRk(o);
+      const pendingLabel=isPendingPre(o)&&!hasIssued;
       if(moneyBlocks[0]){
         const lab=moneyBlocks[0].querySelector('.lr-money-label');
         const val=moneyBlocks[0].querySelector('.lr-money');
-        if(lab)lab.textContent=isPendingPre(o)?'Pre-Order Deposit':'Amount Received';
-        if(val){val.textContent=money(financial(o,'received','amount_paid'),o.currency);val.classList.remove('text-green-600','text-blue-600');val.classList.add(isPendingPre(o)?'text-blue-600':'text-green-600')}
+        if(lab)lab.textContent=pendingLabel?'Pre-Order Deposit':'Amount Received';
+        if(val){val.textContent=money(hasIssued?n(o.amount_paid):financial(o,'received','amount_paid'),o.currency);val.classList.remove('text-green-600','text-blue-600');val.classList.add(pendingLabel?'text-blue-600':'text-green-600')}
       }
       if(moneyBlocks[1]){
         const lab=moneyBlocks[1].querySelector('.lr-money-label');
         const val=moneyBlocks[1].querySelector('.lr-money');
-        if(lab)lab.textContent=isPendingPre(o)?'Est. Balance':(isSettled(o)?'Balance':'Active Balance');
+        if(lab)lab.textContent=pendingLabel?'Est. Balance':(isSettled(o)?'Balance':'Active Balance');
         if(val){
           val.textContent=money(financial(o,'balance','balance_due'),o.currency);
           val.classList.remove('text-red-500','text-green-600','text-gray-400','text-gray-500');
-          val.classList.add(isPendingPre(o)?'text-gray-400':(n(o.balance_due)>0.001?'text-red-500':'text-green-600'));
+          val.classList.add(pendingLabel?'text-gray-400':(n(o.balance_due)>0.001?'text-red-500':'text-green-600'));
         }
         let creditNote=moneyBlocks[1].querySelector('[data-credit-applied]');
         if(n(o.credit_applied)>0.001){
           if(!creditNote){creditNote=document.createElement('div');creditNote.dataset.creditApplied='1';creditNote.className='text-[9px] text-blue-600 mt-0.5';moneyBlocks[1].appendChild(creditNote)}
           creditNote.textContent='− '+money(o.credit_applied,o.currency)+' customer credit';
         }else if(creditNote){creditNote.remove()}
+        // A partial TK/RK issue changes the card labels, not the ledger.
+        // Show the issued / not-yet-invoiced values without inventing a
+        // payment allocation between them.
+        const split=hasIssued?rules?.issuedValueSplit(o):null;
+        let note=moneyBlocks[1].querySelector('[data-sr-invoice-split]');
+        if(split && split.uninvoicedValue>0.001){
+          if(!note){
+            note=document.createElement('div');
+            note.dataset.srInvoiceSplit='1';
+            note.className='text-[10px] text-gray-500 mt-1';
+            moneyBlocks[1].appendChild(note);
+          }
+          note.textContent='Issued TK/RK value '+money(split.issuedValue,o.currency)+
+            ' · Not yet invoiced '+money(split.uninvoicedValue,o.currency)+
+            ' · Balance shown is for the entire SR';
+        }else if(note){note.remove()}
       }
-      if(isPendingPre(o)&&n(o.balance_due)>0.001){
+      if(pendingLabel&&n(o.balance_due)>0.001){
         const badges=[...card.querySelectorAll('.lr-order-main .lr-badge')];
         const first=badges[0];
         if(first){first.textContent='Balance Due';first.className='lr-badge lr-badge-red'}
