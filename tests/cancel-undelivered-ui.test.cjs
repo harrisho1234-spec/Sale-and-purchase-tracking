@@ -41,6 +41,7 @@ w.db={rpc:async(name,args)=>{
  return {data:[]};
 }};
 w.eval(fs.readFileSync(path.join(__dirname,'../sales-returns.js'),'utf8'));
+w.renderReturnsPage=async()=>{}; // isolate form interactions from full dashboard rendering
 
 (async()=>{
  await w.openNewSalesReturn();
