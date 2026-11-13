@@ -415,9 +415,13 @@
     if(h.status==='cancelled')return showToast('Cancelled Credit Notes cannot be edited.','err');
     if(h.action==='exchange')return showToast('Existing Exchange CNs are locked for editing during the temporary pause. Their history is preserved.','err');
 
-    const {data,error}=await db.rpc('get_sales_return_items_detail_v2',{p_return_id:id});
-    if(error)return showToast(error.message,'err');
-    const items=data||[];
+    const [detail,sourceLinks]=await Promise.all([
+      db.rpc('get_sales_return_items_detail_v2',{p_return_id:id}),
+      db.rpc('get_cn_return_item_sources',{p_return_id:id})
+    ]);
+    if(detail.error||sourceLinks.error)return showToast(detail.error?.message||sourceLinks.error?.message,'err');
+    const items=detail.data||[];
+    const sourceByItem=new Map((sourceLinks.data||[]).map(x=>[String(x.return_item_id),x.source_invoice_part_id||'']));
     if(items.some(x=>x.disposition==='exchange'))return showToast('This historical Exchange CN is locked for editing. Its history is preserved.','err');
     const condOptions=['good','damaged','defective','other'];
     const dispOptions=h.action==='cancel_undelivered'?['no_stock_action']:['no_stock_action','return_to_stock','damaged_hold'];
@@ -425,7 +429,7 @@
     openModal(`Edit ${h.cn_no||'Credit Note'}`,`
       <form id="editSalesReturnForm" class="grid md:grid-cols-2 gap-4">
         <div><label class="text-xs font-semibold">CN Number</label><input value="${esc(h.cn_no||'')}" disabled class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-gray-50 text-gray-500"></div>
-        <div><label class="text-xs font-semibold">Source Invoice(s)</label><input value="${esc(h.original_document_no||'')}" disabled class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-gray-50 text-gray-500"></div>
+        <div><label class="text-xs font-semibold">Source Document(s)</label><input value="${esc(h.original_document_no||'')}" disabled class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-gray-50 text-gray-500"></div>
         <div><label class="text-xs font-semibold">Return Date</label><input id="editReturnDate" type="date" value="${esc(h.return_date||today())}" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
         <div><label class="text-xs font-semibold">Return Action</label><select id="editReturnAction" ${h.action==='cancel_undelivered'?'disabled':''} class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${h.action==='cancel_undelivered'?'<option value="cancel_undelivered" selected>Cancel Undelivered Items</option>':''}<option value="return_only" ${h.action==='return_only'?'selected':''}>Return Only / No Refund</option><option value="return_to_stock" ${h.action==='return_to_stock'?'selected':''}>Return to Stock</option><option value="damaged_return" ${h.action==='damaged_return'?'selected':''}>Damaged / Defective Return</option></select><p class="mt-1 text-[11px] text-gray-600">Overall customer return type; each item has separate Handling. No automatic stock movement.</p></div>
         <div class="md:col-span-2"><label class="text-xs font-semibold">Reason</label><input id="editReturnReason" value="${esc(h.reason||'')}" class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Reason for return"></div>
@@ -434,7 +438,7 @@
           <div class="font-bold text-sm">Returned Items</div>
           <div class="text-[10px] text-gray-400 mt-1">Change the returned quantity here. Example: if 3 were sold and only 1 came back, enter 1. Enter 0 to remove an item from this CN. Handling “Return to Stock” is a pending warehouse receipt instruction, not an inventory increase.</div>
           <div class="grid gap-2 mt-3">
-            ${items.map(x=>`<div class="edit-return-item border rounded-xl p-3 bg-white" data-sales-order-item-id="${x.sales_order_item_id}" data-max="${Number(x.max_edit_qty||0)}">
+            ${items.map(x=>`<div class="edit-return-item border rounded-xl p-3 bg-white" data-sales-order-item-id="${x.sales_order_item_id}" data-source-invoice-part-id="${sourceByItem.get(String(x.return_item_id))||''}" data-max="${Number(x.max_edit_qty||0)}">
               <div class="grid lg:grid-cols-[minmax(0,1.5fr)_110px_150px_180px] gap-3 items-end">
                 <div><div class="flex flex-wrap items-center gap-2"><div class="font-semibold text-sm">${esc(x.item_name||'Item')}</div>${x.source_document_no?`<span class="px-2 py-0.5 rounded-md border bg-gray-50 text-[9px] font-semibold text-gray-600">${esc(x.source_document_no)}</span>`:''}</div><div class="text-[10px] text-gray-400">${esc(x.product_code||'')} · Sold ${Number(x.qty_sold||0)} · Other CN returns ${Number(x.qty_returned_other||0)} · Max for this CN ${Number(x.max_edit_qty||0)}</div></div>
                 <div><label class="text-[9px] uppercase font-bold text-gray-400">Return Qty</label><input class="edit-return-qty mt-1 w-full border rounded-lg px-2 py-2" type="number" min="0" max="${Number(x.max_edit_qty||0)}" step="1" value="${Number(x.qty||0)}"></div>
@@ -465,6 +469,7 @@
         if(qty<0||qty>max)return showToast(`Return quantity must be between 0 and ${max}.`,'err');
         payload.push({
           sales_order_item_id:r.dataset.salesOrderItemId,
+          source_invoice_part_id:r.dataset.sourceInvoicePartId||null,
           qty,
           condition:r.querySelector('.edit-return-condition').value,
           disposition:r.querySelector('.edit-return-disposition').value,
