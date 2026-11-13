@@ -49,8 +49,13 @@ function mktRows(sh,headers){
     return obj;
   }).filter(function(r){return !!r.id;});
 }
+function mktSafeSheetCell(v){
+  // Prevent task titles, notes and asset links from becoming spreadsheet formulas.
+  if(typeof v==='string' && /^[\s]*[=+@-]/.test(v))return '\u200B'+v;
+  return v;
+}
 function mktWrite(sh,row,headers,obj){
-  sh.getRange(row,1,1,headers.length).setValues([headers.map(function(k){return obj[k]===undefined||obj[k]===null?'':obj[k];})]);
+  sh.getRange(row,1,1,headers.length).setValues([headers.map(function(k){return mktSafeSheetCell(obj[k]===undefined||obj[k]===null?'':obj[k]);})]);
 }
 function mktGetAuth(token){
   token=mktStr(token,6000);
@@ -83,7 +88,7 @@ function mktTaskById(tasks,id){return tasks.find(function(t){return String(t.id)
 function mktLog(taskId,user,event,notes,before,after){
   var sh=mktSheet('Activity',MKT_LOG_HEADERS);
   var record={id:Utilities.getUuid(),task_id:taskId,actor_id:user.id,actor_name:user.name,created_at:mktNow(),event_type:event,notes:mktStr(notes,1200),before_json:before?JSON.stringify(before):'',after_json:after?JSON.stringify(after):''};
-  sh.appendRow(MKT_LOG_HEADERS.map(function(k){return record[k]||'';}));
+  sh.appendRow(MKT_LOG_HEADERS.map(function(k){return mktSafeSheetCell(record[k]||'');}));
 }
 function mktTaskFields(input,current,user){
   if(!input||typeof input!=='object'||Array.isArray(input))mktFail('Task data is invalid');
@@ -116,6 +121,7 @@ function mktTaskFields(input,current,user){
     visibility:'department'
   };
   if(!v.title)mktFail('Task title is required');
+  if(v.asset_url && !/^https:\/\//i.test(v.asset_url))mktFail('Artwork link must use HTTPS');
   if(['LPH','LPL','BOTH','OTHER',''].indexOf(v.business)<0)mktFail('Choose LPH, LPL, Both or Other');
   if(MKT_STATUSES.indexOf(v.status)<0)mktFail('Invalid task status');
   if(['Low','Medium','High','Urgent'].indexOf(v.priority)<0)mktFail('Invalid priority');
