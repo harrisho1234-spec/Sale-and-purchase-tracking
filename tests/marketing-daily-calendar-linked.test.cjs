@@ -84,7 +84,7 @@ test('Morning Plan groups assigned tasks and opens the original Content Calendar
  m.ctx.window.marketingDailyOpenCalendar(uuid(1));
  assert.match(m.html(),/Content Calendar/);
  assert.match(m.modals.at(-1).title,/Scheduled Content/);
- assert.match(m.modals.at(-1).body,/Water Festival poster/);
+ assert.match(m.modals.at(-1).title,/Water Festival poster/);
 });
 test('Evening Result has a status and remark per Morning Plan task and links back to calendar',async()=>{
  const m=make();await m.ctx.window.go('marketing');m.ctx.window.marketingTab('Daily Plan & Result');m.ctx.window.marketingDate('2026-11-13');
