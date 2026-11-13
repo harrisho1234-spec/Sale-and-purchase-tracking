@@ -69,7 +69,7 @@ test('approved and unapproved CNs are not mixed in source accounting',()=>{
 
 test('preview module loads before tracking and credit forms; JS assets refresh',()=>{
   const helperAt=page.indexOf('cn-ar-preview.js?v=20261113-approved-return-credit1');
-  const trackingAt=page.indexOf('tracking-redesign.js?v=20261113-approved-return-credit1');
+  const trackingAt=page.indexOf('tracking-redesign.js?v=20261113-arrival-and-service-fees1');
   const creditAt=page.indexOf('return-credit-workflow.js?v=20261113-approved-return-credit1');
   const caseAt=page.indexOf('cn-case-workflow.js?v=20261113-approved-return-credit1');
   assert.ok(helperAt>0 && helperAt<trackingAt && trackingAt<creditAt && creditAt<caseAt);
