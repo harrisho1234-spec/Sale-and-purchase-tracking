@@ -4,6 +4,7 @@
   const statusOptions=['ordered','production','shipping','arrived','delivered'];
   const terminalStatuses=new Set(['delivered']);
   const isServiceLine=i=>window.SalesTrackingDisplayRules?.isServiceLine(i)===true;
+  const itemStatus=i=>window.SalesTrackingDisplayRules?.itemStatus(i)||canonical(i.fulfillment_status)||'ordered';
 
   function canEdit(){return ['admin','super_admin'].includes(state.profile?.role||'')}
   function norm(v){return String(v||'').trim().toLowerCase().replace(/[\s-]+/g,'_')}
@@ -51,7 +52,7 @@
   async function loadStatusOrder(orderId){
     const {data,error}=await db.from('sales_orders').select(`
       id,order_no,invoice_no,sr_no,sales_invoice_no,customer_id,customers(name),
-      sales_order_items(id,product_code_snapshot,item_name_snapshot,qty,line_kind,source_type,fulfillment_status)
+      sales_order_items(id,product_code_snapshot,item_name_snapshot,qty,line_kind,source_type,fulfillment_status,item_tracking(status,actual_arrival))
     `).eq('id',orderId).single();
     if(error)throw error;
     return {...data,customer_name:data.customers?.name||'',items:data.sales_order_items||[]};
@@ -135,13 +136,19 @@
       if(br.error)throw br.error;
       window._flexStatusOrder=o;
       const map=new Map();
-      for(const x of br.data||[]){if(!map.has(x.sales_order_item_id))map.set(x.sales_order_item_id,[]);map.get(x.sales_order_item_id).push({status:x.status,qty:Number(x.qty||0)});}
+      for(const x of br.data||[]){
+        // Non-explicit RPC rows are only the old sales_order_items fallback.
+        // Prefer confirmed item_tracking (Ready = Arrived) for those rows.
+        if(x.is_explicit===false)continue;
+        if(!map.has(x.sales_order_item_id))map.set(x.sales_order_item_id,[]);
+        map.get(x.sales_order_item_id).push({status:x.status,qty:Number(x.qty||0)});
+      }
       const doc=o.sales_invoice_no||o.sr_no||o.invoice_no||o.order_no||'Order';
       openModal('Update Item Tracking',`
         <form id="itemStatusForm" class="space-y-4">
           <div class="rounded-xl border bg-gray-50 p-4"><div class="text-[10px] uppercase font-bold text-gray-400">Order / Invoice</div><div class="font-bold mt-1">${esc(doc)}</div><div class="text-xs text-gray-500 mt-1">${esc(o.customer_name||'')}</div></div>
           <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800"><b>Flexible quantity status:</b> one product line can now be split. Example: Qty 3 = <b>Shipping 1</b> + <b>Arrived 2</b>. The quantities must always add up to the sold quantity.</div>
-          <div class="grid gap-3">${(o.items||[]).filter(i=>!isServiceLine(i)).map(i=>cardSummaryHtml(i,map.get(i.id)||[{status:canonical(i.fulfillment_status)||'ordered',qty:Number(i.qty||0)}])).join('')||'<div class="text-xs text-gray-500">No physical products require a fulfillment status. Service fees have no status.</div>'}</div>
+          <div class="grid gap-3">${(o.items||[]).filter(i=>!isServiceLine(i)).map(i=>cardSummaryHtml(i,map.get(i.id)||[{status:itemStatus(i),qty:Number(i.qty||0)}])).join('')||'<div class="text-xs text-gray-500">No physical products require a fulfillment status. Service fees have no status.</div>'}</div>
           <button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Item Status</button>
         </form>`);
       document.querySelectorAll('.flex-status-card').forEach(flexStatusRecalc);
