@@ -345,36 +345,54 @@ function drawMarketingTeamDaily(){
   '<label class="text-xs font-bold">Report Date<input type="date" value="'+h(date)+'" onchange="marketingDate(this.value)" class="block border rounded-lg px-3 py-2 mt-1 text-sm"></label>'+
   '<div class="flex gap-2">'+btn('My Daily Plan','marketingDailyView(\'My Daily\')')+'</div></div>';
  const rows=reportRows.map(r=>{
-  let ids=[],result={};
-  try{ids=JSON.parse(r.plan_json||'[]');if(!Array.isArray(ids))ids=[];}catch(_){}
-  try{result=JSON.parse(r.result_json||'{}');}catch(_){}
+  const raw=dailyParsed(r.plan_json,[]),ids=Array.isArray(raw)?raw:[];
+  const result=dailyParsed(r.result_json,{});
+  const pmIds=Array.isArray(result.task_ids)?result.task_ids:ids;
+  const extras=pmIds.filter(id=>!ids.includes(id));
   const who=DATA.staff.find(p=>p.id===r.user_id);
+  const plannedTasks=ids.map(id=>DATA.tasks.find(x=>x.id===id)).filter(Boolean);
+  const extraTasks=extras.map(id=>DATA.tasks.find(x=>x.id===id)).filter(Boolean);
+  const labels=plannedTasks.length?dailySection(plannedTasks,t=>
+   '<div class="px-3 py-2 text-xs flex gap-2 flex-wrap justify-between">'+
+   '<span>'+h(t.title)+(t.post_date?' · '+dailyCalendarLink(t):'')+'</span>'+
+   '<span class="text-stone-600">'+h(t.business||'Other')+'</span></div>'):
+   empty('No accessible planned tasks found.');
   return '<article class="border rounded-xl bg-white p-4 space-y-3">'+
-   '<div class="flex flex-wrap justify-between gap-2"><b class="text-sm">'+h(who?.name||r.user_name||'Marketing Staff')+'</b>'+
-    '<div class="flex flex-wrap gap-2">'+badge(r.am_submitted_at?'AM Submitted':'AM Pending')+
-     badge(r.pm_submitted_at?'PM Submitted':'PM Pending',r.pm_submitted_at?'bg-green-50 text-green-700':'bg-amber-50 text-amber-800')+'</div></div>'+
-   '<p class="text-xs text-slate-500">'+ids.length+' planned tasks</p>'+
-   '<div class="rounded-lg border divide-y">'+ids.map(id=>{const t=DATA.tasks.find(x=>x.id===id);return '<div class="px-3 py-2 text-xs">'+h(t?.title||'Task '+id.slice(0,8))+
-      (t?' · '+h(t.status)+' · '+h(t.progress)+'%':'')+'</div>';}).join('')+'</div>'+
-   (r.pm_submitted_at?'<p class="text-sm whitespace-pre-wrap"><b>Evening Result:</b> '+h(result.note||'No summary recorded')+'</p>':
-     '<p class="text-xs text-amber-800">Evening Result has not been submitted.</p>')+'</article>';
+   '<div class="flex flex-wrap justify-between gap-2"><div><b class="text-sm">'+h(who?.name||r.user_name||'Marketing Staff')+'</b>'+
+   '<p class="text-xs text-slate-500">'+h(date)+' · '+ids.length+' planned task(s)</p></div>'+
+   '<div class="flex flex-wrap gap-2">'+badge(r.am_submitted_at?'AM Submitted':'AM Pending')+
+   badge(r.pm_submitted_at?'PM Submitted':'PM Pending',r.pm_submitted_at?'bg-green-50 text-green-700':'bg-amber-50 text-amber-800')+'</div></div>'+
+   '<div class="space-y-2"><h4 class="text-xs font-bold">Morning Plan</h4>'+labels+'</div>'+
+   (r.pm_submitted_at?
+    '<div class="space-y-2 border-t pt-3"><h4 class="text-xs font-bold">Evening Result · Planned Tasks</h4>'+
+     (plannedTasks.length?dailySection(plannedTasks,t=>dailyReviewResults([t.id],result)):empty('No planned task results.'))+
+     (extraTasks.length?'<h4 class="text-xs font-bold mt-3">Additional / Unplanned Work</h4>'+
+       dailySection(extraTasks,t=>dailyReviewResults([t.id],result)):'')+
+     '<div class="rounded-xl border p-3 text-xs whitespace-pre-wrap"><b>Evening summary: </b>'+h(result.note||'No summary recorded')+'</div></div>':
+     '<p class="text-xs text-amber-800">Evening Result has not been submitted.</p>')+
+   '</article>';
  }).join('');
- frame('Marketing Team Daily Review','Morning plans and evening results for Marketing staff only.',
-  ownHeader+'<div class="grid md:grid-cols-2 gap-3">'+(rows||empty('No Marketing Daily Reports submitted for this date.'))+'</div>');
+ frame('Marketing Team Daily Review','Morning plans and per-task evening outcomes for Marketing staff only.',
+  ownHeader+'<div class="grid lg:grid-cols-2 gap-3">'+(rows||empty('No Marketing Daily Reports submitted for this date.'))+'</div>');
 }
 function drawDaily(){
  if(manager()&&DATA.dailyView==='Team Review')return drawMarketingTeamDaily();
  const date=DATA.date||today(),day=DATA.daily.find(r=>String(r.user_id)===me()&&formatDate(r.work_date)===date);
- let planned=[],result={};
- try{planned=JSON.parse(day?.plan_json||'[]');if(!Array.isArray(planned))planned=[];}catch(_){}
- try{result=JSON.parse(day?.result_json||'{}')||{};}catch(_){}
+ let planned=dailyParsed(day?.plan_json,[]),result=dailyParsed(day?.result_json,{});
+ if(!Array.isArray(planned))planned=[];
+ if(!result||typeof result!=='object'||Array.isArray(result))result={};
  const hasAM=!!day?.am_submitted_at,hasPM=!!day?.pm_submitted_at;
  const ownTasks=DATA.tasks.filter(marketingOwnDaily);
  const draft=DATA.dailyDraftIds.length?DATA.dailyDraftIds:planned;
- const planRows=hasAM?planned.map(id=>DATA.tasks.find(t=>t.id===id)).filter(Boolean):ownTasks.filter(t=>!marketingClosed(t)||draft.includes(t.id));
- const pmIds=Array.isArray(result.task_ids)?result.task_ids:planned;
- const eveningRows=hasAM?ownTasks.filter(t=>planned.includes(t.id)||!marketingClosed(t)):[];
- const selected=hasAM?pmIds:draft;
+ const selected=hasAM?planned:draft;
+ const planRows=hasAM?planned.map(id=>DATA.tasks.find(t=>t.id===id)).filter(Boolean):
+   ownTasks.filter(t=>!marketingClosed(t)||draft.includes(t.id));
+ const recordedIds=Array.isArray(result.task_ids)?result.task_ids:[];
+ const extraIds=[...new Set(recordedIds.filter(id=>!planned.includes(id)).concat(DATA.dailyUnplannedIds))];
+ const plannedPM=planned.map(id=>DATA.tasks.find(t=>t.id===id)).filter(Boolean);
+ const extraPM=extraIds.map(id=>DATA.tasks.find(t=>t.id===id)).filter(t=>t&&marketingOwnDaily(t));
+ const values=Object.fromEntries((Array.isArray(result.task_results)?result.task_results:[])
+   .filter(x=>x&&safeId(x.id)).map(x=>[x.id,x]));
  const summary=String(result.note||'');
  const statusBar='<div class="rounded-2xl border bg-white p-4 flex flex-wrap gap-3 items-end justify-between">'+
   '<label class="text-xs font-bold">Report Date<input type="date" value="'+h(date)+'" onchange="marketingDate(this.value)" class="block mt-1 border rounded-lg px-3 py-2 text-sm"></label>'+
@@ -382,37 +400,36 @@ function drawDaily(){
    badge('PM: '+(hasPM?'Submitted':'Not Started'),hasPM?'bg-green-50 text-green-700':'bg-blue-50 text-blue-800')+
    badge('Planned: '+planned.length)+'</div></div>';
  const morning='<section class="space-y-3"><div class="flex flex-wrap items-center justify-between gap-2">'+
-  '<div><h3 class="text-base font-bold">Morning Plan</h3><p class="text-xs text-slate-500 mt-1">Select your existing Marketing To-Do tasks for today.</p></div>'+
-  (!hasAM?'<div class="flex flex-wrap gap-2">'+btn('Carry Forward Unfinished','carryMarketingUnfinished()')+
+  '<div><h3 class="text-base font-bold">Morning Plan</h3>'+
+   '<p class="text-xs text-slate-500 mt-1">Choose existing Marketing tasks, including items from Content Calendar. No duplicate tasks are created.</p></div>'+
+  (!hasAM?'<div class="flex flex-wrap gap-2">'+btn('Select from Content Calendar','openMarketingDailyCalendarSelector()','gold')+
+   btn('Carry Forward Unfinished','carryMarketingUnfinished()')+
    btn('+ Add Task','openMarketingTask()')+'</div>':'')+'</div>'+
-  '<div class="bg-white rounded-xl border overflow-hidden">'+
-   (planRows.length?planRows.map(t=>hasAM?
-    '<div class="flex justify-between items-center gap-3 border-b last:border-b-0 p-3"><div><b class="text-sm">'+h(t.title)+'</b>'+
-      '<p class="text-xs text-slate-500">'+h(t.category||'General')+' · '+h(t.business||'Other')+' · '+h(t.priority||'Medium')+'</p></div>'+
-      badge(t.status)+'</div>':
-    marketingDailyRow(t,selected.includes(t.id),false)).join(''):
-    '<div class="text-sm text-center p-8 text-slate-500">No personal To-Do tasks yet. Create a task or have your manager assign one.</div>')+
-   '</div>'+
-   (!hasAM?'<div class="flex flex-wrap gap-2">'+btn('Submit Morning Plan','submitMarketingDaily(\'am\')','gold')+
-    '<span class="text-xs text-slate-500 self-center">Submitting locks the morning task selection.</span></div>':
-    '<div class="text-xs text-green-700">Morning Plan submitted '+h(formatDate(day.am_submitted_at))+' · '+planned.length+' linked tasks. No duplicate tasks were created.</div>')+
+  '<div class="space-y-2">'+(planRows.length?dailySection(planRows,t=>hasAM?
+   '<div class="p-3 flex flex-wrap justify-between items-center gap-2"><div><b class="text-sm">'+h(t.title)+'</b>'+
+   '<p class="text-xs text-slate-500">'+h(t.category||'General')+' · '+h(t.priority||'Medium')+'</p>'+
+   (t.post_date?dailyCalendarLink(t):'')+'</div>'+badge(t.status)+'</div>':
+   marketingDailyRow(t,selected.includes(t.id),false)):
+   empty('No personal Marketing tasks yet. Choose tasks from Content Calendar or ask your manager to assign one.'))+'</div>'+
+  (!hasAM?'<div class="flex flex-wrap gap-2">'+btn('Submit Morning Plan','submitMarketingDaily(\'am\')','gold')+
+    '<span class="text-xs text-slate-500 self-center">Submitting locks task selection. Each task remains linked to My To-Do / Content Calendar.</span></div>':
+   '<div class="text-xs text-green-700">Morning Plan submitted · '+planned.length+' linked task(s).</div>')+
   '</section>';
  const evening=hasAM?'<section class="space-y-3 border-t pt-5">'+
+  '<div class="flex flex-wrap justify-between items-center gap-2">'+
    '<div><h3 class="text-base font-bold">Evening Result</h3>'+
-    '<p class="text-xs text-slate-500 mt-1">Update each task\'s progress through Quick Update, then select work done today and summarize the results.</p></div>'+
-   '<div class="bg-white rounded-xl border divide-y">'+
-    (eveningRows.length?eveningRows.map(t=>'<div class="p-3 flex gap-3 items-start">'+
-      '<input type="checkbox" class="mkt-daily-task mt-1 w-4 h-4 accent-amber-700" value="'+h(uid(t))+'" '+(selected.includes(t.id)?'checked':'')+'>'+
-      '<div class="min-w-0 flex-1"><b class="text-sm">'+h(t.title)+'</b>'+
-       '<p class="text-xs text-slate-500">'+h(t.status)+' · '+h(t.progress||0)+'% · '+h(t.business||'Other')+'</p></div>'+
-      btn('Quick Update','openMarketingProgress(\''+uid(t)+'\')')+'</div>').join(''):empty('No active tasks available.'))+
-    '</div>'+
-   '<label class="block text-xs font-bold">Evening Result Summary<textarea id="mktEveningNotes" rows="3" class="mt-2 w-full border rounded-xl p-3 text-sm" placeholder="What was completed, what is pending, and what needs support?">'+h(summary)+'</textarea></label>'+
-   '<div class="flex flex-wrap items-center gap-2">'+btn(hasPM?'Update Evening Result':'Submit Evening Result','submitMarketingDaily(\'pm\')','gold')+
-    '<span class="text-xs text-slate-500">Individual progress updates stay in To-Do history.</span></div></section>':
-   '<section class="rounded-xl border border-slate-200 bg-slate-50 p-4"><h3 class="text-base font-bold">Evening Result</h3>'+
-    '<p class="text-xs text-slate-600 mt-1">Submit today\'s Morning Plan first. The Evening Result will then show the same tasks with progress update buttons.</p></section>';
- frame('Daily Plan & Evening Result','One report per day · Morning Plan and Evening Result stay together, like Sales Daily Reports.',
+    '<p class="text-xs text-slate-500 mt-1">Report today\'s outcome and remark for each task planned this morning. Quick Update separately tracks overall task progress.</p></div>'+
+   btn('+ Additional / Unplanned Work','openMarketingDailyUnplanned()')+'</div>'+
+  '<div class="space-y-2">'+(plannedPM.length?dailySection(plannedPM,t=>dailyResultRow(t,values,false)):
+    empty('No accessible Morning Plan tasks found.'))+'</div>'+
+  (extraPM.length?'<div class="space-y-2"><h4 class="text-xs font-bold text-amber-900">Additional / Unplanned Work · '+extraPM.length+'</h4>'+
+   dailySection(extraPM,t=>dailyResultRow(t,values,true))+'</div>':'')+
+  '<label class="block text-xs font-bold">Evening Result Summary<textarea id="mktEveningNotes" rows="3" class="mt-2 w-full border rounded-xl p-3 text-sm" placeholder="Overall accomplishments, delays, and support needed">'+h(summary)+'</textarea></label>'+
+  '<div class="flex flex-wrap items-center gap-2">'+btn(hasPM?'Update Evening Result':'Submit Evening Result','submitMarketingDaily(\'pm\')','gold')+
+    '<span class="text-xs text-slate-500">Every task must have a result status and a remark. Daily results do not bypass task approval.</span></div></section>':
+  '<section class="rounded-xl border border-slate-200 bg-slate-50 p-4"><h3 class="text-base font-bold">Evening Result</h3>'+
+   '<p class="text-xs text-slate-600 mt-1">Submit the Morning Plan first. Your Evening Result will then include the same tasks, with separate result statuses and remarks.</p></section>';
+ frame('Daily Plan & Evening Result','Marketing task reporting · Linked to Content Calendar, with individual morning plans and evening outcomes.',
   (manager()?'<div class="flex gap-2">'+btn('My Daily Plan','marketingDailyView(\'My Daily\')','gold')+
    btn('Team Daily Review','marketingDailyView(\'Team Review\')')+'</div>':'')+
    statusBar+morning+evening+marketingWeekSummary(date));
