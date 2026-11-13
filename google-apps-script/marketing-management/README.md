@@ -59,3 +59,15 @@ No staff credentials or fake accounts were created. After accounts are added, op
 ## Current limitations
 
 The initial module supports linked tasks, progress, manager approval, content calendar and reporting. It does **not** automatically post to Facebook/TikTok/Instagram, fetch social engagement analytics, ingest all historical individual staff Daily Reports, upload artwork bytes directly into Drive, or push notifications to background devices. Artwork and final deliverables are stored as links to existing Drive assets. Current overdue attention is in-app on the Marketing Overview page, not a background push notification.
+
+## Marketing Daily Plan linked to Content Calendar — 13 Nov 2026
+
+The Marketing Daily Plan now has a **Select from Content Calendar** action for choosing an existing assigned scheduled task. It links the same task ID to Morning Plan (no duplicate content item). Tasks are grouped by business (LPL/L'Imperial Luxury, LPH/LP Home, Both, Other). Calendar links open the original content entry on its publishing month.
+
+Evening Result now collects an individual **Completed / Partially Completed / Pending / Not Done** status plus required remark against **every** Morning Plan task. Additional/unplanned work can be linked from an existing assigned task. The manager's Team Daily Review displays those per-task outcomes and a general summary separately. Daily results are for reporting; they do **not** automatically change the content task's published status, bypass approval, or alter existing To-Do history. Quick Update remains the progress/audit mechanism.
+
+### Deployment required for per-task Evening Results
+
+The client change is delivered with GitHub Pages, but **Apps Script requires its own redeployment**. Copy the current [Code.gs](./Code.gs) into the existing private Marketing Apps Script project, save it, then choose **Deploy → Manage deployments → Edit (pencil) → Version: New version → Deploy**. Keep the existing script properties, spreadsheet, and Web App URL. Do not create a new blank spreadsheet or web app. Once deployed, the existing `list` response advertises `daily_report_version: 2`; the frontend then enables the itemized PM result submission. Until redeployed, the interface warns and prevents itemized PM outcomes from being silently discarded by the old script. Existing Daily records remain readable, and the **Daily** tab's `result_json` column now contains `task_results` for new submissions; no additional sheet columns or tables are required.
+
+Verify using a Marketing staff account: choose an assigned calendar task, submit Morning Plan, enter a status and remark per planned task, submit Evening Result, then view the result in **Team Daily Review** with a Marketing Manager account. Existing old records without itemized results retain their original summary and do not fabricate outcomes.
