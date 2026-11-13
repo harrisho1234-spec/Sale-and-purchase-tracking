@@ -227,16 +227,19 @@ function dailyCalendarLink(t){
 }
 function marketingDailyRow(t,checked,disabled){
  const id=uid(t);
- return '<label class="flex items-start gap-3 p-3 hover:bg-stone-50">'+
-  '<input type="checkbox" class="mkt-daily-task mt-1 w-4 h-4 accent-amber-700" value="'+h(id)+'" '+(checked?'checked ':'')+
-   (disabled?'disabled ':'')+'onchange="marketingDailyDraftToggle(this.value,this.checked)" aria-label="Select '+h(t.title)+'">'+
-  '<span class="min-w-0 flex-1"><b class="text-sm text-slate-900">'+h(t.title)+'</b>'+
-   '<span class="block text-xs text-slate-500 mt-1">'+h(t.category||'General')+' · '+h(t.priority||'Medium')+
-   ' · Due '+h(t.due_date||'not set')+'</span>'+
-   '<span class="block text-xs text-slate-500 mt-1">'+h(t.status||'Not Started')+' · '+h(t.progress||0)+'%</span>'+
-   (t.post_date?'<span class="block mt-1">'+dailyCalendarLink(t)+'</span>':'')+
-   '</span></label>';
+ return '<div class="flex items-start gap-3 p-3 hover:bg-stone-50">'+
+  '<label class="flex items-start gap-3 flex-1 min-w-0 cursor-pointer">'+
+   '<input type="checkbox" class="mkt-daily-task mt-1 w-4 h-4 accent-amber-700" value="'+h(id)+'" '+(checked?'checked ':'')+
+    (disabled?'disabled ':'')+'onchange="marketingDailyDraftToggle(this.value,this.checked)" aria-label="Select '+h(t.title)+'">'+
+   '<span class="min-w-0 flex-1"><b class="text-sm text-slate-900">'+h(t.title)+'</b>'+
+    '<span class="block text-xs text-slate-500 mt-1">'+h(t.category||'General')+' · '+h(t.priority||'Medium')+
+    ' · Due '+h(t.due_date||'not set')+'</span>'+
+    '<span class="block text-xs text-slate-500 mt-1">'+h(t.status||'Not Started')+' · '+h(t.progress||0)+'%</span>'+
+   '</span></label>'+
+   (t.post_date?'<span class="shrink-0">'+dailyCalendarLink(t)+'</span>':'')+
+ '</div>';
 }
+
 function dailyResultRow(t,values,unplanned){
  const id=uid(t),v=values?.[id]||{},status=DAILY_RESULT_STATUSES.includes(v.status)?v.status:'Pending';
  return '<article class="mkt-daily-result-row p-3 space-y-2" data-task-id="'+h(id)+'">'+
