@@ -135,5 +135,5 @@ test('frontend uses read-only return RPC and separately displays current approve
  assert.match(tracking,/Number\(o\.balance_due\|\|0\)/);
  assert.match(tracking,/salesInvoiceReturnBalanceSummary\(o\)/);
  assert.match(index,/sales-returns\.js\?v=20261113-invoice-scoped-cn1/);
- assert.match(index,/tracking-redesign\.js\?v=20261113-approved-return-credit1/);
+ assert.match(index,/tracking-redesign\.js\?v=20261113-arrival-and-service-fees1/);
 });
