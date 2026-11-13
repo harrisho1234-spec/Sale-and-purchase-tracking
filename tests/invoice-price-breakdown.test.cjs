@@ -90,6 +90,6 @@ test('shared pricing code loads before both invoice renderers',()=>{
  assert.ok(html.includes('invoice-price-breakdown.js?v=20261104-invoice-pricing1'));
  assert.ok(html.indexOf('invoice-price-breakdown.js')<html.indexOf('tracking-redesign.js'));
  assert.ok(html.indexOf('invoice-price-breakdown.js')<html.indexOf('sr-multiple-invoices.js'));
- assert.match(html,/tracking-redesign\.js\?v=20261113-approved-return-credit1/);
+ assert.match(html,/tracking-redesign\.js\?v=20261113-arrival-and-service-fees1/);
  assert.match(html,/sr-multiple-invoices\.js\?v=20261104-invoice-pricing1/);
 });
