@@ -7,6 +7,7 @@ on:
       - 'sales-returns.js'
       - 'database/20261113_cn_issued_invoice_sources.sql'
       - 'tests/cn-issued-invoice-sources.test.cjs'
+      - 'tests/cancel-undelivered-ui.test.cjs'
       - 'tracking-redesign.js'
       - 'cn-ar-preview.js'
       - 'return-credit-workflow.js'
@@ -34,6 +35,10 @@ jobs:
           node --check cn-ar-preview.js
           node --check return-credit-workflow.js
           node --check cn-case-workflow.js
+      - name: Install UI test dependencies
+        run: npm ci --ignore-scripts
+      - name: Verify issued-invoice return and uninvoiced SR cancellation interactions
+        run: node tests/cancel-undelivered-ui.test.cjs
       - name: Test issued TK/RK return sources and preserved legacy CN mapping
         run: node --test tests/cn-issued-invoice-sources.test.cjs
       - name: Test Return/CN financial breakdown and Exchange lock
