@@ -76,5 +76,5 @@ test('report deduplicates converted invoices while leaving payment documents unt
 test('HTML cache versions use updated safe invoice and DO scripts',()=>{
   assert.match(html,/sales-document-duplicate-merge\.js\?v=20261103-cross-invoice-guard1/);
   assert.match(html,/sr-multiple-invoices\.js\?v=20261104-invoice-pricing1/);
-  assert.match(html,/tracking-redesign\.js\?v=20261113-cn-ar-clarity1/);
+  assert.match(html,/tracking-redesign\.js\?v=20261113-approved-return-credit1/);
 });
