@@ -106,6 +106,22 @@ test('partial RK card uses Amount Received / Active Balance even if legacy pendi
  dom.window.close();
 });
 
+test('after TK/RK issuance, the unpaid pre-order header shows Balance Due rather than Pre-Order',()=>{
+ const start=tracking.indexOf('  function salesStatusBadge(o) {');
+ const end=tracking.indexOf('  function stageMeta(stage)',start);
+ assert.ok(start>0&&end>start);
+ const sandbox={
+  displayRules:rules,
+  cleanStatus:x=>String(x||'').toLowerCase(),
+  esc:x=>String(x??''),titleCase:x=>String(x||'')
+ };
+ vm.runInNewContext(tracking.slice(start,end)+'\nthis.badge=salesStatusBadge;',sandbox,{timeout:2000});
+ assert.match(sandbox.badge(invoice),/Balance Due/);
+ assert.doesNotMatch(sandbox.badge(invoice),/Pre-Order/);
+ const unissued={...invoice,linked_documents:[],sales_invoice_no:null,invoice_issued_at:null};
+ assert.match(sandbox.badge(unissued),/Pre-Order/);
+});
+
 test('service fee is excluded from all Sales Tracking status editors and arrival progress',()=>{
  assert.match(tracking,/item_tracking\(status,estimated_arrival,actual_arrival,delivered_at\)/);
  assert.match(tracking,/line_kind,fulfillment_status/);
