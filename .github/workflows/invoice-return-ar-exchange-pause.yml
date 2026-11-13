@@ -9,6 +9,12 @@ on:
       - 'tests/cn-issued-invoice-sources.test.cjs'
       - 'tests/cancel-undelivered-ui.test.cjs'
       - 'tracking-redesign.js'
+      - 'sales-tracking-display-rules.js'
+      - 'sales-tracking-legacy-balance-logic.js'
+      - 'document-flow.js'
+      - 'item-status.js'
+      - 'sales-item-flex-status.js'
+      - 'tests/sales-tracking-arrival-service-fees.test.cjs'
       - 'cn-ar-preview.js'
       - 'return-credit-workflow.js'
       - 'cn-case-workflow.js'
@@ -32,11 +38,18 @@ jobs:
         run: |
           node --check sales-returns.js
           node --check tracking-redesign.js
+          node --check sales-tracking-display-rules.js
+          node --check sales-tracking-legacy-balance-logic.js
+          node --check document-flow.js
+          node --check item-status.js
+          node --check sales-item-flex-status.js
           node --check cn-ar-preview.js
           node --check return-credit-workflow.js
           node --check cn-case-workflow.js
       - name: Install UI test dependencies
         run: npm install --no-save --ignore-scripts --package-lock=false --no-audit --no-fund
+      - name: Verify stock-received Arrived, no fee status, and issued TK/RK payment labels
+        run: node --test tests/sales-tracking-arrival-service-fees.test.cjs
       - name: Verify issued-invoice return and uninvoiced SR cancellation interactions
         run: node tests/cancel-undelivered-ui.test.cjs
       - name: Test issued TK/RK return sources and preserved legacy CN mapping
