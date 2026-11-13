@@ -604,13 +604,38 @@ function selectedTasks(){
 }
 async function submitDaily(phase){
  if(!DATA.ready)return;
- const date=DATA.date||today(),ids=selectedTasks(),notes=document.getElementById('mktEveningNotes')?.value||'';
+ const date=DATA.date||today(),day=DATA.daily.find(r=>String(r.user_id)===me()&&formatDate(r.work_date)===date);
  try{
-  await api('daily_save',{date,phase,task_ids:ids,note:notes});
-  note(phase==='am'?'Morning Plan submitted':'Evening Result saved');
+  if(phase==='am'){
+   const ids=selectedTasks();
+   if(!ids.length)return note('Choose at least one task for the Morning Plan.',true);
+   await api('daily_save',{date,phase,task_ids:ids});
+   DATA.dailyDraftIds=[];
+   note('Morning Plan submitted with '+ids.length+' linked Marketing tasks');
+  }else if(phase==='pm'){
+   if(!day?.am_submitted_at)return note('Submit your Morning Plan first.',true);
+   const planned=dailyParsed(day.plan_json,[]);
+   const rows=Array.from(document.querySelectorAll('.mkt-daily-result-row'));
+   const results=rows.map(row=>({
+    id:safeId(row.dataset.taskId),
+    status:row.querySelector('.mkt-daily-result-status')?.value||'',
+    note:row.querySelector('.mkt-daily-result-note')?.value.trim()||''
+   }));
+   const ids=results.map(x=>x.id);
+   if(!results.length||results.some(x=>!x.id||!DAILY_RESULT_STATUSES.includes(x.status)||!x.note))
+    return note('Select a result status and enter a remark for every Marketing task.',true);
+   if(new Set(ids).size!==ids.length||!planned.every(id=>ids.includes(id)))
+    return note('Every Morning Plan task must have one Evening Result.',true);
+   const summary=document.getElementById('mktEveningNotes')?.value.trim()||'';
+   if(!summary)return note('Enter the overall Evening Result Summary.',true);
+   await api('daily_save',{date,phase,task_ids:ids,task_results:results,report_version:2,note:summary});
+   DATA.dailyUnplannedIds=[];
+   note('Evening Result saved for '+results.length+' linked tasks');
+  }else return;
   await fetchMarketing();
  }catch(e){note(e.message,true);}
 }
+
 function taskForm(t){
  const val=k=>h((t&&t[k])||(k==='post_date'&&!t?DATA.calendarDraftDate:'')||'');
  const sel=(name,items,selected)=>'<label class="block text-xs font-semibold">'+h(name)+'<select name="'+h(name)+'" class="mt-1 block w-full border rounded-lg px-3 py-2 text-sm">'+opts(items,selected)+'</select></label>';
@@ -800,11 +825,21 @@ window.go=async function(page){
 window.marketingTab=changeTab;
 window.refreshMarketing=fetchMarketing;
 window.marketingFilter=function(s){const pos=document.getElementById('mktFilter')?.selectionStart||s.length;DATA.filter=s;drawTodo();const el=document.getElementById('mktFilter');if(el){el.focus();el.setSelectionRange(pos,pos);}};
-window.marketingDate=function(v){DATA.date=v;DATA.dailyDraftIds=[];drawDaily();};
+window.marketingDate=function(v){DATA.date=v;DATA.dailyDraftIds=[];DATA.dailyUnplannedIds=[];drawDaily();};
 window.marketingTodoSetStatus=function(v){DATA.todoStatus=v;drawTodo();};
 window.marketingTodoSetPriority=function(v){DATA.todoPriority=v;drawTodo();};
 window.marketingTodoSetSort=function(v){DATA.todoSort=v;drawTodo();};
 window.marketingDailyView=function(v){if(v==='Team Review'&&!manager())return;DATA.dailyView=v;drawDaily();};
+window.marketingDailyDraftToggle=function(id,checked){
+ id=safeId(id);
+ if(!id)return;
+ DATA.dailyDraftIds=checked?Array.from(new Set(DATA.dailyDraftIds.concat([id]))):DATA.dailyDraftIds.filter(x=>x!==id);
+};
+window.openMarketingDailyCalendarSelector=openDailyCalendarSelector;
+window.marketingDailyAddCalendarTask=dailyAddCalendarTask;
+window.marketingDailyOpenCalendar=dailyOpenCalendar;
+window.openMarketingDailyUnplanned=dailyAddUnplanned;
+window.marketingDailyAttachUnplanned=dailyAttachUnplanned;
 window.marketingQuickPercent=function(v){
  const el=document.getElementById('mktProgressPct'),label=document.getElementById('mktProgressLabel');
  if(el)el.value=v;
