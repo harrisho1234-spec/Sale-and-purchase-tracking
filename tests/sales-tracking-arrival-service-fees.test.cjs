@@ -56,7 +56,7 @@ test('Sales Tracking invoice detail renders two Arrived status badges and no fee
  const sandbox={
   ui:{salesExpanded:new Set(['sr1'])},state:{profile:{role:'sales'}},
   esc:x=>String(x??''),titleCase:x=>x?String(x).replace(/^./,x=>x.toUpperCase()):'',
-  money:fmt,cleanStatus:x=>String(x||'').toLowerCase(),
+  money:fmt,formatDate:x=>String(x||''),cleanStatus:x=>String(x||'').toLowerCase(),
   srTkRkLabel:()=> 'SR-2026-010 → RK2611-008',
   salesStatusBadge:()=>'',invoiceItemSummary:()=> '3 items',
   imageHtml:()=>'',returnInfo:()=>null,returnBadge:()=>'',repName:()=> 'Hout Pichbopha',
