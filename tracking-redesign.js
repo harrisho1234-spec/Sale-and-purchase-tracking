@@ -527,6 +527,13 @@
       :cases.every(c=>c.financial_decision==='credit_ar')?'Customer credit approved'
       :'Multiple CN decisions';
     const pending=decision==='Pending'||decision==='CN approval pending';
+    const projectedCredit=(cnCount===1&&pending&&applied<=0&&Number(returnValue)>0)
+      ?window.CnArPreview?.calculate({
+        invoiceTotal:o.order_total,
+        paymentsReceived:o.amount_paid,
+        otherCreditApplied:o.credit_applied,
+        netReturnValue:returnValue
+      }):null;
     return '<section class="mt-3 rounded-xl border border-blue-100 bg-blue-50/40 p-3 text-xs">'+
       '<div class="flex flex-wrap items-center justify-between gap-2 mb-2"><h4 class="text-sm font-bold text-blue-950">Return / CN &amp; AR Breakdown</h4>'+
         (cnCount?'<span class="text-[10px] font-semibold text-blue-700">'+cnCount+' recorded CN'+(cnCount===1?'':'s')+'</span>':'')+'</div>'+
@@ -537,6 +544,12 @@
       ((cnCount||!rf)?row('Financial decision',esc(decision),pending?'text-amber-700':'text-blue-700'):'')+
       row('Approved credit applied to this invoice',applied>0?'−'+m(applied):m(0),'text-blue-700')+
       '<div class="border-t border-blue-200 mt-2 pt-2">'+row('Current AR / Balance Due',m(ar),ar>0?'text-red-600 text-sm':'text-green-700 text-sm')+'</div>'+
+      (projectedCredit?'<div class="mt-2 p-2 rounded-lg border border-amber-200 bg-amber-50 text-[11px] text-amber-900">'+
+         '<b>If this return credit is approved (estimate only):</b> Invoice after return '+m(projectedCredit.invoiceAfterReturn)+
+         ' · Expected outstanding AR '+m(projectedCredit.projectedAR)+
+         ' · Potential excess customer credit '+m(projectedCredit.creditRemaining)+
+         '. Existing balance will not change until financial approval; credit could also be applied to other outstanding invoices.'+
+       '</div>':'')+
       (rf?.cn_numbers?'<div class="text-[10px] text-gray-500 mt-1">CN: '+esc(rf.cn_numbers)+'</div>':'')+
       '<p class="text-[10px] text-gray-500 mt-2">'+
         (pending?'The CN has not completed all approval/financial steps. ':'')+
