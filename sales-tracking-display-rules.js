@@ -2,7 +2,7 @@
 // Do not update inventory, payment allocations, fulfillment status or posted accounting.
 (function(root){
   'use strict';
-  const norm=v=>String(v||'').trim().toLowerCase().replace(/[\\s-]+/g,'_');
+  const norm=v=>String(v||'').trim().toLowerCase().replace(/[\s-]+/g,'_');
   const num=v=>{const n=Number(v);return Number.isFinite(n)?n:0;};
   const money=v=>Math.round((num(v)+Number.EPSILON)*100)/100;
   function isServiceLine(item){
