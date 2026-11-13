@@ -10,6 +10,7 @@ on:
       - 'index.html'
       - 'tests/marketing-module.test.cjs'
       - 'tests/marketing-content-calendar.test.cjs'
+      - 'tests/marketing-daily-calendar-linked.test.cjs'
       - '.github/workflows/marketing-module-tests.yml'
   pull_request:
     paths:
@@ -20,6 +21,7 @@ on:
       - 'index.html'
       - 'tests/marketing-module.test.cjs'
       - 'tests/marketing-content-calendar.test.cjs'
+      - 'tests/marketing-daily-calendar-linked.test.cjs'
       - '.github/workflows/marketing-module-tests.yml'
 jobs:
   verify:
@@ -37,3 +39,5 @@ jobs:
         run: node tests/marketing-module.test.cjs
       - name: Test brand-specific Marketing Content Calendar and shared list/month views
         run: node --test tests/marketing-content-calendar.test.cjs
+      - name: Test linked Marketing morning plans and per-task evening reporting
+        run: node --test tests/marketing-daily-calendar-linked.test.cjs
