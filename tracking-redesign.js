@@ -141,7 +141,7 @@
     const status = cleanStatus(o.status);
     if (status === 'cancelled') return `<span class="lr-badge lr-badge-gray">Cancelled</span>`;
     if (pay === 'paid') return `<span class="lr-badge lr-badge-green">Settled</span>`;
-    if (type === 'pre_order' || type === 'mixed') return `<span class="lr-badge lr-badge-blue">Pre-Order</span>`;
+    if ((type === 'pre_order' || type === 'mixed') && !displayRules?.hasIssuedTkRk(o)) return `<span class="lr-badge lr-badge-blue">Pre-Order</span>`;
     if (Number(o.balance_due||0) > 0) return `<span class="lr-badge lr-badge-red">Balance Due</span>`;
     return `<span class="lr-badge lr-badge-amber">${esc(titleCase(status||'Active'))}</span>`;
   }
