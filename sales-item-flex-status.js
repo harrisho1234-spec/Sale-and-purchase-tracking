@@ -3,6 +3,7 @@
 (function(){
   const statusOptions=['ordered','production','shipping','arrived','delivered'];
   const terminalStatuses=new Set(['delivered']);
+  const isServiceLine=i=>window.SalesTrackingDisplayRules?.isServiceLine(i)===true;
 
   function canEdit(){return ['admin','super_admin'].includes(state.profile?.role||'')}
   function norm(v){return String(v||'').trim().toLowerCase().replace(/[\s-]+/g,'_')}
@@ -50,7 +51,7 @@
   async function loadStatusOrder(orderId){
     const {data,error}=await db.from('sales_orders').select(`
       id,order_no,invoice_no,sr_no,sales_invoice_no,customer_id,customers(name),
-      sales_order_items(id,product_code_snapshot,item_name_snapshot,qty,fulfillment_status)
+      sales_order_items(id,product_code_snapshot,item_name_snapshot,qty,line_kind,source_type,fulfillment_status)
     `).eq('id',orderId).single();
     if(error)throw error;
     return {...data,customer_name:data.customers?.name||'',items:data.sales_order_items||[]};
@@ -140,7 +141,7 @@
         <form id="itemStatusForm" class="space-y-4">
           <div class="rounded-xl border bg-gray-50 p-4"><div class="text-[10px] uppercase font-bold text-gray-400">Order / Invoice</div><div class="font-bold mt-1">${esc(doc)}</div><div class="text-xs text-gray-500 mt-1">${esc(o.customer_name||'')}</div></div>
           <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800"><b>Flexible quantity status:</b> one product line can now be split. Example: Qty 3 = <b>Shipping 1</b> + <b>Arrived 2</b>. The quantities must always add up to the sold quantity.</div>
-          <div class="grid gap-3">${(o.items||[]).map(i=>cardSummaryHtml(i,map.get(i.id)||[{status:canonical(i.fulfillment_status)||'ordered',qty:Number(i.qty||0)}])).join('')}</div>
+          <div class="grid gap-3">${(o.items||[]).filter(i=>!isServiceLine(i)).map(i=>cardSummaryHtml(i,map.get(i.id)||[{status:canonical(i.fulfillment_status)||'ordered',qty:Number(i.qty||0)}])).join('')||'<div class="text-xs text-gray-500">No physical products require a fulfillment status. Service fees have no status.</div>'}</div>
           <button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">Save Item Status</button>
         </form>`);
       document.querySelectorAll('.flex-status-card').forEach(flexStatusRecalc);
@@ -157,6 +158,7 @@
       const allocations=[...card.querySelectorAll('.flex-status-row')].map(r=>({status:r.querySelector('.flex-status-select').value,qty:Number(r.querySelector('.flex-status-qty').value||0)})).filter(x=>x.qty>0);
       payload.push({sales_order_item_id:card.dataset.itemId,allocations});
     }
+    if(!payload.length)return showToast('No physical product status to update.','err');
     const {error}=await db.rpc('save_sales_item_status_quantities',{p_sales_order_id:o.id,p_items:payload});
     if(error)return showToast(error.message,'err');
     if(window.documentFlowState)window.documentFlowState.loaded=false;
@@ -178,12 +180,12 @@
   }
 
   function decorateRow(row,item,parts){
-    if(!row||!item||!parts||parts.length<=1)return;
+    if(!row||!item||isServiceLine(item)||!parts||parts.length<=1)return;
     row.querySelector('.flex-status-summary')?.remove();
     const target=row.querySelector('.min-w-0')||row.children?.[1]||row;
     target.insertAdjacentHTML('beforeend',breakdownHtml(parts));
     const expected=norm(item.fulfillment_status);
-    [...row.querySelectorAll('.lr-badge')].forEach(b=>{if(norm(b.textContent)===expected)b.style.display='none'});
+    [...row.querySelectorAll('.lr-fulfillment-badge')].forEach(b=>{b.style.display='none'});
   }
 
   async function decorateMixedStatuses(){
