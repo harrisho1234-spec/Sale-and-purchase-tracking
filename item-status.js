@@ -79,6 +79,7 @@
   function decorateTracking(){
     if(!canEdit())return;
     for(const o of window.trackingRedesign?.trackingOrders||[]){
+      if(!(o.items||[]).some(i=>!isServiceLine(i)))continue;
       let wrap=document.getElementById('track-order-'+o.id)?.querySelector('.lr-track-order');
       if(!wrap){wrap=[...document.querySelectorAll('#orderTrackingRoot .lr-track-order')].find(x=>x.textContent.includes(o.order_no||o.invoice_no||''));}
       const head=wrap?.querySelector('.lr-track-order-head');if(head&&!head.querySelector('.item-status-btn')){const right=head.lastElementChild;const b=document.createElement('button');b.className='item-status-btn mt-2 px-3 py-2 rounded-lg border border-green-200 bg-green-50 text-green-800 text-[10px] font-bold';b.textContent='Update Item Status';b.onclick=e=>{e.stopPropagation();openItemStatusManager(o.id)};right?.appendChild(b);}
