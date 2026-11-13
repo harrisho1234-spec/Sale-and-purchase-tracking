@@ -254,7 +254,7 @@ function mktHandle(request,user){
   if(action==='list'){
     var tasks=mktRows(mktSheet('Tasks',MKT_TASK_HEADERS),MKT_TASK_HEADERS).filter(function(t){return mktOwned(t,user);});
     var daily=mktRows(mktSheet('Daily',MKT_DAILY_HEADERS),MKT_DAILY_HEADERS).filter(function(d){return user.manage||String(d.user_id)===user.id;});
-    return {tasks:tasks,daily:daily,role:user.role,server_time:mktNow()};
+    return {tasks:tasks,daily:daily,role:user.role,daily_report_version:2,server_time:mktNow()};
   }
   if(action==='history'){
     var task=mktTaskById(mktRows(mktSheet('Tasks',MKT_TASK_HEADERS),MKT_TASK_HEADERS),mktStr(p.id,40));
