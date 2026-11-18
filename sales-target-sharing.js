@@ -5,12 +5,12 @@ const X={S:null,year:null,uid:null,loaded:null,plan:null,busy:false,error:null,e
 const h=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
 const n=v=>Number.isFinite(Number(v))?Number(v):0;
 const money=v=>'$'+n(v).toLocaleString('en-US',{maximumFractionDigits:2});
-const role=()=>String(window.state?.profile?.role||'');
+const role=()=>String(state?.profile?.role||'');
 const manager=()=>['manager','admin','super_admin'].includes(role());
 const approver=()=>['admin','super_admin'].includes(role());
 const people=()=>X.loaded?.people||[];
 const eligible=()=>people().filter(p=>p.eligible&&!p.internal);
-const msg=(s,err)=>window.showToast?.(s,err?'err':undefined);
+const msg=(s,err)=>showToast(s,err?'err':undefined);
 const pmap=()=>new Map(people().map(p=>[String(p.id),p]));
 const kind=r=>String(r.sales_category||'').toLowerCase()==='project'?'PJ':
   ['RK','TK'].includes(String(r.business_code||'').toUpperCase())?String(r.business_code).toUpperCase():'OTHER';
@@ -122,7 +122,7 @@ function draw(){
     const peopleLabel=(r.proposed||[]).map(a=>(staff.get(String(a.id))?.name||'Staff')+' '+n(a.percentage)+'%').join(' + ');
     return '<div class="flex flex-wrap justify-between gap-2 p-3 rounded-lg border text-xs"><div><b>'+h(r.order_id?.slice(0,8))+'</b> · '+h(peopleLabel)+
        '<div class="text-gray-500 mt-1">'+h(r.reason)+'</div></div>'+
-       (approver()&&String(r.requested_by)!==String(window.state?.user?.id)
+       (approver()&&String(r.requested_by)!==String(state?.user?.id)
         ?'<div class="flex gap-1">'+button('Approve','decideTargetCredit('+JSON.stringify(r.id)+',true)')+
           button('Reject','decideTargetCredit('+JSON.stringify(r.id)+',false)')+'</div>'
         :'<span class="text-amber-700">Awaiting Admin review</span>')+'</div>';
@@ -131,15 +131,15 @@ function draw(){
 }
 async function load(force){
  if(!manager())return;
- const year=Number(X.S?.year),uid=String(window.state?.user?.id||'');
+ const year=Number(X.S?.year),uid=String(state?.user?.id||'');
  if(!year||!uid)return;
  if(X.uid!==uid||X.year!==year){X.uid=uid;X.year=year;X.loaded=null;X.plan=null;X.error=null;X.busy=false}
  if(!force&&(X.loaded||X.busy)){draw();return}
  X.busy=true;X.error=null;draw();
  try{
   const [workspace,plan]=await Promise.all([
-    window.db.rpc('get_sales_target_sharing_workspace',{p_year:year}),
-    window.db.rpc('get_sales_target_plan',{p_year:year})
+    db.rpc('get_sales_target_sharing_workspace',{p_year:year}),
+    db.rpc('get_sales_target_plan',{p_year:year})
   ]);
   if(workspace.error)throw workspace.error;
   if(plan.error)throw plan.error;
