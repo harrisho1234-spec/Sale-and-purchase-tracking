@@ -400,6 +400,7 @@
       // SR → issued TK/RK is now the only active Sales Tracking transaction.
       if(o.is_consolidated_duplicate)return false;
       if(!withinDateFilter(o.order_date,ui.salesDate)) return false;
+      if(!window.salesTrackingPeriodMatch?.(o.order_date)) return false;
       if(ui.salesRep!=='all' && repName(o)!==ui.salesRep) return false;
       if(ui.salesCustomer!=='all' && o.customer_id!==ui.salesCustomer) return false;
       if(!orderMatchesBusinessFilter(o)) return false;
@@ -1110,7 +1111,7 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
 
   window.setSalesTab = function(tab){ ui.salesTab=tab; renderSalesTrackingBody(); };
   window.setSalesStatus = function(v){ ui.salesStatus=v; renderSalesTrackingBody(); };
-  window.setSalesFilter = function(key,v){ ui[key]=v; renderSalesTrackingBody(); };
+  window.setSalesFilter = function(key,v){ if(key==='salesDate'&&v!=='all')window.salesTrackingPeriodReset?.(); ui[key]=v; renderSalesTrackingBody(); };
   window.setSalesSearch = function(v){ ui.salesSearch=v; renderSalesTrackingBody(); };
   window.toggleSalesInvoice = function(id){
     ui.salesExpanded.has(id)?ui.salesExpanded.delete(id):ui.salesExpanded.add(id);
@@ -1196,6 +1197,8 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
             <option value="total" ${ui.salesSort==='total'?'selected':''}>Highest Total</option>
           </select>
         </div>
+
+        ${window.salesTrackingPeriodControls?.()||''}
 
         <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
           <div class="lr-chip-row">
