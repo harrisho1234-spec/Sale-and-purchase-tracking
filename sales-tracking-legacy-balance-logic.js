@@ -52,19 +52,42 @@
     return true;
   }
 
+  function matchesBusiness(o){
+    const chosen=ui.salesBusiness||'all';
+    if(chosen==='all')return true;
+    if(chosen==='PJ')return String(o.sales_category||'standard')==='project';
+    const doc=String(o.sales_invoice_no||o.linked_documents?.[0]?.invoice_no||o.invoice_no||o.order_no||'').toUpperCase();
+    const type=String(o.sales_invoice_type||'').toUpperCase();
+    const business=(type==='RK'||doc.startsWith('RK'))?'RK'
+      :(type==='TK'||doc.startsWith('TK'))?'TK':'OTHER';
+    if(chosen==='RK'||chosen==='TK')return business===chosen||
+      (o.linked_documents||[]).some(d=>d.type===chosen&&d.status==='issued');
+    return chosen==='OTHER'&&business==='OTHER';
+  }
+
   function currentFilteredOriginal(){
     const q=String(ui.salesSearch||'').toLowerCase().trim();
     let list=(ui.salesOrders||[]).filter(o=>{
+      // This is the source for the header count, totals and AR. Keep its
+      // calendar, business and archived-record scope aligned with the cards.
+      if(o.is_consolidated_duplicate)return false;
       if(!withinDate(o.order_date,ui.salesDate))return false;
+      if(window.salesTrackingPeriodMatch && !window.salesTrackingPeriodMatch(o.order_date))return false;
       if(ui.salesRep!=='all'&&repName(o)!==ui.salesRep)return false;
       if(ui.salesCustomer!=='all'&&o.customer_id!==ui.salesCustomer)return false;
+      if(!matchesBusiness(o))return false;
       if(ui.salesClass!=='all'&&!(o.items||[]).some(i=>i.product_catalog?.class===ui.salesClass))return false;
       if(!statusMatch(o))return false;
       if(q){
+        const doc=String(o.sales_invoice_no||o.linked_documents?.[0]?.invoice_no||o.invoice_no||o.order_no||'').toUpperCase();
+        const type=String(o.sales_invoice_type||'').toUpperCase();
+        const business=(type==='RK'||doc.startsWith('RK'))?'RK'
+          :(type==='TK'||doc.startsWith('TK'))?'TK':'OTHER';
         const hay=[o.order_no,o.invoice_no,o.sr_no,o.sales_invoice_no,
            ...(o.linked_documents||[]).map(x=>x.invoice_no),
-           o.customer_name,o.customer_code,repName(o),o.status,o.order_type,
-          ...(o.items||[]).flatMap(i=>[i.product_code_snapshot,i.item_name_snapshot,i.product_catalog?.brand,i.product_catalog?.class])
+           o.customer_name,o.customer_code,o.customer_phone,o.status,o.order_type,
+           business,o.sales_category==='project'?'Project PJ':'Standard',
+           ...(o.items||[]).flatMap(i=>[i.product_code_snapshot,i.item_name_snapshot,i.product_catalog?.brand,i.product_catalog?.class])
         ].filter(Boolean).join(' ').toLowerCase();
         if(!hay.includes(q))return false;
       }
