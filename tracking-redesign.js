@@ -400,7 +400,7 @@
       // SR → issued TK/RK is now the only active Sales Tracking transaction.
       if(o.is_consolidated_duplicate)return false;
       if(!withinDateFilter(o.order_date,ui.salesDate)) return false;
-      if(!window.salesTrackingPeriodMatch?.(o.order_date)) return false;
+      if(window.salesTrackingPeriodMatch && !window.salesTrackingPeriodMatch(o.order_date)) return false;
       if(ui.salesRep!=='all' && repName(o)!==ui.salesRep) return false;
       if(ui.salesCustomer!=='all' && o.customer_id!==ui.salesCustomer) return false;
       if(!orderMatchesBusinessFilter(o)) return false;
