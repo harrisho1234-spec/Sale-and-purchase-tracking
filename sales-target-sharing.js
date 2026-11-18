@@ -66,7 +66,7 @@ function panel(){
  return el;
 }
 function button(text,onclick,style){
- return '<button type="button" onclick="'+onclick+'" class="rounded-lg border px-3 py-2 text-xs font-semibold '+(style||'bg-white')+'">'+text+'</button>';
+ return '<button type="button" onclick="'+h(onclick)+'" class="rounded-lg border px-3 py-2 text-xs font-semibold '+(style||'bg-white')+'">'+h(text)+'</button>';
 }
 function draw(){
  const el=panel();if(!el||!manager())return;
