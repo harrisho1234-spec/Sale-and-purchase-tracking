@@ -258,7 +258,7 @@ begin
    v_person:=(v_item->>'id')::uuid;v_pct:=(v_item->>'percentage')::numeric;
    if v_person=any(v_seen) then raise exception 'Duplicate credit participant'; end if;
    v_seen:=array_append(v_seen,v_person);
-   if v_pct<=0 or v_pct>100 then raise exception 'Each credit share must be above 0%'; end if;
+   if v_pct<=0 or v_pct>100 then raise exception 'Each credit share must be above 0%%'; end if;
    if not (exists(select 1 from public.app_users where user_id=v_person)
         or exists(select 1 from public.sales_target_people where id=v_person)) then
       raise exception 'Unknown target participant'; end if;
@@ -267,7 +267,7 @@ begin
       raise exception 'Excluded/internal account cannot receive credit'; end if;
    v_total:=v_total+v_pct;
  end loop;
- if abs(v_total-100)>0.0001 then raise exception 'Sales credit must total exactly 100%'; end if;
+ if abs(v_total-100)>0.0001 then raise exception 'Sales credit must total exactly 100%%'; end if;
  insert into public.sales_target_credit_requests(order_id,proposed,reason,requested_by)
  values(p_order_id,p_shares,btrim(p_reason),auth.uid()) returning id into v_id;
  insert into public.sales_target_credit_audit(request_id,action,actor,detail)
