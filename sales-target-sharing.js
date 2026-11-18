@@ -74,7 +74,7 @@ function draw(){
  if(X.error){el.innerHTML='<section class="card rounded-2xl p-4 mb-4 text-xs text-amber-800">'+h(X.error)+' '+button('Retry','reloadSalesTargetSharing()')+'</section>';return}
  const data=X.loaded;if(!data)return;
  const summary=earnedCredit(),annualFactor=yearWeight(X.S),staff=pmap();
- const goals=(data.goals||[]).filter(g=>g.active);
+ const goals=data.goals||[];
  const goalCards=goals.map(g=>{
    const members=g.members||[];
    const earned=members.reduce((sum,m)=>sum+(summary.credits.get(String(m.id))||0),0);
@@ -88,7 +88,7 @@ function draw(){
    '<p class="text-[11px] text-gray-600 mt-2">'+members.map(m=>h(staff.get(String(m.id))?.name||'Staff')).join(' · ')+'</p>';
    return '<section class="border rounded-xl p-3 bg-white">'+
       '<div class="flex flex-wrap justify-between items-start gap-2"><div><b class="text-sm">'+h(g.label)+'</b>'+
-      '<p class="text-[10px] text-gray-500">'+h(g.scope.replaceAll('_',' '))+' · '+(g.mode==='pooled'?'Combined goal':'Percentage split')+'</p></div>'+
+      '<p class="text-[10px] text-gray-500">'+h(g.scope.replaceAll('_',' '))+' · '+(g.mode==='pooled'?'Combined goal':'Percentage split')+(g.active?'':' · Inactive')+'</p></div>'+
       button('Edit','openSharedSalesGoal('+JSON.stringify(g.id)+')')+'</div>'+
       '<div class="flex justify-between mt-2 gap-2 text-sm"><span>'+money(earned)+' credited</span><b>'+money(target)+' target</b></div>'+
       '<div class="bg-gray-100 h-2 rounded-full overflow-hidden mt-2"><div class="bg-[#b58a36] h-full" style="width:'+Math.max(0,Math.min(100,target>0?earned/target*100:0))+'%"></div></div>'+
