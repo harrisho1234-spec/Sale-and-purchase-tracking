@@ -1,0 +1,29 @@
+name: Cross-department target sharing tests
+on:
+  push:
+    branches:
+      - main
+      - feature/cross-department-shared-targets
+    paths:
+      - 'sales-target-sharing.js'
+      - 'sales-targets.js'
+      - 'tests/sales-target-sharing.test.cjs'
+      - 'supabase/migrations/20261118_cross_department_shared_targets_and_credit.sql'
+      - '.github/workflows/cross-department-target-tests.yml'
+  pull_request:
+    paths:
+      - 'sales-target-sharing.js'
+      - 'sales-targets.js'
+      - 'tests/sales-target-sharing.test.cjs'
+jobs:
+  target-sharing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check JavaScript syntax
+        run: node --check sales-target-sharing.js
+      - name: Test target sharing math, permissions and report integration
+        run: node --test tests/sales-target-sharing.test.cjs
