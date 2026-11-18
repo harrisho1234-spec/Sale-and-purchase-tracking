@@ -1,6 +1,6 @@
 // Unified pending approvals notification center.
 (function(){
-  var A={orders:[],customers:[],payments:[],stages:[],assignments:[],conversions:[],stockActions:[],stockEdits:[],cnApprovals:[],cnFinance:[],doEdits:[],stockCountEdits:[],dailyReviews:[],loadWarnings:[],loading:false,activeType:'all'};
+  var A={orders:[],customers:[],payments:[],stages:[],assignments:[],conversions:[],stockActions:[],stockEdits:[],cnApprovals:[],cnFinance:[],doEdits:[],stockCountEdits:[],dailyReviews:[],targetCredits:[],loadWarnings:[],loading:false,activeType:'all'};
 
   function role(){return state.profile&&state.profile.role||''}
   function reviewer(){return typeof window.hasAppPermission==='function'?window.hasAppPermission('approvals.view'):['manager','admin','super_admin'].indexOf(role())>=0}
@@ -12,11 +12,11 @@
   function cnTotal(){return A.cnApprovals.length+A.cnFinance.length}
   function total(){return A.orders.length+A.customers.length+A.payments.length+A.stages.length+
     A.assignments.length+A.conversions.length+stockTotal()+cnTotal()+A.doEdits.length+
-    A.stockCountEdits.length+A.dailyReviews.length}
+    A.stockCountEdits.length+A.dailyReviews.length+A.targetCredits.length}
   function dateText(v){var d=new Date(v);return isNaN(d.getTime())?String(v||''):d.toLocaleString()}
 
   async function loadPending(){
-    if(!reviewer()){A.orders=[];A.customers=[];A.payments=[];A.stages=[];A.assignments=[];A.conversions=[];A.stockActions=[];A.stockEdits=[];A.cnApprovals=[];A.cnFinance=[];A.doEdits=[];A.stockCountEdits=[];A.dailyReviews=[];A.loadWarnings=[];return}
+    if(!reviewer()){A.orders=[];A.customers=[];A.payments=[];A.stages=[];A.assignments=[];A.conversions=[];A.stockActions=[];A.stockEdits=[];A.cnApprovals=[];A.cnFinance=[];A.doEdits=[];A.stockCountEdits=[];A.dailyReviews=[];A.targetCredits=[];A.loadWarnings=[];return}
     var stockActionPromise=stockReviewer()
       ?db.rpc('get_stock_action_requests',{p_status:'pending'})
       :Promise.resolve({data:[],error:null});
@@ -38,7 +38,8 @@
       adminReviewer()?optional(db.rpc('get_stock_count_edit_requests',{p_count_id:null,p_pending_only:true})):Promise.resolve({data:[],error:null}),
       typeof window.getSalesDailyApprovalQueue==='function'
         ?optional(window.getSalesDailyApprovalQueue().then(function(data){return {data:data,error:null}}))
-        :Promise.resolve({data:[],error:null})
+        :Promise.resolve({data:[],error:null}),
+      adminReviewer()?optional(db.rpc('get_pending_sales_target_credit_requests')):Promise.resolve({data:[],error:null})
     ]);
     if(res[0].error)throw res[0].error;
     if(res[1].error)throw res[1].error;
@@ -57,7 +58,7 @@
     A.stockActions=res[6].data||[];
     A.stockEdits=res[7].data||[];
     A.loadWarnings=[];
-    ['Return/CN','DO edits','Stock Count edits','Team Daily Review'].forEach(function(name,i){
+    ['Return/CN','DO edits','Stock Count edits','Team Daily Review','Shared Sales Credit'].forEach(function(name,i){
       if(res[i+8].error){
         A.loadWarnings.push(name+' unavailable: '+String(res[i+8].error.message||res[i+8].error));
         console.warn('Pending '+name+':',res[i+8].error.message||res[i+8].error);
@@ -75,6 +76,7 @@
     A.doEdits=adminReviewer()?(Array.isArray(res[9].data)?res[9].data:[]).filter(function(x){return x.status==='pending'}):[];
     A.stockCountEdits=adminReviewer()?(Array.isArray(res[10].data)?res[10].data:[]).filter(function(x){return x.status==='pending'}):[];
     A.dailyReviews=Array.isArray(res[11].data)?res[11].data:[];
+    A.targetCredits=adminReviewer()&&Array.isArray(res[12].data)?res[12].data:[];
   }
 
   function addNavBadge(){
@@ -244,7 +246,35 @@
     await window.openSalesDailyApprovalItem(reportId,date,personId);
   };
 
+  window.reviewSalesTargetCreditFromCenter=async function(id,approved){
+    if(!adminReviewer())return showToast('Admin approval required.','err');
+    var note=prompt(approved?'Optional approval note:':'Reason for rejection:','');
+    if(note===null)return;
+    try{
+      var response=await db.rpc('decide_sales_target_credit',{
+        p_request_id:id,p_approve:approved,p_note:note
+      });
+      if(response.error)throw response.error;
+      showToast(approved?'Shared sales credit approved.':'Shared sales credit rejected.');
+      if(state.page==='approvals')await window.renderApprovals();
+      if(typeof window.refreshApprovalNotifications==='function')
+        await window.refreshApprovalNotifications();
+    }catch(e){showToast(e.message||'Could not review credit request.','err')}
+  };
   function requestHtml(r,type){
+    if(type==='target_credit'){
+      var split=(r.shares||[]).map(function(s){
+        return esc(s.name||'Staff')+' '+Number(s.percentage||0)+'%';
+      }).join(' · ');
+      return '<div class="rounded-xl border border-amber-200 bg-white p-4 space-y-2">'+
+        '<div class="flex flex-wrap items-center gap-2"><span class="rounded-md bg-amber-100 text-amber-800 px-2 py-1 text-[9px] font-bold">SHARED SALES CREDIT</span>'+
+        '<b class="text-sm">Order '+esc(String(r.order_id||'').slice(0,8))+'</b></div>'+
+        '<div class="text-xs text-gray-700">'+split+'</div>'+
+        '<div class="text-xs text-gray-500">'+esc(r.reason||'')+' · '+esc(dateText(r.requested_at))+'</div>'+
+        '<div class="flex flex-wrap gap-2">'+
+        '<button type="button" onclick="reviewSalesTargetCreditFromCenter(\''+esc(r.id)+'\',true)" class="rounded-lg bg-[#211d18] text-white px-3 py-2 text-xs font-bold">Approve Credit</button>'+
+        '<button type="button" onclick="reviewSalesTargetCreditFromCenter(\''+esc(r.id)+'\',false)" class="rounded-lg border px-3 py-2 text-xs font-semibold">Reject</button></div></div>';
+    }
     if(type==='cn_approval'||type==='cn_finance'){
       var finance=type==='cn_finance';
       return '<button type="button" onclick="openCNApprovalFromCenter(\''+esc(r.return_id)+'\')" class="w-full text-left rounded-xl border border-amber-200 bg-white p-4 hover:bg-amber-50">'+
@@ -357,6 +387,7 @@
     if(filter==='all'||filter==='do_edit')A.doEdits.forEach(function(x){rows.push({type:'do_edit',x:x})});
     if(filter==='all'||filter==='stock_count_edit')A.stockCountEdits.forEach(function(x){rows.push({type:'stock_count_edit',x:x})});
     if(filter==='all'||filter==='daily')A.dailyReviews.forEach(function(x){rows.push({type:'daily',x:x})});
+    if(filter==='all'||filter==='target_credit')A.targetCredits.forEach(function(x){rows.push({type:'target_credit',x:x})});
     if((filter==='all'||filter==='stock')&&stockReviewer()&&stockTotal()>0){
       var latest=([].concat(A.stockActions||[],A.stockEdits||[]).sort(function(a,b){return new Date(b.requested_at)-new Date(a.requested_at)})[0]||{});
       rows.push({type:'stock',x:{requested_at:latest.requested_at||new Date().toISOString()}});
@@ -411,7 +442,8 @@
       {key:'stock',label:'Stock Approvals',count:stockTotal(),show:stockReviewer()},
       {key:'do_edit',label:'DO Edit Requests',count:A.doEdits.length,show:adminReviewer()},
       {key:'stock_count_edit',label:'Stock Count Edits',count:A.stockCountEdits.length,show:adminReviewer()},
-      {key:'daily',label:'Team Daily Review',count:A.dailyReviews.length}
+      {key:'daily',label:'Team Daily Review',count:A.dailyReviews.length},
+      {key:'target_credit',label:'Shared Sales Credit',count:A.targetCredits.length,show:adminReviewer()}
     ];
     return types.filter(function(t){return t.show!==false});
   }

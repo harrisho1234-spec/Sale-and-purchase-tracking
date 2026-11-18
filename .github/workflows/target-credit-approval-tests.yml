@@ -1,0 +1,27 @@
+name: Target credit central approval tests
+on:
+  push:
+    branches:
+      - main
+      - feature/target-credit-approval-center
+    paths:
+      - 'approval-notifications.js'
+      - 'tests/unified-approvals-queue.test.cjs'
+      - 'supabase/migrations/20261118_target_credit_approval_queue.sql'
+      - '.github/workflows/target-credit-approval-tests.yml'
+  pull_request:
+    paths:
+      - 'approval-notifications.js'
+      - 'tests/unified-approvals-queue.test.cjs'
+jobs:
+  approvals:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check approval JavaScript syntax
+        run: node --check approval-notifications.js
+      - name: Run approval queue regression tests
+        run: node --test tests/unified-approvals-queue.test.cjs
