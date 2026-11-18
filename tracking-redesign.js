@@ -1215,7 +1215,7 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
         </div>
 
         <div class="lr-summary mt-3">
-          <div class="lr-summary-item"><div class="lr-summary-label">Filtered Invoices</div><div class="lr-summary-value">${filtered.length}</div></div>
+          <div class="lr-summary-item"><div class="lr-summary-label" title="Includes sales requests (SR) as well as issued invoices">Filtered Records</div><div class="lr-summary-value">${filtered.length}</div></div>
           <div class="lr-summary-item"><div class="lr-summary-label">Total Value</div><div class="lr-summary-value">${money(k.total)}</div></div>
           <div class="lr-summary-item"><div class="lr-summary-label">Deposit Paid</div><div class="lr-summary-value text-green-600">${money(k.paid)}</div></div>
           <div class="lr-summary-item"><div class="lr-summary-label">Active Balance Due</div><div class="lr-summary-value text-red-500">${money(k.balance)}</div></div>
