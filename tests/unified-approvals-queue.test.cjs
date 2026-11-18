@@ -175,7 +175,7 @@ test('bell/PWA attention and CN timestamps include existing review queues',()=>{
  assert.match(cnDate,/'requested_at',r\.created_at/);
 });
 test('browser cache versions point to newest Approvals, Daily and bell scripts',()=>{
- assert.match(index,/approval-notifications\.js\?v=20261104-type-tabs-v2/);
+ assert.match(index,/approval-notifications\.js\?v=20261118-target-credit-approval1/);
  assert.match(index,/sales-daily-plan\.js\?v=20261113-unplanned-type-grouping1/);
  assert.match(index,/push-notifications\.js\?v=20261107-overdue-todo-alert2/);
  assert.match(index,/sales-todo\.js\?v=20261107-overdue-bell-alert1/);
@@ -287,4 +287,34 @@ test('Dashboard shortcuts open the same Approvals page with the selected type',a
  assert.match(x.blocks.approvalTypeResults.innerHTML,/CN-CREDIT/);
  assert.doesNotMatch(x.blocks.approvalTypeResults.innerHTML,/CN-NEW/);
  assert.match(approvals,/onclick="openApprovalType\(\\'cn_approval\\'\)"/);
+});
+
+test('Shared Sales Credit approval appears as separate actionable Admin request and updates badge counts',async()=>{
+ const x=mock('admin');
+ x.canned.get_pending_sales_target_credit_requests=[{
+  id:'credit-req-1',order_id:'order-test-1',requested_by:'different-admin',
+  requested_at:'2026-11-18T06:00:00Z',reason:'Showroom and Project both handled customer',
+  shares:[{name:'Showroom Sales',percentage:40},{name:'Project Staff',percentage:60}]
+ }];
+ await x.context.renderApprovals();
+ assert.match(x.blocks.approvalTypeFilters.innerHTML,/data-approval-type="target_credit"/);
+ assert.match(x.ui.innerHTML,/Total Pending <b[^>]*>6<\/b>/);
+ x.context.setApprovalType('target_credit');
+ assert.match(x.blocks.approvalTypeResults.innerHTML,/SHARED SALES CREDIT/);
+ assert.match(x.blocks.approvalTypeResults.innerHTML,/Showroom Sales 40%/);
+ assert.match(x.blocks.approvalTypeResults.innerHTML,/Project Staff 60%/);
+ assert.match(x.blocks.approvalTypeResults.innerHTML,/Approve Credit/);
+ assert.match(x.blocks.approvalTypeResults.innerHTML,/Reject/);
+ x.context.prompt=()=> 'Reviewed, approved';
+ await x.context.reviewSalesTargetCreditFromCenter('credit-req-1',true);
+ const decision=x.calls.find(x=>x.name==='decide_sales_target_credit');
+ assert.equal(decision.args.p_request_id,'credit-req-1');
+ assert.equal(decision.args.p_approve,true);
+});
+test('Managers cannot see Admin-only Shared Sales Credit approval requests',async()=>{
+ const x=mock('manager');
+ x.canned.get_pending_sales_target_credit_requests=[{id:'private-request'}];
+ await x.context.renderApprovals();
+ assert.doesNotMatch(x.blocks.approvalTypeFilters.innerHTML,/data-approval-type="target_credit"/);
+ assert.equal(x.calls.filter(x=>x.name==='get_pending_sales_target_credit_requests').length,0);
 });
