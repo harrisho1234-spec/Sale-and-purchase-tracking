@@ -28,7 +28,7 @@ function doPost(e){
   const action=String(req.action||'');
   const payload=req.payload||{};
   if(typeof payload!=='object'||Array.isArray(payload))throw Error('Invalid payload');
-  if(!['ping','read','save_am','submit_am','append_todo_am','save_pm','submit_pm','review','allow_late_pm','carry_forward','weekly','request_edit','decide_edit','delete_report','todo_list','todo_save','todo_delete','todo_history'].includes(action))throw Error('Unknown action');
+  if(!['ping','read','save_am','submit_am','append_todo_am','save_pm','submit_pm','review','allow_late_pm','carry_forward','weekly','request_edit','decide_edit','acknowledge_am_revision','delete_report','todo_list','todo_save','todo_delete','todo_history'].includes(action))throw Error('Unknown action');
   const ss=SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('SHEET_ID'));
   const res=dispatch(ss,actor,action,payload);
   return respond({ok:true,data:res});
@@ -66,6 +66,7 @@ function dispatch(ss,actor,action,p){
  if(action==='weekly')return weekly(ss,actor,p);
  if(action==='carry_forward')return carryForward(ss,actor,p);
  if(action==='request_edit'||action==='decide_edit')return editAction(ss,actor,action,p);
+ if(action==='acknowledge_am_revision')return acknowledgeAmRevision(ss,actor,p);
  if(action==='delete_report')return deleteReport(ss,actor,p);
  const lock=LockService.getScriptLock();
  lock.waitLock(15000);
@@ -133,10 +134,12 @@ function readReports(ss,a,p){
   &&(!p.userId||String(p.userId)===String(r[2])));
  const taskIndex={};data(tab(ss,'tasks')).forEach(r=>(taskIndex[r[1]]||(taskIndex[r[1]]=[])).push(taskOutput(r)));
  const amended=new Set(data(tab(ss,'audit')).filter(r=>r[5]==='AM_TODO_APPENDED').map(r=>String(r[3])));
+ const amRevisions=amRevisionStates(ss);
  const extraIndex={};data(additionalSheet(ss)).forEach(r=>(extraIndex[r[1]]||(extraIndex[r[1]]=[])).push({id:r[0],category:r[4],customerName:r[5],result:r[6],nextFollowup:r[7],sourceType:r[9]||'',sourceId:r[10]||''}));
  const editIndex={};editRows(ss).forEach(x=>(editIndex[x.row[1]]||(editIndex[x.row[1]]=[])).push({id:x.row[0],section:x.row[3],reason:x.row[4],status:x.row[5],requestedAt:x.row[6],decisionNote:x.row[9]}));
  const lateGrants=allowedLatePmReports(ss);
- return{reports:all.map(r=>({...reportOutput(r,(taskIndex[r[0]]||[]).sort((x,y)=>x.sort-y.sort)),editRequests:editIndex[r[0]]||[],lateSubmissionAllowed:lateGrants.has(String(r[0])),amTodoAmended:amended.has(String(r[0])),additionalActivities:extraIndex[r[0]]||[]})),
+ return{reports:all.map(r=>({...reportOutput(r,(taskIndex[r[0]]||[]).sort((x,y)=>x.sort-y.sort)),editRequests:editIndex[r[0]]||[],lateSubmissionAllowed:lateGrants.has(String(r[0])),amTodoAmended:amended.has(String(r[0])),amRevisionPending:!!amRevisions[String(r[0])]?.pending,
+  amRevision:amRevisions[String(r[0])]||null,additionalActivities:extraIndex[r[0]]||[]})),
  salesPeople:a.can_review?a.sales_people||[]:[],today:today(),policyVersion:'next-day-10am-20261104'};
 }
 function buildTask(t,date,user,reportId,sort,old){
@@ -150,6 +153,28 @@ function buildTask(t,date,user,reportId,sort,old){
   saveText(t.customerId,64),saveText(t.customerName,140),priority,due,
   old?.[11]||'',old?.[12]||'',old?.[13]||'',old?.[14]||'',old?.[15]||now(),now(),old?.[17]||saveText(t.todoTaskId,80)
  ];
+}
+// Audit events are the source of truth for post-PM Morning Plan amendments.
+function amRevisionStates(ss){
+ const revisions={};
+ data(tab(ss,'audit')).forEach(r=>{
+  const id=String(r[3]||''),action=String(r[5]||'');
+  if(!id)return;
+  if(action==='AM_REVISED_AFTER_PM'){
+   let detail={};
+   try{detail=JSON.parse(r[7]||'{}')}catch(_){}
+   revisions[id]={pending:true,at:r[1],changedCount:Number(detail.changedCount||0),
+     changedTaskIds:detail.changedTaskIds||[],reason:detail.reason||'',requestId:detail.requestId||'',
+     revisedBy:r[2]||''};
+  }else if(action==='AM_AMENDMENT_ACKNOWLEDGED'&&revisions[id]){
+   revisions[id]={...revisions[id],pending:false,acknowledgedAt:r[1],acknowledgedBy:r[2]};
+  }
+ });
+ return revisions;
+}
+function amTaskSnapshot(row){
+ return {id:row[0],sort:row[4],category:row[5],plan:row[6],customerId:row[7],
+  customerName:row[8],priority:row[9],plannedFollowup:row[10],todoTaskId:row[17]||''};
 }
 function audit(ss,actor,report,action,before,after,task=''){
  tab(ss,'audit').appendRow([uid(),now(),actor.user_id,report,task,action,
@@ -190,9 +215,12 @@ function saveAm(ss,a,p,submit){
  if(!Array.isArray(p.tasks)||p.tasks.length<1||p.tasks.length>20)throw Error('Add between 1 and 20 planned tasks');
  const sh=tab(ss,'reports'),tasks=tab(ss,'tasks');
  const found=reportFor(sh,date,a.user_id),old=found.row;
- const amApproved=old&&editState(ss,old[0]).some(x=>x.section==='AM'&&x.status==='Approved');
+ const approvedEntry=old&&editRows(ss).filter(x=>x.row[1]===old[0]&&x.row[3]==='AM'&&x.row[5]==='Approved').slice(-1)[0];
+ const amApproved=!!approvedEntry,postPm=!!(old&&old[7]==='Submitted');
  if(old&&old[5]==='Submitted'&&!amApproved)throw Error('Request approval to edit the submitted Morning Plan.');
- if(old&&old[7]==='Submitted')throw Error('Evening Result already submitted. Request the manager to reopen PM before changing the morning tasks.');
+ if(postPm&&!amApproved)throw Error('Management approval is required for a post-Evening Morning Plan amendment.');
+ // Post-PM edits must be atomic: never save an interim AM draft against a submitted PM.
+ if(postPm&&!submit)throw Error('Submit the approved amendment directly; Evening Results stay submitted.');
  const reportId=old?old[0]:uid();
  const oldTasks=taskRows(tasks,reportId);
  const used=new Set();
@@ -213,18 +241,44 @@ function saveAm(ss,a,p,submit){
   if(original){if(used.has(original[0]))throw Error('Duplicate task ID');used.add(original[0])}
   return buildTask(t,date,a.user_id,reportId,i+1,original);
  });
+ if(postPm&&(rows.length!==oldTasks.length||
+    rows.some((r,i)=>r[0]!==oldTasks[i]?.row[0])))
+   throw Error('Once Evening Results are submitted, only corrections to existing Morning Plan tasks are allowed. Do not add, remove or reorder tasks.');
  if(old&&old[5]==='Submitted'&&oldTasks.some(x=>x.row[11]||x.row[12])&&
     (rows.length!==oldTasks.length||rows.some((r,i)=>r[0]!==oldTasks[i]?.row[0])))
    throw Error('Cannot add or remove tasks after evening outcomes exist. Contact Super Admin for reconciliation.');
+ const changed=postPm?rows.map((r,i)=>({before:oldTasks[i].row,after:r}))
+   .filter(x=>JSON.stringify(amTaskSnapshot(x.before))!==JSON.stringify(amTaskSnapshot(x.after))):[];
+ if(postPm&&!changed.length)throw Error('No Morning Plan corrections were made. The original Evening Result is unchanged.');
  if(oldTasks.length)oldTasks.slice().sort((x,y)=>y.rowNo-x.rowNo).forEach(x=>tasks.deleteRow(x.rowNo));
  rows.forEach(row=>tasks.appendRow(row));
  const dateNow=now(),fresh=old?old.slice():new Array(15).fill('');
  fresh[0]=reportId;fresh[1]=date;fresh[2]=a.user_id;fresh[3]=saveText(a.display_name,200);fresh[4]=a.role;
- fresh[5]=submit?'Submitted':'Draft';fresh[6]=submit?dateNow:'';
- fresh[7]='Not Started';fresh[9]='Pending';fresh[13]=old?old[13]:dateNow;fresh[14]=dateNow;
+ if(postPm){
+  // Preserve original AM submission, PM submission, outcomes and original manager review.
+  fresh[5]='Submitted';
+ }else{
+  fresh[5]=submit?'Submitted':'Draft';fresh[6]=submit?dateNow:'';
+  fresh[7]='Not Started';fresh[9]='Pending';
+ }
+ fresh[13]=old?old[13]:dateNow;fresh[14]=dateNow;
  if(found.i<0)sh.appendRow(fresh);else sh.getRange(found.i,1,1,15).setValues([fresh]);
+ if(postPm){
+  // One append-only before/after event per corrected task; no PM outcome is edited.
+  changed.forEach(x=>audit(ss,a,reportId,'AM_TASK_REVISED',
+   {task:amTaskSnapshot(x.before),pm:{status:x.before[11],result:x.before[12],nextFollowup:x.before[13]}},
+   {task:amTaskSnapshot(x.after),requestId:approvedEntry.row[0]},x.after[0]));
+  audit(ss,a,reportId,'AM_REVISED_AFTER_PM',
+   {requestId:approvedEntry.row[0],pmSubmittedAt:old[8],
+    reviewStatus:old[9],reviewedBy:old[11],reviewedAt:old[12]},
+   {requestId:approvedEntry.row[0],reason:approvedEntry.row[4],
+    approvedBy:approvedEntry.row[7],changedCount:changed.length,
+    changedTaskIds:changed.map(x=>x.after[0]),needsManagerReview:true});
+ }else{
+  audit(ss,a,reportId,amApproved?(submit?'AM_REVISED_SUBMITTED':'AM_REVISION_DRAFT'):submit?'AM_SUBMITTED':'AM_DRAFT_SAVED',
+   {tasks:oldTasks.map(x=>taskOutput(x.row))},{tasks:rows.map(taskOutput),date});
+ }
  if(amApproved&&submit)closeEditApproval(ss,reportId,'AM');
- audit(ss,a,reportId,amApproved?(submit?'AM_REVISED_SUBMITTED':'AM_REVISION_DRAFT'):submit?'AM_SUBMITTED':'AM_DRAFT_SAVED',{tasks:oldTasks.map(x=>taskOutput(x.row))},{tasks:rows.map(taskOutput),date});
  return reportOutput(fresh,rows.map(taskOutput));
 }
 function additionalSheet(ss){let sh=ss.getSheetByName('Daily Additional Activities');if(!sh){sh=ss.insertSheet('Daily Additional Activities');sh.appendRow(['ID','Report ID','Date','User ID','Category','Customer','Outcome','Next Follow-up','Created At','Source Type','Source ID'])}return sh}
@@ -360,17 +414,40 @@ function editAction(ss,a,action,p){
   const idx=records.findIndex(x=>x[0]===entry.row[1]);if(idx<0)throw Error('Report not found');
   const report=records[idx].slice();
   if(!fetchTeam(a).has(String(report[2])))throw Error('Not authorized to review this salesperson');
-  if(report[9]==='Reviewed'&&a.role!=='super_admin')throw Error('Only Super Admin can reopen a reviewed report');
-  if(decision==='Approved'&&entry.row[3]==='AM'&&report[7]==='Submitted')throw Error('Reopen the submitted Evening Result before approving Morning Plan changes');
+  // PM reopening a reviewed report remains restricted; AM amendments never reopen PM.
+  if(report[9]==='Reviewed'&&entry.row[3]==='PM'&&a.role!=='super_admin')
+   throw Error('Only Super Admin can reopen a reviewed Evening Result');
+  if(decision==='Approved'&&entry.row[3]==='AM'&&
+      editRows(ss).some(x=>x.row[1]===report[0]&&x.row[3]==='AM'&&x.row[5]==='Approved'))
+   throw Error('An approved Morning Plan amendment already awaits submission');
   const row=entry.row.slice();row[5]=decision;row[7]=a.user_id;row[8]=now();row[9]=note;
   editSheet(ss).getRange(entry.n,1,1,10).setValues([row]);
-  if(decision==='Approved'){
-   if(entry.row[3]==='PM'){report[7]='Draft';report[8]=''}
+  if(decision==='Approved'&&entry.row[3]==='PM'){
+   // Existing PM correction procedure; keep separate from AM amendments.
+   report[7]='Draft';report[8]='';
    if(report[9]==='Reviewed')report[9]='Changes Requested';
    report[14]=now();sh.getRange(idx+2,1,1,15).setValues([report]);
   }
   audit(ss,a,report[0],'EDIT_'+decision.toUpperCase(),{requestId,section:entry.row[3],reason:entry.row[4]},{note});
   return{requestId,status:decision};
+ }finally{SpreadsheetApp.flush();lock.releaseLock()}
+}
+function acknowledgeAmRevision(ss,a,p){
+ ensureReview(a);
+ const reportId=val(p.reportId,80),note=saveText(p.note,750);
+ if(!note)throw Error('Enter a brief amendment review note');
+ const lock=LockService.getScriptLock();lock.waitLock(15000);
+ try{
+  const sh=tab(ss,'reports'),record=data(sh).find(r=>String(r[0])===reportId);
+  if(!record)throw Error('Report not found');
+  if(!fetchTeam(a).has(String(record[2])))throw Error('Not authorized to review this salesperson');
+  const revision=amRevisionStates(ss)[reportId];
+  if(!revision||!revision.pending)throw Error('No pending Morning Plan amendment to review');
+  audit(ss,a,reportId,'AM_AMENDMENT_ACKNOWLEDGED',
+   {requestId:revision.requestId,changedTaskIds:revision.changedTaskIds,
+    originalReview:record[9],reviewedAt:record[12]},
+   {note,reviewedBy:saveText(a.display_name,200),reviewedAt:now()});
+  return {reportId,acknowledged:true,reviewStatus:record[9]};
  }finally{SpreadsheetApp.flush();lock.releaseLock()}
 }
 function deleteReport(ss,a,p){
