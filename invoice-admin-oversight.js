@@ -22,6 +22,7 @@
 
   function renderEvent(e){
     const isReviewed=!!e.reviewed_at;
+    const needsReview=e.actor_role==='admin'&&!isReviewed;
     const before=e.old_data||{},after=e.new_data||{};
     const by=e.actor_email||e.actor_user_id||'Unknown actor';
     return '<article class="border rounded-xl bg-white p-3">'+
@@ -30,7 +31,7 @@
         '<div class="text-[11px] text-gray-500 mt-1">'+escHtml(e.action==='delete'?'Permanent deletion':'Invoice edit')+
         ' · '+escHtml(e.created_at||'')+'</div>'+
       '</div><span class="text-[10px] px-2 py-1 rounded-lg '+(isReviewed?'bg-green-50 text-green-700':'bg-amber-50 text-amber-800')+'">'+
-        (isReviewed?'Reviewed':'Awaiting review')+'</span></div>'+
+        (isReviewed?'Reviewed':needsReview?'Awaiting review':'Historical action')+'</span></div>'+
       '<p class="text-xs mt-2"><b>Changed by:</b> '+escHtml(by)+'</p>'+
       '<p class="text-xs mt-1"><b>Reason:</b> '+escHtml(e.reason||'(No reason supplied)')+'</p>'+
       '<details class="mt-3 border rounded-lg p-2"><summary class="text-xs font-semibold cursor-pointer">Compare original and updated invoice</summary>'+
@@ -45,7 +46,7 @@
             '<pre class="text-[10px] bg-gray-50 p-2 rounded-lg max-h-[260px] overflow-auto whitespace-pre-wrap break-all">'+escHtml(JSON.stringify(after,null,2))+'</pre>'+
           '</div></details>'+
       '</details>'+
-      (isReviewed?'<p class="text-[11px] mt-3 text-green-700">Reviewed '+escHtml(e.reviewed_at)+' · '+escHtml(e.review_note||'')+'</p>':
+      (isReviewed?'<p class="text-[11px] mt-3 text-green-700">Reviewed '+escHtml(e.reviewed_at)+' · '+escHtml(e.review_note||'')+'</p>':!needsReview?'<p class="text-[11px] mt-3 text-gray-500">Super Admin action retained in history (no separate approval required).</p>':
       '<button type="button" class="mt-3 rounded-lg bg-[#211d18] text-white px-3 py-2 text-xs font-semibold" onclick="reviewAdminInvoiceAuditEvent(\''+escHtml(e.id)+'\')">Mark Reviewed</button>')+
       '</article>';
   }
@@ -58,15 +59,15 @@
     target.innerHTML='<p class="p-3 text-xs text-gray-500">Loading invoice audit events…</p>';
     try{
       let q=db.from('sales_invoice_admin_audit')
-        .select('id,sales_order_id,invoice_no,order_no,action,actor_user_id,actor_email,reason,old_data,new_data,created_at,reviewed_at,reviewed_by,review_note')
+        .select('id,sales_order_id,invoice_no,order_no,action,actor_user_id,actor_email,actor_role,reason,old_data,new_data,created_at,reviewed_at,reviewed_by,review_note')
         .order('created_at',{ascending:false})
         .limit(150);
-      if(current==='pending')q=q.is('reviewed_at',null);
+      if(current==='pending')q=q.is('reviewed_at',null).eq('actor_role','admin');
       const {data,error}=await q;
       if(error)throw error;
       if(seq!==sequence||!document.getElementById('invoiceAdminReviewResults'))return;
       document.getElementById('invoiceAdminReviewResults').innerHTML=
-        '<p class="text-xs text-gray-500 mb-3">Showing '+(data||[]).length+' most recent '+(current==='pending'?'unreviewed':'')+' invoice events. Every action retains its before/after audit snapshot.</p>'+
+        '<p class="text-xs text-gray-500 mb-3">Showing '+(data||[]).length+' most recent '+(current==='pending'?'unreviewed Admin':'')+' invoice events. Every action retains its before/after audit snapshot.</p>'+
         ((data||[]).length?'<div class="grid gap-3">'+data.map(renderEvent).join('')+'</div>':'<div class="p-6 text-center text-sm text-gray-500">No invoice changes in this view.</div>');
     }catch(err){
       if(seq===sequence&&document.getElementById('invoiceAdminReviewResults'))document.getElementById('invoiceAdminReviewResults').innerHTML=
