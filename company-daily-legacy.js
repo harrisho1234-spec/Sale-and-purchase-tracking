@@ -196,7 +196,7 @@ function dailySubmissions(selectedDate){
 function daily(selectedDate){
  if(!canSales()&&!canMarketing())return '';
  return '<section class="rounded-xl border bg-white p-4 space-y-3">'+
- '<div class="flex flex-wrap justify-between items-center gap-3"><div><h3 class="font-bold">Connected Sales + Marketing overview</h3>'+
+ '<div class="flex flex-wrap justify-between items-center gap-3"><div><h3 class="font-bold">Connected '+[canSales()?'Sales':'',canMarketing()?'Marketing':''].filter(Boolean).join(' + ')+' overview</h3>'+
  '<p class="text-xs text-slate-500">Original tasks and reports · no duplicate submissions</p></div>'+
  '<div class="flex flex-wrap gap-2">'+(canSales()?sourceButton('sales-todo','Sales To-Do')+sourceButton('sales-daily','Sales Daily'):'')+(canMarketing()?sourceButton('marketing','Marketing Daily'):'')+'</div></div>'+
  warning('salesTodos')+warning('salesReports')+warning('marketing')+
