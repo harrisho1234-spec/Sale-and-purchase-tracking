@@ -93,6 +93,9 @@
     document.head.appendChild(style);
   }
 
+  // Admin may operate invoices; Super Admin alone manages the review queue.
+  function canOperateInvoice() {return ['admin','super_admin'].includes(state.profile?.role)}
+
   function roleCanSeeAllSales() {
     return ['super_admin','admin','manager'].includes(state.profile?.role);
   }
@@ -628,7 +631,7 @@
                 ${(['sales','manager','admin','super_admin'].includes(state.profile?.role)&&cleanStatus(o.status)!=='cancelled'&&hasOfficialDoInvoice(o))
                   ?`<button onclick="openExistingSalesDoRequest(\'${o.id}\')" class="px-3 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-bold">▣ REQUEST DO</button>`
                   :''}
-                ${isSuper()?`<button onclick="openSuperAdminInvoiceEdit(\'${o.id}\')" class="px-3 py-2 border border-[#d8c28a] bg-[#fffaf0] text-[#8a6a1f] rounded-lg text-[10px] font-bold">✎ EDIT INVOICE</button>
+                ${canOperateInvoice()?`<button onclick="openSuperAdminInvoiceEdit(\'${o.id}\')" class="px-3 py-2 border border-[#d8c28a] bg-[#fffaf0] text-[#8a6a1f] rounded-lg text-[10px] font-bold">✎ EDIT INVOICE</button>
                 <button onclick="openSuperAdminInvoiceDelete(\'${o.id}\')" class="px-3 py-2 border border-red-200 bg-red-50 text-red-700 rounded-lg text-[10px] font-bold">DELETE INVOICE</button>`:''}
               </div>`:'' }
           </div>`:'' }
@@ -868,7 +871,7 @@ function invoiceAdminItemEditor(item, currency) {
 }
 
 async function openSuperAdminInvoiceEdit(id) {
-  if(!isSuper()) return showToast('Super Admin only','err');
+  if(!canOperateInvoice()) return showToast('Admin or Super Admin only','err');
   if(typeof window.openEditSalesOrder==='function') return window.openEditSalesOrder(id);
   const o=invoiceById(id);
   if(!o) return showToast('Invoice not found','err');
@@ -890,7 +893,7 @@ async function openSuperAdminInvoiceEdit(id) {
   openModal(`Edit Invoice · ${o.invoice_no||o.order_no||'Order'}`,`
     <form id="superAdminInvoiceEditForm" class="space-y-5">
       <div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-        <b>Super Admin correction.</b> Every save is recorded in the invoice audit log with the original and revised values.
+        <b>Admin invoice correction.</b> Every save requires a reason and is recorded for Super Admin review.
       </div>
 
       <div class="grid md:grid-cols-2 xl:grid-cols-4 gap-3">
@@ -959,7 +962,7 @@ async function openSuperAdminInvoiceEdit(id) {
 
 async function saveSuperAdminInvoiceEdit(e,id) {
   e.preventDefault();
-  if(!isSuper()) return showToast('Super Admin only','err');
+  if(!canOperateInvoice()) return showToast('Admin or Super Admin only','err');
 
   const btn=document.getElementById('invoiceAdminSaveBtn');
   const itemRows=[...document.querySelectorAll('.invoice-admin-item')];
@@ -1013,7 +1016,7 @@ async function saveSuperAdminInvoiceEdit(e,id) {
 }
 
 async function openSuperAdminInvoiceDelete(id) {
-  if(!isSuper()) return showToast('Super Admin only','err');
+  if(!canOperateInvoice()) return showToast('Admin or Super Admin only','err');
   const o=invoiceById(id);
   if(!o) return showToast('Invoice not found','err');
 
@@ -1077,7 +1080,7 @@ async function openSuperAdminInvoiceDelete(id) {
 
 async function confirmSuperAdminInvoiceDelete(e,id) {
   e.preventDefault();
-  if(!isSuper()) return showToast('Super Admin only','err');
+  if(!canOperateInvoice()) return showToast('Admin or Super Admin only','err');
   const reason=document.getElementById('invoiceAdminDeleteReason').value.trim();
   const phrase=document.getElementById('invoiceAdminDeletePhrase').value.trim();
   if(!reason) return showToast('Deletion reason is required.','err');
