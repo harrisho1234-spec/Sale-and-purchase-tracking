@@ -135,7 +135,7 @@ window.companyDailyReview=async id=>{const decision=confirm('Mark this Evening R
 window.companyDailyFilter=(field,value)=>{if(field==='department')S.reportDepartment=value;if(field==='year')S.reportYear=value;if(field==='quarter')S.reportQuarter=value;if(field==='month')S.reportMonth=value;if(field==='employee')S.reportEmployee=value;render()};
 window.companyDailyRefresh=load;
 const oldNav=window.navItems;
-if(typeof oldNav==='function')window.navItems=function(){const items=oldNav.apply(this,arguments);if(allowed()&&!items.some(x=>x[0]===PAGE)){const index=items.findIndex(x=>x[0]==='sales-daily');items.splice(index<0?items.length:index+1,0,[PAGE,'Daily Work · All Departments','☷'])}return items};
+if(typeof oldNav==='function')window.navItems=function(){const items=oldNav.apply(this,arguments);const role=String(state.profile?.role||'');if(['project','project_manager','product_assistant','product_manager'].includes(role)){const permitted=role.startsWith('product_')?['products']:[];return [...items.filter(x=>permitted.includes(x[0])),[PAGE,'Daily Work · All Departments','☷']]}if(allowed()&&!items.some(x=>x[0]===PAGE)){const index=items.findIndex(x=>x[0]==='sales-daily');items.splice(index<0?items.length:index+1,0,[PAGE,'Daily Work · All Departments','☷'])}return items};
 const oldGo=window.go;
 window.go=async function(page){
  if(page!==PAGE)return oldGo.apply(this,arguments);
