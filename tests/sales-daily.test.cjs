@@ -32,7 +32,7 @@ test('AM → PM → corrections → resubmit → review; ownership and weekly fi
  const {a,b,m,task,call}=fixture();const date='2026-10-22';
  const r=call(a,'submit_am',{date,tasks:[task('Call'),task('Visit')]});
  assert.equal(r.salesperson,"'=unsafe");
- assert.throws(()=>call(a,'save_am',{date,tasks:[task('Replace')]}),/already/);
+ assert.throws(()=>call(a,'save_am',{date,tasks:[task('Replace')]}),/approval/);
  assert.throws(()=>call(m,'save_am',{date,tasks:[task('No')]}),/cannot/);
  call(b,'submit_am',{date,tasks:[task('Private')]});
  assert.equal(call(a,'read',{date}).reports.length,1);
