@@ -134,12 +134,12 @@ window.saveSalesDailyEndpoint=async()=>{
 function compactSubmittedTask(t,i){
  return '<div class="border rounded-xl bg-white px-3 py-2 flex gap-3"><span class="text-xs text-gray-500">'+(i+1)+'.</span><div class="flex-1"><div class="text-sm font-semibold">'+h(t.plan)+'</div><div class="text-[11px] text-gray-500">'+h(t.category)+(t.customerName?' · '+h(t.customerName):'')+(t.todoTaskId?' · Linked To-Do':'')+(t.plannedFollowup?' · Due '+h(t.plannedFollowup):'')+'</div></div></div>';
 }
-function formTask(t,i,readonly=false){
+function formTask(t,i,readonly=false,noStructure=false){
  const cs='<option value="">No linked customer</option>'+ui.customers.map(c=>
  '<option value="'+h(c.id)+'" '+(String(t.customerId||'')===String(c.id)?'selected':'')+'>'+h(c.name)+'</option>').join('');
  return '<div class="daily-task-row border rounded-xl bg-white px-3 py-2.5" data-index="'+i+'" data-todo-task-id="'+h(t.todoTaskId||'')+'" data-source-task-id="'+h(t.sourceTaskId||'')+'">'+
  '<div class="flex justify-between items-center gap-2 mb-2"><b class="text-sm">Task '+(i+1)+(t.todoTaskId?' · Linked To-Do':t.sourceTaskId?' · Carried forward':'')+'</b>'+
- (!readonly?(t.todoTaskId||t.sourceTaskId?'<button type="button" onclick="unlinkSalesDailyTask('+i+')" class="border px-2.5 py-1.5 rounded-lg text-[11px]">Unlink task</button>':'')+'<button type="button" onclick="removeSalesDailyTask('+i+')" class="border border-red-100 text-red-600 px-2.5 py-1.5 rounded-lg text-[11px]">Remove</button>':'')+'</div>'+
+ (!readonly&&!noStructure?(t.todoTaskId||t.sourceTaskId?'<button type="button" onclick="unlinkSalesDailyTask('+i+')" class="border px-2.5 py-1.5 rounded-lg text-[11px]">Unlink task</button>':'')+'<button type="button" onclick="removeSalesDailyTask('+i+')" class="border border-red-100 text-red-600 px-2.5 py-1.5 rounded-lg text-[11px]">Remove</button>':'')+'</div>'+
  '<div class="grid sm:grid-cols-3 gap-2">'+
  '<label class="text-xs font-semibold">Category<select data-field="category" class="'+common+'" '+(readonly?'disabled':'')+'>'+
  CATS.map(c=>'<option value="'+h(c)+'" '+(t.category===c?'selected':'')+'>'+h(c)+'</option>').join('')+'</select></label>'+
@@ -202,7 +202,7 @@ async function saveAm(submit){
   const retained=new Set((r.tasks||[]).map(t=>t.todoTaskId).filter(Boolean));
   ui.report=r;ui.tasks=r.tasks||[];
   if(linked.some(id=>!retained.has(id)))toast('Plan saved, but the To-Do link was not retained. Update your Google Apps Script deployment to enable the compact-view label.',true);
-  else toast(submit?'Morning plan submitted':'Morning draft saved');
+  else toast(submit&&ui.report?.pmStatus==='Submitted'?'Approved Morning Plan amendment saved; Evening Result unchanged':submit?'Morning plan submitted':'Morning draft saved');
   await reload();
   window.invalidateSalesDailyApprovals?.();
  }catch(e){toast(e.message,true)}finally{ui.loading=false}
@@ -634,6 +634,7 @@ window.openSalesDailyShare=(section,mode='compact')=>{
 function renderSalesHome(){
  if(state.page!==P)return;
  const report=ui.report,amLocked=report?.amStatus==='Submitted'&&!report?.editRequests?.some(x=>x.section==='AM'&&x.status==='Approved'),pmLocked=report?.pmStatus==='Submitted'||report?.reviewStatus==='Reviewed';
+ const postPmAmendment=!amLocked&&report?.pmStatus==='Submitted';
  const tasks=amLocked?report.tasks:ui.tasks.length?ui.tasks:[empty()];
  ui.tasks=tasks;
  root().innerHTML='<div class="max-w-6xl mx-auto space-y-4">'+header('Daily Plan & Result','One report per day · Morning plan and evening results stay together')+
@@ -644,16 +645,19 @@ function renderSalesHome(){
  '<span class="rounded-lg bg-blue-50 px-3 py-2 text-xs">PM: <b>'+h(report?.pmStatus||'Not Started')+'</b></span>'+
  '<span class="rounded-lg bg-gray-100 px-3 py-2 text-xs">Manager review: <b>'+h(report?managerReviewStatus(report):'Not Ready (PM not submitted)')+'</b></span></div></div>'+
  (report?.managerComment?'<div class="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs"><b>Manager note:</b> '+h(report.managerComment)+'</div>':'')+
+ (report?.amRevisionPending?'<div class="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900"><b>Morning Plan amended after Evening Result.</b> Original PM and manager review remain unchanged. Awaiting management amendment acknowledgment.</div>':'')+
  (isOverdue(report)?'<div class="rounded-xl border border-red-200 bg-red-50 text-red-800 p-3 text-sm"><b>Overdue Evening Result:</b> The first Evening Result was due by 10:00 AM the following day (Phnom Penh time). '+h(ui.policyVersion!=='next-day-10am-20261104'?'The updated deadline rule is not yet active on Google Apps Script.':latePmHint(report)||'Management has authorized a late submission.')+'</div>':'')+
  '<div id="salesDailyAttention" aria-live="polite"></div>'+
  '<section class="space-y-3"><div class="flex flex-wrap justify-between items-center gap-2">'+
- '<h3 class="font-bold">Morning Plan</h3>'+(amLocked?'':'<button type="button" onclick="addSalesDailyTask()" class="'+lightButton+'">+ Add Task</button>')+'</div>'+
- '<div id="dailyPlanRows" class="grid gap-2">'+tasks.map((t,i)=>amLocked?compactSubmittedTask(t,i):formTask(t,i,false)).join('')+'</div>'+
- (!amLocked?'<div class="rounded-xl bg-[#fdfbf6] border p-3 flex flex-wrap gap-2 items-end">'+
+ '<h3 class="font-bold">Morning Plan</h3>'+(amLocked||postPmAmendment?'':'<button type="button" onclick="addSalesDailyTask()" class="'+lightButton+'">+ Add Task</button>')+'</div>'+
+ '<div id="dailyPlanRows" class="grid gap-2">'+tasks.map((t,i)=>amLocked?compactSubmittedTask(t,i):formTask(t,i,false,postPmAmendment)).join('')+'</div>'+
+ (!amLocked?'<div class="'+(postPmAmendment?'hidden ':'')+'rounded-xl bg-[#fdfbf6] border p-3 flex flex-wrap gap-2 items-end">'+
  '<label class="text-xs font-semibold">Carry forward unfinished plans from<input id="dailyCarryFrom" type="date" value="'+h(backDays(ui.date,1))+'" class="'+common+' mt-1"></label>'+
  '<button type="button" onclick="carrySalesDailyTasks()" class="'+lightButton+'">Preview Unfinished Plans</button></div>'+
- '<div class="flex flex-wrap gap-2"><button onclick="saveSalesDailyMorning(false)" class="'+lightButton+'">Save AM Draft</button>'+
- '<button onclick="saveSalesDailyMorning(true)" class="'+actionButton+'">Submit Morning Plan</button></div>':
+ (postPmAmendment?'<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs"><b>Approved correction only.</b> Edit existing Morning Plan details, then save. You cannot add, remove or reorder tasks. The original submitted Evening Result and manager review stay unchanged.</div>':'')+
+ '<div class="flex flex-wrap gap-2">'+
+ (postPmAmendment?'':'<button onclick="saveSalesDailyMorning(false)" class="'+lightButton+'">Save AM Draft</button>')+
+ '<button onclick="saveSalesDailyMorning(true)" class="'+actionButton+'">'+(postPmAmendment?'Save Approved Amendment':'Submit Morning Plan')+'</button></div>':
  '<div class="flex items-center flex-wrap gap-2"><p class="text-xs text-green-700">Morning plan submitted at '+h(formatDailySubmittedAt(report?.amSubmittedAt))+'. Changes are recorded in the audit log.</p><button onclick="requestSalesDailyEdit(\'AM\')" class="'+lightButton+'">Request Morning Edit</button></div>')+'</section>'+
  (amLocked?'<section class="space-y-3 border-t pt-5"><h3 class="font-bold">Evening Result</h3>'+
  '<p class="text-xs text-gray-500">Update what actually happened, and choose the next follow-up date when necessary.</p>'+
@@ -726,6 +730,11 @@ window.openDailyManagerReport=(id,selectedReport)=>{
  if(!r)return toast('This Daily Report is unavailable. Refresh the review list.',true);
  rememberDailyReports([r]);
  const editRequests=(r.editRequests||[]).filter(x=>x.status==='Pending');
+ const amReviewAction=r.amRevisionPending?
+  '<div class="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs"><b>Morning Plan amendment — management recheck required</b>'+
+  '<p class="mt-1">Morning Plan was revised after Evening Results were submitted. Original PM outcomes, submission and manager review remain intact.</p>'+
+  '<p class="mt-1">Reason: '+h(r.amRevision?.reason||'Approved correction')+' · '+Number(r.amRevision?.changedCount||0)+' task(s) corrected</p>'+
+  '<button type="button" onclick="acknowledgeSalesDailyAmRevision(\''+h(r.id)+'\',\''+h(r.date)+'\',\''+h(r.userId)+'\')" class="'+actionButton+' mt-2">Acknowledge Amendment</button></div>':'';
  const requestActions=editRequests.map(x=>'<div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs"><b>'+h(x.section==='AM'?'Morning Plan':'Evening Result')+' edit request</b><p class="my-2">'+h(x.reason)+'</p><div class="flex gap-2"><button class="'+lightButton+'" onclick="decideSalesDailyEdit(\''+h(x.id)+'\',\'Rejected\')">Reject</button><button class="'+actionButton+'" onclick="decideSalesDailyEdit(\''+h(x.id)+'\',\'Approved\')">Approve</button></div></div>').join('');
  const rows=r.tasks.map((t,i)=>'<div class="rounded-xl border p-3 bg-white"><b class="text-xs">'+(i+1)+'. '+h(t.plan)+'</b>'+
  '<div class="text-[11px] text-gray-500 mt-1">'+h(t.category)+(t.customerName?' · '+h(t.customerName):'')+'</div>'+
@@ -734,7 +743,7 @@ window.openDailyManagerReport=(id,selectedReport)=>{
  '<div class="text-xs mt-2"><b>Actual result:</b> '+h(t.result||'Not submitted')+'</div>'+
  (t.nextFollowup?'<div class="text-xs text-blue-700 mt-2">Next follow-up: '+h(t.nextFollowup)+'</div>':'')+'</div>').join('');
  openModal('Daily Plan & Result — '+h(r.salesperson)+' · '+h(r.date),
- '<div class="space-y-4">'+requestActions+'<div class="rounded-xl bg-gray-50 p-3 text-xs">AM: '+h(r.amStatus)+' · PM: '+h(r.pmStatus)+
+ '<div class="space-y-4">'+requestActions+amReviewAction+'<div class="rounded-xl bg-gray-50 p-3 text-xs">AM: '+h(r.amStatus)+' · PM: '+h(r.pmStatus)+
  '</div><div class="mt-1"><b>Manager review:</b> '+h(managerReviewStatus(r))+managerReviewAudit(r)+'</div></div>'+rows+
  '<p class="text-[11px] text-gray-500">Manager review and task completion are separate. A reviewed report can still contain unfinished tasks.</p>'+
  (initialPmMissing(r)?
@@ -752,6 +761,26 @@ window.openDailyManagerReport=(id,selectedReport)=>{
  '<button onclick="submitDailyManagerReview(\''+h(r.id)+'\',\'Changes Requested\')" class="'+lightButton+'">Request Corrections</button>'+
  '<button onclick="submitDailyManagerReview(\''+h(r.id)+'\',\'Reviewed\')" class="'+actionButton+'">Mark Reviewed</button></div>':'')+
  '<button onclick="closeModal()" class="'+lightButton+'">Close</button></div>');
+};
+let amAmendmentReviewSaving=false;
+window.acknowledgeSalesDailyAmRevision=async(id,date,userId)=>{
+ if(!review()||amAmendmentReviewSaving)return;
+ const note=prompt('Management note for the Morning Plan amendment (required):');
+ if(note===null)return;
+ if(!note.trim())return toast('Enter an amendment review note',true);
+ amAmendmentReviewSaving=true;
+ try{
+  await api('acknowledge_am_revision',{reportId:id,note:note.trim()});
+  const result=await api('read',{start:date,end:date,userId:userId||null});
+  const updated=(result.reports||[]).find(r=>String(r.id)===String(id));
+  if(!updated||updated.amRevisionPending)throw Error('Amendment acknowledgment could not be verified. Refresh before trying again.');
+  replaceDailyReport(updated);
+  if(state.page===R)renderManager();
+  window.openDailyManagerReport(String(id),updated);
+  toast('Morning Plan amendment acknowledged. Original Evening Result and manager review preserved.');
+  window.invalidateSalesDailyApprovals?.();
+ }catch(err){toast(err.message||'Could not acknowledge the amendment',true)}
+ finally{amAmendmentReviewSaving=false;}
 };
 let managerReviewSaving=false;
 window.submitDailyManagerReview=async(id,decision)=>{
@@ -995,6 +1024,12 @@ window.getSalesDailyApprovalQueue=async()=>{
        salesperson:r.salesperson||'Sales',request_id:String(x.id),section:x.section||'',
        reason:x.reason||'',requested_at:x.requestedAt||x.createdAt||r.pmSubmittedAt||r.amSubmittedAt||r.date
      }));
+     if(r.amRevisionPending)rows.push({
+       id:'daily-am-revision:'+String(r.id),kind:'am_revision',report_id:String(r.id),
+       date:r.date,userId:String(r.userId||''),salesperson:r.salesperson||'Sales',
+       reason:r.amRevision?.reason||'Morning Plan revised after Evening Result',
+       requested_at:r.amRevision?.at||r.pmSubmittedAt||r.date
+     });
      if(r.pmStatus==='Submitted'&&!['Reviewed','Changes Requested'].includes(r.reviewStatus))
        rows.push({id:'daily-review:'+String(r.id),kind:'review',
          report_id:String(r.id),date:r.date,userId:String(r.userId||''),salesperson:r.salesperson||'Sales',
