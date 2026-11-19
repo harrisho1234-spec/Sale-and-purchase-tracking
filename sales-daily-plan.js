@@ -730,10 +730,21 @@ window.openDailyManagerReport=(id,selectedReport)=>{
  if(!r)return toast('This Daily Report is unavailable. Refresh the review list.',true);
  rememberDailyReports([r]);
  const editRequests=(r.editRequests||[]).filter(x=>x.status==='Pending');
+ const amChanges=(r.amRevision?.changes||[]).slice(0,20).map((change,i)=>{
+   const before=change.before||{},after=change.after||{};
+   const meta=x=>[x.category,x.customerName,x.priority,x.plannedFollowup].filter(Boolean).join(' · ');
+   return '<div class="rounded-lg bg-white border p-2 mt-2">'+
+     '<b>Changed Task '+(i+1)+'</b>'+
+     '<div class="text-gray-600 mt-1"><b>Before:</b> '+h(before.plan||'')+
+       '<div class="text-[10px]">'+h(meta(before))+'</div></div>'+
+     '<div class="mt-1 text-gray-900"><b>After:</b> '+h(after.plan||'')+
+       '<div class="text-[10px]">'+h(meta(after))+'</div></div></div>';
+ }).join('');
  const amReviewAction=r.amRevisionPending?
   '<div class="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs"><b>Morning Plan amendment — management recheck required</b>'+
   '<p class="mt-1">Morning Plan was revised after Evening Results were submitted. Original PM outcomes, submission and manager review remain intact.</p>'+
   '<p class="mt-1">Reason: '+h(r.amRevision?.reason||'Approved correction')+' · '+Number(r.amRevision?.changedCount||0)+' task(s) corrected</p>'+
+  amChanges+
   '<button type="button" onclick="acknowledgeSalesDailyAmRevision(\''+h(r.id)+'\',\''+h(r.date)+'\',\''+h(r.userId)+'\')" class="'+actionButton+' mt-2">Acknowledge Amendment</button></div>':'';
  const requestActions=editRequests.map(x=>'<div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs"><b>'+h(x.section==='AM'?'Morning Plan':'Evening Result')+' edit request</b><p class="my-2">'+h(x.reason)+'</p><div class="flex gap-2"><button class="'+lightButton+'" onclick="decideSalesDailyEdit(\''+h(x.id)+'\',\'Rejected\')">Reject</button><button class="'+actionButton+'" onclick="decideSalesDailyEdit(\''+h(x.id)+'\',\'Approved\')">Approve</button></div></div>').join('');
  const rows=r.tasks.map((t,i)=>'<div class="rounded-xl border p-3 bg-white"><b class="text-xs">'+(i+1)+'. '+h(t.plan)+'</b>'+
