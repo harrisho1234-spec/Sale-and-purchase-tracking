@@ -4,8 +4,8 @@
 'use strict';
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const H='rounded-lg border px-3 py-2 text-xs font-semibold hover:bg-stone-50';
-const role=()=>String(window.state?.profile?.role||'');
-const id=()=>String(window.state?.user?.id||'');
+const role=()=>String(state?.profile?.role||'');
+const id=()=>String(state?.user?.id||'');
 const canSales=()=>['sales','manager','admin','super_admin'].includes(role());
 const canMarketing=()=>['marketing','marketing_manager','admin','super_admin'].includes(role());
 const staffSales=()=>role()==='sales';
@@ -34,7 +34,7 @@ function marketingNormalizeReport(r){
   reviewStatus:r.review_status||'',results:(results.length?results:plan.map(taskId=>({id:taskId,status:r.pm_submitted_at?'Reported':'Planned'}))).map(t=>({id:t.id,title:'',status:t.status||'Planned',result:t.note||''})),sourceId:'marketing:'+String(r.id||r.user_id+'-'+r.work_date)};
 }
 function salesAccess(){
- return canSales()&&String(window.state?.user?.id||'')!=='';}
+ return canSales()&&String(state?.user?.id||'')!=='';}
 async function load(suggestedDate){
  const generation=++S.generation,account=id();S.loading=true;
  S.errors={};S.loaded={};
@@ -146,8 +146,7 @@ async function loadPeriod(f){
  if(!canSales())return;
  const year=Number(f.year);if(!Number.isInteger(year)||year<2020||year>2100)throw Error('Choose a valid year');
  const months=f.month!=='All'?[Number(f.month)]:f.quarter!=='All'?Array.from({length:3},(_,i)=>(Number(f.quarter)-1)*3+i+1):Array.from({length:12},(_,i)=>i+1);
- const ranges=months.map(m=>{const start=year+'-'+String(m).padStart(2,'0')+'-01';const end=shift(year+'-'+String(m+1).padStart(2,'0')+'-01',-1);return{start,end}}); // December corrected below
- for(const r of ranges)if(r.start.endsWith('-12-01'))r.end=year+'-12-31';
+ const ranges=months.map(m=>{const start=year+'-'+String(m).padStart(2,'0')+'-01';const end=m===12?year+'-12-31':shift(year+'-'+String(m+1).padStart(2,'0')+'-01',-1);return{start,end}});
  const previous=new Map(S.salesReports.map(r=>[r.sourceId,r]));const errors=[],loaded=[];
  for(let i=0;i<ranges.length;i+=3){
   const slice=ranges.slice(i,i+3);
