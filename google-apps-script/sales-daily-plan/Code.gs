@@ -182,7 +182,7 @@ function amRevisionStates(ss){
  return revisions;
 }
 function amTaskSnapshot(row){
- return {id:row[0],sort:row[4],category:row[5],plan:row[6],customerId:row[7],
+ return {id:row[0],sort:Number(row[4]||0),category:row[5],plan:row[6],customerId:row[7],
   customerName:row[8],priority:row[9],plannedFollowup:row[10],todoTaskId:row[17]||''};
 }
 function audit(ss,actor,report,action,before,after,task=''){
