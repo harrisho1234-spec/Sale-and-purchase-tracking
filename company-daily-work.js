@@ -7,7 +7,7 @@ const authorizedRoles=new Set(['sales','manager','marketing','marketing_manager'
 const h=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const root=()=>document.getElementById('content');
 const today=()=>{const dt=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Phnom_Penh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());return /^\d{4}-\d{2}-\d{2}$/.test(dt)?dt:new Date().toISOString().slice(0,10)};
-const S={tasks:[],daily:[],staff:[],categories:{},actor:null,ready:false,loading:false,tab:'My Daily',date:today(),selected:[],reportDepartment:'All',reportYear:String(new Date().getFullYear()),reportQuarter:'All',reportMonth:'All',search:'',error:''};
+const S={tasks:[],daily:[],staff:[],categories:{},actor:null,ready:false,loading:false,tab:'My Daily',date:today(),selected:[],reportDepartment:'All',reportYear:String(new Date().getFullYear()),reportQuarter:'All',reportMonth:'All',reportEmployee:'All',search:'',error:''};
 const btn='rounded-lg border px-3 py-2 text-xs font-semibold hover:bg-stone-50';
 const solid='rounded-lg px-3 py-2 text-xs font-semibold bg-[#211d18] text-white';
 function allowed(){return authorizedRoles.has(String(state.profile?.role||''))}
@@ -76,6 +76,7 @@ function reports(){
  const filters=['All','Sales','Marketing','Stock','Project','Product Assistant'];
  const visible=S.daily.filter(r=>{
   if(S.reportDepartment!=='All'&&r.department!==S.reportDepartment)return false;
+  if(S.reportEmployee!=='All'&&r.userId!==S.reportEmployee)return false;
   if(S.reportYear!=='All'&&!r.date.startsWith(S.reportYear))return false;
   if(S.reportMonth!=='All'&&r.date.slice(5,7)!==S.reportMonth)return false;
   if(S.reportQuarter!=='All'&&Math.ceil(Number(r.date.slice(5,7))/3)!==Number(S.reportQuarter))return false;
@@ -83,6 +84,7 @@ function reports(){
  });
  return '<section class="rounded-xl border bg-white p-4 space-y-3"><h3 class="font-bold">Department Daily Reports</h3><div class="flex gap-2 flex-wrap">'+
  '<select class="'+btn+'" onchange="companyDailyFilter(\'department\',this.value)">'+filters.filter(d=>S.actor.allDepartments||d==='All'||d===S.actor.department).map(d=>'<option '+(d===S.reportDepartment?'selected':'')+'>'+d+'</option>').join('')+'</select>'+
+ '<select class="'+btn+'" onchange="companyDailyFilter(\'employee\',this.value)"><option value="All">All employees</option>'+S.staff.filter(x=>S.actor.allDepartments||x.department===S.actor.department).map(x=>'<option value="'+h(x.id)+'" '+(x.id===S.reportEmployee?'selected':'')+'>'+h(x.name)+'</option>').join('')+'</select>'+
  '<input class="'+btn+'" style="width:110px" type="number" min="2020" max="2100" value="'+h(S.reportYear)+'" onchange="companyDailyFilter(\'year\',this.value)" aria-label="Year">'+
  '<select class="'+btn+'" onchange="companyDailyFilter(\'quarter\',this.value)">'+['All','1','2','3','4'].map(x=>'<option '+(x===S.reportQuarter?'selected':'')+' value="'+x+'">'+(x==='All'?'All quarters':'Q'+x)+'</option>').join('')+'</select>'+
  '<select class="'+btn+'" onchange="companyDailyFilter(\'month\',this.value)">'+['All',...Array.from({length:12},(_,i)=>String(i+1).padStart(2,'0'))].map(x=>'<option '+(x===S.reportMonth?'selected':'')+'>'+x+'</option>').join('')+'</select></div>'+
@@ -130,7 +132,7 @@ window.companyDailySubmitPM=async()=>{
 };
 window.companyDailyDecide=async(id,decision)=>{if(!confirm(decision+' this support request?'))return;try{await api('company_decide_request',{id,decision});say('Support request '+decision.toLowerCase()+'d');await load()}catch(e){say(e.message,true)}};
 window.companyDailyReview=async id=>{const decision=confirm('Mark this Evening Result as reviewed? Select Cancel to request changes.')?'Reviewed':'Changes Requested';const comment=prompt('Management comment (optional)');if(comment===null)return;try{await api('company_review',{id,status:decision,comment});say('Manager review saved');await load()}catch(e){say(e.message,true)}};
-window.companyDailyFilter=(field,value)=>{if(field==='department')S.reportDepartment=value;if(field==='year')S.reportYear=value;if(field==='quarter')S.reportQuarter=value;if(field==='month')S.reportMonth=value;render()};
+window.companyDailyFilter=(field,value)=>{if(field==='department')S.reportDepartment=value;if(field==='year')S.reportYear=value;if(field==='quarter')S.reportQuarter=value;if(field==='month')S.reportMonth=value;if(field==='employee')S.reportEmployee=value;render()};
 window.companyDailyRefresh=load;
 const oldNav=window.navItems;
 if(typeof oldNav==='function')window.navItems=function(){const items=oldNav.apply(this,arguments);if(allowed()&&!items.some(x=>x[0]===PAGE)){const index=items.findIndex(x=>x[0]==='sales-daily');items.splice(index<0?items.length:index+1,0,[PAGE,'Daily Work · All Departments','☷'])}return items};
