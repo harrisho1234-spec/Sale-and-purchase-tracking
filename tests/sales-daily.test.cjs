@@ -285,3 +285,44 @@ test('missing evening result can open directly from an authenticated historical 
  assert.match(modal,/Evening Result not submitted/);
  assert.doesNotMatch(modal,/Mark Reviewed/);
 });
+
+
+test('a manager can approve a reviewed report Morning Plan amendment without reopening PM',()=>{
+ const {a,m,task,call,sheets}=fixture(),date='2026-10-22';
+ const created=call(a,'submit_am',{date,tasks:[task('Follow up stock')]});
+ call(a,'submit_pm',{date,results:[{id:created.tasks[0].id,status:'Pending',result:'Customer has not responded'}]});
+ call(m,'review',{reportId:created.id,decision:'Reviewed',comment:'Reviewed original PM'});
+ const old=call(m,'read',{date}).reports[0];
+ const approval=call(a,'request_edit',{reportId:created.id,section:'AM',reason:'Correct AM task description'});
+ call(m,'decide_edit',{requestId:approval.requestId,decision:'Approved',note:'Approved AM text correction'});
+ const afterApproval=call(m,'read',{date}).reports[0];
+ assert.equal(afterApproval.pmStatus,'Submitted');
+ assert.equal(afterApproval.reviewStatus,'Reviewed');
+ assert.equal(afterApproval.reviewedAt,old.reviewedAt);
+ assert.equal(afterApproval.pmSubmittedAt,old.pmSubmittedAt);
+ const changed=[{...task('Follow up updated stock'),id:created.tasks[0].id}];
+ assert.throws(()=>call(a,'save_am',{date,tasks:changed}),/Submit the approved amendment/);
+ assert.throws(()=>call(a,'submit_am',{date,tasks:[...changed,task('Added task')]}),/only corrections to existing/);
+ const amended=call(a,'submit_am',{date,tasks:changed});
+ assert.equal(amended.amSubmittedAt,old.amSubmittedAt);
+ assert.equal(amended.pmSubmittedAt,old.pmSubmittedAt);
+ assert.equal(amended.reviewStatus,'Reviewed');
+ const verified=call(m,'read',{date}).reports[0];
+ assert.equal(verified.tasks[0].plan,'Follow up updated stock');
+ assert.equal(verified.tasks[0].status,'Pending');
+ assert.equal(verified.tasks[0].result,'Customer has not responded');
+ assert.equal(verified.managerComment,'Reviewed original PM');
+ assert.equal(verified.amRevisionPending,true);
+ assert.equal(verified.amRevision.changes.length,1);
+ assert.equal(verified.amRevision.changes[0].before.plan,'Follow up stock');
+ assert.equal(verified.amRevision.changes[0].after.plan,'Follow up updated stock');
+ assert.ok(sheets['Audit Log'].rows.some(row=>row.includes('AM_TASK_REVISED')));
+ assert.ok(sheets['Audit Log'].rows.some(row=>row.includes('AM_REVISED_AFTER_PM')));
+ assert.equal(call(m,'read',{date}).reports[0].editRequests.find(x=>x.id===approval.requestId).status,'Used');
+ assert.throws(()=>call(a,'submit_am',{date,tasks:[{...changed[0],plan:'Unapproved further edit'}]}),/Request approval/);
+ const acknowledged=call(m,'acknowledge_am_revision',{reportId:created.id,note:'Checked task text against original PM'});
+ assert.equal(acknowledged.acknowledged,true);
+ assert.equal(call(m,'read',{date}).reports[0].amRevisionPending,false);
+ assert.equal(call(m,'read',{date}).reports[0].reviewStatus,'Reviewed');
+ assert.throws(()=>call(m,'acknowledge_am_revision',{reportId:created.id,note:'Repeat'}),/No pending/);
+});
