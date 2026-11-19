@@ -1,6 +1,6 @@
 // Unified pending approvals notification center.
 (function(){
-  var A={orders:[],customers:[],payments:[],stages:[],assignments:[],conversions:[],stockActions:[],stockEdits:[],cnApprovals:[],cnFinance:[],doEdits:[],stockCountEdits:[],dailyReviews:[],targetCredits:[],loadWarnings:[],loading:false,activeType:'all'};
+  var A={orders:[],customers:[],payments:[],stages:[],assignments:[],conversions:[],stockActions:[],stockEdits:[],cnApprovals:[],cnFinance:[],doEdits:[],stockCountEdits:[],dailyReviews:[],invoiceAudits:[],targetCredits:[],loadWarnings:[],loading:false,activeType:'all'};
 
   function role(){return state.profile&&state.profile.role||''}
   function reviewer(){return typeof window.hasAppPermission==='function'?window.hasAppPermission('approvals.view'):['manager','admin','super_admin'].indexOf(role())>=0}
@@ -12,11 +12,11 @@
   function cnTotal(){return A.cnApprovals.length+A.cnFinance.length}
   function total(){return A.orders.length+A.customers.length+A.payments.length+A.stages.length+
     A.assignments.length+A.conversions.length+stockTotal()+cnTotal()+A.doEdits.length+
-    A.stockCountEdits.length+A.dailyReviews.length+A.targetCredits.length}
+    A.stockCountEdits.length+A.dailyReviews.length+A.invoiceAudits.length+A.targetCredits.length}
   function dateText(v){var d=new Date(v);return isNaN(d.getTime())?String(v||''):d.toLocaleString()}
 
   async function loadPending(){
-    if(!reviewer()){A.orders=[];A.customers=[];A.payments=[];A.stages=[];A.assignments=[];A.conversions=[];A.stockActions=[];A.stockEdits=[];A.cnApprovals=[];A.cnFinance=[];A.doEdits=[];A.stockCountEdits=[];A.dailyReviews=[];A.targetCredits=[];A.loadWarnings=[];return}
+    if(!reviewer()){A.orders=[];A.customers=[];A.payments=[];A.stages=[];A.assignments=[];A.conversions=[];A.stockActions=[];A.stockEdits=[];A.cnApprovals=[];A.cnFinance=[];A.doEdits=[];A.stockCountEdits=[];A.dailyReviews=[];A.invoiceAudits=[];A.targetCredits=[];A.loadWarnings=[];return}
     var stockActionPromise=stockReviewer()
       ?db.rpc('get_stock_action_requests',{p_status:'pending'})
       :Promise.resolve({data:[],error:null});
@@ -39,7 +39,11 @@
       typeof window.getSalesDailyApprovalQueue==='function'
         ?optional(window.getSalesDailyApprovalQueue().then(function(data){return {data:data,error:null}}))
         :Promise.resolve({data:[],error:null}),
-      adminReviewer()?optional(db.rpc('get_pending_sales_target_credit_requests')):Promise.resolve({data:[],error:null})
+      adminReviewer()?optional(db.rpc('get_pending_sales_target_credit_requests')):Promise.resolve({data:[],error:null}),
+      role()==='super_admin'?optional(db.from('sales_invoice_admin_audit')
+        .select('id,invoice_no,order_no,action,actor_email,reason,created_at')
+        .eq('actor_role','admin').is('reviewed_at',null)
+        .order('created_at',{ascending:false}).limit(150)):Promise.resolve({data:[],error:null})
     ]);
     if(res[0].error)throw res[0].error;
     if(res[1].error)throw res[1].error;
@@ -58,7 +62,7 @@
     A.stockActions=res[6].data||[];
     A.stockEdits=res[7].data||[];
     A.loadWarnings=[];
-    ['Return/CN','DO edits','Stock Count edits','Team Daily Review','Shared Sales Credit'].forEach(function(name,i){
+    ['Return/CN','DO edits','Stock Count edits','Team Daily Review','Shared Sales Credit','Admin invoice review'].forEach(function(name,i){
       if(res[i+8].error){
         A.loadWarnings.push(name+' unavailable: '+String(res[i+8].error.message||res[i+8].error));
         console.warn('Pending '+name+':',res[i+8].error.message||res[i+8].error);
@@ -77,6 +81,7 @@
     A.stockCountEdits=adminReviewer()?(Array.isArray(res[10].data)?res[10].data:[]).filter(function(x){return x.status==='pending'}):[];
     A.dailyReviews=Array.isArray(res[11].data)?res[11].data:[];
     A.targetCredits=adminReviewer()&&Array.isArray(res[12].data)?res[12].data:[];
+    A.invoiceAudits=role()==='super_admin'&&Array.isArray(res[13].data)?res[13].data:[];
   }
 
   function addNavBadge(){
@@ -149,6 +154,7 @@
       +'<button onclick="openApprovalType(\'cn_approval\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">CN Approvals</div><div class="text-2xl font-bold mt-1">'+A.cnApprovals.length+'</div></button>'
       +'<button onclick="openApprovalType(\'cn_finance\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">CN Credit Decisions</div><div class="text-2xl font-bold mt-1">'+A.cnFinance.length+'</div></button>'
       +'<button onclick="openApprovalType(\'daily\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Daily Reviews</div><div class="text-2xl font-bold mt-1">'+A.dailyReviews.length+'</div></button>'
+      +(role()==='super_admin'?'<button onclick="openApprovalType(\'invoice_audit\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Admin Invoice Reviews</div><div class="text-2xl font-bold mt-1">'+A.invoiceAudits.length+'</div></button>':'')
       +(adminReviewer()?'<button onclick="openApprovalType(\'do_edit\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">DO Edits</div><div class="text-2xl font-bold mt-1">'+A.doEdits.length+'</div></button>':'')
       +(adminReviewer()?'<button onclick="openApprovalType(\'stock_count_edit\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Stock Count Edits</div><div class="text-2xl font-bold mt-1">'+A.stockCountEdits.length+'</div></button>':'')
       +(stockReviewer()?'<button onclick="openApprovalType(\'stock\')" class="rounded-xl border bg-white px-4 py-3 text-left"><div class="text-[9px] uppercase font-bold text-gray-400">Stock</div><div class="text-2xl font-bold mt-1">'+stockTotal()+'</div></button>':'')
@@ -299,6 +305,13 @@
         '<div class="text-xs text-gray-500 mt-2">'+esc(r.reason||'Review stock count corrections')+'</div></div>'+
         '<b class="text-xs text-amber-700">Review →</b></div></button>';
     }
+    if(type==='invoice_audit'){
+      return '<button type="button" onclick="closeModal();openInvoiceAdminAuditReview()" class="w-full text-left rounded-xl border p-4 hover:bg-amber-50">'+
+        '<span class="rounded px-2 py-1 text-[9px] bg-amber-50 text-amber-800 font-bold">ADMIN INVOICE CHANGE</span>'+
+        '<b class="ml-2">'+esc(r.invoice_no||r.order_no||'Invoice')+'</b>'+
+        '<div class="text-xs text-gray-600 mt-2">'+esc(r.action==='delete'?'Invoice deleted':'Invoice edited')+' · '+esc(r.actor_email||'Admin')+'</div>'+
+        '<div class="text-xs text-gray-500 mt-1">'+esc(r.reason||'Review change')+'</div></button>';
+    }
     if(type==='daily'){
       return '<button type="button" onclick="openDailyApprovalFromCenter(\''+esc(r.report_id)+'\',\''+esc(r.date)+'\',\''+esc(r.userId||'')+'\')" class="w-full text-left rounded-xl border p-4 hover:bg-amber-50">'+
         '<div class="flex justify-between gap-3 items-center"><div>'+
@@ -387,6 +400,7 @@
     if(filter==='all'||filter==='do_edit')A.doEdits.forEach(function(x){rows.push({type:'do_edit',x:x})});
     if(filter==='all'||filter==='stock_count_edit')A.stockCountEdits.forEach(function(x){rows.push({type:'stock_count_edit',x:x})});
     if(filter==='all'||filter==='daily')A.dailyReviews.forEach(function(x){rows.push({type:'daily',x:x})});
+    if(filter==='all'||filter==='invoice_audit')A.invoiceAudits.forEach(function(x){rows.push({type:'invoice_audit',x:x})});
     if(filter==='all'||filter==='target_credit')A.targetCredits.forEach(function(x){rows.push({type:'target_credit',x:x})});
     if((filter==='all'||filter==='stock')&&stockReviewer()&&stockTotal()>0){
       var latest=([].concat(A.stockActions||[],A.stockEdits||[]).sort(function(a,b){return new Date(b.requested_at)-new Date(a.requested_at)})[0]||{});
@@ -414,6 +428,7 @@
       +'<button onclick="closeModal();openApprovalCenter(\'cn_approval\')" class="rounded-xl border px-3 py-3 '+(filter==='cn_approval'?'bg-[#211d18] text-white':'bg-white')+'"><div class="text-[9px] uppercase font-bold opacity-70">CN Approval</div><div class="text-xl font-bold">'+A.cnApprovals.length+'</div></button>'
       +'<button onclick="closeModal();openApprovalCenter(\'cn_finance\')" class="rounded-xl border px-3 py-3 '+(filter==='cn_finance'?'bg-[#211d18] text-white':'bg-white')+'"><div class="text-[9px] uppercase font-bold opacity-70">CN Credit</div><div class="text-xl font-bold">'+A.cnFinance.length+'</div></button>'
       +'<button onclick="closeModal();openApprovalCenter(\'daily\')" class="rounded-xl border px-3 py-3 '+(filter==='daily'?'bg-[#211d18] text-white':'bg-white')+'"><div class="text-[9px] uppercase font-bold opacity-70">Daily Review</div><div class="text-xl font-bold">'+A.dailyReviews.length+'</div></button>'
+      +(role()==='super_admin'?'<button onclick="closeModal();openApprovalCenter(\'invoice_audit\')" class="rounded-xl border px-3 py-3 '+(filter==='invoice_audit'?'bg-[#211d18] text-white':'bg-white')+'"><div class="text-[9px] uppercase font-bold opacity-70">Admin Invoice Review</div><div class="text-xl font-bold">'+A.invoiceAudits.length+'</div></button>':'')
       +(adminReviewer()?'<button onclick="closeModal();openApprovalCenter(\'do_edit\')" class="rounded-xl border px-3 py-3 '+(filter==='do_edit'?'bg-[#211d18] text-white':'bg-white')+'"><div class="text-[9px] uppercase font-bold opacity-70">DO Edit</div><div class="text-xl font-bold">'+A.doEdits.length+'</div></button>':'')
       +(adminReviewer()?'<button onclick="closeModal();openApprovalCenter(\'stock_count_edit\')" class="rounded-xl border px-3 py-3 '+(filter==='stock_count_edit'?'bg-[#211d18] text-white':'bg-white')+'"><div class="text-[9px] uppercase font-bold opacity-70">Stock Count</div><div class="text-xl font-bold">'+A.stockCountEdits.length+'</div></button>':'')
       +(stockReviewer()?'<button onclick="closeModal();openApprovalCenter(\'stock\')" class="rounded-xl border px-3 py-3 '+(filter==='stock'?'bg-[#211d18] text-white':'bg-white')+'"><div class="text-[9px] uppercase font-bold opacity-70">Stock</div><div class="text-xl font-bold">'+stockTotal()+'</div></button>':'')
@@ -443,6 +458,7 @@
       {key:'do_edit',label:'DO Edit Requests',count:A.doEdits.length,show:adminReviewer()},
       {key:'stock_count_edit',label:'Stock Count Edits',count:A.stockCountEdits.length,show:adminReviewer()},
       {key:'daily',label:'Team Daily Review',count:A.dailyReviews.length},
+      {key:'invoice_audit',label:'Admin Invoice Changes',count:A.invoiceAudits.length,show:role()==='super_admin'},
       {key:'target_credit',label:'Shared Sales Credit',count:A.targetCredits.length,show:adminReviewer()}
     ];
     return types.filter(function(t){return t.show!==false});
