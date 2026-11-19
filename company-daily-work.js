@@ -140,6 +140,7 @@ window.companyDailySubmitPM=async()=>{
 window.companyDailyDecide=async(id,decision)=>{if(!confirm(decision+' this support request?'))return;try{await api('company_decide_request',{id,decision});say('Support request '+decision.toLowerCase()+'d');await load()}catch(e){say(e.message,true)}};
 window.companyDailyReview=async id=>{const decision=confirm('Mark this Evening Result as reviewed? Select Cancel to request changes.')?'Reviewed':'Changes Requested';const comment=prompt('Management comment (optional)');if(comment===null)return;try{await api('company_review',{id,status:decision,comment});say('Manager review saved');await load()}catch(e){say(e.message,true)}};
 window.companyDailyFilter=(field,value)=>{if(field==='department')S.reportDepartment=value;if(field==='year')S.reportYear=value;if(field==='quarter')S.reportQuarter=value;if(field==='month')S.reportMonth=value;if(field==='employee')S.reportEmployee=value;render()};
+window.companyDailyLegacyRender=()=>{if(state.page===PAGE&&S.ready)render()};
 window.companyDailyRefresh=load;
 window.companyDailyLegacyLoadPeriod=async()=>{
  const bridge=window.LICompanyDailyLegacy;
