@@ -156,16 +156,25 @@ function buildTask(t,date,user,reportId,sort,old){
 }
 // Audit events are the source of truth for post-PM Morning Plan amendments.
 function amRevisionStates(ss){
- const revisions={};
+ const revisions={},changesByRequest={};
  data(tab(ss,'audit')).forEach(r=>{
   const id=String(r[3]||''),action=String(r[5]||'');
   if(!id)return;
-  if(action==='AM_REVISED_AFTER_PM'){
+  if(action==='AM_TASK_REVISED'){
+   let before={},after={};
+   try{before=JSON.parse(r[6]||'{}').task||{};after=JSON.parse(r[7]||'{}')}catch(_){}
+   const requestId=String(after.requestId||'');
+   if(requestId){
+    if(!changesByRequest[requestId])changesByRequest[requestId]=[];
+    if(changesByRequest[requestId].length<20)
+     changesByRequest[requestId].push({taskId:r[4],before,after:after.task||{}});
+   }
+  }else if(action==='AM_REVISED_AFTER_PM'){
    let detail={};
    try{detail=JSON.parse(r[7]||'{}')}catch(_){}
    revisions[id]={pending:true,at:r[1],changedCount:Number(detail.changedCount||0),
      changedTaskIds:detail.changedTaskIds||[],reason:detail.reason||'',requestId:detail.requestId||'',
-     revisedBy:r[2]||''};
+     revisedBy:r[2]||'',changes:changesByRequest[String(detail.requestId||'')]||[]};
   }else if(action==='AM_AMENDMENT_ACKNOWLEDGED'&&revisions[id]){
    revisions[id]={...revisions[id],pending:false,acknowledgedAt:r[1],acknowledgedBy:r[2]};
   }
