@@ -27,7 +27,7 @@ const empty=message=>'<div class="bg-white border border-stone-200 rounded-2xl p
 const due=t=>t.due_date&&t.status!=='Published'&&t.status!=='Completed'&&t.status!=='Cancelled'&&formatDate(t.due_date)<today();
 const ownerLabel=t=>t.assignee_name||(t.assignee_id?'Assigned staff':'Unassigned');
 const statuses=['Not Started','In Progress','Blocked','Ready for Review','Completed','Cancelled'];
-const categories=['Artwork / Poster','Video','Photo','Content Writing','Social Media','Promotion','Event','Catalog','Other'];
+const categories=window.LIDailyWorkConfig?.options('Marketing')||['Artwork / Poster','Video','Photo','Content Writing','Social Media','Promotion','Event','Catalog','Other'];
 function opts(items,selected){return items.map(v=>'<option value="'+h(v)+'" '+(v===selected?'selected':'')+'>'+h(v)+'</option>').join('');}
 function changeTab(tab){if(!TABS.includes(tab))return;DATA.tab=tab;draw();}
 async function api(action,payload={}){
@@ -673,6 +673,7 @@ function taskForm(t){
  return '<form id="marketingTaskForm" onsubmit="saveMarketingTask(event)" class="space-y-3">'+
  '<input type="hidden" name="id" value="'+h(currentId)+'">'+
  input('title','Task / deliverable title','text','e.g. Asfour Chandelier Poster')+
+ '<p class="text-[11px] text-slate-500">Examples: '+(window.LIDailyWorkConfig?.suggestions('Marketing')||[]).slice(0,3).map(h).join(' · ')+'</p>'+
  '<label class="block text-xs font-semibold">Description / brief<textarea name="description" rows="3" class="mt-1 block w-full border rounded-lg p-2 text-sm">'+val('description')+'</textarea></label>'+
  '<div class="grid grid-cols-2 gap-3">'+
  sel('business',['','LPH','LPL','BOTH','OTHER'],t?.business||defaultBusiness)+
