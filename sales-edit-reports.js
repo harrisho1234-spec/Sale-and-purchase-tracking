@@ -31,14 +31,14 @@
       const b=document.createElement('button');
       b.className='sales-edit-order-btn px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-[10px] font-bold';
       b.dataset.orderId=o.id;
-      const superAdmin=role()==='super_admin';
+      const invoiceAdmin=['super_admin','admin'].includes(role());
       b.textContent=requestEditMode()?'Request Edit':(flow(o)==='pre_order'?'Edit SR':'Edit Invoice');
-      b.onclick=()=>superAdmin&&typeof window.openSuperAdminInvoiceEdit==='function'
+      b.onclick=()=>invoiceAdmin&&typeof window.openSuperAdminInvoiceEdit==='function'
         ? window.openSuperAdminInvoiceEdit(o.id)
         : openEditSalesOrder(o.id);
       box.appendChild(b);
 
-      if(superAdmin&&!card.querySelector(`.sales-delete-invoice-btn[data-order-id="${o.id}"]`)){
+      if(invoiceAdmin&&!card.querySelector(`.sales-delete-invoice-btn[data-order-id="${o.id}"]`)){
         const del=document.createElement('button');
         del.className='sales-delete-invoice-btn px-3 py-2 rounded-lg border border-red-200 bg-red-50 text-red-700 text-[10px] font-bold';
         del.dataset.orderId=o.id;
@@ -249,7 +249,7 @@
       <div class="grid grid-cols-2 md:grid-cols-5 gap-2 rounded-2xl bg-[#faf8f3] border border-[#eee8df] p-4"><div><div class="text-[9px] uppercase font-bold text-gray-400">Subtotal</div><div id="editSubtotal" class="font-bold mt-1"></div></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Discount</div><div id="editDiscountPreview" class="font-bold mt-1"></div></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Order Total</div><div id="editTotal" class="font-bold mt-1"></div></div><div><div class="text-[9px] uppercase font-bold text-gray-400">Paid</div><div id="editPaid" class="font-bold text-green-600 mt-1"></div></div><div><div class="text-[9px] uppercase font-bold text-gray-400">AR / Balance</div><div id="editBalance" class="font-bold text-red-500 mt-1"></div></div></div>
       <div><label class="text-xs font-semibold">Notes</label><textarea id="editOrderNotes" class="mt-1 w-full border rounded-xl px-3 py-2" rows="3">${esc(o.notes||'')}</textarea></div>
       ${requestEditMode()?`<div><label class="text-xs font-semibold">Reason for Edit</label><textarea id="editOrderRequestNote" required class="mt-1 w-full border border-amber-200 bg-amber-50 rounded-xl px-3 py-2" rows="2" placeholder="Explain what needs to be corrected and why."></textarea><div class="text-[9px] text-amber-700 mt-1">Manager/Admin will see this note when reviewing your request.</div></div>`:'' }
-      ${role()==='super_admin'?`<div><label class="text-xs font-semibold">Reason for correction</label><textarea id="editOrderAuditReason" required class="mt-1 w-full border border-amber-200 bg-amber-50 rounded-xl px-3 py-2" rows="2" placeholder="Example: wrong item, wrong quantity, duplicated line"></textarea><div class="text-[9px] text-amber-700 mt-1">Required for Super Admin changes and stored in the audit log.</div></div>`:''}
+      ${['super_admin','admin'].includes(role())?`<div><label class="text-xs font-semibold">Reason for correction</label><textarea id="editOrderAuditReason" required class="mt-1 w-full border border-amber-200 bg-amber-50 rounded-xl px-3 py-2" rows="2" placeholder="Example: wrong item, wrong quantity, duplicated line"></textarea><div class="text-[9px] text-amber-700 mt-1">Required for Admin and Super Admin changes and stored for Super Admin review.</div></div>`:''}
       <button class="w-full bg-[#211d18] text-white rounded-xl py-3 font-semibold">${requestEditMode()?'Submit Edit Request':f==='pre_order'?'Save SR Changes':'Save Invoice Changes'}</button>
     </form>`);
     editState.discountBasis='amount';editOrderRecalc();
@@ -260,8 +260,8 @@
     e.preventDefault();const o=editState.order,f=flow(o),rows=[...document.querySelectorAll('#editOrderItems .edit-order-item-row')];if(!rows.length)return showToast('Order must have at least one item.','err');
     const subtotal=editSubtotal(),discount=Math.max(0,Math.min(subtotal,Number(document.getElementById('editDiscountAmount').value||0))),total=Math.max(round2(subtotal-discount),0);if(total+0.001<editState.paid)return showToast(`Order total cannot be lower than payments already received (${money(editState.paid)}).`,'err');
     const raw=String(document.getElementById('editDocumentNo').value||'').trim().toUpperCase().replace(/\s+/g,'');if(!raw)return showToast('Enter the SR/TK/RK number.','err');
-    const auditReason=role()==='super_admin'?String(document.getElementById('editOrderAuditReason')?.value||'').trim():'';
-    if(role()==='super_admin'&&!auditReason)return showToast('Enter a reason for the correction.','err');
+    const auditReason=['super_admin','admin'].includes(role())?String(document.getElementById('editOrderAuditReason')?.value||'').trim():'';
+    if(['super_admin','admin'].includes(role())&&!auditReason)return showToast('Enter a reason for the correction.','err');
     let doc=raw,type=null;if(f==='pre_order'){if(!doc.startsWith('SR'))doc='SR-'+doc.replace(/^[-:]+/,'')}else{type=document.getElementById('editInvoiceType').value;if(!doc.startsWith(type))doc=type+doc.replace(/^[-:]+/,'')}
     const patch={customer_id:document.getElementById('editOrderCustomer').value,order_date:document.getElementById('editOrderDate').value,order_discount:discount,notes:document.getElementById('editOrderNotes').value.trim()||null,sales_category:document.getElementById('editSalesCategory')?.value||'standard',order_no:doc};
     if(f==='pre_order'){patch.sr_no=doc}else{patch.invoice_no=doc;patch.sales_invoice_no=doc;patch.sales_invoice_type=type}
@@ -301,7 +301,7 @@
       else{row.sales_order_id=o.id;row.fulfillment_status=lineKind==='service'?'arrived':(f==='pre_order'?'ordered':'arrived');const x=await db.from('sales_order_items').insert(row);if(x.error)return showToast(x.error.message,'err')}
     }
     for(const id of editState.deleted){const x=await db.rpc('delete_sales_order_item_safe',{p_item_id:id});if(x.error)return showToast(x.error.message,'err')}
-    if(role()==='super_admin'){
+    if(['super_admin','admin'].includes(role())){
       const [ao,ai]=await Promise.all([db.from('sales_orders').select('*').eq('id',o.id).single(),db.from('sales_order_items').select('*').eq('sales_order_id',o.id).order('created_at')]);
       if(ao.error)return showToast('Invoice saved, but audit snapshot failed: '+ao.error.message,'err');
       if(ai.error)return showToast('Invoice saved, but audit snapshot failed: '+ai.error.message,'err');
