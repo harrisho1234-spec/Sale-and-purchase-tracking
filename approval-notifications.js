@@ -302,9 +302,9 @@
     if(type==='daily'){
       return '<button type="button" onclick="openDailyApprovalFromCenter(\''+esc(r.report_id)+'\',\''+esc(r.date)+'\',\''+esc(r.userId||'')+'\')" class="w-full text-left rounded-xl border p-4 hover:bg-amber-50">'+
         '<div class="flex justify-between gap-3 items-center"><div>'+
-        '<span class="rounded-md px-2 py-1 text-[9px] font-bold bg-blue-50 text-blue-700">'+(r.kind==='edit'?'DAILY EDIT REQUEST':'DAILY RESULT REVIEW')+'</span>'+
+        '<span class="rounded-md px-2 py-1 text-[9px] font-bold bg-blue-50 text-blue-700">'+(r.kind==='edit'?'DAILY EDIT REQUEST':r.kind==='am_revision'?'AM AMENDMENT REVIEW':'DAILY RESULT REVIEW')+'</span>'+
         '<b class="ml-2">'+esc(r.salesperson||'Sales')+'</b>'+
-        '<div class="text-xs text-gray-500 mt-2">'+esc(r.date||'')+' · '+esc(r.kind==='edit'?(r.section||'')+' · '+(r.reason||'Correction request'):'Evening Result submitted')+'</div></div>'+
+        '<div class="text-xs text-gray-500 mt-2">'+esc(r.date||'')+' · '+esc(r.kind==='edit'?(r.section||'')+' · '+(r.reason||'Correction request'):r.kind==='am_revision'?'Revised Morning Plan · '+(r.reason||'Manager acknowledgment required'):'Evening Result submitted')+'</div></div>'+
         '<b class="text-xs text-amber-700">Review →</b></div></button>';
     }
     if(type==='conversion'){
