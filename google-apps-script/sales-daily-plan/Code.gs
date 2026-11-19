@@ -23,10 +23,17 @@ function doPost(e){
   if(raw.length>45000)throw Error('Daily report request is too large');
   const req=JSON.parse(raw);
   if(!req||typeof req!=='object'||Array.isArray(req))throw Error('Invalid request');
-  const actor=authenticate(req.token);
-  actor._verifiedToken=String(req.token);
   const action=String(req.action||'');
   const payload=req.payload||{};
+  if(action.startsWith('company_')){
+   if(!['company_list','company_save_task','company_decide_request','company_submit_am','company_submit_pm','company_review'].includes(action))throw Error('Unknown company action');
+   if(!payload||typeof payload!=='object'||Array.isArray(payload))throw Error('Invalid payload');
+   const actor=companyAuthenticate(req.token);
+   const ss=SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('SHEET_ID'));
+   return respond({ok:true,data:companyDispatch(ss,actor,action,payload)});
+  }
+  const actor=authenticate(req.token);
+  actor._verifiedToken=String(req.token);
   if(typeof payload!=='object'||Array.isArray(payload))throw Error('Invalid payload');
   if(!['ping','read','save_am','submit_am','append_todo_am','save_pm','submit_pm','review','allow_late_pm','carry_forward','weekly','request_edit','decide_edit','acknowledge_am_revision','delete_report','todo_list','todo_save','todo_delete','todo_history'].includes(action))throw Error('Unknown action');
   const ss=SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('SHEET_ID'));
