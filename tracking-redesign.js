@@ -1211,6 +1211,7 @@ async function confirmSuperAdminInvoiceDelete(e,id) {
             ].map(([v,l])=>`<button class="lr-chip ${ui.salesStatus===v?'active':''}" onclick="setSalesStatus('${v}')">${l}</button>`).join('')}
           </div>
           <div class="flex gap-2 flex-wrap justify-end">
+            ${state.profile?.role==='super_admin'?`<button onclick="openInvoiceAdminAuditReview()" class="px-3 py-2 border border-amber-200 bg-amber-50 text-amber-900 rounded-lg text-[10px] font-bold">ADMIN CHANGE REVIEW</button>`:''}
             <button onclick="openNewOrder()" class="px-3 py-2 bg-[#211d18] text-white rounded-lg text-[10px] font-bold shadow-sm">+ NEW ORDER</button>
             <button onclick="exportSalesTrackingCsv()" class="px-3 py-2 border border-green-200 bg-green-50 text-green-700 rounded-lg text-[10px] font-bold">CSV</button>
             <button onclick="window.print()" class="px-3 py-2 border border-red-200 bg-red-50 text-red-600 rounded-lg text-[10px] font-bold">PRINT / PDF</button>
