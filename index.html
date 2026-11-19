@@ -71,7 +71,18 @@
     .modal-bg{background:rgba(20,18,15,.55);backdrop-filter:blur(4px)}
     .hidden-force{display:none!important}
   </style>
-</head>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Khmer:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    .li-company-task-title {
+      font-family: "Noto Sans Khmer", "Noto Sans", Arial, sans-serif;
+      line-height: 1.85;
+      overflow-wrap: anywhere;
+      word-break: normal;
+    }
+  </style>
+  </head>
 <body>
   <div id="loadingScreen" class="fixed inset-0 z-[100] bg-[#fbfaf7] flex items-center justify-center">
     <div class="text-center"><div class="font-serif text-3xl font-bold gold">L'IMPERIAL</div><div class="text-[10px] tracking-[.35em] text-gray-500 mt-1">SALES & ORDER MANAGEMENT</div><div class="mt-6 w-10 h-10 border-4 border-[#eee8df] border-t-[#b38b2e] rounded-full animate-spin mx-auto"></div></div>
@@ -233,8 +244,8 @@
   <script src="sales-daily-plan.js?v=20261119-controlled-amendment1"></script>
   <script src="sales-todo.js?v=20261107-overdue-bell-alert1"></script>
   <script src="marketing-management.js?v=20261113-linked-marketing-daily1"></script>
-  <script src="company-daily-legacy.js?v=20261119-legacy-integration1"></script>
-  <script src="company-daily-work.js?v=20261119-company-daily-v2"></script>
+  <script src="company-daily-legacy.js?v=20261119-compact-overview1"></script>
+  <script src="company-daily-work.js?v=20261119-compact-overview1"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function () {
