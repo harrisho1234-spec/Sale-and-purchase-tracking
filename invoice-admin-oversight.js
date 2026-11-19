@@ -103,6 +103,8 @@
       if(!data?.ok)throw Error('Review acknowledgment was not confirmed');
       showToast('Invoice change reviewed');
       await refresh();
+      if(typeof window.refreshApprovalNotifications==='function')
+        Promise.resolve(window.refreshApprovalNotifications()).catch(err=>console.warn('Invoice approvals refresh:',err?.message||err));
     }catch(err){showToast(err.message||'Review could not be saved','err')}
     finally{saving=false}
   };
