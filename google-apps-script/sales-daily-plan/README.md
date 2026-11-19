@@ -76,3 +76,15 @@ Older To-Do History rows only captured status/progress, but the separate append-
 **Verification:** Open the task's history again in the app. On the task originally created on 4 Nov 2026 at 8:25 AM by Koem Nalis, original start date should display as 4 Nov, the 5 Nov revision as 4 Nov → 6 Nov, and the 7 Nov deadline revision as 6 Nov → 7 Nov. All times are shown in Phnom Penh time.
 
 The new workflow .github/workflows/sales-todo-history-tests.yml executes the two Sales To-Do revision tests after relevant GitHub commits.
+
+## Controlled Morning Plan amendments after submitted Evening Results (19 Nov 2026)
+
+**Backend deployment is required.** The updated JavaScript in GitHub Pages alone does not remove the existing Google Apps Script rejection. To activate this change, open the *existing* Daily Plan Google Apps Script project, replace its existing `Code.gs` with the current [Code.gs](./Code.gs), **Save**, and use **Deploy → Manage deployments → Edit existing web app → New version → Deploy**. Keep the existing `/exec` URL and existing Script Properties. Do **not** create a new app or clear Google Sheet rows.
+
+- A team Manager/Admin/Super Admin may approve a pending **AM** edit request even if its PM was submitted and already reviewed. Approving AM does **not** reopen PM or erase the earlier manager review.
+- The salesperson may correct the *existing* Morning Plan task descriptions, category, priority, customer and follow-up details; tasks cannot be added, removed, or reordered through this post-PM correction. The approved change is saved **once** through **Save Approved Amendment**. No partial AM draft is written over an already-submitted PM.
+- Each changed task stores a separately logged before/after AM snapshot in the append-only **Audit Log**, tied to the edit request, approver and submission details. The Evening Result's status, actual outcome, follow-up, submission timestamp and manager review remain intact.
+- A new **AM Amendment Review** entry appears in the regular Approvals list. Management sees before-and-after task details and acknowledges the revision with a required note; this acknowledgment is audited independently of the original Evening Result review.
+- Existing PM correction/reopening rules remain unchanged (including Super Admin restrictions on reopening already-reviewed PM). Authorization and team scoping are unchanged.
+
+Validation: the mocked backend flow exercised approval, protected post-PM submission, one-use edit approval, preserved PM and manager review, audit snapshots, review flag, and management acknowledgment. The repository also has a regression test in `tests/sales-daily.test.cjs`. Confirm the live flow with a safe test report after deploying the Apps Script version. Existing historical reports must not be modified as part of deployment.
