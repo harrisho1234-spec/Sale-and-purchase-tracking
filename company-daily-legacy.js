@@ -96,29 +96,134 @@ function taskCard(t,my){
  '<div class="text-xs text-slate-500">'+esc(t.department)+' · '+esc(t.assignee||'Unassigned')+' · '+esc(t.status)+' · '+esc(t.dueDate||'No deadline')+'</div></div>'+
  (mine?'<button class="'+H+'" onclick="companyDailyLegacyUse(\''+t.source+'\',\''+esc(t.id)+'\')">Use in Morning Plan</button>':sourceButton(t.source,'Open original'))+'</div>';
 }
+
+const VIEW={department:'All',person:'All',status:'Active',priority:'All',search:'',page:1,perPage:10,reportExpanded:false};
+function normalizedStatus(t){
+ const x=String(t.status||'').toLowerCase();
+ if(x==='completed'||x==='published')return 'Completed';
+ if(x==='cancelled')return 'Cancelled';
+ if(x==='blocked')return 'Blocked';
+ if(x==='in progress'||x==='in_progress')return 'In Progress';
+ return 'Not Started';
+}
+function overdue(t){
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(String(t.dueDate||'')))return false;
+ const todayValue=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Phnom_Penh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+ return t.dueDate<todayValue&&!['Completed','Cancelled'].includes(normalizedStatus(t));
+}
+function taskPool(){
+ return accountTasks().filter(t=>role()==='admin'||role()==='super_admin'||role()==='manager'||
+ String(t.assigneeId)===id()||(!t.assigneeId&&t.source==='marketing'&&staffMarketing()));
+}
+function filteredTasks(){
+ return taskPool().filter(t=>{
+  const st=normalizedStatus(t);
+  if(VIEW.department!=='All'&&t.department!==VIEW.department)return false;
+  if(VIEW.person!=='All'&&String(t.assigneeId||'')!==VIEW.person)return false;
+  if(VIEW.status==='Overdue'&&!overdue(t))return false;
+  if(VIEW.status==='Blocked'&&st!=='Blocked')return false;
+  if(VIEW.status==='In Progress'&&st!=='In Progress')return false;
+  if(VIEW.status==='Not Started'&&st!=='Not Started')return false;
+  if(VIEW.status==='Active'&&['Completed','Cancelled'].includes(st))return false;
+  if(VIEW.priority!=='All'&&t.priority!==VIEW.priority)return false;
+  if(VIEW.search&&!([t.title,t.description,t.assignee,t.department,t.status,t.category].join(' ').toLocaleLowerCase().includes(VIEW.search.toLocaleLowerCase())))return false;
+  return true;
+ }).sort((a,b)=>Number(overdue(b))-Number(overdue(a))||
+  String(a.dueDate||'9999').localeCompare(String(b.dueDate||'9999'))||
+  String(a.assignee||'').localeCompare(String(b.assignee||'')));
+}
+const selectItem=(value,label,selected)=>'<option value="'+esc(value)+'" '+(String(value)===String(selected)?'selected':'')+'>'+esc(label||value)+'</option>';
+function controls(){
+ const pool=taskPool();
+ const departments=['All',...new Set(pool.map(t=>t.department).filter(Boolean))];
+ const people=[...new Map(pool.filter(t=>t.assigneeId).map(t=>[String(t.assigneeId),t.assignee||'Staff'])).entries()].sort((a,b)=>a[1].localeCompare(b[1]));
+ const field=(caption,body)=>'<label class="text-[11px] font-semibold text-stone-600 min-w-0">'+caption+body+'</label>';
+ const select=(key,items)=>'<select class="mt-1 block w-full rounded-lg border border-stone-200 bg-white px-2.5 py-2 text-xs" onchange="companyLegacyFilter(\''+key+'\',this.value)">'+items.map(x=>selectItem(x[0],x[1],VIEW[key])).join('')+'</select>';
+ return '<div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-2">'+
+ field('Department',select('department',departments.map(d=>[d,d==='All'?'All departments':d])))+
+ field('Staff',select('person',[['All','All staff'],...people]))+
+ field('Status',select('status',[['Active','Active'],['Overdue','Overdue'],['Blocked','Blocked'],['In Progress','In progress'],['Not Started','Not started'],['All','All statuses']]))+
+ field('Priority',select('priority',[['All','All priorities'],['Urgent','Urgent'],['High','High'],['Medium','Medium'],['Low','Low']]))+
+ field('Search tasks','<input class="mt-1 block w-full rounded-lg border border-stone-200 px-2.5 py-2 text-xs" value="'+esc(VIEW.search)+'" oninput="companyLegacySearch(this.value)" placeholder="Task, project, person…" aria-label="Search connected tasks">')+
+ field('Rows',select('perPage',[[10,'10 rows'],[20,'20 rows'],[40,'40 rows']]))+
+ '</div>';
+}
+function overview(){
+ const all=taskPool(),sales=all.filter(t=>t.source==='sales'),mkt=all.filter(t=>t.source==='marketing'),late=all.filter(overdue),blocked=all.filter(t=>normalizedStatus(t)==='Blocked');
+ const metric=(name,num,selector)=>'<button class="text-left rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 hover:bg-stone-100" onclick="companyLegacyQuick(\''+selector+'\')"><div class="text-[10px] text-stone-500">'+name+'</div><div class="text-xl font-bold text-stone-900">'+num+'</div></button>';
+ return '<div class="grid grid-cols-2 sm:grid-cols-4 gap-2">'+
+ metric('Active tasks',all.length,'Active')+
+ metric('Overdue',late.length,'Overdue')+
+ metric('In progress',all.filter(t=>normalizedStatus(t)==='In Progress').length,'In Progress')+
+ metric('Blocked',blocked.length,'Blocked')+'</div>'+
+ '<p class="text-xs text-stone-500">Sales: '+sales.length+' · Marketing: '+mkt.length+' · Read-only view of original records. Select a count to filter.</p>';
+}
+function compactTable(){
+ const all=filteredTasks(),pages=Math.max(1,Math.ceil(all.length/VIEW.perPage));VIEW.page=Math.min(Math.max(1,VIEW.page),pages);
+ const subset=all.slice((VIEW.page-1)*VIEW.perPage,VIEW.page*VIEW.perPage);
+ const statusTag=t=>'<span class="inline-flex whitespace-nowrap rounded-md bg-stone-100 px-2 py-1 text-[11px] '+(overdue(t)?'text-red-700 bg-red-50':'text-stone-700')+'">'+esc(overdue(t)?'Overdue':normalizedStatus(t))+'</span>';
+ const rows=subset.map(t=>{
+  const target=t.source==='sales'?'sales-todo':'marketing',mine=String(t.assigneeId)===id();
+  const action=mine&&staffSales()&&t.source==='sales'||mine&&staffMarketing()&&t.source==='marketing'?
+    '<button class="text-xs font-semibold text-amber-800 underline underline-offset-2" onclick="companyDailyLegacyUse(\''+esc(t.source)+'\',\''+esc(t.id)+'\')">Add to Plan</button>':
+    '<button class="text-xs font-semibold text-amber-800 underline underline-offset-2" onclick="companyDailyLegacyOpen(\''+target+'\')">Open</button>';
+  return '<tr class="border-b last:border-0 hover:bg-stone-50 align-top">'+
+   '<td class="px-3 py-3"><div class="font-semibold text-xs break-words leading-5 max-w-[350px]" lang="auto">'+esc(t.title||'Untitled task')+'</div><div class="text-[10px] text-stone-400">'+esc(t.priority||'No priority')+'</div></td>'+
+   '<td class="px-3 py-3 text-xs">'+esc(t.department)+'</td>'+
+   '<td class="px-3 py-3 text-xs">'+esc(t.assignee||'Unassigned')+'</td>'+
+   '<td class="px-3 py-3">'+statusTag(t)+'</td>'+
+   '<td class="px-3 py-3 text-xs whitespace-nowrap">'+esc(t.dueDate||'—')+'</td>'+
+   '<td class="px-3 py-3 whitespace-nowrap">'+action+'</td></tr>';
+ }).join('');
+ return '<div class="flex justify-between items-center gap-2 flex-wrap"><p class="text-xs font-semibold text-stone-600">'+all.length+' matching tasks · Showing '+(all.length?(VIEW.page-1)*VIEW.perPage+1:0)+'–'+Math.min(all.length,VIEW.page*VIEW.perPage)+'</p>'+
+ (VIEW.department!=='All'||VIEW.person!=='All'||VIEW.status!=='Active'||VIEW.priority!=='All'||VIEW.search?
+ '<button onclick="companyLegacyReset()" class="text-xs underline text-amber-800">Clear filters</button>':'')+'</div>'+
+ '<div class="overflow-x-auto rounded-xl border border-stone-200"><table class="w-full min-w-[760px] text-left table-fixed"><thead class="bg-stone-50 text-[11px] text-stone-500"><tr>'+
+ '<th class="w-[34%] px-3 py-2">Task</th><th class="w-[12%] px-3 py-2">Department</th><th class="w-[17%] px-3 py-2">Staff</th><th class="w-[13%] px-3 py-2">Status</th><th class="w-[13%] px-3 py-2">Deadline</th><th class="w-[11%] px-3 py-2">Action</th></tr></thead><tbody>'+
+ (rows||'<tr><td colspan="6" class="p-5 text-sm text-stone-500">No matching tasks. Adjust the filters to see other work.</td></tr>')+
+ '</tbody></table></div>'+
+ '<div class="flex justify-between items-center gap-2"><button class="'+H+'" onclick="companyLegacyPage(-1)" '+(VIEW.page===1?'disabled':'')+'>Previous</button><span class="text-xs text-stone-500">Page '+VIEW.page+' of '+pages+'</span><button class="'+H+'" onclick="companyLegacyPage(1)" '+(VIEW.page===pages?'disabled':'')+'>Next</button></div>';
+}
+function dailySubmissions(selectedDate){
+ const rows=reports().filter(r=>r.workDate===selectedDate&&(role()==='admin'||role()==='super_admin'||role()==='manager'||r.staffId===id()));
+ const am=rows.filter(r=>r.morningDone).length,pm=rows.filter(r=>r.eveningDone).length;
+ return '<div class="rounded-lg bg-stone-50 px-3 py-2 flex flex-wrap justify-between gap-2 items-center">'+
+ '<span class="text-xs text-stone-600"><b>'+esc(selectedDate)+'</b> · '+rows.length+' report(s) · AM '+am+' submitted · PM '+pm+' submitted</span>'+
+ '<button class="text-xs font-semibold text-amber-800" onclick="companyLegacyToggleReports()">'+(VIEW.reportExpanded?'Hide report details':'Show report details')+'</button></div>'+
+ (VIEW.reportExpanded?(rows.length?rows.map(r=>'<div class="rounded-lg border p-3 text-xs"><b>'+esc(r.department)+' · '+esc(r.staffName)+'</b><div class="text-stone-500 mt-1">AM: '+(r.morningDone?'Submitted':'Not started')+' · PM: '+(r.eveningDone?'Submitted':'Not started')+'</div>'+
+ (r.results||[]).slice(0,10).map(t=>'<div class="mt-1">'+esc(t.title)+' · '+esc(t.status)+'</div>').join('')+'</div>').join(''):'<p class="text-xs text-stone-500">No submissions on this date.</p>'):'');
+}
 function daily(selectedDate){
  if(!canSales()&&!canMarketing())return '';
- const all=accountTasks().filter(t=>role()==='admin'||role()==='super_admin'||String(t.assigneeId)===id()),recent=reports().filter(r=>r.workDate===selectedDate&&(role()==='admin'||role()==='super_admin'||r.staffId===id()));
- const sourceNames=[canSales()?'Sales':'',canMarketing()?'Marketing':''].filter(Boolean).join(' + ');
- return '<section class="rounded-xl border bg-white p-4 space-y-3"><div class="flex flex-wrap items-center justify-between gap-3"><div><h3 class="font-bold">Connected '+sourceNames+' work</h3>'+
- '<p class="text-xs text-slate-500">Live view of existing tasks and daily reports. These are not copied into Company Daily or counted twice.</p></div>'+
+ return '<section class="rounded-xl border bg-white p-4 space-y-3">'+
+ '<div class="flex flex-wrap justify-between items-center gap-3"><div><h3 class="font-bold">Connected Sales + Marketing overview</h3>'+
+ '<p class="text-xs text-slate-500">Original tasks and reports · no duplicate submissions</p></div>'+
  '<div class="flex flex-wrap gap-2">'+(canSales()?sourceButton('sales-todo','Sales To-Do')+sourceButton('sales-daily','Sales Daily'):'')+(canMarketing()?sourceButton('marketing','Marketing Daily'):'')+'</div></div>'+
  warning('salesTodos')+warning('salesReports')+warning('marketing')+
- '<div class="text-xs font-bold text-slate-600">Existing tasks · '+all.length+'</div>'+
- (all.length?all.slice(0,35).map(t=>taskCard(t,true)).join(''):'<p class="text-sm text-slate-500">No active tasks from your accessible legacy workspaces in this view.</p>')+
- '<div class="text-xs font-bold text-slate-600">Existing daily submissions · '+selectedDate+'</div>'+
- (recent.length?recent.map(r=>'<div class="border rounded-lg p-3 text-sm"><b>'+esc(r.department)+' · '+esc(r.staffName)+'</b>'+
- '<p class="text-xs text-slate-500">Morning: '+(r.morningDone?'Submitted':'Not started')+' · Evening: '+(r.eveningDone?'Submitted':'Not started')+'</p>'+
- (r.results||[]).slice(0,8).map(t=>'<div class="text-xs mt-1">'+esc(t.title)+' · '+esc(t.status)+'</div>').join('')+'</div>').join(''):'<p class="text-sm text-slate-500">No existing daily submissions found for this date in the loaded range.</p>')+
- '</section>';
+ overview()+controls()+compactTable()+dailySubmissions(selectedDate)+'</section>';
 }
 function tasksPanel(){
  if(!canSales()&&!canMarketing())return '';
- const list=accountTasks();
- return '<section class="rounded-xl border bg-white p-4 space-y-3"><h3 class="font-bold">Existing Sales & Marketing tasks · '+list.length+'</h3>'+
- '<p class="text-xs text-slate-500">Original task records remain editable only in their respective department apps.</p>'+
- (list.length?list.slice(0,100).map(x=>taskCard(x,false)).join(''):'<p class="text-sm text-slate-500">No accessible active tasks or the source is unavailable.</p>')+'</section>';
+ return '<section class="rounded-xl border bg-white p-4 space-y-3"><h3 class="font-bold">Connected department tasks</h3>'+
+ '<p class="text-xs text-stone-500">Filtered management view. Updates take place in original Sales / Marketing modules.</p>'+
+ overview()+controls()+compactTable()+'</section>';
 }
+window.companyLegacyFilter=(field,value)=>{
+ if(!Object.prototype.hasOwnProperty.call(VIEW,field))return;
+ VIEW[field]=field==='perPage'?Math.min(40,Math.max(10,Number(value)||10)):value;
+ VIEW.page=1;if(state.page==='company-daily')window.companyDailyLegacyRender?.();
+};
+window.companyLegacySearch=value=>{
+ VIEW.search=String(value||'');VIEW.page=1;
+ if(state.page!=='company-daily')return;
+ window.companyDailyLegacyRender?.();
+ const input=document.querySelector('input[aria-label="Search connected tasks"]');
+ if(input){input.focus();input.setSelectionRange(value.length,value.length)}
+};
+window.companyLegacyPage=delta=>{VIEW.page+=delta;window.companyDailyLegacyRender?.()};
+window.companyLegacyQuick=status=>{VIEW.status=status;VIEW.page=1;window.companyDailyLegacyRender?.()};
+window.companyLegacyReset=()=>{VIEW.department='All';VIEW.person='All';VIEW.status='Active';VIEW.priority='All';VIEW.search='';VIEW.page=1;window.companyDailyLegacyRender?.()};
+window.companyLegacyToggleReports=()=>{VIEW.reportExpanded=!VIEW.reportExpanded;window.companyDailyLegacyRender?.()};
 function filters(r,f){
  if(f.department!=='All'&&r.department!==f.department)return false;
  if(f.year!=='All'&&!r.workDate.startsWith(f.year))return false;
