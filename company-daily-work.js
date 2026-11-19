@@ -51,7 +51,7 @@ function daily(){
  (my.length?my.map(t=>'<label class="flex gap-3 items-start rounded-lg border p-3 text-sm"><input type="checkbox" class="mt-1" data-company-am value="'+h(t.id)+'" '+(chosen.includes(t.id)?'checked':'')+' '+(submitted?'disabled':'')+'><span><b>'+h(t.title)+'</b><small class="block text-gray-500">'+h(t.category)+' · '+h(t.department)+' · '+h(t.priority)+'</small></span></label>').join(''):'<p class="text-sm text-gray-500">No approved tasks assigned. Create a task or request work support first.</p>')+
  (!submitted?'<button class="'+solid+'" onclick="companyDailySubmitAM()">Submit Morning Plan</button>':'<p class="text-xs text-green-700">Morning Plan submitted · '+chosen.length+' tasks linked</p>')+'</section>'+
  (submitted?'<section class="rounded-xl border bg-white p-4 space-y-3"><h3 class="font-bold">Evening Result</h3>'+
- (report.pmStatus==='Submitted'?'<p class="text-xs text-green-700">Evening Result submitted. Awaiting manager review.</p>'+
+ (report.pmStatus==='Submitted'&&report.reviewStatus!=='Changes Requested'?'<p class="text-xs text-green-700">Evening Result submitted. Awaiting manager review.</p>'+
  (report.results||[]).map(x=>'<div class="rounded-lg border p-3 text-sm"><b>'+h(taskById(x.id)?.title||'Task')+'</b><p>'+h(x.status)+' — '+h(x.result)+'</p><small>'+h(x.nextStep)+'</small></div>').join(''):
  '<div class="grid gap-3">'+chosen.map((id,i)=>'<div data-company-pm="'+h(id)+'" class="rounded-lg border p-3 space-y-2"><b class="text-sm">'+(i+1)+'. '+h(taskById(id)?.title||'Task')+'</b>'+
  '<select data-pm="status" class="w-full border rounded-lg px-3 py-2 text-sm">'+['Completed','Partially Completed','Pending','Rescheduled','Cancelled'].map(v=>'<option>'+v+'</option>').join('')+'</select>'+
