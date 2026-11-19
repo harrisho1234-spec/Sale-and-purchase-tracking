@@ -190,6 +190,11 @@
     sales:new Set(['customers.view','customers.create','customers.edit','sales_orders.view','sales_orders.create','sales_orders.edit','sales_orders.convert_request','sales_orders.print','quotations.view','quotations.create','tracking.view','tracking.edit','payments.view','returns.view','returns.create','products.view','products.sales_price_view','reports.view','targets.view_own','sales_activity.view_own','sales_daily.plan_own']),
     accountant:new Set(['customers.view','sales_orders.view','quotations.view','tracking.view','payments.view','payments.create','payments.edit','returns.view','products.view','products.sales_price_view','inventory.view','inventory.reports','reports.view','reports.export','finance.ar_view','finance.cost_margin_view','finance.payment_records']),
     stock_controller:new Set(['products.view','inventory.view','inventory.operate','inventory.transfer','inventory.count','inventory.reports','procurement.view','procurement.po_receive']),
+    project:new Set([]),
+    project_manager:new Set([]),
+    product_assistant:new Set(['products.view']),
+    product_manager:new Set(['products.view']),
+    stock_manager:new Set(['products.view','inventory.view','inventory.reports']),
     manager:new Set(['customers.view','customers.create','customers.edit','sales_orders.view','sales_orders.create','sales_orders.edit','sales_orders.convert_approve','sales_orders.print','sales_orders.export','sales.view_all','quotations.view','quotations.create','tracking.view','tracking.edit','payments.view','payments.create','payments.edit','returns.view','returns.create','returns.edit','products.view','products.sales_price_view','inventory.view','inventory.reports','reports.view','reports.export','finance.ar_view','approvals.view','approvals.manage','sales_access.manage','targets.view_own','targets.view_team','sales_activity.view_own','sales_activity.view_team','sales_daily.review_team']),
     admin:new Set(AREAS.flatMap(a=>a.activities.map(x=>x.key)).filter(k=>!['users.manage','products.delete','products.tax_manage','activity_logs.view'].includes(k))),
     super_admin:new Set(AREAS.flatMap(a=>a.activities.map(x=>x.key)))
@@ -201,6 +206,11 @@
     sales:'Sales',
     accountant:'Accountant',
     stock_controller:'Stock Controller',
+    project:'Project Staff',
+    project_manager:'Project Manager',
+    product_assistant:'Product Assistant',
+    product_manager:'Product Manager',
+    stock_manager:'Stock Manager',
     manager:'Manager',
     admin:'Admin',
     super_admin:'Super Admin'
