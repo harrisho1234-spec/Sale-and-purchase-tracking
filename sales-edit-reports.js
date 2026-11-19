@@ -305,7 +305,7 @@
       const [ao,ai]=await Promise.all([db.from('sales_orders').select('*').eq('id',o.id).single(),db.from('sales_order_items').select('*').eq('sales_order_id',o.id).order('created_at')]);
       if(ao.error)return showToast('Invoice saved, but audit snapshot failed: '+ao.error.message,'err');
       if(ai.error)return showToast('Invoice saved, but audit snapshot failed: '+ai.error.message,'err');
-      const audit=await db.from('sales_invoice_admin_audit').insert({sales_order_id:o.id,order_no:ao.data?.order_no||doc,invoice_no:ao.data?.invoice_no||null,action:'edit',actor_user_id:state.user.id,actor_email:state.user.email||null,reason:auditReason,old_data:editState.auditOld||{},new_data:{order:ao.data,items:ai.data||[]}});
+      const audit=await db.from('sales_invoice_admin_audit').insert({sales_order_id:o.id,order_no:ao.data?.order_no||doc,invoice_no:ao.data?.invoice_no||null,action:'edit',actor_user_id:state.user.id,actor_email:state.user.email||null,actor_role:role(),reason:auditReason,old_data:editState.auditOld||{},new_data:{order:ao.data,items:ai.data||[]}});
       if(audit.error)return showToast('Invoice saved, but audit log failed: '+audit.error.message,'err');
     }
     if(role()==='manager'&&mgrCtx()&&typeof recordManagerRepAction==='function')await recordManagerRepAction('edit_sales_order','sales_order',o.id,{document_no:doc,total});
