@@ -23,9 +23,13 @@ async function load(){
  S.loading=true;S.error='';
  if(state.page===PAGE)root().innerHTML='<div class="p-8 text-sm text-stone-500">Loading Daily Work securely from Google Sheets…</div>';
  try{
+  // Read the new Company Daily store and the original Sales/Marketing
+  // stores independently. Legacy reads are never used to write/copy records.
+  const bridge=window.LICompanyDailyLegacy?.load(S.date);
   const data=await api('company_list');
   S.tasks=data.tasks||[];S.daily=data.daily||[];S.staff=data.staff||[];S.categories=data.categories||{};S.actor=data.actor;
   S.ready=true;
+  if(bridge)await bridge;
  }catch(e){S.ready=false;S.error=e.message||String(e)}
  finally{S.loading=false;if(state.page===PAGE)render()}
 }
@@ -40,7 +44,10 @@ function header(){
 function render(){
  if(state.page!==PAGE)return;
  if(!S.ready){root().innerHTML='<div class="rounded-xl border bg-white p-6 text-sm text-red-700"><b>Daily Work is not ready.</b><p class="mt-2">'+h(S.error||'Connection unavailable')+'</p><p class="mt-2 text-slate-500">Your existing Sales and Marketing reports are unchanged. The Company Daily Apps Script extension must be published before this workspace can read or save tasks.</p><button onclick="companyDailyRefresh()" class="'+btn+' mt-3">Retry</button></div>';return}
- root().innerHTML=header()+(S.tab==='My Daily'?daily():S.tab==='Tasks'?tasks():S.tab==='Support Requests'?requests():reports())+'</section>';
+ const legacy=window.LICompanyDailyLegacy;
+ root().innerHTML=header()+(S.tab==='My Daily'?(legacy?.daily(S.date)||'')+daily():
+ S.tab==='Tasks'?(legacy?.tasksPanel()||'')+tasks():
+ S.tab==='Support Requests'?requests():reports()+(legacy?.reportPanel({department:S.reportDepartment,year:S.reportYear,month:S.reportMonth,quarter:S.reportQuarter,employee:S.reportEmployee})||''))+'</section>';
 }
 function daily(){
  const report=current(),my=mine(),submitted=report?.amStatus==='Submitted';
@@ -116,7 +123,7 @@ window.companyDailyOpenTask=id=>openModal(id?'Update Daily Work Task':'New Daily
 window.companyDailyAssigneeChange=id=>{const dep=S.staff.find(x=>String(x.id)===String(id))?.department||'Sales',box=document.getElementById('companyCategory');if(box)box.innerHTML=selectOptions(S.categories[dep]||['Other'],'')};
 window.companyDailySave=async ev=>{ev.preventDefault();const t=Object.fromEntries(new FormData(ev.target).entries());if(t.id&&!t.assigneeId)t.assigneeId=taskById(t.id)?.assigneeId;try{await api('company_save_task',t);closeModal();say('Daily Work task saved');await load()}catch(e){say(e.message,true)}};
 window.companyDailyTab=tab=>{S.tab=tab;render()};
-window.companyDailyDate=value=>{S.date=value;S.selected=[];render()};
+window.companyDailyDate=async value=>{S.date=value;S.selected=[];if(S.ready)await load();else render()};
 window.companyDailySearch=value=>{S.search=value;render();const input=document.getElementById('companySearch');if(input){input.focus();input.setSelectionRange(value.length,value.length)}};
 window.companyDailySubmitAM=async()=>{
  const ids=[...root().querySelectorAll('[data-company-am]:checked')].map(x=>x.value);
@@ -134,6 +141,17 @@ window.companyDailyDecide=async(id,decision)=>{if(!confirm(decision+' this suppo
 window.companyDailyReview=async id=>{const decision=confirm('Mark this Evening Result as reviewed? Select Cancel to request changes.')?'Reviewed':'Changes Requested';const comment=prompt('Management comment (optional)');if(comment===null)return;try{await api('company_review',{id,status:decision,comment});say('Manager review saved');await load()}catch(e){say(e.message,true)}};
 window.companyDailyFilter=(field,value)=>{if(field==='department')S.reportDepartment=value;if(field==='year')S.reportYear=value;if(field==='quarter')S.reportQuarter=value;if(field==='month')S.reportMonth=value;if(field==='employee')S.reportEmployee=value;render()};
 window.companyDailyRefresh=load;
+window.companyDailyLegacyLoadPeriod=async()=>{
+ const bridge=window.LICompanyDailyLegacy;
+ if(!bridge)return;
+ const button=document.activeElement;
+ if(button){button.disabled=true;button.textContent='Loading source reports…'}
+ try{
+  const result=await bridge.loadPeriod({year:S.reportYear,month:S.reportMonth,quarter:S.reportQuarter});
+  render();
+  if(result.errors.length)say('Some Sales months could not load: '+result.errors.join(' · '),true);
+ }catch(e){say(e.message,true);render()}
+};
 const oldNav=window.navItems;
 if(typeof oldNav==='function')window.navItems=function(){const items=oldNav.apply(this,arguments);const role=String(state.profile?.role||'');if(['project','project_manager','product_assistant','product_manager'].includes(role)){const permitted=role.startsWith('product_')?['products']:[];return [...items.filter(x=>permitted.includes(x[0])),[PAGE,'Daily Work · All Departments','☷']]}if(allowed()&&!items.some(x=>x[0]===PAGE)){const index=items.findIndex(x=>x[0]==='sales-daily');items.splice(index<0?items.length:index+1,0,[PAGE,'Daily Work · All Departments','☷'])}return items};
 const oldGo=window.go;
