@@ -52,7 +52,7 @@ function cdSaveTask(ss,a,p){return cdWithLock(function(){
  const due=p.dueDate?cdDate(p.dueDate):'';
  if(found){
   const old=cdTask(found.r);
-  if(!cdManager(a,old.department)&&String(old.assigneeId)!==String(a.user_id))throw Error('Only assignee or department manager can update task');
+  if(!cdManager(a,old.department)&&(String(old.assigneeId)!==String(a.user_id)||old.requestStatus!=='Approved'))throw Error('Only an approved assignee or department manager can update task');
   const row=found.r.slice();
   if(cdManager(a,old.department)){row[1]=title;row[3]=CD_CATS[old.department].includes(p.category)?p.category:'Other';row[4]=description;row[12]=priority;row[13]=due;row[16]=ref}
   const status=String(p.status||old.status);
@@ -91,13 +91,29 @@ function cdSubmitAM(ss,a,p){return cdWithLock(function(){
 function cdSubmitPM(ss,a,p){return cdWithLock(function(){
  const date=cdDate(p.date),sh=cdTab(ss,'daily'),found=cdRows(sh).find(x=>x.r[1]===date&&String(x.r[2])===String(a.user_id));
  if(!found||found.r[4]!=='Submitted')throw Error('Submit Morning Plan first');
- if(found.r[7]==='Submitted')throw Error('Evening Result already submitted');
+ if(found.r[7]==='Submitted'&&found.r[10]!=='Changes Requested')throw Error('Evening Result already submitted');
  const ids=JSON.parse(found.r[6]||'[]'),res=Array.isArray(p.results)?p.results:[];
  if(ids.length!==res.length||new Set(res.map(x=>String(x.id))).size!==ids.length||ids.some(id=>!res.some(x=>String(x.id)===id)))throw Error('Result required for each planned task');
  const results=res.map(x=>{if(!['Completed','Partially Completed','Pending','Rescheduled','Cancelled'].includes(x.status))throw Error('Invalid result status');
  return{id:cdRaw(x.id,80),status:x.status,result:cdText(x.result,1000),nextStep:cdText(x.nextStep,500)}});
- const row=found.r.slice();row[7]='Submitted';row[8]=new Date().toISOString();row[9]=JSON.stringify(results);
- sh.getRange(found.n,1,1,14).setValues([row]);cdAudit(ss,a,'EVENING_SUBMITTED','daily',row[0],{},cdDaily(row));return cdDaily(row);
+ const row=found.r.slice(),previous=cdDaily(found.r);
+ row[7]='Submitted';row[8]=new Date().toISOString();row[9]=JSON.stringify(results);
+ row[10]='Not Reviewed';row[11]='';row[12]='';row[13]='';
+ sh.getRange(found.n,1,1,14).setValues([row]);
+ // Keep the To-Do status synchronized with the evening result so a finished
+ // task no longer appears as outstanding. Every change stays in the audit.
+ const taskSheet=cdTab(ss,'tasks');
+ for(const outcome of results){
+  const match=cdRows(taskSheet).find(x=>x.r[0]===outcome.id&&String(x.r[5])===String(a.user_id));
+  if(!match)continue;
+  const before=cdTask(match.r),tr=match.r.slice();
+  tr[10]=outcome.status==='Completed'?'Completed':outcome.status==='Cancelled'?'Cancelled':outcome.status==='Pending'||outcome.status==='Rescheduled'?'Not Started':'In Progress';
+  tr[14]=outcome.status==='Completed'?100:outcome.status==='Partially Completed'?Math.max(1,Number(tr[14]||0)):Number(tr[14]||0);
+  tr[15]=outcome.result;tr[17]=new Date().toISOString();
+  taskSheet.getRange(match.n,1,1,20).setValues([tr]);
+  cdAudit(ss,a,'TASK_EVENING_RESULT','task',tr[0],before,cdTask(tr));
+ }
+ cdAudit(ss,a,'EVENING_SUBMITTED','daily',row[0],previous,cdDaily(row));return cdDaily(row);
 })}
 function cdReview(ss,a,p){return cdWithLock(function(){
  const sh=cdTab(ss,'daily'),found=cdRows(sh).find(x=>x.r[0]===String(p.id||''));
