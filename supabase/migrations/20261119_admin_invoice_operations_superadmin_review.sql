@@ -114,7 +114,7 @@ begin
     'deleted_payments', v_payment_count
   );
 end;
-$function$
+$function$;
 
 
 CREATE OR REPLACE FUNCTION public.super_admin_update_sales_invoice(p_order_id uuid, p_order jsonb, p_items jsonb DEFAULT '[]'::jsonb, p_reason text DEFAULT NULL::text)
@@ -337,7 +337,7 @@ begin
     'action', 'edit'
   );
 end;
-$function$
+$function$;
 
 create or replace function public.super_admin_review_invoice_audit(p_audit_id uuid, p_note text)
 returns jsonb
