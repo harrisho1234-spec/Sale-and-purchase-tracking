@@ -168,7 +168,7 @@ function compactTable(){
     '<button class="text-xs font-semibold text-amber-800 underline underline-offset-2" onclick="companyDailyLegacyUse(\''+esc(t.source)+'\',\''+esc(t.id)+'\')">Add to Plan</button>':
     '<button class="text-xs font-semibold text-amber-800 underline underline-offset-2" onclick="companyDailyLegacyOpen(\''+target+'\')">Open</button>';
   return '<tr class="border-b last:border-0 hover:bg-stone-50 align-top">'+
-   '<td class="px-3 py-3"><div class="font-semibold text-xs break-words leading-5 max-w-[350px]" lang="auto">'+esc(t.title||'Untitled task')+'</div><div class="text-[10px] text-stone-400">'+esc(t.priority||'No priority')+'</div></td>'+
+   '<td class="px-3 py-3"><div class="li-company-task-title font-semibold text-xs break-words max-w-[350px]" lang="auto">'+esc(t.title||'Untitled task')+'</div><div class="text-[10px] text-stone-400">'+esc(t.priority||'No priority')+'</div></td>'+
    '<td class="px-3 py-3 text-xs">'+esc(t.department)+'</td>'+
    '<td class="px-3 py-3 text-xs">'+esc(t.assignee||'Unassigned')+'</td>'+
    '<td class="px-3 py-3">'+statusTag(t)+'</td>'+
