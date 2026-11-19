@@ -14,6 +14,11 @@ function accessRoleRows(){
     {role_key:'sales',display_name:'Sales',base_role:'sales'},
     {role_key:'accountant',display_name:'Accountant',base_role:'accountant'},
     {role_key:'stock_controller',display_name:'Stock Controller',base_role:'stock_controller'},
+    {role_key:'project',display_name:'Project Staff',base_role:'project'},
+    {role_key:'project_manager',display_name:'Project Manager',base_role:'project_manager'},
+    {role_key:'product_assistant',display_name:'Product Assistant',base_role:'product_assistant'},
+    {role_key:'product_manager',display_name:'Product Manager',base_role:'product_manager'},
+    {role_key:'stock_manager',display_name:'Stock Manager',base_role:'stock_manager'},
     {role_key:'manager',display_name:'Manager',base_role:'manager'},
     {role_key:'admin',display_name:'Admin',base_role:'admin'},
     {role_key:'super_admin',display_name:'Super Admin',base_role:'super_admin'}
