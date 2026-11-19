@@ -5,6 +5,7 @@
 'use strict';
 const P='sales-daily',R='sales-daily-review',WORKBOOK='https://docs.google.com/spreadsheets/d/1dDxwdTB59YZa1j3PilEjCTdfhG-zWWDgCMpQhdLmz9s/edit';
 const CATS=['Customer Follow-up','Showroom / Page','Online Inquiries','Product Content','Quotation / SR','Other'];
+const dailyExamples=()=>window.LIDailyWorkConfig?.suggestions('Sales')||[];
 const STATUSES=['Completed','Partially Completed','Pending','Rescheduled','Cancelled'];
 const h=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
 const today=()=>{const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Phnom_Penh',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());const m=Object.fromEntries(parts.filter(x=>x.type!=='literal').map(x=>[x.type,x.value]));return `${m.year}-${m.month}-${m.day}`;};
@@ -149,6 +150,7 @@ function formTask(t,i,readonly=false,noStructure=false){
  '</div>'+
  '<label class="text-xs font-semibold block mt-2">Morning Plan <span class="text-red-500">*</span>'+
  '<textarea data-field="plan" maxlength="1000" rows="1" required class="'+common+'" '+(readonly?'disabled':'')+' placeholder="What will you do?">'+h(t.plan||'')+'</textarea></label>'+
+ '<p class="text-[11px] text-slate-500 mt-1">Examples: '+dailyExamples().slice(0,3).map(h).join(' · ')+' · Use Other for custom support work.</p>'+
  '<details class="mt-2 text-xs" '+(t.customerId||t.customerName?'open':'')+'><summary class="cursor-pointer text-amber-800 font-semibold py-1">Customer details (optional)</summary><div class="grid sm:grid-cols-2 gap-2 mt-2"><label class="text-xs font-semibold">Link Customer Master<select data-field="customerId" class="'+common+'" '+(readonly?'disabled':'')+'>'+cs+'</select></label>'+
  '<label class="text-xs font-semibold">Customer name (optional)<input data-field="customerName" maxlength="140" class="'+common+'" '+(readonly?'disabled':'')+' value="'+h(t.customerName||'')+'" placeholder="Customer if not registered"></label></div></details></div>';
 }
