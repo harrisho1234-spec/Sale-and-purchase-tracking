@@ -3,8 +3,8 @@
 (function(){
 'use strict';
 const PAGE='marketing';
-const TABS=['Overview','Daily Plan & Result','My To-Do','Content Calendar','Campaigns','Reviews','Reports'];
-const DATA={tab:'Overview',tasks:[],daily:[],staff:[],date:'',month:'',filter:'',brand:'all',ready:false,config:false,loading:false,todoStatus:'Active',todoPriority:'All',todoSort:'due',dailyDraftIds:[],dailyUnplannedIds:[],dailyReportVersion:1,dailyView:'My Daily',calendarBrand:'LPL',calendarView:'list',calendarDraftDate:''};
+const TABS=['Daily Plan & Result','Staff To-Do','Schedule','Content Calendar','Reports','Reviews'];
+const DATA={tab:'Daily Plan & Result',tasks:[],daily:[],staff:[],date:'',month:'',filter:'',brand:'all',ready:false,config:false,loading:false,todoStatus:'Active',todoPriority:'All',todoSort:'due',dailyDraftIds:[],dailyUnplannedIds:[],dailyReportVersion:1,dailyView:marketingRole()?'My Daily':'Team Review',teamStaffFilter:'All',todoStaffFilter:'All',todoOwnerView:'assigned',scheduleMonth:'',scheduleOwner:'all',scheduleStatus:'active',reportPeriod:'month',reportYear:String(new Date().getFullYear()),reportMonth:String(new Date().getMonth()+1).padStart(2,'0'),reportQuarter:String(Math.ceil((new Date().getMonth()+1)/3)),reportStaff:'All',calendarBrand:'LPL',calendarView:'list',calendarDraftDate:''};
 const h=v=>typeof esc==='function'?esc(v==null?'':String(v)):String(v==null?'':v).replace(/[&<>"']/g,'');
 const role=()=>String(state.profile&&state.profile.role||'');
 const marketingRole=()=>role()==='marketing'||role()==='marketing_manager';
@@ -24,12 +24,15 @@ const line=t=>h(t.title)+' · '+h(t.business||'Other')+(t.brand?' · '+h(t.brand
 const btn=(label,click,kind)=>'<button type="button" class="px-3 py-2 rounded-lg border text-xs font-semibold '+(kind==='gold'?'bg-[#211d18] text-white border-[#211d18]':'bg-white border-stone-200 hover:bg-stone-50')+'" onclick="'+click+'">'+h(label)+'</button>';
 const uid=t=>safeId(t.id);
 const empty=message=>'<div class="bg-white border border-stone-200 rounded-2xl p-8 text-center text-sm text-stone-500">'+h(message)+'</div>';
-const due=t=>t.due_date&&t.status!=='Published'&&t.status!=='Completed'&&t.status!=='Cancelled'&&formatDate(t.due_date)<today();
-const ownerLabel=t=>t.assignee_name||(t.assignee_id?'Assigned staff':'Unassigned');
+const due=t=>marketingAssigned(t)&&t.due_date&&t.status!=='Published'&&t.status!=='Completed'&&t.status!=='Cancelled'&&formatDate(t.due_date)<today();
+function marketingStaffAccounts(){return DATA.staff.filter(x=>['marketing','marketing_manager'].includes(String(x.role||''))&&x.active!==false)}
+function marketingStaffFor(t){const id=String(t?.assignee_id||'');return id?marketingStaffAccounts().find(x=>String(x.id)===id):null}
+function marketingAssigned(t){return !!marketingStaffFor(t)}
+const ownerLabel=t=>marketingAssigned(t)?(t.assignee_name||marketingStaffFor(t)?.name||'Marketing staff'):'Planning / Unassigned';
 const statuses=['Not Started','In Progress','Blocked','Ready for Review','Completed','Cancelled'];
 const categories=window.LIDailyWorkConfig?.options('Marketing')||['Artwork / Poster','Video','Photo','Content Writing','Social Media','Promotion','Event','Catalog','Other'];
 function opts(items,selected){return items.map(v=>'<option value="'+h(v)+'" '+(v===selected?'selected':'')+'>'+h(v)+'</option>').join('');}
-function changeTab(tab){if(!TABS.includes(tab))return;DATA.tab=tab;draw();}
+function changeTab(tab){if(tab==='My To-Do')tab='Staff To-Do';if(tab==='Overview')tab='Daily Plan & Result';if(tab==='Campaigns')tab='Schedule';if(!TABS.includes(tab))return;DATA.tab=tab;draw();}
 async function api(action,payload={}){
  const r=await db.functions.invoke('marketing-google-proxy',{body:{action,payload}});
  if(r.error)throw Error(r.data&&r.data.error||r.error.message||'Marketing connection unavailable');
@@ -63,12 +66,12 @@ function frame(title,subtitle,content){
    '<div class="flex gap-1 overflow-x-auto bg-white border rounded-xl p-1">'+
     TABS.filter(t=>manager()||!['Reviews','Reports'].includes(t)).map(t=>
       '<button type="button" class="shrink-0 rounded-lg px-3 py-2 text-xs font-semibold '+(DATA.tab===t?'bg-[#211d18] text-white':'text-stone-600 hover:bg-stone-100')+
-      '" onclick="marketingTab(\''+h(t)+'\')">'+h(t)+'</button>').join('')+
+      '" onclick="marketingTab(\''+h(t)+'\')">'+h(t==='Staff To-Do'&&!manager()?'My To-Do':t)+'</button>').join('')+
    '</div>'+content+'</section>';
 }
 function draw(){
  if(state.page!==PAGE||!canEnter())return;
- if(DATA.loading&&!DATA.ready)return frame('Marketing Management','Preparing your department…',empty('Loading your Marketing tasks and calendar…'));
+ if(DATA.loading&&!DATA.ready)return frame('Marketing Management','Preparing your department…',empty('Loading Marketing tasks and staff reports…'));
  if(!DATA.ready){
   return frame('Marketing Management','Separate department — Sales and Stock remain unchanged.',
    '<div class="bg-white rounded-2xl border p-6 space-y-3"><h3 class="font-bold text-lg">Marketing Google Sheets connection</h3>'+
@@ -76,13 +79,12 @@ function draw(){
    '<p class="text-sm text-stone-500">The Marketing master workbook and app module are prepared. Super Admin must deploy the Marketing Google Apps Script and save its /exec URL.</p>'+
    (superAdmin()?btn('Connect Google Sheet','openMarketingSetup()','gold'):'<p class="text-xs">Ask Super Admin to complete the one-time connection.</p>')+'</div>');
  }
- if(DATA.tab==='Overview')return drawOverview();
  if(DATA.tab==='Daily Plan & Result')return drawDaily();
- if(DATA.tab==='My To-Do')return drawTodo();
+ if(DATA.tab==='Staff To-Do')return drawTodo();
+ if(DATA.tab==='Schedule')return drawSchedule();
  if(DATA.tab==='Content Calendar')return drawCalendar();
- if(DATA.tab==='Campaigns')return drawCampaigns();
- if(DATA.tab==='Reviews')return drawReviews();
  if(DATA.tab==='Reports')return drawReports();
+ if(DATA.tab==='Reviews')return drawReviews();
 }
 function taskCard(t){
  const id=uid(t),col=t.approval_status==='Changes Requested'?'bg-red-50 text-red-700':due(t)?'bg-amber-50 text-amber-800':'bg-stone-100 text-stone-600';
@@ -119,9 +121,7 @@ function drawOverview(){
   (thisWeek.length?thisWeek.map(taskCard).join(''):empty('No upcoming deadlines.'))+'</section></div>');
 }
 
-function marketingOwnDaily(t){
- return String(t.assignee_id||'')===me()||(!t.assignee_id&&String(t.created_by||'')===me());
-}
+function marketingOwnDaily(t){return marketingAssigned(t)&&String(t.assignee_id||'')===me();}
 function marketingClosed(t){return ['Completed','Published','Cancelled'].includes(t.status);}
 function marketingTodoStatus(t){return due(t)?'Overdue':t.status||'Not Started';}
 function marketingTodoSort(a,b){
