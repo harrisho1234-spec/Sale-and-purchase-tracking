@@ -4,7 +4,7 @@
 'use strict';
 const PAGE='marketing';
 const TABS=['Daily Plan & Result','Staff To-Do','Schedule','Content Calendar','Reports','Reviews'];
-const DATA={tab:'Daily Plan & Result',tasks:[],daily:[],staff:[],date:'',month:'',filter:'',brand:'all',ready:false,config:false,loading:false,todoStatus:'Active',todoPriority:'All',todoSort:'due',dailyDraftIds:[],dailyUnplannedIds:[],dailyReportVersion:1,dailyView:marketingRole()?'My Daily':'Team Review',teamStaffFilter:'All',todoStaffFilter:'All',todoOwnerView:'assigned',scheduleMonth:'',scheduleOwner:'all',scheduleStatus:'active',reportPeriod:'month',reportYear:String(new Date().getFullYear()),reportMonth:String(new Date().getMonth()+1).padStart(2,'0'),reportQuarter:String(Math.ceil((new Date().getMonth()+1)/3)),reportStaff:'All',calendarBrand:'LPL',calendarView:'list',calendarDraftDate:''};
+const DATA={tab:'Daily Plan & Result',tasks:[],daily:[],staff:[],date:'',month:'',filter:'',brand:'all',ready:false,config:false,loading:false,todoStatus:'Active',todoPriority:'All',todoSort:'due',dailyDraftIds:[],dailyUnplannedIds:[],dailyReportVersion:1,dailyView:manager()?'Team Review':'My Daily',teamStaffFilter:'All',todoStaffFilter:'All',todoOwnerView:'assigned',scheduleMonth:'',scheduleOwner:'all',scheduleStatus:'active',reportPeriod:'month',reportYear:String(new Date().getFullYear()),reportMonth:String(new Date().getMonth()+1).padStart(2,'0'),reportQuarter:String(Math.ceil((new Date().getMonth()+1)/3)),reportStaff:'All',calendarBrand:'LPL',calendarView:'list',calendarDraftDate:''};
 const h=v=>typeof esc==='function'?esc(v==null?'':String(v)):String(v==null?'':v).replace(/[&<>"']/g,'');
 const role=()=>String(state.profile&&state.profile.role||'');
 const marketingRole=()=>role()==='marketing'||role()==='marketing_manager';
@@ -534,7 +534,7 @@ function drawSchedule(){
    '<div class="flex flex-wrap gap-2">'+badge(assigned?t.status||'Not Started':'Planning / Unassigned',
     assigned?'bg-stone-100 text-stone-700':'bg-amber-50 text-amber-900')+
     (due(t)?badge('Overdue','bg-red-50 text-red-700'):'')+
-    btn('Details','openMarketingTask(\''+uid(t)+'\')')+'</div></article>';
+    btn(manager()?'Edit Details':'Progress',manager()?'openMarketingTask(\''+uid(t)+'\')':'openMarketingProgress(\''+uid(t)+'\')')+'</div></article>';
  }).join('');
  const undatedRows=undated.slice(0,50).map(t=>
   '<div class="flex justify-between items-center gap-2 border-b last:border-0 py-2 text-xs"><span><b>'+h(t.title||'Task')+'</b>'+
@@ -701,7 +701,7 @@ function drawCampaigns(){
  }).join(''):empty('No campaigns yet. Add a Campaign name when creating a task.'))+'</div>');
 }
 function drawReviews(){
- if(!manager())return changeTab('Overview');
+ if(!manager())return changeTab('Daily Plan & Result');
  const queue=tasks().filter(t=>t.approval_status==='Pending'||t.approval_status==='Changes Requested');
  frame('Review & Approval','Final artwork approvals and revision requests preserve task history.',
  '<div class="grid md:grid-cols-2 gap-3">'+(queue.length?queue.map(taskCard).join(''):empty('No pending design or content reviews.'))+'</div>');
@@ -892,7 +892,7 @@ async function saveTask(e){
 
 function openProgress(id){
  const t=DATA.tasks.find(x=>x.id===safeId(id));
- if(!own(t))return note('Task is not available',true);
+ if(!t||!own(t))return note('Task is not available',true);
  const n=Math.max(0,Math.min(100,Number(t.progress)||0));
  openModal('Quick Update · '+h(t.title),
   '<form onsubmit="saveMarketingProgress(event,\''+uid(t)+'\')" class="space-y-4">'+
@@ -1027,7 +1027,7 @@ window.go=async function(page){
   state.page=PAGE;
   renderNav();
   document.getElementById('pageTitle').textContent='Marketing Management';
-  document.getElementById('pageSubtitle').textContent='Daily Plan · To-Do · Content Calendar · Reviews';
+  document.getElementById('pageSubtitle').textContent='Staff Daily Plans · To-Do · Work Schedule · Content Calendar · Reports';
   root().innerHTML='<div class="p-8 text-center text-stone-500">Opening Marketing Department…</div>';
   await fetchMarketing();
   return;
@@ -1041,6 +1041,53 @@ window.marketingDate=function(v){DATA.date=v;DATA.dailyDraftIds=[];DATA.dailyUnp
 window.marketingTodoSetStatus=function(v){DATA.todoStatus=v;drawTodo();};
 window.marketingTodoSetPriority=function(v){DATA.todoPriority=v;drawTodo();};
 window.marketingTodoSetSort=function(v){DATA.todoSort=v;drawTodo();};
+window.marketingTodoOwner=function(v){
+ if(!['assigned','unassigned','all'].includes(v))return;
+ if(v==='all'&&!manager())return;
+ DATA.todoOwnerView=v;DATA.todoStaffFilter='All';drawTodo();
+};
+window.marketingTodoStaff=function(v){
+ if(v!=='All'&&!marketingStaffAccounts().some(p=>String(p.id)===String(v)))return;
+ DATA.todoStaffFilter=String(v);drawTodo();
+};
+window.marketingTeamStaffFilter=function(v){
+ if(v!=='All'&&!marketingStaffAccounts().some(p=>String(p.id)===String(v))&&
+   !DATA.daily.some(r=>String(r.user_id)===String(v)))return;
+ DATA.teamStaffFilter=String(v);drawDaily();
+};
+window.marketingTeamDayShift=function(n){
+ if(n!==1&&n!==-1)return;
+ const date=new Date((DATA.date||today())+'T12:00:00Z');
+ if(Number.isNaN(date.getTime()))return;
+ date.setUTCDate(date.getUTCDate()+n);
+ window.marketingDate(date.toISOString().slice(0,10));
+};
+window.marketingScheduleMonth=function(v){
+ if(!/^\d{4}-\d{2}$/.test(String(v||'')))return;
+ DATA.scheduleMonth=v;drawSchedule();
+};
+window.marketingScheduleOwner=function(v){
+ if(!['all','assigned','unassigned'].includes(v))return;
+ DATA.scheduleOwner=v;drawSchedule();
+};
+window.marketingScheduleStatus=function(v){
+ if(!['all','active'].includes(v))return;
+ DATA.scheduleStatus=v;drawSchedule();
+};
+window.marketingReportFilter=function(field,v){
+ if(!manager())return;
+ if(field==='period'&&['month','quarter','year','all'].includes(v))DATA.reportPeriod=v;
+ else if(field==='year'&&/^\d{4}$/.test(String(v)))DATA.reportYear=v;
+ else if(field==='month'&&/^(0[1-9]|1[0-2])$/.test(String(v)))DATA.reportMonth=v;
+ else if(field==='quarter'&&/^[1-4]$/.test(String(v)))DATA.reportQuarter=v;
+ else if(field==='staff'&&(v==='All'||marketingStaffAccounts().some(p=>String(p.id)===String(v))||DATA.daily.some(r=>String(r.user_id)===String(v))))DATA.reportStaff=String(v);
+ drawReports();
+};
+window.marketingReportOpenDay=function(date,userId){
+ if(!manager()||!/^\d{4}-\d{2}-\d{2}$/.test(String(date||'')))return;
+ DATA.date=date;DATA.teamStaffFilter=userId||'All';DATA.dailyView='Team Review';
+ DATA.tab='Daily Plan & Result';draw();
+};
 window.marketingDailyView=function(v){if(v==='Team Review'&&!manager())return;DATA.dailyView=v;drawDaily();};
 window.marketingDailyDraftToggle=function(id,checked){
  id=safeId(id);
@@ -1087,7 +1134,7 @@ window.carryMarketingUnfinished=function(){
  drawDaily();
  note(carrying.length+' unfinished task(s) selected. Submit the Morning Plan to save.');
 };
-window.marketingMonth=function(v){if(!/^d{4}-d{2}$/.test(String(v||'')))return;DATA.month=v;drawCalendar();};
+window.marketingMonth=function(v){if(!/^\d{4}-\d{2}$/.test(String(v||'')))return;DATA.month=v;drawCalendar();};
 window.marketingCalendarBrand=function(v){if(!CALENDAR_BUSINESSES.some(b=>b.id===v))return;DATA.calendarBrand=v;drawCalendar();};
 window.marketingCalendarView=function(v){if(v!=='list'&&v!=='calendar')return;DATA.calendarView=v;drawCalendar();};
 window.marketingCalendarShift=calendarShift;
