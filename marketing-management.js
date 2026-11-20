@@ -133,7 +133,7 @@ function marketingTodoSort(a,b){
 }
 function marketingTodoRow(t){
  const id=uid(t),late=due(t),progress=Math.max(0,Math.min(100,Number(t.progress)||0));
- const isDaily=marketingOwnDaily(t),status=marketingTodoStatus(t);
+ const isDaily=marketingOwnDaily(t),status=marketingAssigned(t)?marketingTodoStatus(t):'Planning / Unassigned';
  const urgency=late?'text-red-700 bg-red-50':t.priority==='Urgent'?'text-amber-900 bg-amber-50':'text-slate-700 bg-slate-100';
  return '<article class="bg-white rounded-xl border border-slate-200 p-4 space-y-3" data-marketing-todo-row="'+id+'">'+
   '<div class="flex flex-wrap justify-between gap-3">'+
@@ -163,9 +163,12 @@ function marketingTodoRow(t){
   '</div></article>';
 }
 function drawTodo(){
- const all=tasks(),term=DATA.filter.trim().toLowerCase();
- const active=all.filter(t=>!marketingClosed(t));
- const matched=all.filter(t=>{
+ const all=tasks(),assigned=all.filter(marketingAssigned),backlog=all.filter(t=>!marketingAssigned(t));
+ const view=DATA.todoOwnerView==='auto'?(marketingStaffAccounts().length?'assigned':'unassigned'):DATA.todoOwnerView;
+ const scope=all.filter(t=>view==='all'||(view==='assigned'?marketingAssigned(t):!marketingAssigned(t)));
+ const term=DATA.filter.trim().toLowerCase();
+ const matched=scope.filter(t=>{
+  if(DATA.todoStaffFilter!=='All'&&view!=='unassigned'&&String(t.assignee_id||'')!==DATA.todoStaffFilter)return false;
   if(term&&!['title','description','assignee_name','brand','campaign','business'].some(k=>String(t[k]||'').toLowerCase().includes(term)))return false;
   if(DATA.todoPriority!=='All'&&t.priority!==DATA.todoPriority)return false;
   if(DATA.todoStatus==='Active'&&marketingClosed(t))return false;
@@ -173,28 +176,41 @@ function drawTodo(){
   if(!['Active','All','Overdue'].includes(DATA.todoStatus)&&String(t.status)!==DATA.todoStatus)return false;
   return true;
  }).sort(marketingTodoSort);
- const alerts=all.filter(t=>due(t)||t.approval_status==='Changes Requested');
- const metric=(label,n,sub)=>'<div class="rounded-xl border border-slate-200 bg-white px-4 py-3"><div class="text-xs text-slate-500">'+label+'</div><b class="block text-xl mt-1">'+n+'</b><div class="text-[10px] text-slate-400">'+sub+'</div></div>';
- const filterOption=(v,selected,label)=>'<option value="'+h(v)+'" '+(v===selected?'selected':'')+'>'+h(label||v)+'</option>';
- frame('Marketing To-Do List','Assignments, deadlines and progress · Google Sheets · Sales-style task management',
-  (alerts.length?'<div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex flex-wrap items-center justify-between gap-2">'+
-   '<div><b class="text-sm text-amber-900">⚠ '+alerts.length+' tasks need attention</b><p class="text-xs text-amber-800 mt-1">'+
-   all.filter(due).length+' overdue · '+all.filter(t=>t.approval_status==='Changes Requested').length+' revisions requested</p></div>'+
-   btn('View Overdue','marketingTodoSetStatus(\'Overdue\')')+'</div>':'')+
-  '<div class="grid grid-cols-3 gap-2">'+metric('Total',all.length,'All accessible tasks')+
-   metric('Completed',all.filter(t=>['Completed','Published'].includes(t.status)).length,'Finished / published')+
-   metric('Overdue',all.filter(due).length,'Unfinished past deadline')+'</div>'+
-  '<div class="bg-white border border-slate-200 rounded-xl p-3 grid grid-cols-2 lg:grid-cols-4 gap-2">'+
+ const alerts=assigned.filter(t=>due(t)||t.approval_status==='Changes Requested');
+ const kpi=(label,n,sub)=>'<div class="rounded-xl border border-slate-200 bg-white p-3"><p class="text-[10px] text-slate-500 font-bold uppercase">'+label+'</p><b class="block text-2xl mt-1">'+n+'</b><p class="text-[10px] text-slate-400">'+sub+'</p></div>';
+ const toggle=(value,label,count)=>'<button type="button" onclick="marketingTodoOwner(\''+value+'\')" class="px-3 py-2 rounded-xl text-xs font-bold border '+
+  (view===value?'bg-[#211d18] text-white border-[#211d18]':'bg-white text-stone-600 border-stone-200')+'">'+label+' ('+count+')</button>';
+ const opt=(v,selected,label)=>'<option value="'+h(v)+'" '+(v===selected?'selected':'')+'>'+h(label||v)+'</option>';
+ const people=marketingStaffAccounts();
+ frame('Marketing To-Do List','Track staff assignments and progress separately from unassigned Marketing planning tasks.',
+  '<div class="grid grid-cols-2 lg:grid-cols-4 gap-2">'+
+   kpi('Assigned to staff',assigned.length,'Active accounts only')+
+   kpi('Unassigned planning',backlog.length,'Not employee performance')+
+   kpi('Completed assigned',assigned.filter(t=>['Completed','Published'].includes(t.status)).length,'Current task records')+
+   kpi('Overdue assigned',assigned.filter(due).length,'Assigned overdue tasks')+'</div>'+
+  (backlog.length?'<div class="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900">'+
+   '<b>'+backlog.length+' tasks are in the Marketing planning backlog.</b> They are not assigned to employee accounts and are excluded from employee overdue and performance calculations. Open Unassigned Planning to review them.</div>':'')+
+  '<div class="flex flex-wrap gap-2 items-center">'+toggle('assigned','Staff To-Do',assigned.length)+
+   toggle('unassigned','Unassigned Planning',backlog.length)+
+   (manager()?toggle('all','All Marketing Tasks',all.length):'')+'</div>'+
+  (alerts.length?'<div class="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-800"><b>'+alerts.length+' assigned task(s) need action</b> · '+
+   assigned.filter(due).length+' overdue · '+assigned.filter(t=>t.approval_status==='Changes Requested').length+' revision requests</div>':'')+
+  '<div class="bg-white border border-slate-200 rounded-xl p-3 grid grid-cols-2 lg:grid-cols-5 gap-2">'+
    '<input id="mktFilter" value="'+h(DATA.filter)+'" placeholder="Search tasks" oninput="marketingFilter(this.value)" class="col-span-2 lg:col-span-1 border rounded-lg px-3 py-2 text-sm min-w-0" aria-label="Search Marketing tasks">'+
-   '<select id="mktStatusFilter" onchange="marketingTodoSetStatus(this.value)" aria-label="Status filter" class="border rounded-lg px-3 py-2 text-sm bg-white">'+
-    ['Active','All','Not Started','In Progress','Blocked','Ready for Review','Completed','Published','Cancelled','Overdue'].map(x=>filterOption(x,DATA.todoStatus)).join('')+'</select>'+
-   '<select id="mktPriorityFilter" onchange="marketingTodoSetPriority(this.value)" aria-label="Priority filter" class="border rounded-lg px-3 py-2 text-sm bg-white">'+
-    ['All','Urgent','High','Medium','Low'].map(x=>filterOption(x,DATA.todoPriority)).join('')+'</select>'+
-   '<select id="mktSortFilter" onchange="marketingTodoSetSort(this.value)" aria-label="Sort tasks" class="border rounded-lg px-3 py-2 text-sm bg-white">'+
-    [['due','Deadline'],['priority','Priority'],['recent','Recently Updated']].map(x=>filterOption(x[0],DATA.todoSort,x[1])).join('')+'</select>'+
-  '</div>'+
-  '<div class="flex flex-wrap items-center justify-between gap-2"><p class="text-xs text-slate-500">'+matched.length+' results · '+active.length+' active tasks</p>'+btn('+ Add Task','openMarketingTask()','gold')+'</div>'+
-  '<div class="grid gap-3">'+(matched.length?matched.map(marketingTodoRow).join(''):empty('No tasks match these filters. Try All status or create a new task.'))+'</div>');
+   '<select onchange="marketingTodoStaff(this.value)" aria-label="Marketing staff filter" class="border rounded-lg px-3 py-2 text-xs bg-white" '+(view==='unassigned'?'disabled':'')+'>'+
+    '<option value="All">All staff</option>'+people.map(p=>'<option value="'+h(p.id)+'" '+(DATA.todoStaffFilter===String(p.id)?'selected':'')+'>'+h(p.name||'Marketing staff')+'</option>').join('')+'</select>'+
+   '<select id="mktStatusFilter" onchange="marketingTodoSetStatus(this.value)" aria-label="Status filter" class="border rounded-lg px-3 py-2 text-xs bg-white">'+
+    ['Active','All','Not Started','In Progress','Blocked','Ready for Review','Completed','Published','Cancelled','Overdue'].map(x=>opt(x,DATA.todoStatus)).join('')+'</select>'+
+   '<select id="mktPriorityFilter" onchange="marketingTodoSetPriority(this.value)" aria-label="Priority filter" class="border rounded-lg px-3 py-2 text-xs bg-white">'+
+    ['All','Urgent','High','Medium','Low'].map(x=>opt(x,DATA.todoPriority)).join('')+'</select>'+
+   '<select id="mktSortFilter" onchange="marketingTodoSetSort(this.value)" aria-label="Sort tasks" class="border rounded-lg px-3 py-2 text-xs bg-white">'+
+    [['due','Deadline'],['priority','Priority'],['recent','Recently Updated']].map(x=>opt(x[0],DATA.todoSort,x[1])).join('')+'</select></div>'+
+  '<div class="flex justify-between items-center gap-2"><p class="text-xs text-slate-500">'+matched.length+' matching task(s) · '+
+    (view==='unassigned'?'Planning backlog':view==='assigned'?'Assigned staff work':'Combined task list')+'</p>'+
+    (manager()?btn('+ Add Task','openMarketingTask()','gold'):'')+'</div>'+
+  '<div class="grid gap-3">'+(matched.length?matched.map(marketingTodoRow).join(''):
+    empty(view==='assigned'?'No tasks assigned to connected Marketing staff. Use Unassigned Planning for work prepared before account setup.':
+          'No tasks match your filters.'))+'</div>');
 }
 const DAILY_RESULT_STATUSES=['Completed','Partially Completed','Pending','Not Done'];
 function dailyParsed(value,fallback){
