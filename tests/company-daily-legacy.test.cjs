@@ -19,11 +19,13 @@ function fixture(role='super_admin',userId='admin'){
  return{bridge:win.LICompanyDailyLegacy,calls,win,storage};
 }
 test('admin reads original Sales and Marketing without creating company tasks',async()=>{
- const {bridge,calls}=fixture();
+ const {bridge,calls,win}=fixture();
  await bridge.load('2026-11-19');
  assert.equal(bridge.S.salesReports.length,1);
  assert.equal(bridge.S.marketingReports.length,1);
  assert.match(bridge.daily('2026-11-19'),/Customer follow-up/);
+ assert.doesNotMatch(bridge.tasksPanel(),/Poster/, 'Marketing backlog must not appear in default Sales operational view');
+ win.companyLegacyScope('marketing_backlog');
  assert.match(bridge.tasksPanel(),/Poster/);
  assert.equal(calls.some(c=>c.includes('company_save')),false);
 });
@@ -40,4 +42,33 @@ test('quarter reporting handles December without invalid month 13',async()=>{
  const result=await x.bridge.loadPeriod({year:'2026',quarter:'4',month:'All'});
  assert.equal(result.loaded,3);
  assert.equal(x.bridge.S.salesCoverage.some(r=>r[0]==='2026-12-01'&&r[1]==='2026-12-31'),true);
+});
+
+test('before Marketing accounts exist, 43 Marketing tasks are separated from active Sales To-Do',()=>{
+ const {bridge,win}=fixture();
+ bridge.S.salesTodos=[
+  {id:'s1',title:'Sales overdue follow up',status:'In Progress',dueDate:'2020-01-01',assignee:'Rep A',assigneeId:'sales1'},
+  {id:'s2',title:'Sales regular visit',status:'Not Started',assignee:'Rep B',assigneeId:'sales2'}
+ ];
+ bridge.S.marketingTasks=Array.from({length:43},(_,i)=>({id:'m'+i,title:'Marketing draft '+i,status:'Not Started',due_date:'2020-01-01'}));
+ bridge.S.marketingStaff=[];bridge.S.loaded.marketingStaff=true;
+ let html=bridge.daily('2026-11-20');
+ assert.match(html,/2 matching tasks/);
+ assert.match(html,/Marketing unassigned backlog<\/div><div class="text-xl font-bold text-stone-900">43<\/div>/);
+ assert.match(html,/Marketing assigned to staff<\/div><div class="text-xl font-bold text-stone-900">0<\/div>/);
+ assert.match(html,/43 existing task\(s\) are awaiting assignment/);
+ win.companyLegacyScope('marketing_backlog');
+ html=bridge.daily('2026-11-20');
+ assert.match(html,/43 matching tasks/);
+ assert.match(html,/Planning \/ Unassigned/);
+ assert.match(html,/Awaiting staff setup/);
+ win.companyLegacyScope('combined');
+ assert.match(bridge.daily('2026-11-20'),/45 matching tasks/);
+ win.companyLegacyScope('overdue');
+ assert.match(bridge.daily('2026-11-20'),/1 matching tasks/);
+ // Assignment becomes operational only after a linked staff account is returned.
+ bridge.S.marketingTasks[0].assignee_id='marketing-user';
+ bridge.S.marketingStaff=[{id:'marketing-user',name:'Marketing User',active:true}];
+ win.companyLegacyScope('marketing_assigned');
+ assert.match(bridge.daily('2026-11-20'),/1 matching tasks/);
 });
