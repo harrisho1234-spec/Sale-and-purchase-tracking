@@ -707,19 +707,99 @@ function drawReviews(){
  '<div class="grid md:grid-cols-2 gap-3">'+(queue.length?queue.map(taskCard).join(''):empty('No pending design or content reviews.'))+'</div>');
 }
 function drawReports(){
- if(!manager())return changeTab('Overview');
- const all=tasks(),closed=all.filter(t=>['Completed','Published'].includes(t.status)),posted=all.filter(t=>t.status==='Published');
- const names=Array.from(new Set(all.map(t=>ownerLabel(t))));
- const rows=names.map(n=>{const ts=all.filter(t=>ownerLabel(t)===n);
- return '<tr class="border-b"><td class="px-3 py-2">'+h(n)+'</td><td class="px-3 py-2 text-center">'+ts.length+'</td>'+
- '<td class="px-3 py-2 text-center">'+ts.filter(t=>['Completed','Published'].includes(t.status)).length+'</td>'+
- '<td class="px-3 py-2 text-center">'+ts.filter(due).length+'</td><td class="px-3 py-2 text-center">'+ts.filter(t=>t.status==='Published').length+'</td></tr>';}).join('');
- frame('Marketing Performance','Production and publishing performance for the authorized Marketing team.',
- '<div class="grid grid-cols-2 md:grid-cols-4 gap-3">'+
- ['Assigned '+all.length,'Completed '+closed.length,'Published '+posted.length,'Overdue '+all.filter(due).length]
- .map(x=>'<div class="bg-white border rounded-xl p-4 font-bold">'+h(x)+'</div>').join('')+'</div>'+
- '<div class="overflow-auto bg-white rounded-xl border"><table class="w-full text-sm"><thead><tr class="bg-stone-50 text-stone-500 text-xs"><th class="text-left px-3 py-2">Staff</th><th>Tasks</th><th>Done</th><th>Overdue</th><th>Posted</th></tr></thead><tbody>'+rows+'</tbody></table></div>');
+ if(!manager())return changeTab('Daily Plan & Result');
+ const all=tasks(),staff=marketingStaffAccounts(),year=DATA.reportYear,
+  period=DATA.reportPeriod,month=DATA.reportMonth,quarter=Number(DATA.reportQuarter);
+ const within=d=>{
+  const date=formatDate(d);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return false;
+  if(period==='all')return true;
+  if(date.slice(0,4)!==year)return false;
+  if(period==='month')return date.slice(5,7)===month;
+  if(period==='quarter')return Math.ceil(Number(date.slice(5,7))/3)===quarter;
+  return true;
+ };
+ const reports=DATA.daily.filter(r=>within(r.work_date)&&
+  (DATA.reportStaff==='All'||String(r.user_id)===DATA.reportStaff));
+ const byUser=new Map(staff.map(person=>[String(person.id),{id:String(person.id),name:person.name||'Marketing staff',linked:true}]));
+ reports.forEach(r=>{
+  const id=String(r.user_id||'');
+  if(id&&!byUser.has(id))byUser.set(id,{id,name:r.user_name||'Historical Marketing account',linked:false});
+ });
+ const people=[...byUser.values()].filter(p=>DATA.reportStaff==='All'||p.id===DATA.reportStaff)
+ .sort((a,b)=>a.name.localeCompare(b.name));
+ const taskAssigned=t=>marketingAssigned(t)&&
+  (DATA.reportStaff==='All'||String(t.assignee_id)===DATA.reportStaff);
+ const currentAssigned=all.filter(taskAssigned),unassigned=all.filter(t=>!marketingAssigned(t));
+ const completedOutcome=r=>{
+  if(!r.pm_submitted_at)return 0;
+  const details=dailyParsed(r.result_json,{});
+  return Array.isArray(details.task_results)?details.task_results.filter(x=>x?.status==='Completed').length:0;
+ };
+ const countedOutcomes=r=>{
+  if(!r.pm_submitted_at)return 0;
+  const details=dailyParsed(r.result_json,{});
+  return Array.isArray(details.task_results)?details.task_results.length:0;
+ };
+ const published=all.filter(t=>t.status==='Published'&&within(t.post_date)&&
+  (DATA.reportStaff==='All'||String(t.assignee_id)===DATA.reportStaff)&&marketingAssigned(t));
+ const metric=(label,value,detail)=>'<div class="rounded-xl border bg-white p-3"><p class="text-[10px] uppercase font-bold text-stone-500">'+label+'</p>'+
+  '<b class="text-2xl block mt-1">'+value+'</b><p class="text-[10px] text-stone-500">'+detail+'</p></div>';
+ const options=(items,current)=>items.map(([value,label])=>'<option value="'+h(value)+'" '+(value===current?'selected':'')+'>'+h(label)+'</option>').join('');
+ const years=[...new Set([year,...DATA.daily.map(r=>formatDate(r.work_date).slice(0,4)).filter(x=>/^\d{4}$/.test(x))])].sort((a,b)=>b.localeCompare(a));
+ const names=[...new Map([...staff,...DATA.daily.map(r=>({id:r.user_id,name:r.user_name||'Historical Marketing account'}))]
+   .filter(x=>x.id).map(p=>[String(p.id),p.name||'Marketing staff'])).entries()].sort((a,b)=>String(a[1]).localeCompare(String(b[1])));
+ const filters='<div class="bg-white border rounded-xl p-3 flex flex-wrap gap-2 items-end">'+
+  '<label class="text-xs font-bold">Period<select aria-label="Marketing report period" onchange="marketingReportFilter(\'period\',this.value)" class="block mt-1 border rounded-lg p-2">'+
+  options([['month','Month'],['quarter','Quarter'],['year','Year'],['all','All time']],period)+'</select></label>'+
+  '<label class="text-xs font-bold">Year<select aria-label="Marketing report year" onchange="marketingReportFilter(\'year\',this.value)" class="block mt-1 border rounded-lg p-2">'+
+   years.map(y=>'<option value="'+h(y)+'" '+(y===year?'selected':'')+'>'+h(y)+'</option>').join('')+'</select></label>'+
+  (period==='quarter'?'<label class="text-xs font-bold">Quarter<select aria-label="Marketing report quarter" onchange="marketingReportFilter(\'quarter\',this.value)" class="block mt-1 border rounded-lg p-2">'+
+   options([['1','Q1'],['2','Q2'],['3','Q3'],['4','Q4']],DATA.reportQuarter)+'</select></label>':'')+
+  (period==='month'?'<label class="text-xs font-bold">Month<select aria-label="Marketing report month" onchange="marketingReportFilter(\'month\',this.value)" class="block mt-1 border rounded-lg p-2">'+
+   options(Array.from({length:12},(_,i)=>[String(i+1).padStart(2,'0'),new Intl.DateTimeFormat('en-US',{month:'short',timeZone:'UTC'}).format(new Date(Date.UTC(2026,i,1)))]),month)+'</select></label>':'')+
+  '<label class="text-xs font-bold">Marketing Staff<select aria-label="Marketing report staff filter" onchange="marketingReportFilter(\'staff\',this.value)" class="block mt-1 border rounded-lg p-2">'+
+    options([['All','All connected staff'],...names],DATA.reportStaff)+'</select></label></div>';
+ const rows=people.map(person=>{
+  const r=reports.filter(x=>String(x.user_id)===person.id);
+  const staffTasks=currentAssigned.filter(t=>String(t.assignee_id)===person.id);
+  return '<tr class="border-b"><td class="px-3 py-3"><b>'+h(person.name)+'</b>'+
+   (!person.linked?'<div class="text-[10px] text-amber-800">Historical / unlinked user</div>':'')+'</td>'+
+   '<td class="text-center px-3 py-2">'+r.filter(x=>!!x.am_submitted_at).length+'</td>'+
+   '<td class="text-center px-3 py-2">'+r.filter(x=>!!x.pm_submitted_at).length+'</td>'+
+   '<td class="text-center px-3 py-2">'+r.reduce((a,x)=>a+completedOutcome(x),0)+'</td>'+
+   '<td class="text-center px-3 py-2">'+staffTasks.length+'</td>'+
+   '<td class="text-center px-3 py-2">'+staffTasks.filter(t=>['Completed','Published'].includes(t.status)).length+'</td></tr>';
+ }).join('');
+ const detail=reports.slice().sort((a,b)=>formatDate(b.work_date).localeCompare(formatDate(a.work_date)))
+  .slice(0,120).map(r=>{
+   let plan=dailyParsed(r.plan_json,[]);if(!Array.isArray(plan))plan=[];
+   return '<button type="button" onclick="marketingReportOpenDay(\''+h(formatDate(r.work_date))+'\',\''+h(r.user_id||'')+'\')" class="w-full flex flex-wrap justify-between gap-2 text-left rounded-lg border bg-white px-3 py-2 hover:bg-stone-50">'+
+    '<div><b class="text-xs">'+h(r.user_name||byUser.get(String(r.user_id))?.name||'Marketing staff')+'</b>'+
+    '<p class="text-[10px] text-stone-500">'+h(formatDate(r.work_date))+' · '+plan.length+' planned task(s)</p></div>'+
+    '<div class="flex gap-2">'+badge(r.am_submitted_at?'AM Submitted':'No AM')+
+    badge(r.pm_submitted_at?'PM Submitted':'No PM')+'</div></button>';
+  }).join('');
+ frame('Marketing Team Reports','Staff-by-staff Daily Plan and Evening Result reporting, separate from current To-Do and publishing activity.',
+  filters+
+  '<div class="grid grid-cols-2 lg:grid-cols-4 gap-2">'+
+   metric('Morning Plans',reports.filter(r=>!!r.am_submitted_at).length,'Submitted in selected period')+
+   metric('Evening Results',reports.filter(r=>!!r.pm_submitted_at).length,'Submitted in selected period')+
+   metric('Completed daily outcomes',reports.reduce((a,r)=>a+completedOutcome(r),0),'Per-task results recorded: '+reports.reduce((a,r)=>a+countedOutcomes(r),0))+
+   metric('Content published',published.length,'Published tasks scheduled in period')+'</div>'+
+  (!staff.length?'<p class="rounded-xl border border-amber-200 bg-amber-50 text-amber-900 p-3 text-xs"><b>Staff setup pending.</b> No connected Marketing employee accounts are available for individual performance tracking. Historical reports, if present, remain visible.</p>':'')+
+  '<p class="text-xs text-stone-500">Submitted AM/PM counts use report work dates. Assigned To-Do totals below are a current snapshot, not historical performance. '+
+   unassigned.length+' unassigned Marketing planning tasks are excluded from employee performance and overdue counts.</p>'+
+  '<div class="overflow-x-auto border rounded-xl bg-white"><table class="w-full min-w-[740px] text-xs"><thead class="bg-stone-50 text-stone-600"><tr>'+
+   '<th class="text-left px-3 py-3">Marketing Staff</th><th>AM Submitted</th><th>PM Submitted</th>'+
+   '<th>Completed Daily Results</th><th>Assigned To-Do Now</th><th>Done Now</th></tr></thead><tbody>'+
+   (rows||'<tr><td colspan="6" class="text-center px-3 py-6 text-stone-500">No connected staff or report records in this selection.</td></tr>')+
+  '</tbody></table></div>'+
+  '<section class="space-y-2"><h3 class="font-bold text-sm">Daily report history</h3>'+
+   '<p class="text-xs text-stone-500">Open a record to inspect its original Morning Plan and item-by-item Evening Result.</p>'+
+   '<div class="grid md:grid-cols-2 gap-2">'+(detail||empty('No submitted Marketing daily records in this period.'))+'</div></section>');
 }
+
 function selectedTasks(){
  return Array.from(document.querySelectorAll('.mkt-daily-task:checked')).map(e=>e.value).filter(safeId);
 }
