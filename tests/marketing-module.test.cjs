@@ -30,7 +30,7 @@ function make(role){
  await mkt.ctx.window.go('dashboard');
  assert.equal(mkt.ctx.state.page,'marketing');
  assert.equal(mkt.ctx.oldCalls.length,0);
- assert.match(mkt.els.get('content').innerHTML,/Marketing Team Daily Review|Marketing Management/);
+ assert.match(mkt.els.get('content').innerHTML,/Daily Plan & Evening Result|Marketing Team Daily Review|Marketing Management/);
  mkt.ctx.window.marketingTab('My To-Do');
  assert.match(mkt.els.get('content').innerHTML,/Marketing To-Do List/);
  assert.match(mkt.els.get('content').innerHTML,/Status filter/);
