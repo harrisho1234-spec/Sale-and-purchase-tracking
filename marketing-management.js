@@ -4,7 +4,7 @@
 'use strict';
 const PAGE='marketing';
 const TABS=['Daily Plan & Result','Staff To-Do','Schedule','Content Calendar','Reports','Reviews'];
-const DATA={tab:'Daily Plan & Result',tasks:[],daily:[],staff:[],date:'',month:'',filter:'',brand:'all',ready:false,config:false,loading:false,todoStatus:'Active',todoPriority:'All',todoSort:'due',dailyDraftIds:[],dailyUnplannedIds:[],dailyReportVersion:1,dailyView:manager()?'Team Review':'My Daily',teamStaffFilter:'All',todoStaffFilter:'All',todoOwnerView:'assigned',scheduleMonth:'',scheduleOwner:'all',scheduleStatus:'active',reportPeriod:'month',reportYear:String(new Date().getFullYear()),reportMonth:String(new Date().getMonth()+1).padStart(2,'0'),reportQuarter:String(Math.ceil((new Date().getMonth()+1)/3)),reportStaff:'All',calendarBrand:'LPL',calendarView:'list',calendarDraftDate:''};
+const DATA={tab:'Daily Plan & Result',tasks:[],daily:[],staff:[],date:'',month:'',filter:'',brand:'all',ready:false,config:false,loading:false,todoStatus:'Active',todoPriority:'All',todoSort:'due',dailyDraftIds:[],dailyUnplannedIds:[],dailyReportVersion:1,dailyView:manager()?'Team Review':'My Daily',teamStaffFilter:'All',todoStaffFilter:'All',todoOwnerView:'auto',scheduleMonth:'',scheduleOwner:'all',scheduleStatus:'active',reportPeriod:'month',reportYear:String(new Date().getFullYear()),reportMonth:String(new Date().getMonth()+1).padStart(2,'0'),reportQuarter:String(Math.ceil((new Date().getMonth()+1)/3)),reportStaff:'All',calendarBrand:'LPL',calendarView:'list',calendarDraftDate:''};
 const h=v=>typeof esc==='function'?esc(v==null?'':String(v)):String(v==null?'':v).replace(/[&<>"']/g,'');
 const role=()=>String(state.profile&&state.profile.role||'');
 const marketingRole=()=>role()==='marketing'||role()==='marketing_manager';
@@ -121,7 +121,7 @@ function drawOverview(){
   (thisWeek.length?thisWeek.map(taskCard).join(''):empty('No upcoming deadlines.'))+'</section></div>');
 }
 
-function marketingOwnDaily(t){return marketingAssigned(t)&&String(t.assignee_id||'')===me();}
+function marketingOwnDaily(t){return String(t.assignee_id||'')===me()||(marketingRole()&&!t.assignee_id&&String(t.created_by||'')===me());}
 function marketingClosed(t){return ['Completed','Published','Cancelled'].includes(t.status);}
 function marketingTodoStatus(t){return due(t)?'Overdue':t.status||'Not Started';}
 function marketingTodoSort(a,b){
