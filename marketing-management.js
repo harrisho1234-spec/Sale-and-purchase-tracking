@@ -502,6 +502,60 @@ function drawDaily(){
    statusBar+morning+evening+marketingWeekSummary(date));
 }
 
+// Work Schedule is based on task start/deadline dates; the Content Calendar
+// remains the separate publishing calendar based on post_date.
+function drawSchedule(){
+ const month=DATA.scheduleMonth||today().slice(0,7);
+ const all=tasks(),hasDeadline=t=>/^\d{4}-\d{2}-\d{2}$/.test(formatDate(t.due_date)),
+   hasStart=t=>/^\d{4}-\d{2}-\d{2}$/.test(formatDate(t.start_date));
+ const inMonth=t=>(hasDeadline(t)&&formatDate(t.due_date).slice(0,7)===month)||
+   (hasStart(t)&&formatDate(t.start_date).slice(0,7)===month);
+ const owner=DATA.scheduleOwner,scope=all.filter(t=>owner==='all'||(owner==='assigned'?marketingAssigned(t):!marketingAssigned(t)));
+ const open=scope.filter(t=>DATA.scheduleStatus==='all'||!marketingClosed(t));
+ const scheduled=open.filter(inMonth).sort((a,b)=>formatDate(a.due_date||a.start_date||'9999').localeCompare(formatDate(b.due_date||b.start_date||'9999'))||
+   String(a.title||'').localeCompare(String(b.title||'')));
+ const undated=open.filter(t=>!hasDeadline(t)&&!hasStart(t));
+ const scopeOptions=[['all','All Marketing work'],['assigned','Assigned to staff'],['unassigned','Unassigned planning']];
+ const controls='<div class="bg-white rounded-xl border p-3 flex flex-wrap items-end gap-3">'+
+  '<label class="text-xs font-semibold">Work month<input type="month" aria-label="Marketing work schedule month" class="block mt-1 border rounded-lg px-3 py-2 text-sm" value="'+h(month)+'" onchange="marketingScheduleMonth(this.value)"></label>'+
+  '<label class="text-xs font-semibold">Assignment<select aria-label="Schedule assignment filter" class="block mt-1 border rounded-lg px-3 py-2 text-xs" onchange="marketingScheduleOwner(this.value)">'+
+   scopeOptions.map(([key,label])=>'<option value="'+key+'" '+(owner===key?'selected':'')+'>'+label+'</option>').join('')+'</select></label>'+
+  '<label class="text-xs font-semibold">Status<select aria-label="Schedule status filter" class="block mt-1 border rounded-lg px-3 py-2 text-xs" onchange="marketingScheduleStatus(this.value)">'+
+    [['active','Active / upcoming'],['all','All statuses']].map(([key,label])=>'<option value="'+key+'" '+(DATA.scheduleStatus===key?'selected':'')+'>'+label+'</option>').join('')+'</select></label>'+
+  '<div class="ml-auto">'+(manager()?btn('+ Plan Work','openMarketingTask()','gold'):'')+'</div></div>';
+ const metric=(name,n,detail)=>'<div class="rounded-xl border bg-white p-3"><p class="text-[10px] text-stone-500 uppercase font-bold">'+name+'</p><b class="block text-2xl mt-1">'+n+'</b><p class="text-[10px] text-stone-500">'+detail+'</p></div>';
+ const datedRows=scheduled.map(t=>{
+  const assigned=marketingAssigned(t),start=hasStart(t)?formatDate(t.start_date):'Not set',deadline=hasDeadline(t)?formatDate(t.due_date):'Not set';
+  return '<article class="rounded-xl border bg-white px-4 py-3 flex flex-wrap gap-3 items-center justify-between">'+
+   '<div class="min-w-0 flex-1"><p class="text-[10px] text-stone-500">'+h(start)+' start · '+h(deadline)+' deadline</p>'+
+   '<b class="text-sm">'+h(t.title||'Untitled task')+'</b>'+
+   '<p class="text-xs text-stone-500 mt-1">'+h(t.business||'Marketing')+' · '+h(t.campaign||t.category||'General')+' · '+
+    h(ownerLabel(t))+'</p></div>'+
+   '<div class="flex flex-wrap gap-2">'+badge(assigned?t.status||'Not Started':'Planning / Unassigned',
+    assigned?'bg-stone-100 text-stone-700':'bg-amber-50 text-amber-900')+
+    (due(t)?badge('Overdue','bg-red-50 text-red-700'):'')+
+    btn('Details','openMarketingTask(\''+uid(t)+'\')')+'</div></article>';
+ }).join('');
+ const undatedRows=undated.slice(0,50).map(t=>
+  '<div class="flex justify-between items-center gap-2 border-b last:border-0 py-2 text-xs"><span><b>'+h(t.title||'Task')+'</b>'+
+   '<small class="block text-stone-500">'+h(ownerLabel(t))+' · '+h(t.campaign||t.category||'Marketing')+'</small></span>'+
+   (manager()?btn('Set Dates','openMarketingTask(\''+uid(t)+'\')'):'')+'</div>').join('');
+ frame('Marketing Work Schedule','Internal work start dates, deadlines, and preparation tasks. Content publishing dates are managed separately.',
+  controls+
+  '<div class="grid grid-cols-2 lg:grid-cols-4 gap-2">'+
+   metric('Dated this month',scheduled.length,'Start or deadline in '+h(month))+
+   metric('No work dates',undated.length,'Tasks needing a work schedule')+
+   metric('Assigned staff tasks',open.filter(marketingAssigned).length,'Connected staff only')+
+   metric('Planning backlog',open.filter(t=>!marketingAssigned(t)).length,'Unassigned tasks')+'</div>'+
+  '<div class="flex flex-wrap justify-between items-center gap-2"><h3 class="font-bold text-sm">Work timeline · '+h(monthLabel(month))+'</h3>'+
+   btn('Open Content Calendar','marketingTab(\'Content Calendar\')')+'</div>'+
+  '<div class="grid gap-2">'+(datedRows||empty('No task start or due dates fall in this month. Use the No Work Dates list below to schedule existing tasks.'))+'</div>'+
+  '<section class="rounded-xl border bg-white p-4"><div class="flex flex-wrap justify-between gap-2"><h3 class="font-bold text-sm">No Work Dates</h3>'+
+   '<span class="text-xs text-stone-500">'+undated.length+' tasks · not considered overdue</span></div>'+
+  (undatedRows||'<p class="text-xs mt-3 text-stone-500">All visible tasks have a start date or deadline.</p>')+
+  (undated.length>50?'<p class="text-xs mt-2 text-stone-500">Showing the first 50 unscheduled tasks. Set dates in Staff To-Do to reduce the backlog.</p>':'')+'</section>');
+}
+
 const CALENDAR_BUSINESSES=[
  {id:'LPL',name:"L'Imperial Luxury"},
  {id:'LPH',name:'LP Home'}
