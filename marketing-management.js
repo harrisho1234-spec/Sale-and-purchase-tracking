@@ -4,7 +4,7 @@
 'use strict';
 const PAGE='marketing';
 const TABS=['Daily Plan & Result','Staff To-Do','Schedule','Content Calendar','Reports','Reviews'];
-const DATA={tab:'Daily Plan & Result',tasks:[],daily:[],staff:[],date:'',month:'',filter:'',brand:'all',ready:false,config:false,loading:false,todoStatus:'Active',todoPriority:'All',todoSort:'due',dailyDraftIds:[],dailyUnplannedIds:[],dailyReportVersion:1,dailyView:['admin','super_admin','marketing_manager'].includes(String(state?.profile?.role||''))?'Team Review':'My Daily',teamStaffFilter:'All',todoStaffFilter:'All',todoOwnerView:'auto',scheduleMonth:'',scheduleOwner:'all',scheduleStatus:'active',reportPeriod:'month',reportYear:String(new Date().getFullYear()),reportMonth:String(new Date().getMonth()+1).padStart(2,'0'),reportQuarter:String(Math.ceil((new Date().getMonth()+1)/3)),reportStaff:'All',calendarBrand:'LPL',calendarView:'list',calendarDraftDate:''};
+const DATA={tab:'Daily Plan & Result',tasks:[],daily:[],staff:[],date:'',month:'',filter:'',brand:'all',ready:false,config:false,loading:false,todoStatus:'Active',todoPriority:'All',todoSort:'due',dailyDraftIds:[],dailyUnplannedIds:[],dailyReportVersion:1,dailyView:['admin','super_admin','marketing_manager'].includes(String(state?.profile?.role||''))?'Team Review':'My Daily',teamStaffFilter:'All',todoStaffFilter:'All',todoOwnerView:'auto',scheduleMonth:'',scheduleOwner:'all',scheduleStatus:'active',scheduleMode:'timeline',reportPeriod:'month',reportYear:String(new Date().getFullYear()),reportMonth:String(new Date().getMonth()+1).padStart(2,'0'),reportQuarter:String(Math.ceil((new Date().getMonth()+1)/3)),reportStaff:'All',calendarBrand:'LPL',calendarView:'list',calendarDraftDate:''};
 const h=v=>typeof esc==='function'?esc(v==null?'':String(v)):String(v==null?'':v).replace(/[&<>"']/g,'');
 const role=()=>String(state.profile&&state.profile.role||'');
 const marketingRole=()=>role()==='marketing'||role()==='marketing_manager';
@@ -32,7 +32,7 @@ const ownerLabel=t=>marketingAssigned(t)?(t.assignee_name||marketingStaffFor(t)?
 const statuses=['Not Started','In Progress','Blocked','Ready for Review','Completed','Cancelled'];
 const categories=window.LIDailyWorkConfig?.options('Marketing')||['Artwork / Poster','Video','Photo','Content Writing','Social Media','Promotion','Event','Catalog','Other'];
 function opts(items,selected){return items.map(v=>'<option value="'+h(v)+'" '+(v===selected?'selected':'')+'>'+h(v)+'</option>').join('');}
-function changeTab(tab){if(tab==='My To-Do')tab='Staff To-Do';if(tab==='Overview')tab='Daily Plan & Result';if(tab==='Campaigns')tab='Schedule';if(!TABS.includes(tab))return;DATA.tab=tab;draw();}
+function changeTab(tab){if(tab==='My To-Do')tab='Staff To-Do';if(tab==='Overview')tab='Daily Plan & Result';if(tab==='Campaigns'){tab='Schedule';DATA.scheduleMode='campaigns'}else if(tab==='Schedule')DATA.scheduleMode='timeline';if(!TABS.includes(tab))return;DATA.tab=tab;draw();}
 async function api(action,payload={}){
  const r=await db.functions.invoke('marketing-google-proxy',{body:{action,payload}});
  if(r.error)throw Error(r.data&&r.data.error||r.error.message||'Marketing connection unavailable');
@@ -81,7 +81,7 @@ function draw(){
  }
  if(DATA.tab==='Daily Plan & Result')return drawDaily();
  if(DATA.tab==='Staff To-Do')return drawTodo();
- if(DATA.tab==='Schedule')return drawSchedule();
+ if(DATA.tab==='Schedule')return DATA.scheduleMode==='campaigns'?drawCampaigns():drawSchedule();
  if(DATA.tab==='Content Calendar')return drawCalendar();
  if(DATA.tab==='Reports')return drawReports();
  if(DATA.tab==='Reviews')return drawReviews();
@@ -522,7 +522,7 @@ function drawSchedule(){
    scopeOptions.map(([key,label])=>'<option value="'+key+'" '+(owner===key?'selected':'')+'>'+label+'</option>').join('')+'</select></label>'+
   '<label class="text-xs font-semibold">Status<select aria-label="Schedule status filter" class="block mt-1 border rounded-lg px-3 py-2 text-xs" onchange="marketingScheduleStatus(this.value)">'+
     [['active','Active / upcoming'],['all','All statuses']].map(([key,label])=>'<option value="'+key+'" '+(DATA.scheduleStatus===key?'selected':'')+'>'+label+'</option>').join('')+'</select></label>'+
-  '<div class="ml-auto">'+(manager()?btn('+ Plan Work','openMarketingTask()','gold'):'')+'</div></div>';
+  '<div class="ml-auto flex flex-wrap gap-2">'+btn('Campaign Summary','marketingScheduleMode(\'campaigns\')')+(manager()?btn('+ Plan Work','openMarketingTask()','gold'):'')+'</div></div>';
  const metric=(name,n,detail)=>'<div class="rounded-xl border bg-white p-3"><p class="text-[10px] text-stone-500 uppercase font-bold">'+name+'</p><b class="block text-2xl mt-1">'+n+'</b><p class="text-[10px] text-stone-500">'+detail+'</p></div>';
  const datedRows=scheduled.map(t=>{
   const assigned=marketingAssigned(t),start=hasStart(t)?formatDate(t.start_date):'Not set',deadline=hasDeadline(t)?formatDate(t.due_date):'Not set';
@@ -693,7 +693,7 @@ function drawCampaigns(){
  const groups=new Map();
  tasks().forEach(t=>{const name=t.campaign||'Unassigned / General Work';if(!groups.has(name))groups.set(name,[]);groups.get(name).push(t);});
  frame('Campaigns & Projects','Tasks for the same promotion are grouped automatically under one campaign.',
- '<div class="grid md:grid-cols-2 gap-3">'+(groups.size?Array.from(groups).map(([name,ts])=>{
+ '<div class="flex justify-end">'+btn('‹ Work Schedule','marketingScheduleMode(\'timeline\')')+'</div>'+ '<div class="grid md:grid-cols-2 gap-3">'+(groups.size?Array.from(groups).map(([name,ts])=>{
  const done=ts.filter(t=>t.status==='Completed'||t.status==='Published').length;
  return '<div class="bg-white border rounded-xl p-4 space-y-3"><b>'+h(name)+'</b><div class="text-xs text-stone-500">'+ts.length+' tasks · '+done+' delivered · '+ts.filter(due).length+' overdue</div>'+
  '<div class="h-2 bg-stone-100 rounded-full overflow-hidden"><div class="h-full bg-amber-600" style="width:'+(100*done/Math.max(1,ts.length))+'%"></div></div>'+
@@ -1074,6 +1074,7 @@ window.marketingScheduleStatus=function(v){
  if(!['all','active'].includes(v))return;
  DATA.scheduleStatus=v;drawSchedule();
 };
+window.marketingScheduleMode=function(v){if(!['timeline','campaigns'].includes(v))return;DATA.scheduleMode=v;draw();};
 window.marketingReportFilter=function(field,v){
  if(!manager())return;
  if(field==='period'&&['month','quarter','year','all'].includes(v))DATA.reportPeriod=v;
