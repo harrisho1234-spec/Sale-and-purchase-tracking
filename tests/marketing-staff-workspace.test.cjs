@@ -73,6 +73,10 @@ test('marketing workspace separates staff activity, planning backlog and publish
  assert.match(app.html(),/Marketing Work Schedule/);
  assert.match(app.html(),/No Work Dates/);
  assert.match(app.html(),/48 tasks/);
+ app.window.marketingScheduleMode('campaigns');
+ assert.match(app.html(),/Campaigns & Projects/);
+ app.window.marketingScheduleMode('timeline');
+ assert.match(app.html(),/Marketing Work Schedule/);
  app.window.marketingTab('Content Calendar');
  assert.match(app.html(),/Content publishing month/);
  app.window.marketingTab('Reports');
@@ -116,6 +120,7 @@ test('marketing staff can still submit personal reports, but cannot access manag
  app.window.marketingTab('My To-Do'); // backward-compatible link from older pages
  assert.match(app.html(),/Marketing To-Do List/);
  assert.match(app.html(),/Marketing Task 1/);
+ assert.doesNotMatch(app.html(),/Marketing Task 4/, 'staff cannot see unassigned or other staff To-Do tasks');
  app.window.marketingTab('Schedule');
  assert.match(app.html(),/Marketing Work Schedule/);
 });
