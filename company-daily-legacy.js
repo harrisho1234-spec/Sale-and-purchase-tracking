@@ -65,7 +65,13 @@ async function load(suggestedDate){
     S.marketingReports=(result[0].value.daily||[]).map(marketingNormalizeReport);
     S.loaded.marketing=true;
    }else{S.errors.marketing=result[0].reason.message;S.marketingTasks=[];S.marketingReports=[]}
-   if(result[1].status==='fulfilled'&&!result[1].value.error)S.marketingStaff=result[1].value.data||[];
+   if(result[1].status==='fulfilled'&&!result[1].value.error){
+    S.marketingStaff=result[1].value.data||[];
+    S.loaded.marketingStaff=true;
+   }else{
+    S.marketingStaff=[];
+    S.errors.marketingStaff=result[1].status==='rejected'?result[1].reason.message:(result[1].value.error?.message||'Marketing staff directory unavailable');
+   }
   })());
  }
  try{await Promise.allSettled(jobs)}finally{if(generation===S.generation)S.loading=false}
@@ -79,7 +85,14 @@ function accountTasks(){
  if(canMarketing())for(const t of S.marketingTasks){
   if(staffMarketing()&&String(t.assignee_id||t.created_by)!==own)continue;
   if(['Completed','Published','Cancelled'].includes(t.status))continue;
-  out.push({source:'marketing',sourceId:key('marketing',t.id),id:String(t.id),title:t.title||'',description:t.description||'',status:t.status||'',priority:t.priority||'',dueDate:date(t.due_date),assignee:t.assignee_name||'',assigneeId:t.assignee_id||'',department:'Marketing'});
+  const recordedAssignee=String(t.assignee_id||'');
+  const staff=S.marketingStaff.find(x=>String(x.id||x.user_id||'')===recordedAssignee&&x.active!==false);
+  // Unassigned/unsynced Marketing task records are planning work, not an employee workload.
+  // When staff lookup is unavailable, retain a real recorded assignment rather than guessing.
+  const staffReady=recordedAssignee&&(!S.loaded.marketingStaff||!!staff);
+  out.push({source:'marketing',sourceId:key('marketing',t.id),id:String(t.id),title:t.title||'',description:t.description||'',status:t.status||'',priority:t.priority||'',dueDate:date(t.due_date),
+    assignee:staffReady?(t.assignee_name||staff?.name||'Assigned Marketing staff'):'',assigneeId:staffReady?recordedAssignee:'',
+    department:'Marketing',isBacklog:!staffReady});
  }
  return out;
 }
@@ -97,7 +110,7 @@ function taskCard(t,my){
  (mine?'<button class="'+H+'" onclick="companyDailyLegacyUse(\''+t.source+'\',\''+esc(t.id)+'\')">Use in Morning Plan</button>':sourceButton(t.source,'Open original'))+'</div>';
 }
 
-const VIEW={department:'All',person:'All',status:'Active',priority:'All',search:'',page:1,perPage:10,reportExpanded:false};
+const VIEW={scope:staffMarketing()?'marketing_assigned':'sales',department:'All',person:'All',status:'Active',priority:'All',search:'',page:1,perPage:10,reportExpanded:false};
 function normalizedStatus(t){
  const x=String(t.status||'').toLowerCase();
  if(x==='completed'||x==='published')return 'Completed';
@@ -107,6 +120,8 @@ function normalizedStatus(t){
  return 'Not Started';
 }
 function overdue(t){
+ // Marketing planning backlog does not generate staff-overdue alerts before assignment.
+ if(t.isBacklog)return false;
  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(t.dueDate||'')))return false;
  const todayValue=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Phnom_Penh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
  return t.dueDate<todayValue&&!['Completed','Cancelled'].includes(normalizedStatus(t));
@@ -115,8 +130,27 @@ function taskPool(){
  return accountTasks().filter(t=>role()==='admin'||role()==='super_admin'||role()==='manager'||
  String(t.assigneeId)===id()||(!t.assigneeId&&t.source==='marketing'&&staffMarketing()));
 }
+function withinScope(t){
+  if(VIEW.scope==='sales')return t.source==='sales';
+  if(VIEW.scope==='marketing_backlog')return t.source==='marketing'&&t.isBacklog;
+  if(VIEW.scope==='marketing_assigned')return t.source==='marketing'&&!t.isBacklog;
+  return true; // Combined management is explicitly selected, never the default.
+}
+function scopeButtons(){
+ const scopes=[
+  ...(canSales()?[['sales','Sales To-Do']]:[]),
+  ...(canMarketing()?[['marketing_backlog','Marketing Planning'],['marketing_assigned','Marketing Assigned']]:[]),
+  ...(canSales()&&canMarketing()?[['combined','Combined Management']]:[])
+ ];
+ return '<div class="flex flex-wrap gap-2 items-center border-b pb-3">'+
+  '<span class="text-xs font-bold text-stone-600 mr-1">View</span>'+
+  scopes.map(([value,label])=>'<button type="button" onclick="companyLegacyScope(\''+value+'\')" class="rounded-lg px-3 py-2 text-xs font-semibold border '+
+   (VIEW.scope===value?'bg-[#211d18] text-white border-[#211d18]':'bg-white text-stone-700 border-stone-200 hover:bg-stone-50')+'">'+label+'</button>').join('')+
+  '</div>';
+}
 function filteredTasks(){
  return taskPool().filter(t=>{
+  if(!withinScope(t))return false;
   const st=normalizedStatus(t);
   if(VIEW.department!=='All'&&t.department!==VIEW.department)return false;
   if(VIEW.person!=='All'&&String(t.assigneeId||'')!==VIEW.person)return false;
@@ -134,14 +168,12 @@ function filteredTasks(){
 }
 const selectItem=(value,label,selected)=>'<option value="'+esc(value)+'" '+(String(value)===String(selected)?'selected':'')+'>'+esc(label||value)+'</option>';
 function controls(){
- const pool=taskPool();
- const departments=['All',...new Set(pool.map(t=>t.department).filter(Boolean))];
+ const pool=taskPool().filter(withinScope);
  const people=[...new Map(pool.filter(t=>t.assigneeId).map(t=>[String(t.assigneeId),t.assignee||'Staff'])).entries()].sort((a,b)=>a[1].localeCompare(b[1]));
  const field=(caption,body)=>'<label class="text-[11px] font-semibold text-stone-600 min-w-0">'+caption+body+'</label>';
  const select=(key,items)=>'<select class="mt-1 block w-full rounded-lg border border-stone-200 bg-white px-2.5 py-2 text-xs" onchange="companyLegacyFilter(\''+key+'\',this.value)">'+items.map(x=>selectItem(x[0],x[1],VIEW[key])).join('')+'</select>';
- return '<div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-2">'+
- field('Department',select('department',departments.map(d=>[d,d==='All'?'All departments':d])))+
- field('Staff',select('person',[['All','All staff'],...people]))+
+ return '<div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">'+
+ field('Staff',select('person',[['All','All assigned staff'],...people]))+
  field('Status',select('status',[['Active','Active'],['Overdue','Overdue'],['Blocked','Blocked'],['In Progress','In progress'],['Not Started','Not started'],['All','All statuses']]))+
  field('Priority',select('priority',[['All','All priorities'],['Urgent','Urgent'],['High','High'],['Medium','Medium'],['Low','Low']]))+
  field('Search tasks','<input class="mt-1 block w-full rounded-lg border border-stone-200 px-2.5 py-2 text-xs" value="'+esc(VIEW.search)+'" oninput="companyLegacySearch(this.value)" placeholder="Task, project, person…" aria-label="Search connected tasks">')+
@@ -149,19 +181,26 @@ function controls(){
  '</div>';
 }
 function overview(){
- const all=taskPool(),sales=all.filter(t=>t.source==='sales'),mkt=all.filter(t=>t.source==='marketing'),late=all.filter(overdue),blocked=all.filter(t=>normalizedStatus(t)==='Blocked');
- const metric=(name,num,selector)=>'<button class="text-left rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 hover:bg-stone-100" onclick="companyLegacyQuick(\''+selector+'\')"><div class="text-[10px] text-stone-500">'+name+'</div><div class="text-xl font-bold text-stone-900">'+num+'</div></button>';
+ const all=taskPool(),sales=all.filter(t=>t.source==='sales'),
+  marketingBacklog=all.filter(t=>t.source==='marketing'&&t.isBacklog),
+  marketingAssigned=all.filter(t=>t.source==='marketing'&&!t.isBacklog),
+  late=all.filter(overdue);
+ const metric=(name,num,selector)=>'<button type="button" class="text-left rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 hover:bg-stone-100" onclick="companyLegacyScope(\''+selector+'\')"><div class="text-[10px] text-stone-500">'+name+'</div><div class="text-xl font-bold text-stone-900">'+num+'</div></button>';
  return '<div class="grid grid-cols-2 sm:grid-cols-4 gap-2">'+
- metric('Active tasks',all.length,'Active')+
- metric('Overdue',late.length,'Overdue')+
- metric('In progress',all.filter(t=>normalizedStatus(t)==='In Progress').length,'In Progress')+
- metric('Blocked',blocked.length,'Blocked')+'</div>'+
- '<p class="text-xs text-stone-500">Sales: '+sales.length+' · Marketing: '+mkt.length+' · Read-only view of original records. Select a count to filter.</p>';
+ metric('Sales active To-Do',sales.length,'sales')+
+ metric('Marketing unassigned backlog',marketingBacklog.length,'marketing_backlog')+
+ metric('Marketing assigned to staff',marketingAssigned.length,'marketing_assigned')+
+ metric('Operational overdue',late.length,'overdue')+'</div>'+
+ '<p class="text-xs text-stone-500">Sales work and Marketing planning are separate. Backlog records are not counted as staff workload, overdue or employee daily submission performance.</p>'+
+ (marketingBacklog.length?'<p class="text-xs rounded-lg border border-amber-200 bg-amber-50 text-amber-900 px-3 py-2"><b>Marketing setup:</b> '+marketingBacklog.length+' existing task(s) are awaiting assignment to Marketing staff accounts. Keep planning here or open Marketing; no user accounts or staff assignments are created automatically.</p>':'')+
+ warning('marketingStaff');
 }
 function compactTable(){
  const all=filteredTasks(),pages=Math.max(1,Math.ceil(all.length/VIEW.perPage));VIEW.page=Math.min(Math.max(1,VIEW.page),pages);
  const subset=all.slice((VIEW.page-1)*VIEW.perPage,VIEW.page*VIEW.perPage);
- const statusTag=t=>'<span class="inline-flex whitespace-nowrap rounded-md bg-stone-100 px-2 py-1 text-[11px] '+(overdue(t)?'text-red-700 bg-red-50':'text-stone-700')+'">'+esc(overdue(t)?'Overdue':normalizedStatus(t))+'</span>';
+ const statusTag=t=>'<span class="inline-flex whitespace-nowrap rounded-md px-2 py-1 text-[11px] '+
+  (t.isBacklog?'text-amber-800 bg-amber-50':overdue(t)?'text-red-700 bg-red-50':'text-stone-700 bg-stone-100')+
+  '">'+esc(t.isBacklog?'Planning / Unassigned':overdue(t)?'Overdue':normalizedStatus(t))+'</span>';
  const rows=subset.map(t=>{
   const target=t.source==='sales'?'sales-todo':'marketing',mine=String(t.assigneeId)===id();
   const action=mine&&staffSales()&&t.source==='sales'||mine&&staffMarketing()&&t.source==='marketing'?
@@ -170,7 +209,7 @@ function compactTable(){
   return '<tr class="border-b last:border-0 hover:bg-stone-50 align-top">'+
    '<td class="px-3 py-3"><div class="li-company-task-title font-semibold text-xs break-words max-w-[350px]" lang="auto">'+esc(t.title||'Untitled task')+'</div><div class="text-[10px] text-stone-400">'+esc(t.priority||'No priority')+'</div></td>'+
    '<td class="px-3 py-3 text-xs">'+esc(t.department)+'</td>'+
-   '<td class="px-3 py-3 text-xs">'+esc(t.assignee||'Unassigned')+'</td>'+
+   '<td class="px-3 py-3 text-xs">'+esc(t.isBacklog?'Awaiting staff setup':t.assignee||'Unassigned')+'</td>'+
    '<td class="px-3 py-3">'+statusTag(t)+'</td>'+
    '<td class="px-3 py-3 text-xs whitespace-nowrap">'+esc(t.dueDate||'—')+'</td>'+
    '<td class="px-3 py-3 whitespace-nowrap">'+action+'</td></tr>';
@@ -197,16 +236,16 @@ function daily(selectedDate){
  if(!canSales()&&!canMarketing())return '';
  return '<section class="rounded-xl border bg-white p-4 space-y-3">'+
  '<div class="flex flex-wrap justify-between items-center gap-3"><div><h3 class="font-bold">Connected '+[canSales()?'Sales':'',canMarketing()?'Marketing':''].filter(Boolean).join(' + ')+' overview</h3>'+
- '<p class="text-xs text-slate-500">Original tasks and reports · no duplicate submissions</p></div>'+
- '<div class="flex flex-wrap gap-2">'+(canSales()?sourceButton('sales-todo','Sales To-Do')+sourceButton('sales-daily','Sales Daily'):'')+(canMarketing()?sourceButton('marketing','Marketing Daily'):'')+'</div></div>'+
+ '<p class="text-xs text-slate-500">Sales staff activity separate from unassigned Marketing planning · no duplicate submissions</p></div>'+
+ '<div class="flex flex-wrap gap-2">'+(canSales()?sourceButton('sales-todo','Sales To-Do')+sourceButton('sales-daily','Sales Daily'):'')+(canMarketing()?sourceButton('marketing','Marketing Workspace'):'')+'</div></div>'+
  warning('salesTodos')+warning('salesReports')+warning('marketing')+
- overview()+controls()+compactTable()+dailySubmissions(selectedDate)+'</section>';
+ scopeButtons()+overview()+controls()+compactTable()+dailySubmissions(selectedDate)+'</section>';
 }
 function tasksPanel(){
  if(!canSales()&&!canMarketing())return '';
  return '<section class="rounded-xl border bg-white p-4 space-y-3"><h3 class="font-bold">Connected department tasks</h3>'+
  '<p class="text-xs text-stone-500">Filtered management view. Updates take place in original Sales / Marketing modules.</p>'+
- overview()+controls()+compactTable()+'</section>';
+ scopeButtons()+overview()+controls()+compactTable()+'</section>';
 }
 window.companyLegacyFilter=(field,value)=>{
  if(!Object.prototype.hasOwnProperty.call(VIEW,field))return;
@@ -222,6 +261,14 @@ window.companyLegacySearch=value=>{
 };
 window.companyLegacyPage=delta=>{VIEW.page+=delta;window.companyDailyLegacyRender?.()};
 window.companyLegacyQuick=status=>{VIEW.status=status;VIEW.page=1;window.companyDailyLegacyRender?.()};
+window.companyLegacyScope=value=>{
+ if(!['sales','marketing_backlog','marketing_assigned','combined','overdue'].includes(value))return;
+ if(value==='sales'&&!canSales() || (value==='marketing_backlog'||value==='marketing_assigned')&&!canMarketing() || value==='combined'&&!(canSales()&&canMarketing()))return;
+ VIEW.scope=value==='overdue'?'combined':value;
+ VIEW.status=value==='overdue'?'Overdue':'Active';
+ VIEW.person='All';VIEW.department='All';VIEW.page=1;
+ window.companyDailyLegacyRender?.();
+};
 window.companyLegacyReset=()=>{VIEW.department='All';VIEW.person='All';VIEW.status='Active';VIEW.priority='All';VIEW.search='';VIEW.page=1;window.companyDailyLegacyRender?.()};
 window.companyLegacyToggleReports=()=>{VIEW.reportExpanded=!VIEW.reportExpanded;window.companyDailyLegacyRender?.()};
 function filters(r,f){
