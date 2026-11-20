@@ -235,7 +235,7 @@ function dailySubmissions(selectedDate){
 function daily(selectedDate){
  if(!canSales()&&!canMarketing())return '';
  return '<section class="rounded-xl border bg-white p-4 space-y-3">'+
- '<div class="flex flex-wrap justify-between items-center gap-3"><div><h3 class="font-bold">Connected '+[canSales()?'Sales':'',canMarketing()?'Marketing':''].filter(Boolean).join(' + ')+' overview</h3>'+
+ '<div class="flex flex-wrap justify-between items-center gap-3"><div><h3 class="font-bold">Sales operations and Marketing planning</h3>'+
  '<p class="text-xs text-slate-500">Sales staff activity separate from unassigned Marketing planning · no duplicate submissions</p></div>'+
  '<div class="flex flex-wrap gap-2">'+(canSales()?sourceButton('sales-todo','Sales To-Do')+sourceButton('sales-daily','Sales Daily'):'')+(canMarketing()?sourceButton('marketing','Marketing Workspace'):'')+'</div></div>'+
  warning('salesTodos')+warning('salesReports')+warning('marketing')+
@@ -243,8 +243,8 @@ function daily(selectedDate){
 }
 function tasksPanel(){
  if(!canSales()&&!canMarketing())return '';
- return '<section class="rounded-xl border bg-white p-4 space-y-3"><h3 class="font-bold">Connected department tasks</h3>'+
- '<p class="text-xs text-stone-500">Filtered management view. Updates take place in original Sales / Marketing modules.</p>'+
+ return '<section class="rounded-xl border bg-white p-4 space-y-3"><h3 class="font-bold">Department activity and planning backlog</h3>'+
+ '<p class="text-xs text-stone-500">Separate assigned staff work from Marketing tasks awaiting account setup. Update work in its original department module.</p>'+
  scopeButtons()+overview()+controls()+compactTable()+'</section>';
 }
 window.companyLegacyFilter=(field,value)=>{
