@@ -25,9 +25,9 @@ const btn=(label,click,kind)=>'<button type="button" class="px-3 py-2 rounded-lg
 const uid=t=>safeId(t.id);
 const empty=message=>'<div class="bg-white border border-stone-200 rounded-2xl p-8 text-center text-sm text-stone-500">'+h(message)+'</div>';
 const due=t=>marketingAssigned(t)&&t.due_date&&t.status!=='Published'&&t.status!=='Completed'&&t.status!=='Cancelled'&&formatDate(t.due_date)<today();
-function marketingStaffAccounts(){return DATA.staff.filter(x=>['marketing','marketing_manager'].includes(String(x.role||''))&&x.active!==false)}
+function marketingStaffAccounts(){return DATA.staff.filter(x=>(!x.role||['marketing','marketing_manager'].includes(String(x.role)))&&x.active!==false)}
 function marketingStaffFor(t){const id=String(t?.assignee_id||'');return id?marketingStaffAccounts().find(x=>String(x.id)===id):null}
-function marketingAssigned(t){return !!marketingStaffFor(t)}
+function marketingAssigned(t){return !!marketingStaffFor(t)||(marketingRole()&&!!t?.assignee_id&&String(t.assignee_id)===me())}
 const ownerLabel=t=>marketingAssigned(t)?(t.assignee_name||marketingStaffFor(t)?.name||'Marketing staff'):'Planning / Unassigned';
 const statuses=['Not Started','In Progress','Blocked','Ready for Review','Completed','Cancelled'];
 const categories=window.LIDailyWorkConfig?.options('Marketing')||['Artwork / Poster','Video','Photo','Content Writing','Social Media','Promotion','Event','Catalog','Other'];
@@ -343,41 +343,76 @@ function marketingWeekSummary(date){
    '<div class="rounded-xl border p-3"><p class="text-[10px] text-slate-500">'+x[0]+'</p><b class="text-xl">'+x[1]+'</b></div>').join('')+'</div></section>';
 }
 function drawMarketingTeamDaily(){
- const date=DATA.date||today();
- const reportRows=DATA.daily.filter(r=>formatDate(r.work_date)===date);
- const ownHeader='<div class="flex flex-wrap justify-between items-end gap-3 rounded-xl bg-white border p-3">'+
-  '<label class="text-xs font-bold">Report Date<input type="date" value="'+h(date)+'" onchange="marketingDate(this.value)" class="block border rounded-lg px-3 py-2 mt-1 text-sm"></label>'+
-  '<div class="flex gap-2">'+btn('My Daily Plan','marketingDailyView(\'My Daily\')')+'</div></div>';
- const rows=reportRows.map(r=>{
-  const raw=dailyParsed(r.plan_json,[]),ids=Array.isArray(raw)?raw:[];
-  const result=dailyParsed(r.result_json,{});
-  const pmIds=Array.isArray(result.task_ids)?result.task_ids:ids;
-  const extras=pmIds.filter(id=>!ids.includes(id));
-  const who=DATA.staff.find(p=>p.id===r.user_id);
-  const plannedTasks=ids.map(id=>DATA.tasks.find(x=>x.id===id)).filter(Boolean);
-  const extraTasks=extras.map(id=>DATA.tasks.find(x=>x.id===id)).filter(Boolean);
-  const labels=plannedTasks.length?dailySection(plannedTasks,t=>
-   '<div class="px-3 py-2 text-xs flex gap-2 flex-wrap justify-between">'+
-   '<span>'+h(t.title)+(t.post_date?' · '+dailyCalendarLink(t):'')+'</span>'+
-   '<span class="text-stone-600">'+h(t.business||'Other')+'</span></div>'):
-   empty('No accessible planned tasks found.');
-  return '<article class="border rounded-xl bg-white p-4 space-y-3">'+
-   '<div class="flex flex-wrap justify-between gap-2"><div><b class="text-sm">'+h(who?.name||r.user_name||'Marketing Staff')+'</b>'+
-   '<p class="text-xs text-slate-500">'+h(date)+' · '+ids.length+' planned task(s)</p></div>'+
-   '<div class="flex flex-wrap gap-2">'+badge(r.am_submitted_at?'AM Submitted':'AM Pending')+
-   badge(r.pm_submitted_at?'PM Submitted':'PM Pending',r.pm_submitted_at?'bg-green-50 text-green-700':'bg-amber-50 text-amber-800')+'</div></div>'+
-   '<div class="space-y-2"><h4 class="text-xs font-bold">Morning Plan</h4>'+labels+'</div>'+
-   (r.pm_submitted_at?
-    '<div class="space-y-2 border-t pt-3"><h4 class="text-xs font-bold">Evening Result · Planned Tasks</h4>'+
-     (plannedTasks.length?dailySection(plannedTasks,t=>dailyReviewResults([t.id],result)):empty('No planned task results.'))+
-     (extraTasks.length?'<h4 class="text-xs font-bold mt-3">Additional / Unplanned Work</h4>'+
-       dailySection(extraTasks,t=>dailyReviewResults([t.id],result)):'')+
-     '<div class="rounded-xl border p-3 text-xs whitespace-pre-wrap"><b>Evening summary: </b>'+h(result.note||'No summary recorded')+'</div></div>':
-     '<p class="text-xs text-amber-800">Evening Result has not been submitted.</p>')+
-   '</article>';
+ const date=DATA.date||today(),staff=marketingStaffAccounts(),
+  dayReports=DATA.daily.filter(r=>formatDate(r.work_date)===date);
+ const people=new Map(staff.map(person=>[String(person.id),person]));
+ dayReports.forEach(r=>{
+  if(!people.has(String(r.user_id)))people.set(String(r.user_id),{
+    id:r.user_id,name:r.user_name||'Historical Marketing account',historical:true
+  });
+ });
+ const chosen=DATA.teamStaffFilter;
+ const roster=[...people.values()].filter(p=>chosen==='All'||String(p.id)===chosen)
+  .sort((a,b)=>String(a.name||'').localeCompare(String(b.name||'')));
+ const selectedReports=dayReports.filter(r=>chosen==='All'||String(r.user_id)===chosen);
+ const metrics=[
+  ['Connected staff',staff.length,'Linked Marketing user accounts'],
+  ['Morning Plans',selectedReports.filter(r=>!!r.am_submitted_at).length,'Submitted on selected date'],
+  ['Evening Results',selectedReports.filter(r=>!!r.pm_submitted_at).length,'Submitted on selected date'],
+  ['Awaiting PM',selectedReports.filter(r=>!!r.am_submitted_at&&!r.pm_submitted_at).length,'Only reports with AM submitted']
+ ];
+ const kpis='<div class="grid grid-cols-2 lg:grid-cols-4 gap-2">'+metrics.map(([name,count,detail])=>
+  '<div class="rounded-xl border bg-white p-3"><div class="text-[10px] text-stone-500 uppercase font-bold">'+h(name)+'</div>'+
+  '<b class="block text-2xl mt-1">'+count+'</b><p class="text-[10px] text-stone-500 mt-1">'+h(detail)+'</p></div>').join('')+'</div>';
+ const staffOptions='<option value="All">All connected Marketing staff</option>'+
+  [...people.values()].sort((a,b)=>String(a.name||'').localeCompare(String(b.name||'')))
+  .map(p=>'<option value="'+h(p.id)+'" '+(chosen===String(p.id)?'selected':'')+'>'+h(p.name||'Marketing staff')+'</option>').join('');
+ const filterBar='<div class="flex flex-wrap items-end justify-between gap-3 rounded-xl bg-white border p-3">'+
+  '<div class="flex flex-wrap items-end gap-2"><label class="text-xs font-bold">Work date<input type="date" value="'+h(date)+
+  '" onchange="marketingDate(this.value)" class="block mt-1 border rounded-lg px-3 py-2 text-sm"></label>'+
+  btn('‹ Previous','marketingTeamDayShift(-1)')+btn('Today','marketingDate(\''+today()+'\')')+
+  btn('Next ›','marketingTeamDayShift(1)')+'</div>'+
+  '<label class="text-xs font-bold">Staff account<select onchange="marketingTeamStaffFilter(this.value)" class="block mt-1 border rounded-lg px-3 py-2 text-sm">'+staffOptions+'</select></label></div>';
+ const taskTitle=id=>DATA.tasks.find(t=>String(t.id)===String(id))?.title||'Task reference not available';
+ const cards=roster.map(p=>{
+  const r=selectedReports.find(x=>String(x.user_id)===String(p.id));
+  if(!r)return '<div class="rounded-xl border bg-white p-4">'+
+    '<b class="text-sm">'+h(p.name||'Marketing staff')+'</b>'+
+    '<p class="text-xs text-stone-500 mt-2">No Daily Plan / Result record on this date.</p>'+
+    '<p class="text-[11px] text-stone-400 mt-1">Not automatically marked late: working schedules and account activation may differ.</p></div>';
+  let ids=dailyParsed(r.plan_json,[]);if(!Array.isArray(ids))ids=[];
+  const outcome=dailyParsed(r.result_json,{});
+  const pmIds=Array.isArray(outcome.task_ids)?outcome.task_ids:ids;
+  const extra=pmIds.filter(x=>!ids.includes(x));
+  const planned=ids.map((id,n)=>
+   '<div class="py-2 border-b last:border-b-0 text-xs"><b>'+(n+1)+'. '+h(taskTitle(id))+'</b></div>').join('');
+  const resultHtml=r.pm_submitted_at?
+   '<div class="border-t pt-3"><h4 class="text-xs font-bold">Evening Result</h4>'+
+   (ids.length?ids.map(id=>dailyReviewResults([id],outcome)).join(''):'<p class="text-xs text-stone-500 mt-2">No planned task results</p>')+
+   (extra.length?'<h4 class="text-xs font-bold mt-3">Additional / Unplanned Work</h4>'+
+    extra.map(id=>dailyReviewResults([id],outcome)).join(''):'')+
+   (outcome.note?'<p class="text-xs mt-3 rounded-lg bg-stone-50 p-3 whitespace-pre-wrap"><b>Summary:</b> '+h(outcome.note)+'</p>':'')+'</div>':
+   '<p class="text-xs text-amber-700 border-t pt-3">Evening Result has not been submitted.</p>';
+  return '<article class="rounded-xl border bg-white p-4 space-y-3">'+
+    '<div class="flex flex-wrap justify-between gap-2"><div><b class="text-sm">'+h(p.name||r.user_name||'Marketing staff')+'</b>'+
+    '<p class="text-xs text-stone-500 mt-1">'+h(date)+' · '+ids.length+' planned task(s)'+
+    (p.historical?' · Historical / unlinked account':'')+'</p></div>'+
+    '<div class="flex flex-wrap gap-1">'+badge(r.am_submitted_at?'AM Submitted':'AM Not Submitted',
+     r.am_submitted_at?'bg-green-50 text-green-700':'bg-stone-100 text-stone-600')+
+    badge(r.pm_submitted_at?'PM Submitted':'PM Not Submitted',
+     r.pm_submitted_at?'bg-green-50 text-green-700':'bg-stone-100 text-stone-600')+'</div></div>'+
+    '<details open><summary class="font-bold text-xs cursor-pointer">View Morning Plan and Evening Result</summary>'+
+    '<div class="mt-3"><h4 class="text-xs font-bold">Morning Plan</h4>'+
+    (planned||'<p class="text-xs text-stone-500 p-2">No task references in the plan.</p>')+'</div>'+
+    '<div class="mt-3">'+resultHtml+'</div></details></article>';
  }).join('');
- frame('Marketing Team Daily Review','Morning plans and per-task evening outcomes for Marketing staff only.',
-  ownHeader+'<div class="grid lg:grid-cols-2 gap-3">'+(rows||empty('No Marketing Daily Reports submitted for this date.'))+'</div>');
+ const setup=!staff.length?
+  '<div class="rounded-xl border border-amber-200 bg-amber-50 text-amber-900 p-4 text-xs"><b>Marketing accounts are not connected yet.</b>'+
+  '<p class="mt-1">Existing Marketing tasks remain planning records. Assign staff accounts when ready; without accounts there is no individual compliance score or overdue employee result.</p></div>':'';
+ frame('Marketing Team Daily Review','Review each staff member’s Morning Plan and Evening Result using existing Marketing Google Sheet records.',
+  filterBar+kpis+setup+
+  (marketingRole()?'<div class="flex justify-end">'+btn('Open My Daily','marketingDailyView(\'My Daily\')')+'</div>':'')+
+  '<div class="grid lg:grid-cols-2 gap-3">'+(cards||empty('No connected Marketing staff or reports for this date.'))+'</div>');
 }
 function drawDaily(){
  if(manager()&&DATA.dailyView==='Team Review')return drawMarketingTeamDaily();
