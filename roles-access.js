@@ -257,7 +257,7 @@ window.saveMyPassword=async function(e){
 };
 
 openCreateUser=function(){
-  if(!isSuper())return showToast('Super Admin only','err');
+  if(!isAdmin())return showToast('Admin access required','err');
   openModal('Create User',`<form id="createUserForm" class="space-y-4">
     <div class="grid md:grid-cols-2 gap-4">
       <div><label class="text-xs font-semibold text-gray-600">Name</label><input id="newUserName" required class="mt-1 w-full border rounded-xl px-3 py-2.5" placeholder="Staff name"></div>
