@@ -137,6 +137,7 @@
     {
       id:'showroom',label:'Showroom',icon:'▧',
       activities:[
+        {key:'showroom.access',label:'Open Showroom',description:'Sign in to L’Imperial Showroom using this employee account. Does not grant management or supplier costing access.',view:true},
         {key:'showroom.management_mode',label:'Use Management Mode',description:'Unlock Limperial Showroom Management Mode, including cost view, showroom background and seasonal promotion management.'}
       ]
     },
