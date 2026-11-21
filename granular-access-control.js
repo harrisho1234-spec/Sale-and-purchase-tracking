@@ -414,8 +414,13 @@
   };
 
   function areaFor(id){return AREAS.find(a=>a.id===id)||AREAS[0]}
+  const ADMIN_ACCESS_PROTECTED=new Set(['users.manage','activity_logs.view','products.delete','products.tax_manage','sales_access.manage']);
+  function canAdminEditActivity(activity){
+    return isSuperAdmin()||(!activity.protected&&!ADMIN_ACCESS_PROTECTED.has(activity.key)&&
+      !!roleByKey('admin')?.permissions?.[activity.key]);
+  }
   function mutableActivities(area){
-    return area.activities.filter(x=>!x.protected);
+    return area.activities.filter(canAdminEditActivity);
   }
   function areaLevel(area,perms){
     const acts=mutableActivities(area);
@@ -476,7 +481,7 @@
               '<div class="mt-4 text-xs text-gray-500">Full enables every editable activity in this area. Partial lets you choose individual activities. Protected system controls stay locked.</div>'+
               '<button onclick="setAccessBuilderViewOnly(\''+area.id+'\')" class="mt-4 px-3 py-2 rounded-xl border border-amber-300 bg-amber-50 text-amber-800 text-xs font-semibold">View only in this area</button>'+
               '<div class="mt-5 divide-y">'+area.activities.map(x=>{
-                const locked=!!x.protected;
+                const locked=!canAdminEditActivity(x);
                 return '<label class="py-3 flex gap-3 '+(locked?'opacity-60':'cursor-pointer')+'"><input type="checkbox" '+(perms[x.key]?'checked':'')+' '+(locked?'disabled':'')+' onchange="setAccessBuilderPermission(\''+x.key+'\',this.checked)" class="mt-1"><span><span class="text-sm font-medium">'+escText(x.label)+(locked?' <span class="text-[9px] text-amber-700">PROTECTED</span>':'')+'</span><span class="block text-[10px] text-gray-500 mt-1">'+escText(x.description)+'</span></span></label>';
               }).join('')+'</div>'+
             '</div>'+
@@ -485,7 +490,7 @@
         '<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">'+
           '<div class="text-[10px] text-gray-400">'+(b.type==='user'&&b.hasExistingOverride?'This user currently has custom access. Reset to role defaults if the exception is no longer needed.':'')+'</div>'+
           '<div class="flex flex-wrap justify-end gap-2">'+
-            (b.type==='user'&&b.hasExistingOverride?'<button type="button" onclick="resetUserAccessToRole()" class="px-4 py-2.5 rounded-xl border border-red-200 text-red-600 text-xs font-semibold">Reset to Role Defaults</button>':'')+
+            (b.type==='user'&&b.hasExistingOverride&&isSuperAdmin()?'<button type="button" onclick="resetUserAccessToRole()" class="px-4 py-2.5 rounded-xl border border-red-200 text-red-600 text-xs font-semibold">Reset to Role Defaults</button>':'')+
             '<button type="button" onclick="closeModal()" class="px-4 py-2.5 rounded-xl border text-xs font-semibold">Cancel</button>'+
             '<button type="button" onclick="saveAccessPermissionBuilder()" class="px-4 py-2.5 rounded-xl bg-[#17324d] text-white text-xs font-semibold">Save & Continue</button>'+
           '</div>'+
@@ -495,7 +500,7 @@
 
   window.setAccessBuilderSearch=function(v){if(!A.builder)return;A.builder.search=v||'';renderPermissionBuilder()};
   window.selectAccessBuilderArea=function(id){if(!A.builder)return;A.builder.areaId=id;renderPermissionBuilder()};
-  window.setAccessBuilderPermission=function(key,value){if(!A.builder)return;A.builder.workPermissions[key]=!!value;renderPermissionBuilder()};
+  window.setAccessBuilderPermission=function(key,value){if(!A.builder)return;const activity=AREAS.flatMap(a=>a.activities).find(x=>x.key===key);if(!activity||!canAdminEditActivity(activity))return;A.builder.workPermissions[key]=!!value;renderPermissionBuilder()};
   window.setAccessBuilderAreaLevel=function(id,level){
     if(!A.builder)return;
     const area=areaFor(id);
@@ -618,6 +623,7 @@
   };
 
   window.resetUserAccessToRole=async function(){
+    if(!isSuperAdmin())return showToast('Super Admin only','err');
     const b=A.builder;
     if(!b||b.type!=='user')return;
     if(!confirm('Reset this user to the current role defaults? Their custom access exceptions will be removed.'))return;
