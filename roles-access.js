@@ -51,7 +51,7 @@ navItems=function(){
   if(granular?window.hasAppPermission('procurement.view'):isAdmin()) base.push(['procurement','Procurement','▣'],['supplier-pos','Supplier POs','⌑']);
   if(granular?window.hasAppPermission('reports.view'):canManageSalesAccess()) base.push(['reports','Reports','▥']);
   if(granular?window.hasAppPermission('sales_access.manage'):canManageSalesAccess()) base.push(['sales-access','Sales Access','⊕']);
-  if(isSuper()) base.push(['users','Users & Access','♙']);
+  if(isAdmin()) base.push(['users','Users & Access','♙']);
   return base;
 };
 
@@ -128,7 +128,7 @@ renderUsers=async function(){
 };
 
 window.openEditAppUser=function(id){
-  if(!isSuper())return showToast('Super Admin only','err');
+  if(!isAdmin())return showToast('Admin access required','err');
   const u=(window._usersAccessRows||[]).find(x=>x.user_id===id);
   if(!u)return showToast('User not found. Refresh Users & Access.','err');
   openModal('Edit User',`<form id="editAppUserForm" class="space-y-4">
@@ -157,7 +157,7 @@ window.openEditAppUser=function(id){
 
 window.saveEditAppUser=async function(e,id){
   e.preventDefault();
-  if(!isSuper())return showToast('Super Admin only','err');
+  if(!isAdmin())return showToast('Admin access required','err');
   const btn=document.getElementById('editAppUserBtn');
   const payload={
     action:'update_user',
@@ -183,7 +183,7 @@ window.saveEditAppUser=async function(e,id){
 };
 
 window.openResetAppUserPassword=function(id){
-  if(!isSuper())return showToast('Super Admin only','err');
+  if(!isAdmin())return showToast('Admin access required','err');
   if(id===state.user.id)return openChangeMyPassword();
   const u=(window._usersAccessRows||[]).find(x=>x.user_id===id);
   if(!u)return showToast('User not found. Refresh Users & Access.','err');
@@ -200,7 +200,7 @@ window.openResetAppUserPassword=function(id){
 
 window.saveResetAppUserPassword=async function(e,id){
   e.preventDefault();
-  if(!isSuper())return showToast('Super Admin only','err');
+  if(!isAdmin())return showToast('Admin access required','err');
   const password=document.getElementById('resetAppUserPassword').value;
   const confirmPassword=document.getElementById('resetAppUserPasswordConfirm').value;
   if(password.length<8)return showToast('Password must be at least 8 characters.','err');
