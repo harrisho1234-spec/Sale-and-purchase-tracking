@@ -342,7 +342,7 @@
 
   function roleOptions(current){
     const roles=A.adminSnapshot?.roles||[];
-    return roles.filter(r=>isSuperAdmin()||!['admin','super_admin'].includes(r.base_role)).map(r=>'<option value="'+escText(r.role_key)+'" '+(r.role_key===current?'selected':'')+'>'+escText(r.display_name||ROLE_LABELS[r.role_key]||r.role_key)+'</option>').join('');
+    return roles.filter(r=>isSuperAdmin()||r.role_key===current||!['admin','super_admin'].includes(r.base_role)).map(r=>'<option value="'+escText(r.role_key)+'" '+(r.role_key===current?'selected':'')+'>'+escText(r.display_name||ROLE_LABELS[r.role_key]||r.role_key)+'</option>').join('');
   }
 
   function usersTabHtml(){
