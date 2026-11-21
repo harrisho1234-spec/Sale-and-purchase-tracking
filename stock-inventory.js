@@ -2613,24 +2613,22 @@
     if(!p)return showToast('Product stock record not found.','err');
     openModal('Product Stock Card — '+(p.code||'Product'),'<div class="py-12 text-center text-sm text-gray-400">Loading product stock card...</div>');
 
-    const orderedPromise=role()==='accountant'
-      ?Promise.resolve({data:[],error:null})
-      :db.rpc('get_sales_po_ordered_items');
-
-    const [historyRes,receiveRes,orderedRes]=await Promise.all([
+    // Active reservations must come from the same live reservation function
+    // that drives the stock balance, not historical PO fulfillment links.
+    const [historyRes,receiveRes,reservedRes]=await Promise.all([
       db.from('inventory_movement_history').select('*').eq('product_id',productId).order('movement_date',{ascending:false}).order('created_at',{ascending:false}).limit(30),
       db.rpc('get_inventory_po_receiving_queue',{p_search:p.code||null}),
-      orderedPromise
+      db.rpc('get_inventory_reserved_details',{p_product_id:productId})
     ]);
     if(historyRes.error){document.getElementById('modalBody').innerHTML=`<div class="text-red-600">${esc(historyRes.error.message)}</div>`;return}
 
     const history=historyRes.data||[];
     const arrivedPending=(receiveRes.data||[]).filter(x=>String(x.product_id)===String(productId));
-    const ordered=(orderedRes.data||[]).filter(x=>String(x.product_id)===String(productId));
+    const activeReservations=reservedRes.error?[]:(reservedRes.data||[]);
+    const reservedDetailsUnavailable=!!reservedRes.error;
+    const activeReservedTotal=activeReservations.reduce((sum,x)=>sum+n(x.reserved_qty),0);
     const a=inv.agingMap.get(productId);
     const locs=(p.locations||[]).filter(x=>n(x.qty)!==0);
-    const customerAllocations=[];
-    ordered.forEach(x=>(Array.isArray(x.allocations)?x.allocations:[]).forEach(y=>customerAllocations.push({...y,po_number:x.po_number||x.po_pending_reference||'PO'})));
 
     document.getElementById('modalBody').innerHTML=`<div class="space-y-4">
       <div class="rounded-2xl border bg-[#fcfbf8] p-4 flex flex-col md:flex-row md:items-center gap-4">
@@ -2655,8 +2653,9 @@
           <div class="divide-y">${arrivedPending.length?arrivedPending.slice(0,10).map(x=>`<div class="py-2 flex justify-between gap-3 text-xs"><div><b>${esc(x.po_number||'PO')}</b><div class="text-[10px] text-gray-400">${esc(x.vendor_name||'')} · ETA ${esc(dateText(x.eta))}</div></div><div class="text-right"><b class="text-purple-600">${q(x.remaining_qty)}</b><div class="text-[9px] text-gray-400">pending receive</div></div></div>`).join(''):'<div class="py-6 text-center text-xs text-gray-400">Nothing has arrived waiting for receipt.</div>'}</div>
         </div>
         <div class="rounded-xl border p-4">
-          <div class="flex items-center justify-between mb-2"><div><h4 class="font-bold">Customer Allocation</h4><div class="text-[10px] text-gray-400">Supplier PO quantities linked to customers. Physically received, undelivered allocations are included in Reserved; incoming/unreceived quantities are not.</div></div><span class="text-xs font-bold text-amber-700">${customerAllocations.reduce((s,x)=>s+n(x.qty_allocated),0).toLocaleString()} pcs</span></div>
-          <div class="divide-y">${customerAllocations.length?customerAllocations.slice(0,12).map(x=>`<div class="py-2 flex justify-between gap-3 text-xs"><div class="min-w-0"><b class="truncate block">${esc(x.customer_name||'Customer')}</b><div class="text-[10px] text-gray-400 truncate">${esc(x.order_ref||'Sales Order')} · ${esc(x.po_number||'PO')}${x.sales_rep_name?' · '+esc(x.sales_rep_name):''}</div></div><b class="shrink-0">${q(x.qty_allocated)}</b></div>`).join(''):'<div class="py-6 text-center text-xs text-gray-400">No customer allocation for incoming PO quantities.</div>'}</div>
+          <div class="flex items-center justify-between mb-2 gap-3"><div><h4 class="font-bold">Active Customer Reservations</h4><div class="text-[10px] text-gray-400">Only outstanding quantities are shown. Released OUT, delivered, cancelled and reconciled quantities are excluded; old PO links do not create a reservation.</div></div><span class="text-xs font-bold text-amber-700 whitespace-nowrap">${reservedDetailsUnavailable?'—':q(activeReservedTotal)+' pcs'}</span></div>
+          <div class="divide-y">${reservedDetailsUnavailable?'<div class="py-4 text-xs text-red-600">Unable to load live reservation details. Please refresh and check Reserved Stock details.</div>':activeReservations.length?activeReservations.slice(0,12).map(x=>`<div class="py-2 flex justify-between gap-3 text-xs"><div class="min-w-0"><b class="truncate block">${esc(x.customer_name||'Customer')}</b><div class="text-[10px] text-gray-400 truncate">${esc(x.document_no||'Sales Order')}${x.sales_rep_name?' · '+esc(x.sales_rep_name):''}</div><div class="text-[10px] text-gray-400">Ordered ${q(x.ordered_qty)} · Released OUT ${q(x.released_qty)} · ${esc(x.fulfillment_status||'Pending')}</div></div><b class="shrink-0 text-amber-700">${q(x.reserved_qty)}</b></div>`).join(''):'<div class="py-6 text-center text-xs text-gray-400">No active customer reservations for this product.</div>'}</div>
+          ${!reservedDetailsUnavailable&&Math.abs(activeReservedTotal-n(p.reserved))>0.0001?'<div class="mt-2 text-[10px] text-amber-700">The stock balance and live reservation details differ. Refresh Stock to reconcile the display.</div>':''}
         </div>
       </div>
 
