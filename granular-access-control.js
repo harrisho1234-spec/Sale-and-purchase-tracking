@@ -154,7 +154,7 @@
         {key:'sales_activity.view_team',label:'View Team Sales Activity',description:'See recorded actions by Sales staff (and your own). Team is currently all Sales-role accounts.'},
         {key:'sales_activity.view_all',label:'View All Sales Activity',description:'See recorded actions by all sales and authorized management staff.'},
         {key:'stock_locations.manage',label:'Manage Stock Locations',description:'Create and maintain stock locations.'},
-        {key:'users.manage',label:'Manage Users & Access',description:'Protected Super Admin account and permission administration.',protected:true},
+        {key:'users.manage',label:'Manage Users & Access',description:'Admin manages staff permissions; protected Super Admin settings remain restricted.',protected:true},
         {key:'activity_logs.view',label:'View access activity log',description:'Protected audit trail for access changes.',protected:true,view:true},
         {key:'help.manage',label:'Edit Help & Guides',description:'Update staff instructions, troubleshooting, and training guide text in Help & Guides. Restricted to authorized Manager/Admin roles.'}
       ]
@@ -197,7 +197,7 @@
     product_manager:new Set(['products.view']),
     stock_manager:new Set(['products.view','inventory.view','inventory.reports']),
     manager:new Set(['customers.view','customers.create','customers.edit','sales_orders.view','sales_orders.create','sales_orders.edit','sales_orders.convert_approve','sales_orders.print','sales_orders.export','sales.view_all','quotations.view','quotations.create','tracking.view','tracking.edit','payments.view','payments.create','payments.edit','returns.view','returns.create','returns.edit','products.view','products.sales_price_view','inventory.view','inventory.reports','reports.view','reports.export','finance.ar_view','approvals.view','approvals.manage','sales_access.manage','targets.view_own','targets.view_team','sales_activity.view_own','sales_activity.view_team','sales_daily.review_team']),
-    admin:new Set(AREAS.flatMap(a=>a.activities.map(x=>x.key)).filter(k=>!['users.manage','products.delete','products.tax_manage','activity_logs.view'].includes(k))),
+    admin:new Set(AREAS.flatMap(a=>a.activities.map(x=>x.key)).filter(k=>!['products.delete','products.tax_manage','activity_logs.view'].includes(k))),
     super_admin:new Set(AREAS.flatMap(a=>a.activities.map(x=>x.key)))
   };
 
@@ -223,6 +223,7 @@
   }
   function currentRole(){return String((typeof state!=='undefined'&&state.profile&&state.profile.role)||'')}
   function isSuperAdmin(){return currentRole()==='super_admin'}
+  function isAccessAdmin(){return isSuperAdmin()||(currentRole()==='admin'&&window.hasAppPermission('users.manage'))}
   function legacyPermission(key){
     if(currentRole()==='super_admin')return true;
     return !!ROLE_FALLBACK[currentRole()]?.has(key);
@@ -236,7 +237,7 @@
 
   window.canAccessAppPage=function(page){
     if(page==='dashboard')return true;
-    if(page==='users')return isSuperAdmin();
+    if(page==='users')return isAccessAdmin();
     const p=PAGE_PERMISSIONS[page];
     return p?window.hasAppPermission(p):true;
   };
@@ -319,7 +320,7 @@
 
 
   async function loadAdminData(){
-    if(!isSuperAdmin())throw new Error('Super Admin only');
+    if(!isAccessAdmin())throw new Error('User & Access permission required');
     const [users,snapshot]=await Promise.all([
       db.from('app_users').select('*').order('display_name'),
       db.rpc('get_access_admin_snapshot')
@@ -341,7 +342,7 @@
 
   function roleOptions(current){
     const roles=A.adminSnapshot?.roles||[];
-    return roles.map(r=>'<option value="'+escText(r.role_key)+'" '+(r.role_key===current?'selected':'')+'>'+escText(r.display_name||ROLE_LABELS[r.role_key]||r.role_key)+'</option>').join('');
+    return roles.filter(r=>isSuperAdmin()||!['admin','super_admin'].includes(r.base_role)).map(r=>'<option value="'+escText(r.role_key)+'" '+(r.role_key===current?'selected':'')+'>'+escText(r.display_name||ROLE_LABELS[r.role_key]||r.role_key)+'</option>').join('');
   }
 
   function usersTabHtml(){
@@ -350,15 +351,16 @@
         const accessRoleKey=accessRoleKeyForUser(u);
         const role=roleByKey(accessRoleKey);
         const o=overrideByUser(u.user_id);
+        const canEdit=isSuperAdmin()||(!['admin','super_admin'].includes(u.role)&&u.user_id!==state.user.id);
         return '<div class="p-4 grid xl:grid-cols-[1.15fr_180px_160px_auto] gap-3 items-center">'+
           '<div><div class="font-semibold">'+escText(u.display_name||u.email||u.user_id)+'</div><div class="text-xs text-gray-400">'+escText(u.email||'')+'</div><div class="mt-2 flex flex-wrap gap-2 items-center">'+userAccessStatus(u)+(o?'<span class="text-[9px] text-gray-400">Overrides '+Object.keys(o.permissions||{}).length+' activities</span>':'')+'</div></div>'+
-          '<div><div class="text-[9px] uppercase font-bold text-gray-400 mb-1">Role Template</div><select onchange="updateUserRoleSafe(\''+u.user_id+'\',this.value)" class="w-full border rounded-lg px-3 py-2 text-sm bg-white">'+roleOptions(accessRoleKey)+'</select><div class="text-[9px] text-gray-400 mt-1">'+escText(role?.display_name||ROLE_LABELS[accessRoleKey]||accessRoleKey)+'</div></div>'+
-          '<button onclick="toggleUserActive(\''+u.user_id+'\','+(u.active?'false':'true')+')" class="px-3 py-2 rounded-lg text-xs font-semibold border '+(u.active?'text-green-700 bg-green-50 border-green-200':'text-gray-600 bg-gray-50 border-gray-200')+'">'+(u.active?'Active':'Inactive')+'</button>'+
+          '<div><div class="text-[9px] uppercase font-bold text-gray-400 mb-1">Role Template</div><select '+(!canEdit?'disabled':'')+' onchange="updateUserRoleSafe(\''+u.user_id+'\',this.value)" class="w-full border rounded-lg px-3 py-2 text-sm bg-white">'+roleOptions(accessRoleKey)+'</select><div class="text-[9px] text-gray-400 mt-1">'+escText(role?.display_name||ROLE_LABELS[accessRoleKey]||accessRoleKey)+'</div></div>'+
+          (isSuperAdmin()?'<button onclick="toggleUserActive(\''+u.user_id+'\','+(u.active?'false':'true')+')" class="px-3 py-2 rounded-lg text-xs font-semibold border '+(u.active?'text-green-700 bg-green-50 border-green-200':'text-gray-600 bg-gray-50 border-gray-200')+'">'+(u.active?'Active':'Inactive')+'</button>':'<span class="text-xs text-gray-500">'+(u.active?'Active':'Inactive')+'</span>')+
           '<div class="flex flex-wrap justify-end gap-2">'+
-            (u.role!=='super_admin'?'<button onclick="openUserPermissionBuilder(\''+u.user_id+'\')" class="px-3 py-2 rounded-lg text-xs font-semibold border border-blue-200 bg-blue-50 text-blue-700">Permissions</button>':'')+
-            '<button onclick="openEditAppUser(\''+u.user_id+'\')" class="px-3 py-2 rounded-lg text-xs font-semibold border bg-white text-gray-700">Edit User</button>'+
-            (u.user_id!==state.user.id?'<button onclick="openResetAppUserPassword(\''+u.user_id+'\')" class="px-3 py-2 rounded-lg text-xs font-semibold border border-amber-200 bg-amber-50 text-amber-800">Reset Password</button>':'')+
-            '<button '+(u.user_id===state.user.id?'disabled':'')+' onclick="deleteAppUser(\''+u.user_id+'\',\''+escText(u.display_name||u.email||'this user').replace(/'/g,'&#39;')+'\')" class="px-3 py-2 rounded-lg text-xs font-semibold border text-red-600 border-red-200 disabled:opacity-30">Delete</button>'+
+            (canEdit?'<button onclick="openUserPermissionBuilder(\''+u.user_id+'\')" class="px-3 py-2 rounded-lg text-xs font-semibold border border-blue-200 bg-blue-50 text-blue-700">Permissions</button>':'')+
+            (isSuperAdmin()?'<button onclick="openEditAppUser(\''+u.user_id+'\')" class="px-3 py-2 rounded-lg text-xs font-semibold border bg-white text-gray-700">Edit User</button>':'')+
+            (isSuperAdmin()&&u.user_id!==state.user.id?'<button onclick="openResetAppUserPassword(\''+u.user_id+'\')" class="px-3 py-2 rounded-lg text-xs font-semibold border border-amber-200 bg-amber-50 text-amber-800">Reset Password</button>':'')+
+            (isSuperAdmin()?'<button '+(u.user_id===state.user.id?'disabled':'')+' onclick="deleteAppUser(\''+u.user_id+'\',\''+escText(u.display_name||u.email||'this user').replace(/'/g,'&#39;')+'\')" class="px-3 py-2 rounded-lg text-xs font-semibold border text-red-600 border-red-200 disabled:opacity-30">Delete</button>':'')+
           '</div>'+
         '</div>';
       }).join(''):(typeof empty==='function'?empty('No users found.'):'<div class="p-8 text-center text-gray-400">No users found.</div>'))+
@@ -375,7 +377,7 @@
         '<div class="flex justify-between gap-3"><div><div class="font-bold">'+escText(r.display_name||r.role_key)+'</div><div class="text-[10px] text-gray-400 mt-1">'+escText(r.role_key)+' · '+(counts[r.role_key]||0)+' user'+((counts[r.role_key]||0)===1?'':'s')+'</div></div>'+
         (protectedRole?'<span class="h-fit px-2 py-1 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 text-[9px] font-bold">PROTECTED</span>':'')+'</div>'+
         '<div class="grid grid-cols-2 gap-2 mt-4"><div class="rounded-xl border bg-gray-50 p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Activities</div><div class="text-xl font-black mt-1">'+cnt+'</div></div><div class="rounded-xl border bg-gray-50 p-3"><div class="text-[9px] uppercase font-bold text-gray-400">Sales Scope</div><div class="text-xs font-bold mt-2">'+(r.restrict_assigned_customers?'Assigned only':'All allowed')+'</div></div></div>'+
-        '<button '+(protectedRole?'disabled':'')+' onclick="openRolePermissionBuilder(\''+escText(r.role_key)+'\')" class="mt-4 w-full px-3 py-2.5 rounded-xl border text-xs font-semibold '+(protectedRole?'opacity-40':'bg-white hover:bg-gray-50')+'">'+(protectedRole?'Super Admin always has full access':'Edit Role Permissions')+'</button>'+
+        '<button '+(protectedRole||!isSuperAdmin()?'disabled':'')+' onclick="openRolePermissionBuilder(\''+escText(r.role_key)+'\')" class="mt-4 w-full px-3 py-2.5 rounded-xl border text-xs font-semibold '+(protectedRole||!isSuperAdmin()?'opacity-40':'bg-white hover:bg-gray-50')+'">'+(protectedRole?'Super Admin always has full access':isSuperAdmin()?'Edit Role Permissions':'Role templates: Super Admin only')+'</button>'+
       '</div>';
     }).join('')+'</div>';
   }
@@ -394,13 +396,13 @@
   };
 
   window.renderUsers=async function(){
-    if(!isSuperAdmin())throw new Error('Super Admin only');
+    if(!isAccessAdmin())throw new Error('User & Access permission required');
     await loadAdminData();
     const tab=A.adminTab||'users';
     document.getElementById('content').innerHTML=
       '<div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-4">'+
         '<div><h3 class="font-bold text-lg">Users & Access</h3><p class="text-xs text-gray-400 mt-1">Role templates provide defaults. Give individual users custom access only when they need exceptions.</p></div>'+
-        '<div class="flex flex-wrap gap-2"><button onclick="openCreateUser()" class="px-4 py-2.5 bg-[#211d18] text-white rounded-xl text-sm font-semibold">+ Add User</button></div>'+
+        (isSuperAdmin()?'<div class="flex flex-wrap gap-2"><button onclick="openCreateUser()" class="px-4 py-2.5 bg-[#211d18] text-white rounded-xl text-sm font-semibold">+ Add User</button></div>':'')+
       '</div>'+
       '<div class="mb-4 flex flex-wrap gap-2">'+
         '<button onclick="setUsersAccessTab(\'users\')" class="px-4 py-2 rounded-xl border text-xs font-semibold '+(tab==='users'?'bg-[#211d18] text-white border-[#211d18]':'bg-white')+'">Users</button>'+
@@ -552,10 +554,10 @@
   };
 
   window.openUserPermissionBuilder=function(userId){
-    if(!isSuperAdmin())return showToast('Super Admin only','err');
+    if(!isAccessAdmin())return showToast('User & Access permission required','err');
     const u=userById(userId);
     if(!u)return showToast('User not found.','err');
-    if(u.role==='super_admin')return showToast('Super Admin permissions are protected.','err');
+    if(u.role==='super_admin'||(!isSuperAdmin()&&(u.role==='admin'||u.user_id===state.user.id)))return showToast('Admin and Super Admin permissions are protected.','err');
     const accessRoleKey=accessRoleKeyForUser(u);
     const role=roleByKey(accessRoleKey);
     if(!role)return showToast('Role template not found.','err');
@@ -577,10 +579,11 @@
   };
 
   window.saveAccessPermissionBuilder=async function(){
-    if(!A.builder||!isSuperAdmin())return;
+    if(!A.builder||!isAccessAdmin())return;
     const b=A.builder;
     try{
       if(b.type==='role'){
+        if(!isSuperAdmin())throw Error('Only Super Admin may edit role templates.');
         const r=await db.rpc('save_access_role_template',{
           p_role_key:b.roleKey,
           p_display_name:String(b.displayName||'').trim()||ROLE_LABELS[b.roleKey]||b.roleKey,
@@ -674,7 +677,7 @@
 
   // Role template changes are applied atomically: custom access role + legacy base role stay aligned.
   window.updateUserRoleSafe=async function(userId,accessRoleKey){
-    if(!isSuperAdmin())return showToast('Super Admin only','err');
+    if(!isAccessAdmin())return showToast('User & Access permission required','err');
     const r=await db.rpc('assign_access_role_to_user',{p_user_id:userId,p_access_role_key:accessRoleKey});
     if(r.error)return showToast(r.error.message||'Could not update role','err');
     showToast('Role updated');
