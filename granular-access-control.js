@@ -340,9 +340,17 @@
       :'<span class="px-2 py-1 rounded-lg border bg-gray-50 text-gray-500 text-[9px] font-bold">ROLE DEFAULTS</span>';
   }
 
+  const STAFF_ROLE_PROTECTED_KEYS=new Set(['users.manage','activity_logs.view','products.delete','products.tax_manage']);
+  function adminAssignableRole(r){
+    if(!r||r.active===false||['admin','super_admin'].includes(r.base_role))return false;
+    const adminPermissions=roleByKey('admin')?.permissions||{};
+    return !Object.entries(r.permissions||{}).some(([key,enabled])=>
+      enabled===true&&(STAFF_ROLE_PROTECTED_KEYS.has(key)||adminPermissions[key]!==true));
+  }
   function roleOptions(current){
     const roles=A.adminSnapshot?.roles||[];
-    return roles.filter(r=>isSuperAdmin()||r.role_key===current||!['admin','super_admin'].includes(r.base_role)).map(r=>'<option value="'+escText(r.role_key)+'" '+(r.role_key===current?'selected':'')+'>'+escText(r.display_name||ROLE_LABELS[r.role_key]||r.role_key)+'</option>').join('');
+    return roles.filter(r=>isSuperAdmin()||r.role_key===current||adminAssignableRole(r))
+      .map(r=>'<option value="'+escText(r.role_key)+'" '+(r.role_key===current?'selected':'')+'>'+escText(r.display_name||ROLE_LABELS[r.role_key]||r.role_key)+'</option>').join('');
   }
 
   function usersTabHtml(){
@@ -358,8 +366,8 @@
           (isSuperAdmin()?'<button onclick="toggleUserActive(\''+u.user_id+'\','+(u.active?'false':'true')+')" class="px-3 py-2 rounded-lg text-xs font-semibold border '+(u.active?'text-green-700 bg-green-50 border-green-200':'text-gray-600 bg-gray-50 border-gray-200')+'">'+(u.active?'Active':'Inactive')+'</button>':'<span class="text-xs text-gray-500">'+(u.active?'Active':'Inactive')+'</span>')+
           '<div class="flex flex-wrap justify-end gap-2">'+
             (canEdit?'<button onclick="openUserPermissionBuilder(\''+u.user_id+'\')" class="px-3 py-2 rounded-lg text-xs font-semibold border border-blue-200 bg-blue-50 text-blue-700">Permissions</button>':'')+
-            (isSuperAdmin()?'<button onclick="openEditAppUser(\''+u.user_id+'\')" class="px-3 py-2 rounded-lg text-xs font-semibold border bg-white text-gray-700">Edit User</button>':'')+
-            (isSuperAdmin()&&u.user_id!==state.user.id?'<button onclick="openResetAppUserPassword(\''+u.user_id+'\')" class="px-3 py-2 rounded-lg text-xs font-semibold border border-amber-200 bg-amber-50 text-amber-800">Reset Password</button>':'')+
+            (canEdit?'<button onclick="openEditAppUser(\''+u.user_id+'\')" class="px-3 py-2 rounded-lg text-xs font-semibold border bg-white text-gray-700">Edit User</button>':'')+
+            (canEdit&&u.user_id!==state.user.id?'<button onclick="openResetAppUserPassword(\''+u.user_id+'\')" class="px-3 py-2 rounded-lg text-xs font-semibold border border-amber-200 bg-amber-50 text-amber-800">Reset Password</button>':'')+
             (isSuperAdmin()?'<button '+(u.user_id===state.user.id?'disabled':'')+' onclick="deleteAppUser(\''+u.user_id+'\',\''+escText(u.display_name||u.email||'this user').replace(/'/g,'&#39;')+'\')" class="px-3 py-2 rounded-lg text-xs font-semibold border text-red-600 border-red-200 disabled:opacity-30">Delete</button>':'')+
           '</div>'+
         '</div>';
@@ -402,7 +410,7 @@
     document.getElementById('content').innerHTML=
       '<div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-4">'+
         '<div><h3 class="font-bold text-lg">Users & Access</h3><p class="text-xs text-gray-400 mt-1">Role templates provide defaults. Give individual users custom access only when they need exceptions.</p></div>'+
-        (isSuperAdmin()?'<div class="flex flex-wrap gap-2"><button onclick="openCreateUser()" class="px-4 py-2.5 bg-[#211d18] text-white rounded-xl text-sm font-semibold">+ Add User</button></div>':'')+
+        (isAccessAdmin()?'<div class="flex flex-wrap gap-2"><button onclick="openCreateUser()" class="px-4 py-2.5 bg-[#211d18] text-white rounded-xl text-sm font-semibold">+ Add User</button></div>':'')+
       '</div>'+
       '<div class="mb-4 flex flex-wrap gap-2">'+
         '<button onclick="setUsersAccessTab(\'users\')" class="px-4 py-2 rounded-xl border text-xs font-semibold '+(tab==='users'?'bg-[#211d18] text-white border-[#211d18]':'bg-white')+'">Users</button>'+
@@ -646,6 +654,16 @@
     const old=document.getElementById(selectId);
     if(!old||!old.parentElement)return;
     const parent=old.parentElement;
+    if(!isSuperAdmin()){
+      const roles=(A.adminSnapshot?.roles||[]).filter(adminAssignableRole);
+      const requested=roles.some(r=>r.role_key===currentRoleKey)?currentRoleKey:'sales';
+      parent.innerHTML='<label class="text-xs font-semibold text-gray-600">Staff Role</label>'+
+        '<select id="'+selectId+'" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">'+
+        roles.map(r=>'<option value="'+escText(r.role_key)+'" '+(r.role_key===requested?'selected':'')+'>'+
+          escText(r.display_name||r.role_key)+'</option>').join('')+'</select>'+
+        '<div class="text-[10px] text-gray-400 mt-1">Admin may assign approved staff roles only. New role templates and Admin/Super Admin accounts remain protected.</div>';
+      return;
+    }
     const currentRole=roleByKey(currentRoleKey);
     const listId=selectId+'List';
     const baseRole=(currentRole?.base_role&&currentRole.base_role!=='super_admin')?currentRole.base_role:'sales';
