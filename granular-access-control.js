@@ -655,6 +655,9 @@
     if(!old||!old.parentElement)return;
     const parent=old.parentElement;
     if(!isSuperAdmin()){
+      // Existing approved staff roles do not need a second base-role selector.
+      const baseSelector=document.getElementById(baseSelectId);
+      if(baseSelector?.parentElement)baseSelector.parentElement.classList.add('hidden');
       const roles=(A.adminSnapshot?.roles||[]).filter(adminAssignableRole);
       const current=roleByKey(currentRoleKey);
       if(current&&!roles.some(r=>r.role_key===current.role_key))roles.unshift(current);
