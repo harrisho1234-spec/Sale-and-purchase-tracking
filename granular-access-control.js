@@ -656,6 +656,8 @@
     const parent=old.parentElement;
     if(!isSuperAdmin()){
       const roles=(A.adminSnapshot?.roles||[]).filter(adminAssignableRole);
+      const current=roleByKey(currentRoleKey);
+      if(current&&!roles.some(r=>r.role_key===current.role_key))roles.unshift(current);
       const requested=roles.some(r=>r.role_key===currentRoleKey)?currentRoleKey:'sales';
       parent.innerHTML='<label class="text-xs font-semibold text-gray-600">Staff Role</label>'+
         '<select id="'+selectId+'" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">'+
