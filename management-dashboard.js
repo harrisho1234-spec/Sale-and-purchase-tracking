@@ -10,7 +10,7 @@ const num=x=>Number.isFinite(Number(x))?Number(x):0;
 const cash=x=>'$'+num(x).toLocaleString('en-US',{maximumFractionDigits:0});
 const percent=(x,y)=>y>0?(100*x/y).toFixed(1)+'%':'—';
 let year=new Date().getFullYear(),quarter=Math.floor(new Date().getMonth()/3)+1,uid='',nonce=0;
-const role=()=>String(window.state?.profile?.role||'');
+const role=()=>String(state?.profile?.role||'');
 const canRender=()=>ROLE.has(role())&&
   (typeof window.hasAppPermission!=='function' ||
    ['targets.view_company','targets.view_team','targets.manage','targets.view_business'].some(p=>window.hasAppPermission(p)));
@@ -83,21 +83,21 @@ function compactApprovals(node){
     '<button type="button" onclick="go(\'approvals\')" class="text-xs font-bold text-amber-900 hover:underline whitespace-nowrap">Review requests →</button></div>';
 }
 async function render(){
-  const page=window.state?.page;
+  const page=state?.page;
   if(page!=='dashboard'||!canRender())return;
   const root=document.getElementById('content');
   if(!root)return;
-  if(uid!==String(window.state?.user?.id||'')){uid=String(window.state?.user?.id||'');year=new Date().getFullYear();quarter=Math.floor(new Date().getMonth()/3)+1;}
+  if(uid!==String(state?.user?.id||'')){uid=String(state?.user?.id||'');year=new Date().getFullYear();quarter=Math.floor(new Date().getMonth()/3)+1;}
   const generation=++nonce;
   const oldHTML=root.innerHTML,approvals=compactApprovals(root);
   root.innerHTML='<div class="rounded-2xl bg-white border p-5 mb-4 text-sm text-gray-500">Loading management performance from the official Sales Report and saved targets…</div>';
   try{
     const [rr,pr]=await Promise.all([
-      window.db.rpc('get_sales_report_rows_v6'),
-      window.db.rpc('get_sales_target_plan',{p_year:year})
+      db.rpc('get_sales_report_rows_v6'),
+      db.rpc('get_sales_target_plan',{p_year:year})
     ]);
     if(rr.error)throw rr.error;if(pr.error)throw pr.error;
-    if(generation!==nonce||window.state?.page!=='dashboard')return;
+    if(generation!==nonce||state?.page!=='dashboard')return;
     const plan=pr.data||{};
     if(!plan.allowed)throw new Error('Target permissions are not available for this account.');
     const all=Array.isArray(rr.data)?rr.data:[];
@@ -127,7 +127,7 @@ async function render(){
       approvals+
       '<div class="grid xl:grid-cols-3 gap-4">'+
       '<section class="xl:col-span-2 rounded-2xl border bg-white p-4"><h3 class="font-bold">Monthly actual vs allocated target</h3><p class="text-xs text-gray-500 mb-4">Quarter distribution follows saved monthly target weights</p>'+
-      months.map(m=>{const value=scoped.filter(r=>month(r)===m).reduce((a,r)=>a+num(r.actual_sales),0);const moTarget=plan.configured?target*(num(plan.months?.[m-1])/Math.max(0.000001,months.reduce((s,k)=>s+num(plan.months?.[k-1]),0))):0;
+      months.map(m=>{const value=scoped.filter(r=>month(r)===m).reduce((a,r)=>a+num(r.actual_sales),0);const moTarget=plan.configured?target*(num((Array.isArray(plan.months)&&plan.months.length===12?plan.months:Array(12).fill(100/12))[m-1])/Math.max(0.000001,months.reduce((s,k)=>s+num((Array.isArray(plan.months)&&plan.months.length===12?plan.months:Array(12).fill(100/12))[k-1]),0))):0;
         return '<div class="mb-4"><div class="flex justify-between text-xs gap-2 mb-1"><b>'+MONTHS[m-1]+'</b><span>'+cash(value)+' / '+(plan.configured?cash(moTarget):'Target not set')+'</span></div>'+bar(value,moTarget)+'</div>';
       }).join('')+'</section>'+
       '<section class="rounded-2xl border bg-white p-4"><h3 class="font-bold mb-3">Business categories</h3>'+
@@ -139,7 +139,7 @@ async function render(){
     root.querySelector('#mgmtYear')?.addEventListener('change',e=>{year=Number(e.target.value);render();});
     root.querySelector('#mgmtQuarter')?.addEventListener('change',e=>{quarter=Number(e.target.value);render();});
   }catch(err){
-    if(generation!==nonce||window.state?.page!=='dashboard')return;
+    if(generation!==nonce||state?.page!=='dashboard')return;
     root.innerHTML='<div class="rounded-xl border border-amber-200 bg-amber-50 p-4"><b>Management performance unavailable</b><p class="text-sm mt-1">'+esc(err.message||'Unable to load management data')+'</p><button class="text-xs underline mt-2" type="button" onclick="renderDashboard()">Retry</button></div>'+approvals+oldHTML;
   }
 }
