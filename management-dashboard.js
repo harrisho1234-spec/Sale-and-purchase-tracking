@@ -107,7 +107,10 @@ async function render(){
     const actual=scoped.reduce((a,r)=>a+num(r.actual_sales),0);
     const target=plan.configured?targetForQuarter(plan,quarter):0;
     const now=new Date(),current=year===now.getFullYear()&&quarter===Math.floor(now.getMonth()/3)+1;
-    const elapsed=current?((now-new Date(year,months[0]-1,1))/(new Date(year,months[2],1)-new Date(year,months[0]-1,1))):year<now.getFullYear()||(year===now.getFullYear()&&quarter<Math.floor(now.getMonth()/3)+1))?1:0;
+    const currentQuarter=Math.floor(now.getMonth()/3)+1;
+    const isPastQuarter=year<now.getFullYear()||(year===now.getFullYear()&&quarter<currentQuarter);
+    const startOfQuarter=new Date(year,months[0]-1,1),endOfQuarter=new Date(year,months[2],1);
+    const elapsed=current?(now-startOfQuarter)/(endOfQuarter-startOfQuarter):(isPastQuarter?1:0);
     const expected=target*Math.max(0,Math.min(1,elapsed));
     const pace=target>0?(actual>=expected?'On / ahead of pace':'Behind pace'):'Target not set';
     const remaining=Math.max(0,target-actual);
@@ -127,7 +130,10 @@ async function render(){
       approvals+
       '<div class="grid xl:grid-cols-3 gap-4">'+
       '<section class="xl:col-span-2 rounded-2xl border bg-white p-4"><h3 class="font-bold">Monthly actual vs allocated target</h3><p class="text-xs text-gray-500 mb-4">Quarter distribution follows saved monthly target weights</p>'+
-      months.map(m=>{const value=scoped.filter(r=>month(r)===m).reduce((a,r)=>a+num(r.actual_sales),0);const moTarget=plan.configured?target*(num((Array.isArray(plan.months)&&plan.months.length===12?plan.months:Array(12).fill(100/12))[m-1])/Math.max(0.000001,months.reduce((s,k)=>s+num((Array.isArray(plan.months)&&plan.months.length===12?plan.months:Array(12).fill(100/12))[k-1]),0))):0;
+      months.map(m=>{const value=scoped.filter(r=>month(r)===m).reduce((a,r)=>a+num(r.actual_sales),0);
+        const weights=Array.isArray(plan.months)&&plan.months.length===12?plan.months:Array(12).fill(100/12);
+        const sumWeights=months.reduce((sum,k)=>sum+num(weights[k-1]),0);
+        const moTarget=plan.configured&&sumWeights>0?target*num(weights[m-1])/sumWeights:0;
         return '<div class="mb-4"><div class="flex justify-between text-xs gap-2 mb-1"><b>'+MONTHS[m-1]+'</b><span>'+cash(value)+' / '+(plan.configured?cash(moTarget):'Target not set')+'</span></div>'+bar(value,moTarget)+'</div>';
       }).join('')+'</section>'+
       '<section class="rounded-2xl border bg-white p-4"><h3 class="font-bold mb-3">Business categories</h3>'+
