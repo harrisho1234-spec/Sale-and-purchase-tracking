@@ -20,7 +20,7 @@ const month=r=>Number(String(r.order_date||'').slice(5,7));
 const scopedLabel=p=>p.can_company||p.can_manage?'Company':p.can_team?'Visible team':'Permitted sales';
 function quarterMonths(q){return [q*3-2,q*3-1,q*3];}
 function scopeRows(rows,plan){
-  if(plan.can_company||plan.can_manage)return rows;
+  if(plan.can_company||plan.can_manage||plan.can_business)return rows;
   if(plan.can_team){
     const ids=new Set((plan.reps||[]).map(x=>String(x.id)));
     return rows.filter(r=>ids.has(String(r.sales_rep_id)));
@@ -89,7 +89,7 @@ async function render(){
   if(!root)return;
   if(uid!==String(state?.user?.id||'')){uid=String(state?.user?.id||'');year=new Date().getFullYear();quarter=Math.floor(new Date().getMonth()/3)+1;}
   const generation=++nonce;
-  const oldHTML=root.innerHTML,approvals=compactApprovals(root);
+  const approvals=compactApprovals(root),oldHTML=root.innerHTML;
   root.innerHTML='<div class="rounded-2xl bg-white border p-5 mb-4 text-sm text-gray-500">Loading management performance from the official Sales Report and saved targets…</div>';
   try{
     const [rr,pr]=await Promise.all([
