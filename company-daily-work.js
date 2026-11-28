@@ -240,9 +240,6 @@ if(typeof oldNav==='function')window.navItems=function(){const items=oldNav.appl
  for(const item of rolePages)if(access(item[3])&&
    (typeof window.canAccessAppPage!=='function'||window.canAccessAppPage(item[0])))
    add(item.slice(0,3));
- for(const item of items)if(item[0]!=='dashboard'&&
-   typeof window.canAccessAppPage==='function'&&window.canAccessAppPage(item[0])&&
-   (item[0]!=='users'||access('users.manage')))add(item);
  add([PAGE,'Daily Work · All Departments','☷']);
  return visible;
 }if(allowed()&&!items.some(x=>x[0]===PAGE)){const index=items.findIndex(x=>x[0]==='sales-daily');items.splice(index<0?items.length:index+1,0,[PAGE,'Daily Work · All Departments','☷'])}return items};
