@@ -33,7 +33,7 @@ function accessRoleDatalist(listId){
   return '<datalist id="'+listId+'">'+accessRoleRows().map(r=>'<option value="'+esc(r.display_name||r.role_key)+'"></option>').join('')+'</datalist>';
 }
 function baseAccessTemplateOptions(current){
-  const labels={sales:'Sales',accountant:'Accountant',stock_controller:'Stock Controller',manager:'Manager',admin:'Admin'};
+  const labels={sales:'Sales',accountant:'Accountant',stock_controller:'Stock Controller',project:'Project Staff',project_manager:'Project Manager',marketing:'Marketing',marketing_manager:'Marketing Manager',product_assistant:'Product Assistant',product_manager:'Product Manager',stock_manager:'Stock Manager',manager:'Manager',admin:'Admin'};
   const cur=String(current||'sales');
   return Object.entries(labels).map(([k,v])=>'<option value="'+k+'" '+(k===cur?'selected':'')+'>'+v+'</option>').join('');
 }
@@ -145,7 +145,7 @@ window.openEditAppUser=function(id){
       <div>
         <label class="text-xs font-semibold text-gray-600">Access Template</label>
         <select id="editAppUserBaseRole" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">${baseAccessTemplateOptions(u.role)}</select>
-        <div class="text-[10px] text-gray-400 mt-1">Used only when creating a new typed role. Existing roles keep their saved permissions.</div>
+        <div class="text-[10px] text-gray-400 mt-1">For a new custom role, choose its base access here. For an existing role, select the correct role in Role / Job Title above—changing this dropdown alone does not change existing permissions.</div>
       </div>
       <div class="flex items-end"><label class="w-full flex items-center gap-2 border rounded-xl px-3 py-3 text-sm"><input id="editAppUserActive" type="checkbox" ${u.active?'checked':''} class="w-4 h-4"><span>Active user</span></label></div>
     </div>
