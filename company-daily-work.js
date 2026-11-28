@@ -21,11 +21,11 @@ function projectSummary(){
  const outstanding=me.filter(t=>!['Completed','Cancelled'].includes(t.status));
  const overdue=outstanding.filter(t=>t.dueDate&&t.dueDate<todayDate);
  const deadline=report?.amStatus==='Submitted'&&report?.pmStatus!=='Submitted'&&report?.reviewStatus!=='Changes Requested';
- const late=deadline&&Date.now()>projectDue(S.date);
+ const late=deadline&&!report?.latePmAllowed&&Date.now()>projectDue(S.date);
  return '<div class="grid sm:grid-cols-3 gap-2 mb-3">'+
  '<div class="border rounded-xl bg-white p-3 text-xs">My open To-Do<b class="block text-xl mt-1">'+outstanding.length+'</b></div>'+
  '<div class="border rounded-xl bg-white p-3 text-xs">Overdue To-Do<b class="block text-xl mt-1 '+(overdue.length?'text-red-600':'')+'">'+overdue.length+'</b></div>'+
- '<div class="border rounded-xl p-3 text-xs '+(late?'bg-red-50 border-red-200':'bg-white')+'">Evening Result<b class="block text-sm mt-1">'+(late?'Past 10:00 AM deadline':report?.pmStatus==='Submitted'?'Submitted':deadline?'Due next day by 10:00 AM':'Awaiting morning plan')+'</b></div></div>'+
+ '<div class="border rounded-xl p-3 text-xs '+(late?'bg-red-50 border-red-200':'bg-white')+'">Evening Result<b class="block text-sm mt-1">'+(late?'Past 10:00 AM deadline':report?.latePmAllowed?'Late submission approved':report?.pmStatus==='Submitted'?'Submitted':deadline?'Due next day by 10:00 AM':'Awaiting morning plan')+'</b></div></div>'+
  (overdue.length?'<div class="border border-red-200 bg-red-50 rounded-xl px-3 py-2 text-sm mb-3"><b>Overdue tasks:</b> '+overdue.slice(0,3).map(t=>h(t.title)).join(' · ')+(overdue.length>3?' and '+(overdue.length-3)+' more':'')+'</div>':'');
 }
 function allowed(){return authorizedRoles.has(String(state.profile?.role||''))}
@@ -72,6 +72,7 @@ function daily(){
  if(!submitted&&!S.selected.length)S.selected=my.filter(t=>!['Completed','Cancelled'].includes(t.status)).map(x=>x.id);
  const chosen=submitted?report.taskIds:S.selected;
  return '<div class="rounded-xl border bg-white p-4 flex flex-wrap gap-3 items-end justify-between"><label class="text-xs font-bold">Work date<input type="date" class="block rounded-lg border px-3 py-2 mt-1" value="'+h(S.date)+'" onchange="companyDailyDate(this.value)"></label><div class="flex flex-wrap gap-2 text-xs"><span class="bg-amber-50 rounded-lg px-3 py-2">Shared AM: <b>'+h(report?.amStatus||'Not Started')+'</b></span><span class="bg-blue-50 rounded-lg px-3 py-2">Shared PM: <b>'+h(report?.pmStatus||'Not Started')+'</b></span><span class="bg-gray-100 rounded-lg px-3 py-2">Shared Review: <b>'+h(report?.reviewStatus||'Not Reviewed')+'</b></span></div></div>'+
+ (projectMode()&&!submitted?'<form id="projectQuickTask" onsubmit="companyProjectQuickTask(event)" class="border rounded-xl bg-white p-4 space-y-3"><div class="font-bold text-sm">Quick Add · Project Task</div><div class="grid sm:grid-cols-3 gap-2"><input name="title" required maxlength="180" class="border rounded-lg px-3 py-2 text-sm sm:col-span-2" placeholder="Task / planned activity"><select name="category" class="border rounded-lg px-3 py-2 text-sm">'+(S.categories.Project||['Other']).map(cat=>'<option>'+h(cat)+'</option>').join('')+'</select></div><div class="flex items-center gap-2"><button class="'+solid+'" type="submit">+ Add to my tasks</button><small class="text-gray-500">Create tasks, then select them in Morning Plan below.</small></div></form>':'')+
  '<section class="rounded-xl border bg-white p-4 space-y-3"><div><h3 class="font-bold">'+(projectMode()?'Morning Daily Plan':'Company Shared-Work Morning Plan')+'</h3><p class="text-xs text-gray-500">'+(projectMode()?'Select your project tasks for today. Create new tasks with + New Task, then submit the plan.':'For new company support assignments only. Existing Sales or Marketing Morning Plans remain in their original department module. Do not submit the same work twice.')+' Requests awaiting approval cannot be submitted.</p></div>'+
  (my.length?my.map(t=>'<label class="flex gap-3 items-start rounded-lg border p-3 text-sm"><input type="checkbox" class="mt-1" data-company-am value="'+h(t.id)+'" '+(chosen.includes(t.id)?'checked':'')+' '+(submitted?'disabled':'')+'><span><b>'+h(t.title)+'</b><small class="block text-gray-500">'+h(t.category)+' · '+h(t.department)+' · '+h(t.priority)+'</small></span></label>').join(''):'<p class="text-sm text-gray-500">No approved tasks assigned. Create a task or request work support first.</p>')+
  (!submitted?'<button class="'+solid+'" onclick="companyDailySubmitAM()">Submit Morning Plan</button>':'<p class="text-xs text-green-700">Morning Plan submitted · '+chosen.length+' tasks linked</p>')+'</section>'+
@@ -115,7 +116,7 @@ function reports(){
  '<select class="'+btn+'" onchange="companyDailyFilter(\'month\',this.value)">'+['All',...Array.from({length:12},(_,i)=>String(i+1).padStart(2,'0'))].map(x=>'<option '+(x===S.reportMonth?'selected':'')+'>'+x+'</option>').join('')+'</select></div>'+
  '<div class="text-xs text-slate-500">'+visible.length+' reports · '+visible.filter(x=>x.pmStatus==='Submitted').length+' evening results submitted</div>'+
  visible.sort((a,b)=>b.date.localeCompare(a.date)).slice(0,250).map(r=>'<div class="border rounded-lg p-3 flex flex-wrap justify-between gap-3"><div><b>'+h(r.date)+' · '+h(S.staff.find(s=>s.id===r.userId)?.name||'Employee')+'</b><p class="text-xs text-gray-500">'+h(r.department)+' · AM '+h(r.amStatus)+' · PM '+h(r.pmStatus)+' · '+h(r.reviewStatus)+'</p><div class="text-xs">'+(r.results||[]).map(x=>h(taskById(x.id)?.title||'Task')+': '+h(x.status)).join(' · ')+'</div></div>'+
- (r.pmStatus==='Submitted'&&r.reviewStatus!=='Reviewed'?'<button class="'+btn+'" onclick="companyDailyReview(\''+h(r.id)+'\')">Review</button>':'')+'</div>').join('')+'</section>';
+ (r.pmStatus==='Submitted'&&r.reviewStatus!=='Reviewed'?'<button class="'+btn+'" onclick="companyDailyReview(\''+h(r.id)+'\')">Review</button>':r.department==='Project'&&r.amStatus==='Submitted'&&!r.latePmAllowed&&Date.now()>projectDue(r.date)?'<button class="'+btn+'" onclick="companyDailyAllowLate(\''+h(r.id)+'\')">Allow Late Result</button>':'')+'</div>').join('')+'</section>';
 }
 function selectOptions(values,chosen){return values.map(x=>'<option value="'+h(x)+'" '+(chosen===x?'selected':'')+'>'+h(x)+'</option>').join('')}
 function taskForm(id){
@@ -143,6 +144,22 @@ window.companyDailySave=async ev=>{ev.preventDefault();const t=Object.fromEntrie
 window.companyDailyTab=tab=>{S.tab=tab;render()};
 window.companyDailyDate=async value=>{S.date=value;S.selected=[];if(S.ready)await load();else render()};
 window.companyDailySearch=value=>{S.search=value;render();const input=document.getElementById('companySearch');if(input){input.focus();input.setSelectionRange(value.length,value.length)}};
+window.companyProjectQuickTask=async ev=>{
+ ev.preventDefault();
+ if(!projectMode()||S.actor?.department!=='Project')return say('Project staff only',true);
+ const form=ev.target, data=Object.fromEntries(new FormData(form).entries());
+ if(!String(data.title||'').trim())return say('Enter a task title',true);
+ const button=form.querySelector('button[type="submit"]');if(button)button.disabled=true;
+ try{
+  await api('company_save_task',{title:data.title,category:data.category,assigneeId:S.actor.id,priority:'Medium',status:'Not Started',progress:0});
+  S.selected=[];await load();say('Project task added. Select it in the Morning Plan below.');
+ }catch(e){say(e.message,true);if(button?.isConnected)button.disabled=false}
+};
+window.companyDailyAllowLate=async id=>{
+ if(!S.actor?.canReview)return say('Project Manager/Admin permission required',true);
+ if(!confirm('Allow late Evening Result for this Project report? This decision will be recorded in the audit.'))return;
+ try{await api('company_allow_late_pm',{id});say('Late submission authorized');await load()}catch(e){say(e.message,true)}
+};
 window.companyDailySubmitAM=async()=>{
  const ids=[...root().querySelectorAll('[data-company-am]:checked')].map(x=>x.value);
  if(!ids.length)return say('Choose at least one approved task',true);
@@ -153,7 +170,7 @@ window.companyDailySubmitPM=async()=>{
  const results=[...root().querySelectorAll('[data-company-pm]')].map(row=>({id:row.dataset.companyPm,status:row.querySelector('[data-pm="status"]')?.value,result:row.querySelector('[data-pm="result"]')?.value,nextStep:row.querySelector('[data-pm="nextStep"]')?.value}));
  if(!results.length)return say('No planned tasks to report',true);
  if(projectMode()&&results.some(x=>!String(x.result||'').trim()))return say('Enter an actual outcome for every planned task',true);
- if(projectMode()&&current()?.reviewStatus!=='Changes Requested'&&Date.now()>projectDue(S.date))return say('The next-day 10:00 AM Evening Result deadline has passed. Ask your Project Manager/Admin for assistance.',true);
+ if(projectMode()&&!current()?.latePmAllowed&&current()?.reviewStatus!=='Changes Requested'&&Date.now()>projectDue(S.date))return say('The next-day 10:00 AM Evening Result deadline has passed. Ask your Project Manager/Admin for assistance.',true);
  if(!confirm('Submit Evening Result for '+S.date+'?'))return;
  try{await api('company_submit_pm',{date:S.date,results});say('Evening Result submitted');await load()}catch(e){say(e.message,true)}
 };
