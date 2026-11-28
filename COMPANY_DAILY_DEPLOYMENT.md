@@ -92,3 +92,39 @@ is not treated as an initial missing Evening Result.
 push notifications for Project overdue tasks are **not yet implemented**.
 Project Daily still uses the shared-work task backend and does not yet provide
 every Sales-only draft, carry-forward, or revision-detail screen.
+
+## Flexible Project Morning Plan — amendment rollout (2026-11-28)
+
+Update only `CompanyDaily.gs` in the **same** Apps Script project. It contains new
+Project-only actions and additional columns on the **Company Daily Tasks** and
+**Company Daily Reports** tabs. The tab headers are extended in place, and old
+records remain intact. Save and deploy a **new version of the existing web app**;
+do not modify or replace `Code.gs`, other tabs, Script Properties, or URL.
+
+The Project Coordinator may:
+- Create a personal task before or after Morning Plan submission.
+- Add extra tasks to the submitted plan **on the same work date** by giving a
+  reason; the original task list is retained, and every amendment is audited.
+- Edit owned Project task details and record dependencies on Customer, Sales,
+  Stock, Technician, Supplier, Contractor, Designer, or Other.
+- Use **Waiting on Others** and **Rescheduled** in the Evening Result, with a
+  required explanation and follow-up date.
+- Review amendment history while continuing to follow the next-day 10 AM
+  Evening Result rule (subject to manager-authorized late submission).
+
+The backend will reject amendments from non-Project users, unassigned or
+unapproved tasks, missing explanations, and amendments after the Evening Result.
+Project plan amendments are additions, not deletion of original work. Changes
+to a task are separately recorded in the Company Daily Audit sheet.
+
+**Known limitations:** A Project Coordinator with a custom role whose underlying
+`app_users.role` is still `sales` will be treated as Sales by the Company Daily
+backend. Correct the account's actual Project role before testing. Automatic
+Project overdue push notifications and full draft/drag-and-drop support are not
+implemented.
+
+**Verification checklist:** With a test Project account, submit one AM task,
+create and add a second task with a reason, confirm original versus additional
+in the UI, submit a PM result with Waiting on Others and follow-up date, review
+as Project Manager/Admin, and inspect the Company Daily Audit tab. Validate that
+Sales and Marketing daily submissions still work.
