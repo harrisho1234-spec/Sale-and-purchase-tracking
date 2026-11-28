@@ -7,7 +7,7 @@ const authorizedRoles=new Set(['sales','manager','marketing','marketing_manager'
 const h=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const root=()=>document.getElementById('content');
 const today=()=>{const dt=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Phnom_Penh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());return /^\d{4}-\d{2}-\d{2}$/.test(dt)?dt:new Date().toISOString().slice(0,10)};
-const S={tasks:[],daily:[],staff:[],categories:{},actor:null,ready:false,loading:false,tab:'My Daily',date:today(),selected:[],reportDepartment:'All',reportYear:String(new Date().getFullYear()),reportQuarter:'All',reportMonth:'All',reportEmployee:'All',search:'',error:''};
+const S={tasks:[],daily:[],staff:[],categories:{},actor:null,ready:false,loading:false,tab:'My Daily',date:today(),selected:[],reportDepartment:'All',reportYear:String(new Date().getFullYear()),reportQuarter:'All',reportMonth:'All',reportEmployee:'All',search:'',todoSearch:'',todoStatus:'Open',todoPriority:'All',todoSort:'Due date',error:''};
 const btn='rounded-lg border px-3 py-2 text-xs font-semibold hover:bg-stone-50';
 const solid='rounded-lg px-3 py-2 text-xs font-semibold bg-[#211d18] text-white';
 const projectMode=()=>String(state?.profile?.role||'')==='project';
@@ -55,7 +55,7 @@ function mine(){return S.tasks.filter(t=>String(t.assigneeId)===String(S.actor?.
 function current(){return S.daily.find(r=>r.date===S.date&&String(r.userId)===String(S.actor?.id))}
 function taskById(id){return S.tasks.find(x=>String(x.id)===String(id))}
 function header(){
- const tabs=['My Daily','Tasks','Support Requests','Department Reports'];
+ const tabs=projectMode()?['My Daily','To-Do','Support Requests','Department Reports']:['My Daily','Tasks','Support Requests','Department Reports'];
  return '<section class="max-w-7xl mx-auto space-y-4"><div class="flex justify-between flex-wrap gap-3 items-center"><div><div class="text-[10px] font-bold tracking-[.15em] text-amber-700">'+(projectMode()?'L’IMPERIAL · PROJECT':'L’IMPERIAL · COMPANY WORK')+'</div><h2 class="text-xl font-bold mt-1">'+(projectMode()?'Project Coordinator · Daily Plan & Result':'Daily Work Management')+'</h2><p class="text-xs text-slate-500">Morning Plan · Evening Result · Tasks · Manager review</p></div><div class="flex gap-2"><button class="'+btn+'" onclick="companyDailyRefresh()">Refresh</button><button class="'+solid+'" onclick="companyDailyOpenTask()">'+(projectMode()?'+ New Project Task':'+ New Task / Support Request')+'</button></div></div>'+
  '<div class="flex gap-1 overflow-x-auto bg-white p-1 rounded-xl border">'+tabs.filter(t=>t!=='Department Reports'||S.actor?.canReview).map(t=>'<button class="shrink-0 px-3 py-2 rounded-lg text-xs font-bold '+(S.tab===t?'bg-[#211d18] text-white':'text-stone-600')+'" onclick="companyDailyTab(\''+h(t)+'\')">'+h(t)+'</button>').join('')+'</div>';
 }
@@ -65,6 +65,7 @@ function render(){
  const legacy=window.LICompanyDailyLegacy;
  root().innerHTML=header()+(S.tab==='My Daily'?(legacy?.daily(S.date)||'')+projectSummary()+daily():
  S.tab==='Tasks'?(legacy?.tasksPanel()||'')+tasks():
+ S.tab==='To-Do'&&projectMode()?projectTodo():
  S.tab==='Support Requests'?requests():reports()+(legacy?.reportPanel({department:S.reportDepartment,year:S.reportYear,month:S.reportMonth,quarter:S.reportQuarter,employee:S.reportEmployee})||''))+'</section>';
 }
 function daily(){
@@ -96,6 +97,60 @@ function daily(){
  (projectMode()?'<div class="grid sm:grid-cols-3 gap-2"><select data-pm="dependencyParty" class="border rounded-lg p-2 text-sm">'+['','Customer','Sales','Stock','Technician','Supplier','Contractor','Designer','Other'].map(v=>'<option value="'+h(v)+'">'+h(v||'No dependency')+'</option>').join('')+'</select><input data-pm="reason" maxlength="350" class="border rounded-lg p-2 text-sm" placeholder="Reason for waiting / delay"><label class="text-xs">Next follow-up date<input data-pm="nextDate" type="date" class="border rounded-lg p-2 text-sm w-full"></label></div>':'')+'</div>').join('')+'</div><button class="'+solid+'" onclick="companyDailySubmitPM()">Submit Evening Result</button>')+
  (report.comment?'<p class="text-sm bg-amber-50 p-3 rounded-lg"><b>Manager note: </b>'+h(report.comment)+'</p>':'')+'</section>':'')+
  '<section class="rounded-xl border bg-white p-4"><h3 class="font-bold mb-2">'+(projectMode()?'My Project To-Do':'New Company Support Tasks')+'</h3>'+my.filter(t=>!['Completed','Cancelled'].includes(t.status)).map(t=>'<div class="border-b py-2 text-sm flex flex-wrap justify-between gap-2"><span>'+h(t.title)+' <small class="text-gray-500">'+h(t.status)+'</small></span><button class="'+btn+'" onclick="companyDailyOpenTask(\''+h(t.id)+'\')">Update</button></div>').join('')+'</section>';
+}
+function projectTodo(){
+ const all=mine().filter(t=>t.department==='Project');
+ const active=t=>!['Completed','Cancelled'].includes(t.status);
+ const date=t=>String(t.dueDate||t.rescheduledTo||'');
+ const late=t=>active(t)&&date(t)&&date(t)<today();
+ const priorityRank={Urgent:0,High:1,Medium:2,Low:3};
+ const statuses=['Open','All','Not Started','In Progress','Waiting on Others','Rescheduled','Blocked','Completed','Cancelled'];
+ const priorities=['All','Urgent','High','Medium','Low'];
+ const sortLabels=['Due date','Priority','Recently updated','Title'];
+ const linked=new Set(S.daily.filter(r=>String(r.userId)===String(S.actor?.id)).flatMap(r=>r.taskIds||[]).map(String));
+ const search=S.todoSearch.trim().toLowerCase();
+ const list=all.filter(t=>
+  (!search||[t.title,t.description,t.category,t.relatedRef,t.dependencyParty,t.dependencyDetails].join(' ').toLowerCase().includes(search))&&
+  (S.todoPriority==='All'||t.priority===S.todoPriority)&&
+  (S.todoStatus==='All'||(S.todoStatus==='Open'?active(t):t.status===S.todoStatus))
+ ).sort((a,b)=>{
+  if(S.todoSort==='Priority')return (priorityRank[a.priority]??5)-(priorityRank[b.priority]??5)||date(a).localeCompare(date(b));
+  if(S.todoSort==='Recently updated')return String(b.updatedAt||'').localeCompare(String(a.updatedAt||''));
+  if(S.todoSort==='Title')return String(a.title||'').localeCompare(String(b.title||''));
+  return (!date(a)?'9999':date(a)).localeCompare(!date(b)?'9999':date(b))||
+    (priorityRank[a.priority]??5)-(priorityRank[b.priority]??5);
+ });
+ const picker=(field,vals)=>'<select aria-label="'+h(field)+'" class="border rounded-lg px-2 py-2 text-xs bg-white" onchange="companyProjectTodoFilter(\''+h(field)+'\',this.value)">'+
+   vals.map(v=>'<option value="'+h(v)+'" '+(S[field]===v?'selected':'')+'>'+h(v)+'</option>').join('')+'</select>';
+ const metric=(label,value)=>'<div class="border rounded-xl bg-white p-3"><div class="text-xs text-gray-500">'+label+'</div><b class="text-xl">'+value+'</b></div>';
+ return '<section class="space-y-4">'+
+  '<div class="flex flex-wrap justify-between items-center gap-2"><div><h3 class="font-bold text-lg">My Project To-Do</h3><p class="text-xs text-gray-500">Personal tasks · Linked to Morning Plan & Evening Result · Changes recorded in Company Daily Audit</p></div>'+
+  '<button type="button" onclick="companyDailyOpenTask()" class="'+solid+'">+ New To-Do</button></div>'+
+  '<div class="grid grid-cols-2 sm:grid-cols-4 gap-2">'+
+    metric('Open',all.filter(active).length)+metric('Overdue',all.filter(late).length)+
+    metric('Waiting on Others',all.filter(t=>t.status==='Waiting on Others').length)+
+    metric('Completed',all.filter(t=>t.status==='Completed').length)+'</div>'+
+  '<div class="border bg-white rounded-xl p-3 flex flex-wrap items-center gap-2">'+
+    '<input id="projectTodoSearch" aria-label="Search project tasks" value="'+h(S.todoSearch)+'" placeholder="Search tasks, projects, people..." class="border rounded-lg px-3 py-2 text-sm flex-1 min-w-[180px]" oninput="companyProjectTodoSearch(this.value)">'+
+    picker('todoStatus',statuses)+picker('todoPriority',priorities)+picker('todoSort',sortLabels)+'</div>'+
+  '<div class="space-y-2">'+(list.length?list.map(t=>{
+    const due=date(t), overdue=late(t),progress=Math.max(0,Math.min(100,Number(t.progress)||0));
+    const isLinked=linked.has(String(t.id));
+    return '<div class="border rounded-xl bg-white p-3 sm:p-4 flex flex-wrap items-start justify-between gap-3">'+
+      '<div class="min-w-0 flex-1 space-y-2"><div class="flex items-center gap-2 flex-wrap">'+
+      '<b class="text-sm">'+h(t.title)+'</b>'+
+      (overdue?'<span class="text-[10px] font-bold text-red-700 bg-red-50 px-2 py-1 rounded">OVERDUE</span>':'')+
+      (isLinked?'<span class="text-[10px] text-blue-700 bg-blue-50 px-2 py-1 rounded">Daily Plan linked</span>':'')+'</div>'+
+      '<div class="text-xs text-gray-500">'+h(t.category||'Other')+' · '+h(t.priority||'Medium')+' priority · '+h(t.status||'Not Started')+
+      (due?' · Due '+h(due):' · No deadline')+'</div>'+
+      (t.relatedRef?'<p class="text-xs text-gray-600">Project / order: '+h(t.relatedRef)+'</p>':'')+
+      (t.dependencyParty||t.dependencyDetails?'<p class="text-xs text-amber-800">Depends on: '+h(t.dependencyParty||'Other')+(t.dependencyDetails?' — '+h(t.dependencyDetails):'')+'</p>':'')+
+      (t.rescheduleReason?'<p class="text-xs text-gray-600">Reason: '+h(t.rescheduleReason)+'</p>':'')+
+      '<div class="h-1.5 bg-gray-100 rounded-full overflow-hidden max-w-sm"><div class="h-full bg-amber-600 rounded-full" style="width:'+progress+'%"></div></div>'+
+      '<p class="text-[10px] text-gray-400">'+progress+'% complete'+(t.updatedAt?' · Updated '+h(t.updatedAt.slice(0,16).replace('T',' ')):'')+'</p></div>'+
+      '<button class="'+btn+'" type="button" onclick="companyDailyOpenTask(\''+h(t.id)+'\')">View / Update</button>'+
+      '</div>';
+  }).join(''):'<div class="rounded-xl border bg-white p-6 text-sm text-gray-500">No Project To-Do tasks match these filters. Use + New To-Do to add a task.</div>')+'</div></section>';
 }
 function tasks(){
  const list=S.tasks.filter(t=>(S.actor.allDepartments||t.requestedBy===S.actor.id||t.assigneeId===S.actor.id||t.department===S.actor.department)&&[t.title,t.department,t.category,t.relatedRef].join(' ').toLowerCase().includes(S.search.toLowerCase()));
@@ -132,7 +187,7 @@ function reports(){
 function selectOptions(values,chosen){return values.map(x=>'<option value="'+h(x)+'" '+(chosen===x?'selected':'')+'>'+h(x)+'</option>').join('')}
 function taskForm(id){
  const t=taskById(id)||{},isEdit=!!t.id;
- const editable=!isEdit||S.actor.allDepartments||S.actor.canReview&&t.department===S.actor.department;
+ const editable=!isEdit||S.actor.allDepartments||S.actor.canReview&&t.department===S.actor.department||t.department==='Project'&&String(t.assigneeId)===String(S.actor.id)&&t.requestStatus==='Approved';
  const assigneeId=t.assigneeId||S.actor.id,department=S.staff.find(x=>x.id===assigneeId)?.department||S.actor.department;
  const cats=S.categories[department]||['Other'];
  return '<form id="companyDailyTaskForm" onsubmit="companyDailySave(event)" class="space-y-3">'+
@@ -154,6 +209,16 @@ window.companyDailyOpenTask=id=>openModal(id?'Update Daily Work Task':'New Daily
 window.companyDailyAssigneeChange=id=>{const dep=S.staff.find(x=>String(x.id)===String(id))?.department||'Sales',box=document.getElementById('companyCategory');if(box)box.innerHTML=selectOptions(S.categories[dep]||['Other'],'')};
 window.companyDailySave=async ev=>{ev.preventDefault();const t=Object.fromEntries(new FormData(ev.target).entries());if(t.id&&!t.assigneeId)t.assigneeId=taskById(t.id)?.assigneeId;try{await api('company_save_task',t);closeModal();say('Daily Work task saved');await load()}catch(e){say(e.message,true)}};
 window.companyDailyTab=tab=>{S.tab=tab;render()};
+window.companyProjectTodoFilter=(field,value)=>{
+ if(!projectMode()||!['todoStatus','todoPriority','todoSort'].includes(field))return;
+ S[field]=String(value);render();
+};
+window.companyProjectTodoSearch=value=>{
+ if(!projectMode())return;
+ S.todoSearch=String(value);render();
+ const input=document.getElementById('projectTodoSearch');
+ if(input){input.focus();try{input.setSelectionRange(value.length,value.length)}catch(_){}}
+};
 window.companyDailyDate=async value=>{S.date=value;S.selected=[];if(S.ready)await load();else render()};
 window.companyDailySearch=value=>{S.search=value;render();const input=document.getElementById('companySearch');if(input){input.focus();input.setSelectionRange(value.length,value.length)}};
 window.companyProjectQuickTask=async ev=>{
