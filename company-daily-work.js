@@ -71,18 +71,29 @@ function daily(){
  const report=current(),my=mine(),submitted=report?.amStatus==='Submitted';
  if(!submitted&&!S.selected.length)S.selected=my.filter(t=>!['Completed','Cancelled'].includes(t.status)).map(x=>x.id);
  const chosen=submitted?report.taskIds:S.selected;
+ const originalIds=new Set(report?.originalTaskIds||chosen);
+ const addedProjectTasks=projectMode()&&submitted?my.filter(t=>!chosen.includes(t.id)&&!['Completed','Cancelled'].includes(t.status)):[];
  return '<div class="rounded-xl border bg-white p-4 flex flex-wrap gap-3 items-end justify-between"><label class="text-xs font-bold">Work date<input type="date" class="block rounded-lg border px-3 py-2 mt-1" value="'+h(S.date)+'" onchange="companyDailyDate(this.value)"></label><div class="flex flex-wrap gap-2 text-xs"><span class="bg-amber-50 rounded-lg px-3 py-2">Shared AM: <b>'+h(report?.amStatus||'Not Started')+'</b></span><span class="bg-blue-50 rounded-lg px-3 py-2">Shared PM: <b>'+h(report?.pmStatus||'Not Started')+'</b></span><span class="bg-gray-100 rounded-lg px-3 py-2">Shared Review: <b>'+h(report?.reviewStatus||'Not Reviewed')+'</b></span></div></div>'+
- (projectMode()&&!submitted?'<form id="projectQuickTask" onsubmit="companyProjectQuickTask(event)" class="border rounded-xl bg-white p-4 space-y-3"><div class="font-bold text-sm">Quick Add · Project Task</div><div class="grid sm:grid-cols-3 gap-2"><input name="title" required maxlength="180" class="border rounded-lg px-3 py-2 text-sm sm:col-span-2" placeholder="Task / planned activity"><select name="category" class="border rounded-lg px-3 py-2 text-sm">'+(S.categories.Project||['Other']).map(cat=>'<option>'+h(cat)+'</option>').join('')+'</select></div><div class="flex items-center gap-2"><button class="'+solid+'" type="submit">+ Add to my tasks</button><small class="text-gray-500">Create tasks, then select them in Morning Plan below.</small></div></form>':'')+
+ (projectMode()?'<form id="projectQuickTask" onsubmit="companyProjectQuickTask(event)" class="border rounded-xl bg-white p-4 space-y-3"><div class="font-bold text-sm">'+(submitted?'Add Urgent / Unplanned Project Task':'Quick Add · Project Task')+'</div><div class="grid sm:grid-cols-3 gap-2"><input name="title" required maxlength="180" class="border rounded-lg px-3 py-2 text-sm sm:col-span-2" placeholder="Task / planned activity"><select name="category" class="border rounded-lg px-3 py-2 text-sm">'+(S.categories.Project||['Other']).map(cat=>'<option>'+h(cat)+'</option>').join('')+'</select></div><div class="flex items-center gap-2"><button class="'+solid+'" type="submit">+ Add to my tasks</button><small class="text-gray-500">Create a task, then select it in the Morning Plan or add it as an audited revision.</small></div></form>':'')+
  '<section class="rounded-xl border bg-white p-4 space-y-3"><div><h3 class="font-bold">'+(projectMode()?'Morning Daily Plan':'Company Shared-Work Morning Plan')+'</h3><p class="text-xs text-gray-500">'+(projectMode()?'Select your project tasks for today. Create new tasks with + New Task, then submit the plan.':'For new company support assignments only. Existing Sales or Marketing Morning Plans remain in their original department module. Do not submit the same work twice.')+' Requests awaiting approval cannot be submitted.</p></div>'+
- (my.length?my.map(t=>'<label class="flex gap-3 items-start rounded-lg border p-3 text-sm"><input type="checkbox" class="mt-1" data-company-am value="'+h(t.id)+'" '+(chosen.includes(t.id)?'checked':'')+' '+(submitted?'disabled':'')+'><span><b>'+h(t.title)+'</b><small class="block text-gray-500">'+h(t.category)+' · '+h(t.department)+' · '+h(t.priority)+'</small></span></label>').join(''):'<p class="text-sm text-gray-500">No approved tasks assigned. Create a task or request work support first.</p>')+
- (!submitted?'<button class="'+solid+'" onclick="companyDailySubmitAM()">Submit Morning Plan</button>':'<p class="text-xs text-green-700">Morning Plan submitted · '+chosen.length+' tasks linked</p>')+'</section>'+
+ (my.length?my.map(t=>'<label class="flex gap-3 items-start rounded-lg border p-3 text-sm"><input type="checkbox" class="mt-1" data-company-am value="'+h(t.id)+'" '+(chosen.includes(t.id)?'checked':'')+' '+(submitted?'disabled':'')+'><span><b>'+h(t.title)+'</b><small class="block text-gray-500">'+h(t.category)+' · '+h(t.department)+' · '+h(t.priority)+(projectMode()&&submitted&&chosen.includes(t.id)?' · '+(originalIds.has(t.id)?'Original':'Additional'):'')+'</small></span></label>').join(''):'<p class="text-sm text-gray-500">No approved tasks assigned. Create a task or request work support first.</p>')+
+ (!submitted?'<button class="'+solid+'" onclick="companyDailySubmitAM()">Submit Morning Plan</button>':'<p class="text-xs text-green-700">Morning Plan submitted · '+chosen.length+' tasks linked</p>')+
+ (projectMode()&&submitted?
+   '<p class="text-xs">Original plan: '+originalIds.size+' · Additional work: '+Math.max(0,chosen.length-originalIds.size)+'</p>'+
+   ((report?.planRevisions||[]).length?'<details class="border rounded-lg p-3 text-xs"><summary class="font-semibold cursor-pointer">Plan change history ('+report.planRevisions.length+')</summary>'+report.planRevisions.map(rev=>'<p class="border-t py-2">'+h(rev.at)+' · '+h(rev.reason)+' · '+(rev.taskIds||[]).map(id=>h(taskById(id)?.title||'Task')).join(', ')+'</p>').join('')+'</details>':'')+
+   (S.date===today()&&report.pmStatus!=='Submitted'&&addedProjectTasks.length?
+    '<form onsubmit="companyProjectAmendPlan(event)" class="border rounded-lg bg-amber-50 p-3 space-y-2"><b class="text-sm">Add new work to submitted Morning Plan</b>'+
+    addedProjectTasks.map(t=>'<label class="block text-sm"><input class="mr-2" type="checkbox" name="taskIds" value="'+h(t.id)+'">'+h(t.title)+'</label>').join('')+
+    '<input name="reason" required maxlength="350" class="border rounded-lg p-2 w-full text-sm" placeholder="Why was this work added?"><button class="'+solid+'" type="submit">Add and record revision</button></form>':'')
+ :'')+'</section>'+
  (submitted?'<section class="rounded-xl border bg-white p-4 space-y-3"><h3 class="font-bold">'+(projectMode()?'Evening Result · Planned vs Actual':'Company Shared-Work Evening Result')+'</h3>'+
  (report.pmStatus==='Submitted'&&report.reviewStatus!=='Changes Requested'?'<p class="text-xs text-green-700">Evening Result submitted. Awaiting manager review.</p>'+
  (report.results||[]).map(x=>'<div class="rounded-lg border p-3 text-sm"><b>'+h(taskById(x.id)?.title||'Task')+'</b><p>'+h(x.status)+' — '+h(x.result)+'</p><small>'+h(x.nextStep)+'</small></div>').join(''):
  '<div class="grid gap-3">'+chosen.map((id,i)=>'<div data-company-pm="'+h(id)+'" class="rounded-lg border p-3 space-y-2"><b class="text-sm">'+(i+1)+'. '+h(taskById(id)?.title||'Task')+'</b>'+
- '<select data-pm="status" class="w-full border rounded-lg px-3 py-2 text-sm">'+['Completed','Partially Completed','Pending','Rescheduled','Cancelled'].map(v=>'<option>'+v+'</option>').join('')+'</select>'+
+ '<select data-pm="status" class="w-full border rounded-lg px-3 py-2 text-sm">'+['Completed','Partially Completed','Pending',...(projectMode()?['Waiting on Others']:[]),'Rescheduled','Cancelled'].map(v=>'<option>'+v+'</option>').join('')+'</select>'+
  '<textarea data-pm="result" class="w-full border rounded-lg px-3 py-2 text-sm" rows="2" placeholder="What was actually completed?"></textarea>'+
- '<input data-pm="nextStep" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Next action / blocker (optional)"></div>').join('')+'</div><button class="'+solid+'" onclick="companyDailySubmitPM()">Submit Evening Result</button>')+
+ '<input data-pm="nextStep" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Next action / blocker (optional)">'+
+ (projectMode()?'<div class="grid sm:grid-cols-3 gap-2"><select data-pm="dependencyParty" class="border rounded-lg p-2 text-sm">'+['','Customer','Sales','Stock','Technician','Supplier','Contractor','Designer','Other'].map(v=>'<option value="'+h(v)+'">'+h(v||'No dependency')+'</option>').join('')+'</select><input data-pm="reason" maxlength="350" class="border rounded-lg p-2 text-sm" placeholder="Reason for waiting / delay"><label class="text-xs">Next follow-up date<input data-pm="nextDate" type="date" class="border rounded-lg p-2 text-sm w-full"></label></div>':'')+'</div>').join('')+'</div><button class="'+solid+'" onclick="companyDailySubmitPM()">Submit Evening Result</button>')+
  (report.comment?'<p class="text-sm bg-amber-50 p-3 rounded-lg"><b>Manager note: </b>'+h(report.comment)+'</p>':'')+'</section>':'')+
  '<section class="rounded-xl border bg-white p-4"><h3 class="font-bold mb-2">'+(projectMode()?'My Project To-Do':'New Company Support Tasks')+'</h3>'+my.filter(t=>!['Completed','Cancelled'].includes(t.status)).map(t=>'<div class="border-b py-2 text-sm flex flex-wrap justify-between gap-2"><span>'+h(t.title)+' <small class="text-gray-500">'+h(t.status)+'</small></span><button class="'+btn+'" onclick="companyDailyOpenTask(\''+h(t.id)+'\')">Update</button></div>').join('')+'</section>';
 }
@@ -155,6 +166,17 @@ window.companyProjectQuickTask=async ev=>{
   S.selected=[];await load();say('Project task added. Select it in the Morning Plan below.');
  }catch(e){say(e.message,true);if(button?.isConnected)button.disabled=false}
 };
+window.companyProjectAmendPlan=async ev=>{
+ ev.preventDefault();
+ if(!projectMode())return;
+ const form=ev.target,fd=new FormData(form),taskIds=fd.getAll('taskIds').map(String),reason=String(fd.get('reason')||'').trim();
+ if(!taskIds.length)return say('Choose a task to add',true);
+ if(!reason)return say('Enter the reason for the change',true);
+ if(!confirm('Add '+taskIds.length+' task(s) to your Morning Plan and record the revision?'))return;
+ const button=form.querySelector('button[type="submit"]');if(button)button.disabled=true;
+ try{await api('company_amend_project_plan',{date:S.date,taskIds,reason});say('Morning Plan amended; original preserved');await load()}
+ catch(e){say(e.message,true);if(button?.isConnected)button.disabled=false}
+};
 window.companyDailyAllowLate=async id=>{
  if(!S.actor?.canReview)return say('Project Manager/Admin permission required',true);
  if(!confirm('Allow late Evening Result for this Project report? This decision will be recorded in the audit.'))return;
@@ -167,10 +189,11 @@ window.companyDailySubmitAM=async()=>{
  try{await api('company_submit_am',{date:S.date,taskIds:ids});say('Morning Plan submitted');S.selected=[];await load()}catch(e){say(e.message,true)}
 };
 window.companyDailySubmitPM=async()=>{
- const results=[...root().querySelectorAll('[data-company-pm]')].map(row=>({id:row.dataset.companyPm,status:row.querySelector('[data-pm="status"]')?.value,result:row.querySelector('[data-pm="result"]')?.value,nextStep:row.querySelector('[data-pm="nextStep"]')?.value}));
+ const results=[...root().querySelectorAll('[data-company-pm]')].map(row=>({id:row.dataset.companyPm,status:row.querySelector('[data-pm="status"]')?.value,result:row.querySelector('[data-pm="result"]')?.value,nextStep:row.querySelector('[data-pm="nextStep"]')?.value,...(projectMode()?{dependencyParty:row.querySelector('[data-pm="dependencyParty"]')?.value,reason:row.querySelector('[data-pm="reason"]')?.value,nextDate:row.querySelector('[data-pm="nextDate"]')?.value}:{})}));
  if(!results.length)return say('No planned tasks to report',true);
  if(projectMode()&&results.some(x=>!String(x.result||'').trim()))return say('Enter an actual outcome for every planned task',true);
  if(projectMode()&&!current()?.latePmAllowed&&current()?.reviewStatus!=='Changes Requested'&&Date.now()>projectDue(S.date))return say('The next-day 10:00 AM Evening Result deadline has passed. Ask your Project Manager/Admin for assistance.',true);
+ if(projectMode()&&results.some(x=>['Waiting on Others','Rescheduled'].includes(x.status)&&(!String(x.reason||'').trim()||!x.nextDate)))return say('Explain the delay and enter a next follow-up date for waiting/rescheduled tasks',true);
  if(!confirm('Submit Evening Result for '+S.date+'?'))return;
  try{await api('company_submit_pm',{date:S.date,results});say('Evening Result submitted');await load()}catch(e){say(e.message,true)}
 };
