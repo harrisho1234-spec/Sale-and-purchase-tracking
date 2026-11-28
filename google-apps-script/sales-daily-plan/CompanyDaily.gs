@@ -5,7 +5,7 @@ const CD_CATS={
  Sales:['Customer Follow-up','Showroom / Page','Online Inquiries','Product Content','Quotation / SR','Other'],
  Marketing:['Artwork / Poster','Video','Photo','Content Writing','Social Media','Promotion','Event','Catalog','Other'],
  Stock:['Stock Receiving','Stock Count','Stock Transfer','Delivery Preparation','DO Release','Stock Adjustment','Other'],
- Project:['Mock-up','Proposal','3D Rendering','Drawing Revision','Site Measurement','Installation Coordination','Other'],
+ Project:['Project Site Visit','Customer / Contractor Coordination','Installation Scheduling','Delivery Coordination','Project Progress Follow-up','Measurement / Site Inspection','Supplier / Technician Coordination','Documentation & Reporting','Mock-up','Proposal','3D Rendering','Drawing Revision','Other'],
  'Product Assistant':['Product Code Verification','Catalog Update','Product Photo','Price Verification','Product Selection','Quotation Support','Other'],
  Management:['Review','Coordination','Other']
 };
@@ -92,6 +92,13 @@ function cdSubmitPM(ss,a,p){return cdWithLock(function(){
  const date=cdDate(p.date),sh=cdTab(ss,'daily'),found=cdRows(sh).find(x=>x.r[1]===date&&String(x.r[2])===String(a.user_id));
  if(!found||found.r[4]!=='Submitted')throw Error('Submit Morning Plan first');
  if(found.r[7]==='Submitted'&&found.r[10]!=='Changes Requested')throw Error('Evening Result already submitted');
+ // Project Coordinators follow the same next-day 10:00 AM (Phnom Penh) initial PM policy as Sales.
+ // Enforcement is on the server, not only in the browser. Reviewer changes may be resubmitted.
+ if(a.department==='Project' && found.r[10]!=='Changes Requested' && found.r[7]!=='Submitted'){
+  const deadline=new Date(date+'T10:00:00+07:00');
+  deadline.setDate(deadline.getDate()+1);
+  if(new Date().getTime()>deadline.getTime())throw Error('Evening Result deadline passed (next day 10:00 AM Cambodia time). Ask your Project Manager/Admin for assistance.');
+ }
  const ids=JSON.parse(found.r[6]||'[]'),res=Array.isArray(p.results)?p.results:[];
  if(ids.length!==res.length||new Set(res.map(x=>String(x.id))).size!==ids.length||ids.some(id=>!res.some(x=>String(x.id)===id)))throw Error('Result required for each planned task');
  const results=res.map(x=>{if(!['Completed','Partially Completed','Pending','Rescheduled','Cancelled'].includes(x.status))throw Error('Invalid result status');
