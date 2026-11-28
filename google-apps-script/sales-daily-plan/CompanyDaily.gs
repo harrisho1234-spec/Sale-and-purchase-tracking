@@ -40,6 +40,7 @@ function cdTab(ss,k){const name='Company Daily '+(k==='tasks'?'Tasks':k==='daily
 function cdRows(sh){return sh.getDataRange().getDisplayValues().slice(1).map((r,i)=>({r,n:i+2})).filter(x=>x.r[0])}
 function cdText(v,n){const s=String(v==null?'':v).trim();if(s.length>n)throw Error('Field exceeds '+n+' characters');return /^[=+@\-]/.test(s)?"'"+s:s}
 function cdRaw(v,n){const s=String(v==null?'':v).trim();if(s.length>n)throw Error('Field exceeds '+n+' characters');return s}
+function cdPad(row,length){const out=row.slice(0,length);while(out.length<length)out.push('');return out}
 function cdDate(v){const d=String(v||'');if(!/^\d{4}-\d{2}-\d{2}$/.test(d)||new Date(d+'T00:00:00Z').toISOString().slice(0,10)!==d)throw Error('Invalid date');return d}
 function cdManager(a,d){return a.all_departments===true||(a.can_review===true&&a.department===d)}
 function cdTask(r){return{id:r[0],title:r[1],department:r[2],category:r[3],description:r[4],assigneeId:r[5],assignee:r[6],requestedBy:r[7],requester:r[8],requesterDepartment:r[9],status:r[10],requestStatus:r[11],priority:r[12],dueDate:r[13],progress:Number(r[14]||0),result:r[15],relatedRef:r[16],updatedAt:r[17],createdAt:r[18],dependencyParty:r[20]||'',dependencyDetails:r[21]||'',rescheduleReason:r[22]||'',rescheduledTo:r[23]||''}}
@@ -83,7 +84,7 @@ function cdSaveTask(ss,a,p){return cdWithLock(function(){
   const status=String(p.status||old.status);
   if(!['Not Started','In Progress','Completed','Blocked','Cancelled',...(old.department==='Project'?['Waiting on Others','Rescheduled']:[])].includes(status))throw Error('Invalid status');
   row[10]=status;row[14]=Math.min(100,Math.max(0,Number(p.progress)||0));row[15]=cdText(p.result,1200);row[17]=new Date().toISOString();
-  sh.getRange(found.n,1,1,CD_HEADERS.tasks.length).setValues([row.slice(0,CD_HEADERS.tasks.length)]);cdAudit(ss,a,'UPDATE_TASK','task',id,old,cdTask(row));return cdTask(row);
+  sh.getRange(found.n,1,1,CD_HEADERS.tasks.length).setValues([cdPad(row,CD_HEADERS.tasks.length)]);cdAudit(ss,a,'UPDATE_TASK','task',id,old,cdTask(row));return cdTask(row);
  }
  const staff=(a.staff||[]).find(x=>String(x.id)===String(p.assigneeId||a.user_id));
  if(!staff||!CD_CATS[staff.department])throw Error('Assign to an active authorized employee');
@@ -116,7 +117,7 @@ function cdSubmitAM(ss,a,p){return cdWithLock(function(){
  const row=found?found.r.slice():[Utilities.getUuid(),date,a.user_id,a.department,'','','','Not Started','','[]','Not Reviewed','','','','FALSE','',''];
  row[4]='Submitted';row[5]=new Date().toISOString();row[6]=JSON.stringify(ids);
  if(a.department==='Project'){row[17]=JSON.stringify(ids);row[18]='[]';}
- if(found)sh.getRange(found.n,1,1,CD_HEADERS.daily.length).setValues([row.slice(0,CD_HEADERS.daily.length)]);else sh.appendRow(row.slice(0,CD_HEADERS.daily.length));
+ if(found)sh.getRange(found.n,1,1,CD_HEADERS.daily.length).setValues([cdPad(row,CD_HEADERS.daily.length)]);else sh.appendRow(cdPad(row,CD_HEADERS.daily.length));
  cdAudit(ss,a,'MORNING_SUBMITTED','daily',row[0],{},cdDaily(row));return cdDaily(row);
 })}
 function cdAmendProjectPlan(ss,a,p){return cdWithLock(function(){
@@ -143,7 +144,7 @@ function cdAmendProjectPlan(ss,a,p){return cdWithLock(function(){
  if(history.length>=100)throw Error('Plan revision limit reached; contact Admin');
  history.push({at:new Date().toISOString(),actor:a.user_id,action:'ADDED_TASKS',taskIds:newIds,reason});
  row[6]=JSON.stringify(ids);if(!row[17])row[17]=JSON.stringify(existing);row[18]=JSON.stringify(history);
- sh.getRange(found.n,1,1,CD_HEADERS.daily.length).setValues([row.slice(0,CD_HEADERS.daily.length)]);
+ sh.getRange(found.n,1,1,CD_HEADERS.daily.length).setValues([cdPad(row,CD_HEADERS.daily.length)]);
  cdAudit(ss,a,'PROJECT_PLAN_AMENDED','daily',row[0],before,cdDaily(row));
  return cdDaily(row);
 })}
@@ -179,11 +180,11 @@ function cdSubmitPM(ss,a,p){return cdWithLock(function(){
   const match=cdRows(taskSheet).find(x=>x.r[0]===outcome.id&&String(x.r[5])===String(a.user_id));
   if(!match)continue;
   const before=cdTask(match.r),tr=match.r.slice();
-  tr[10]=outcome.status==='Completed'?'Completed':outcome.status==='Cancelled'?'Cancelled':outcome.status==='Waiting on Others'?'Waiting on Others':outcome.status==='Rescheduled'?'Rescheduled':outcome.status==='Pending'?'Not Started':'In Progress';
+  tr[10]=outcome.status==='Completed'?'Completed':outcome.status==='Cancelled'?'Cancelled':a.department==='Project'&&outcome.status==='Waiting on Others'?'Waiting on Others':a.department==='Project'&&outcome.status==='Rescheduled'?'Rescheduled':['Pending','Rescheduled'].includes(outcome.status)?'Not Started':'In Progress';
   if(a.department==='Project'&&['Waiting on Others','Rescheduled'].includes(outcome.status)){tr[20]=outcome.dependencyParty;tr[22]=outcome.reason;tr[23]=outcome.nextDate;}
   tr[14]=outcome.status==='Completed'?100:outcome.status==='Partially Completed'?Math.max(1,Number(tr[14]||0)):Number(tr[14]||0);
   tr[15]=outcome.result;tr[17]=new Date().toISOString();
-  taskSheet.getRange(match.n,1,1,CD_HEADERS.tasks.length).setValues([tr.slice(0,CD_HEADERS.tasks.length)]);
+  taskSheet.getRange(match.n,1,1,CD_HEADERS.tasks.length).setValues([cdPad(tr,CD_HEADERS.tasks.length)]);
   cdAudit(ss,a,'TASK_EVENING_RESULT','task',tr[0],before,cdTask(tr));
  }
  cdAudit(ss,a,'EVENING_SUBMITTED','daily',row[0],previous,cdDaily(row));return cdDaily(row);
