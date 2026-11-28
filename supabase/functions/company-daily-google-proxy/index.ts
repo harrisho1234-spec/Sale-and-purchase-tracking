@@ -1,7 +1,7 @@
 // Company Daily Work relay; JWT and Google Sheets access are independently
 // verified. No task/report data is stored in Supabase.
 const ORIGINS=new Set(["https://harrisho1234-spec.github.io","http://localhost:3000","http://localhost:5173"]);
-const ACTIONS=new Set(["company_list","company_save_task","company_decide_request","company_submit_am","company_submit_pm","company_review","company_allow_late_pm"]);
+const ACTIONS=new Set(["company_list","company_save_task","company_decide_request","company_submit_am","company_submit_pm","company_review","company_allow_late_pm","company_amend_project_plan"]);
 function reply(data:unknown,status=200,origin=""){
  return new Response(JSON.stringify(data),{status,headers:{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store",...(ORIGINS.has(origin)?{"Access-Control-Allow-Origin":origin,"Vary":"Origin"}:{})}});
 }
