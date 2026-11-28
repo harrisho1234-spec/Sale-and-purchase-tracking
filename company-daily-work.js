@@ -215,7 +215,37 @@ window.companyDailyLegacyLoadPeriod=async()=>{
  }catch(e){say(e.message,true);render()}
 };
 const oldNav=window.navItems;
-if(typeof oldNav==='function')window.navItems=function(){const items=oldNav.apply(this,arguments);const role=String(state.profile?.role||'');if(['project','project_manager','product_assistant','product_manager'].includes(role)){const permitted=role.startsWith('product_')?['products']:[];return [...items.filter(x=>permitted.includes(x[0])),[PAGE,'Daily Work · All Departments','☷']]}if(allowed()&&!items.some(x=>x[0]===PAGE)){const index=items.findIndex(x=>x[0]==='sales-daily');items.splice(index<0?items.length:index+1,0,[PAGE,'Daily Work · All Departments','☷'])}return items};
+if(typeof oldNav==='function')window.navItems=function(){const items=oldNav.apply(this,arguments);const role=String(state.profile?.role||'');if(['project','project_manager','product_assistant','product_manager'].includes(role)){
+ // Project / Product role determines the daily-work workflow, not an absolute
+ // ban on every other navigation tab. Permission overrides remain authoritative.
+ const rolePages=[
+   ['customers','Customers','◉','customers.view'],
+   ['sales-orders','Sales Orders','▤','sales_orders.view'],
+   ['tracking','Order Tracking','◎','tracking.view'],
+   ['quotation-imports','Quotation History','⇢','quotations.view'],
+   ['products','Products','◇','products.view'],
+   ['payments','Payments','＄','payments.view'],
+   ['returns','Returns','↩','returns.view'],
+   ['stock-inventory','Stock & Inventory','↔','inventory.view'],
+   ['procurement','Procurement','▣','procurement.view'],
+   ['supplier-pos','Supplier POs','⌑','procurement.view'],
+   ['reports','Reports','▥','reports.view'],
+   ['marketing','Marketing','✦','marketing.view']
+ ];
+ const access=key=>typeof window.hasAppPermission==='function'&&window.hasAppPermission(key);
+ const seen=new Set(),visible=[];
+ const add=item=>{if(!seen.has(item[0])){seen.add(item[0]);visible.push(item)}};
+ // Include existing navigation entries only when page access is explicitly
+ // enabled, never because a legacy navigation function happens to list them.
+ for(const item of rolePages)if(access(item[3])&&
+   (typeof window.canAccessAppPage!=='function'||window.canAccessAppPage(item[0])))
+   add(item.slice(0,3));
+ for(const item of items)if(item[0]!=='dashboard'&&
+   typeof window.canAccessAppPage==='function'&&window.canAccessAppPage(item[0])&&
+   (item[0]!=='users'||access('users.manage')))add(item);
+ add([PAGE,'Daily Work · All Departments','☷']);
+ return visible;
+}if(allowed()&&!items.some(x=>x[0]===PAGE)){const index=items.findIndex(x=>x[0]==='sales-daily');items.splice(index<0?items.length:index+1,0,[PAGE,'Daily Work · All Departments','☷'])}return items};
 const oldGo=window.go;
 window.go=async function(page){
  if(page!==PAGE)return oldGo.apply(this,arguments);
