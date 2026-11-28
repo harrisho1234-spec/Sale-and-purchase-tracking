@@ -159,7 +159,7 @@ function tasks(){
 }
 function requests(){
  const list=S.tasks.filter(t=>t.requestStatus==='Pending Approval'&&(S.actor?.allDepartments||S.actor?.canReview&&t.department===S.actor.department||t.requestedBy===S.actor.id));
- return '<section class="rounded-xl border bg-white p-4 space-y-3"><h3 class="font-bold">Cross-department Support Requests</h3><p class="text-xs text-slate-500">A support request must be approved by the receiving department manager (or Admin) before appearing in the assignee’s daily plan.</p>'+
+ return '<section class="rounded-xl border bg-white p-4 space-y-3"><div class="flex flex-wrap justify-between items-center gap-2"><h3 class="font-bold">Cross-department Support Requests</h3>'+(projectMode()?'<button type="button" class="'+solid+'" onclick="companyDailyOpenSupportRequest()">+ New Support Request</button>':'')+'</div><p class="text-xs text-slate-500">A support request must be approved by the receiving department manager (or Admin) before appearing in the assignee’s daily plan.</p>'+
  (list.length?list.map(t=>'<div class="border rounded-xl p-3 space-y-2"><b>'+h(t.title)+'</b><div class="text-xs text-gray-500">From '+h(t.requester)+' → '+h(t.department)+' / '+h(t.assignee)+' · '+h(t.priority)+'</div><p class="text-sm">'+h(t.description)+'</p>'+
  (S.actor?.allDepartments||S.actor?.canReview&&t.department===S.actor.department?'<div class="flex gap-2"><button class="'+solid+'" onclick="companyDailyDecide(\''+h(t.id)+'\',\'Approve\')">Approve Assignment</button><button class="'+btn+'" onclick="companyDailyDecide(\''+h(t.id)+'\',\'Reject\')">Reject</button></div>':'<small class="text-amber-700">Awaiting receiving department approval</small>')+'</div>').join(''):'<p class="text-sm text-gray-500">No pending support requests.</p>')+'</section>';
 }
@@ -185,15 +185,41 @@ function reports(){
  (r.pmStatus==='Submitted'&&r.reviewStatus!=='Reviewed'?'<button class="'+btn+'" onclick="companyDailyReview(\''+h(r.id)+'\')">Review</button>':r.department==='Project'&&r.amStatus==='Submitted'&&!r.latePmAllowed&&Date.now()>projectDue(r.date)?'<button class="'+btn+'" onclick="companyDailyAllowLate(\''+h(r.id)+'\')">Allow Late Result</button>':'')+'</div>').join('')+'</section>';
 }
 function selectOptions(values,chosen){return values.map(x=>'<option value="'+h(x)+'" '+(chosen===x?'selected':'')+'>'+h(x)+'</option>').join('')}
-function taskForm(id){
+
+function projectPersonalTaskForm(id){
+ const t=taskById(id)||{},cats=S.categories.Project||['Other'];
+ const opts=(name,arr,value)=>'<select name="'+name+'" class="block w-full border rounded-lg p-2 mt-1">'+selectOptions(arr,value)+'</select>';
+ const detail=!!(t.description||t.relatedRef||t.dependencyParty||t.dependencyDetails||t.rescheduledTo||t.rescheduleReason||t.result);
+ return '<form id="companyDailyTaskForm" onsubmit="companyDailySave(event)" class="space-y-3">'+
+ '<input type="hidden" name="id" value="'+h(t.id||'')+'"><input type="hidden" name="assigneeId" value="'+h(S.actor?.id||'')+'">'+
+ '<div class="rounded-lg border bg-stone-50 p-3 text-xs">My personal Project To-Do · Assigned to <b>'+h(S.actor?.name||'me')+'</b>. For work assigned to others use <b>Support Requests</b>.</div>'+
+ '<label class="block text-xs font-bold">Task / Deliverable<input required name="title" maxlength="180" class="block w-full border rounded-lg p-2 mt-1" placeholder="What needs to be done?" value="'+h(t.title||'')+'"></label>'+
+ '<div class="grid sm:grid-cols-2 gap-3">'+
+ '<label class="text-xs font-bold">Category'+opts('category',cats,t.category||cats[0])+'</label>'+
+ '<label class="text-xs font-bold">Priority'+opts('priority',['Low','Medium','High','Urgent'],t.priority||'Medium')+'</label>'+
+ '<label class="text-xs font-bold">Deadline<input name="dueDate" type="date" class="block w-full border rounded-lg p-2 mt-1" value="'+h(t.dueDate||'')+'"></label>'+
+ '<label class="text-xs font-bold">Status'+opts('status',['Not Started','In Progress','Completed','Blocked','Waiting on Others','Rescheduled','Cancelled'],t.status||'Not Started')+'</label>'+
+ '<label class="text-xs font-bold">Progress (%)<input name="progress" type="number" min="0" max="100" class="block w-full border rounded-lg p-2 mt-1" value="'+h(t.progress||0)+'"></label></div>'+
+ '<details class="rounded-xl border p-3" '+(detail?'open':'')+'><summary class="text-sm font-semibold cursor-pointer">Additional details (optional) · Project, dependencies and follow-up</summary><div class="space-y-3 pt-3">'+
+ '<label class="block text-xs font-bold">Description / Brief<textarea name="description" maxlength="1200" rows="2" class="block w-full border rounded-lg p-2 mt-1">'+h(t.description||'')+'</textarea></label>'+
+ '<label class="block text-xs font-bold">Related customer / project / order<input name="relatedRef" maxlength="200" class="block w-full border rounded-lg p-2 mt-1" value="'+h(t.relatedRef||'')+'"></label>'+
+ '<div class="grid sm:grid-cols-2 gap-3"><label class="text-xs font-bold">Depends on'+opts('dependencyParty',['','Customer','Sales','Stock','Technician','Supplier','Contractor','Designer','Other'],t.dependencyParty||'')+'</label>'+
+ '<label class="text-xs font-bold">Next follow-up / rescheduled date<input name="rescheduledTo" type="date" class="block w-full border rounded-lg p-2 mt-1" value="'+h(t.rescheduledTo||'')+'"></label>'+
+ '<label class="text-xs font-bold">Dependency details<input name="dependencyDetails" maxlength="350" class="block w-full border rounded-lg p-2 mt-1" value="'+h(t.dependencyDetails||'')+'"></label>'+
+ '<label class="text-xs font-bold">Reason for delay / reschedule<input name="rescheduleReason" maxlength="350" class="block w-full border rounded-lg p-2 mt-1" value="'+h(t.rescheduleReason||'')+'"></label></div>'+
+ '<label class="block text-xs font-bold">Work result / update<textarea name="result" maxlength="1200" rows="2" class="block w-full border rounded-lg p-2 mt-1">'+h(t.result||'')+'</textarea></label></div></details>'+
+ '<div class="flex gap-2 justify-end"><button type="button" class="'+btn+'" onclick="closeModal()">Cancel</button><button class="'+solid+'" type="submit">'+(t.id?'Save Changes':'Save To-Do')+'</button></div></form>';
+}
+function taskForm(id,supportRequest=false){
  const t=taskById(id)||{},isEdit=!!t.id;
  const editable=!isEdit||S.actor.allDepartments||S.actor.canReview&&t.department===S.actor.department||t.department==='Project'&&String(t.assigneeId)===String(S.actor.id)&&t.requestStatus==='Approved';
- const assigneeId=t.assigneeId||S.actor.id,department=S.staff.find(x=>x.id===assigneeId)?.department||S.actor.department;
+ const others=supportRequest?S.staff.filter(x=>x.department!=='Project'&&S.categories[x.department]):[];
+ const assigneeId=t.assigneeId||(supportRequest?others[0]?.id:S.actor.id),department=S.staff.find(x=>String(x.id)===String(assigneeId))?.department||S.actor.department;
  const cats=S.categories[department]||['Other'];
  return '<form id="companyDailyTaskForm" onsubmit="companyDailySave(event)" class="space-y-3">'+
  '<input type="hidden" name="id" value="'+h(t.id||'')+'"><label class="block text-xs font-bold">Task / Deliverable<input name="title" required maxlength="180" class="block w-full border rounded-lg p-2 mt-1" value="'+h(t.title||'')+'" '+(!editable?'readonly':'')+'></label>'+
  '<label class="block text-xs font-bold">Description / Brief<textarea name="description" maxlength="1200" rows="3" class="block w-full border rounded-lg p-2 mt-1" '+(!editable?'readonly':'')+'>'+h(t.description||'')+'</textarea></label>'+
- '<div class="grid grid-cols-2 gap-3"><label class="text-xs font-bold">Assignee<select id="companyAssignee" name="assigneeId" class="block w-full border rounded-lg p-2 mt-1" onchange="companyDailyAssigneeChange(this.value)" '+(isEdit?'disabled':'')+'>'+S.staff.filter(s=>S.categories[s.department]).map(s=>'<option value="'+h(s.id)+'" '+(String(s.id)===String(assigneeId)?'selected':'')+'>'+h(s.name)+' · '+h(s.department)+'</option>').join('')+'</select></label>'+
+ '<div class="grid grid-cols-2 gap-3"><label class="text-xs font-bold">Assignee<select id="companyAssignee" name="assigneeId" class="block w-full border rounded-lg p-2 mt-1" onchange="companyDailyAssigneeChange(this.value)" '+(isEdit?'disabled':'')+'>'+(supportRequest?others:S.staff.filter(s=>S.categories[s.department])).map(s=>'<option value="'+h(s.id)+'" '+(String(s.id)===String(assigneeId)?'selected':'')+'>'+h(s.name)+' · '+h(s.department)+'</option>').join('')+'</select></label>'+
  '<label class="text-xs font-bold">Category<select id="companyCategory" name="category" class="block w-full border rounded-lg p-2 mt-1" '+(!editable?'disabled':'')+'>'+selectOptions(cats,t.category||cats[0])+'</select></label>'+
  '<label class="text-xs font-bold">Priority<select name="priority" class="block w-full border rounded-lg p-2 mt-1" '+(!editable?'disabled':'')+'>'+selectOptions(['Low','Medium','High','Urgent'],t.priority||'Medium')+'</select></label>'+
  '<label class="text-xs font-bold">Deadline<input name="dueDate" type="date" class="block w-full border rounded-lg p-2 mt-1" value="'+h(t.dueDate||'')+'" '+(!editable?'readonly':'')+'></label>'+
@@ -205,7 +231,17 @@ function taskForm(id){
  (isEdit?'<p class="text-xs text-gray-500">Department: '+h(t.department)+' · Request: '+h(t.requestStatus)+'</p>':'<p class="text-xs text-amber-800">Cross-department tasks require the receiving manager’s approval before assignment.</p>')+
  '<div class="flex gap-2 justify-end"><button type="button" class="'+btn+'" onclick="closeModal()">Cancel</button><button class="'+solid+'" type="submit">Save Task</button></div></form>';
 }
-window.companyDailyOpenTask=id=>openModal(id?'Update Daily Work Task':'New Daily Work Task / Support Request',taskForm(id));
+window.companyDailyOpenTask=id=>{
+ const task=id?taskById(id):null;
+ const personal=projectMode()&&S.actor?.department==='Project'&&(!task||task.department==='Project'&&String(task.assigneeId)===String(S.actor.id));
+ openModal(personal?(id?'Update Project To-Do':'New Project To-Do'):(id?'Update Daily Work Task':'New Daily Work Task / Support Request'),
+ personal?projectPersonalTaskForm(id):taskForm(id));
+};
+window.companyDailyOpenSupportRequest=()=>{
+ if(!projectMode())return window.companyDailyOpenTask();
+ if(!S.staff.some(x=>x.department!=='Project'&&S.categories[x.department]))return say('No other department staff available for support requests',true);
+ openModal('Request Support from Another Department',taskForm(null,true));
+};
 window.companyDailyAssigneeChange=id=>{const dep=S.staff.find(x=>String(x.id)===String(id))?.department||'Sales',box=document.getElementById('companyCategory');if(box)box.innerHTML=selectOptions(S.categories[dep]||['Other'],'')};
 window.companyDailySave=async ev=>{ev.preventDefault();const t=Object.fromEntries(new FormData(ev.target).entries());if(t.id&&!t.assigneeId)t.assigneeId=taskById(t.id)?.assigneeId;try{await api('company_save_task',t);closeModal();say('Daily Work task saved');await load()}catch(e){say(e.message,true)}};
 window.companyDailyTab=tab=>{S.tab=tab;render()};
