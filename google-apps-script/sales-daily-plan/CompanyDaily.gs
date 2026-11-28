@@ -110,6 +110,7 @@ function cdSubmitPM(ss,a,p){return cdWithLock(function(){
  const ids=JSON.parse(found.r[6]||'[]'),res=Array.isArray(p.results)?p.results:[];
  if(ids.length!==res.length||new Set(res.map(x=>String(x.id))).size!==ids.length||ids.some(id=>!res.some(x=>String(x.id)===id)))throw Error('Result required for each planned task');
  const results=res.map(x=>{if(!['Completed','Partially Completed','Pending','Rescheduled','Cancelled'].includes(x.status))throw Error('Invalid result status');
+ if(a.department==='Project'&&!String(x.result||'').trim())throw Error('Enter the Evening Result for every planned Project task');
  return{id:cdRaw(x.id,80),status:x.status,result:cdText(x.result,1000),nextStep:cdText(x.nextStep,500)}});
  const row=found.r.slice(),previous=cdDaily(found.r);
  row[7]='Submitted';row[8]=new Date().toISOString();row[9]=JSON.stringify(results);
